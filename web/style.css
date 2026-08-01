@@ -1,0 +1,385 @@
+/* Elicit Q&A screen — focus-friendly, one column, no chrome.
+   Design contract: docs/interface-references.md */
+
+:root {
+ --fg: #1a1a1a;
+ --dim: #999;
+ --bg: #fafaf8;
+ --warn: #b33;
+ --warn-bg: #fff5f5;
+ --serif: 'Iowan Old Style', 'Palatino Linotype', 'URW Palladio L', 'Georgia',
+  'Times New Roman', serif;
+ --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+ --measure: 42rem;
+ --gap: 1.5rem;
+ --radius: 4px;
+ transition: background 0.3s, color 0.3s;
+}
+
+*,
+*::before,
+*::after {
+ box-sizing: border-box;
+ margin: 0;
+}
+
+html {
+ font-size: 18px;
+ line-height: 1.6;
+ color: var(--fg);
+ background: var(--bg);
+ -webkit-font-smoothing: antialiased;
+}
+
+body {
+ font-family: var(--serif);
+ min-height: 100dvh;
+}
+
+/* ── layout ── */
+
+main {
+ max-width: var(--measure);
+ margin: 0 auto;
+ padding: 4rem var(--gap) 6rem;
+ display: flex;
+ flex-direction: column;
+ gap: var(--gap);
+}
+
+.screen {
+ display: none;
+ flex-direction: column;
+ gap: var(--gap);
+}
+
+.screen.active {
+ display: flex;
+}
+
+/* ── mode declaration ── */
+
+.mode-form {
+ display: flex;
+ flex-direction: column;
+ gap: 1.2rem;
+}
+
+.mode-row {
+ display: flex;
+ gap: 1rem;
+ align-items: baseline;
+ flex-wrap: wrap;
+}
+
+.mode-row label {
+ font-size: 0.85rem;
+ color: var(--dim);
+ text-transform: lowercase;
+ letter-spacing: 0.03em;
+}
+
+.mode-select {
+ font-family: inherit;
+ font-size: 0.95rem;
+ background: transparent;
+ border: none;
+ border-bottom: 1px solid var(--dim);
+ color: var(--fg);
+ padding: 0.15rem 0;
+ cursor: pointer;
+ outline: none;
+ transition: border-color 0.2s;
+}
+
+.mode-select:focus {
+ border-color: var(--fg);
+}
+
+.topic-input {
+ font-family: inherit;
+ font-size: 1.1rem;
+ background: transparent;
+ border: none;
+ border-bottom: 1px solid var(--dim);
+ color: var(--fg);
+ padding: 0.3rem 0;
+ outline: none;
+ width: 100%;
+ transition: border-color 0.2s;
+}
+
+.topic-input:focus {
+ border-color: var(--fg);
+}
+
+.topic-input::placeholder {
+ color: var(--dim);
+ font-style: italic;
+}
+
+/* ── exchange ── */
+
+.exchange-header {
+ position: sticky;
+ top: 0;
+ background: var(--bg);
+ padding: 0.5rem 0;
+ z-index: 1;
+}
+
+.question-block {
+ font-size: 1.4rem;
+ line-height: 1.4;
+ font-weight: 500;
+ max-width: 36rem;
+ margin: 2rem 0 1rem;
+}
+
+.transcript {
+ display: flex;
+ flex-direction: column;
+ gap: 1rem;
+}
+
+.turn {
+ transition: opacity 0.4s;
+ max-width: 100%;
+}
+
+.turn.agent {
+ color: var(--dim);
+ font-style: italic;
+ font-size: 0.9rem;
+}
+
+.turn.user {
+ color: var(--fg);
+}
+
+.answer-area {
+ display: flex;
+ flex-direction: column;
+ gap: 0.5rem;
+ margin-top: 2rem;
+}
+
+.answer-textarea {
+ font-family: inherit;
+ font-size: 1rem;
+ line-height: 1.7;
+ color: var(--fg);
+ background: transparent;
+ border: none;
+ outline: none;
+ resize: none;
+ width: 100%;
+ min-height: 3.4em;
+ overflow: hidden;
+ caret-color: var(--fg);
+}
+
+.answer-textarea::placeholder {
+ color: var(--dim);
+ font-style: italic;
+}
+
+.harvest-now {
+ align-self: flex-end;
+ font-family: var(--sans);
+ font-size: 0.72rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0.25rem 0.5rem;
+ transition: color 0.2s;
+ text-transform: lowercase;
+ letter-spacing: 0.03em;
+}
+
+.harvest-now:hover {
+ color: var(--fg);
+}
+
+/* ── focus dimming ── */
+
+.answering .turn {
+ opacity: 0.3;
+}
+
+/* ── harvest review ── */
+
+.harvest-list {
+ display: flex;
+ flex-direction: column;
+ gap: 2.5rem;
+}
+
+.proposal-block {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+ padding-bottom: 2.5rem;
+ border-bottom: 1px solid color-mix(in srgb, var(--dim) 20%, transparent);
+}
+
+.proposal-block:last-child {
+ border-bottom: none;
+}
+
+.proposal-text {
+ font-size: 1rem;
+ line-height: 1.7;
+ position: relative;
+ padding-right: 12rem;
+}
+
+.proposal-reading {
+ position: absolute;
+ right: 0;
+ top: 0;
+ width: 11rem;
+ font-size: 0.72rem;
+ line-height: 1.4;
+ color: var(--dim);
+ font-style: italic;
+ text-align: right;
+}
+
+.proposal-reading strong {
+ font-weight: 500;
+ font-style: normal;
+ color: color-mix(in srgb, var(--dim) 40%, var(--fg));
+}
+
+.proposal-actions {
+ display: flex;
+ gap: 0.4rem;
+ flex-wrap: wrap;
+}
+
+.proposal-action {
+ font-family: var(--sans);
+ font-size: 0.72rem;
+ color: var(--dim);
+ background: none;
+ border: 1px solid var(--dim);
+ border-radius: var(--radius);
+ padding: 0.15rem 0.55rem;
+ cursor: pointer;
+ transition: color 0.15s, border-color 0.15s, background 0.15s;
+ text-transform: lowercase;
+ letter-spacing: 0.02em;
+}
+
+.proposal-action:hover {
+ color: var(--fg);
+ border-color: var(--fg);
+}
+
+.proposal-action.discard {
+ border-color: transparent;
+ color: var(--warn);
+}
+
+.proposal-action.discard:hover {
+ background: var(--warn-bg);
+ border-color: var(--warn);
+}
+
+/* trim editor */
+.trim-editor {
+ font-family: inherit;
+ font-size: 1rem;
+ line-height: 1.7;
+ color: var(--fg);
+ background: transparent;
+ border: 1px dashed var(--dim);
+ border-radius: var(--radius);
+ padding: 0.5rem;
+ resize: vertical;
+ width: 100%;
+ min-height: 4em;
+ outline: none;
+}
+
+.trim-editor:focus {
+ border-color: var(--fg);
+}
+
+/* restate editor */
+.restate-editor {
+ font-family: inherit;
+ font-size: 1rem;
+ line-height: 1.7;
+ color: var(--fg);
+ background: transparent;
+ border: none;
+ border-bottom: 1px solid var(--dim);
+ padding: 0.3rem 0;
+ width: 100%;
+ outline: none;
+ resize: none;
+}
+
+.restate-editor:focus {
+ border-color: var(--fg);
+}
+
+.confirm-restate {
+ font-family: var(--sans);
+ font-size: 0.72rem;
+ color: var(--dim);
+ background: none;
+ border: 1px solid var(--dim);
+ border-radius: var(--radius);
+ padding: 0.15rem 0.55rem;
+ cursor: pointer;
+ align-self: flex-start;
+ transition: color 0.15s, border-color 0.15s;
+}
+
+.confirm-restate:hover {
+ color: var(--fg);
+ border-color: var(--fg);
+}
+
+/* ── done state ── */
+
+.done-message {
+ font-size: 1.2rem;
+ color: var(--dim);
+ text-align: center;
+ padding: 4rem 0;
+}
+
+/* ── shared ── */
+
+.submit-btn {
+ font-family: var(--sans);
+ font-size: 0.85rem;
+ background: var(--fg);
+ color: var(--bg);
+ border: none;
+ border-radius: var(--radius);
+ padding: 0.45rem 1.2rem;
+ cursor: pointer;
+ align-self: flex-start;
+ transition: opacity 0.2s;
+}
+
+.submit-btn:hover {
+ opacity: 0.85;
+}
+
+.submit-btn:disabled {
+ opacity: 0.4;
+ cursor: default;
+}
+
+.error-msg {
+ font-size: 0.8rem;
+ color: var(--warn);
+ font-family: var(--sans);
+}
