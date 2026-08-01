@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Turn, Vault } from '../src/types.js';
 import { makeScriptedComplete } from './fakes.js';
-import { startSession, userTurn } from '../src/elicitor/elicitor.js';
+import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
 import { starterBank, MAX_PROBES } from '../src/elicitor/protocol.js';
 
 /** In-memory fake Vault that records turns for inspection. */
@@ -191,5 +191,83 @@ describe('elicitor', () => {
     if (result.kind === 'probe') {
       expect(vault._turns(session.id)).toHaveLength(3);
     }
+  });
+
+  test('skip returns a different starter than the skipped one', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault });
+    const originalText = s.turns[s.turns.length - 1]!.text;
+    const result = skipQuestion(s);
+    expect(result.kind).toBe('question');
+    if (result.kind === 'question') {
+      expect(result.text).not.toBe(originalText);
+    }
+    // the skipped turn should be marked
+    const skippedTurn = s.turns[s.turns.length - 2]!;
+    expect(skippedTurn.skipped).toBe(true);
+    expect(skippedTurn.text).toBe(originalText);
+  });
+
+  test('skip appends replacement turn after the skipped turn in vault', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault });
+    const result = skipQuestion(s);
+    expect(result.kind).toBe('question');
+    const turns = vault._turns(s.id);
+    expect(turns.length).toBe(2);
+    expect(turns[0]!.skipped).toBe(true);
+    expect(turns[1]!.skipped).toBeUndefined();
+    if (result.kind === 'question') {
+      expect(turns[1]!.text).toBe(result.text);
+    }
+  });
+
+  test('skip does not count toward MAX_PROBES', async () => {
+    const vault = makeFakeVault();
+    // 5 probe responses
+    const complete = makeScriptedComplete([
+      'What do you mean by that?',
+      'Can you say more?',
+      'How did that feel?',
+      'What happened next?',
+      'Why was that important?',
+    ]);
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault });
+
+    // skip the opener
+    const skipResult = skipQuestion(s);
+    expect(skipResult.kind).toBe('question');
+
+    // 5 probes still fit (MAX_PROBES=6, probeCount after skip = 1 not-skipped agent)
+    for (let i = 0; i < 5; i++) {
+      const r = await userTurn(s, `answer ${i}`);
+      expect(r.kind).toBe('probe');
+    }
+
+    // 6th should saturate
+    const saturated = await userTurn(s, 'one too many');
+    expect(saturated.kind).toBe('saturated');
+  });
+
+  test('skip exhausts after all 10 starters used', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault });
+
+    // Skip 9 times — the opener used 1 starter, so 9 more skips use the remaining 9
+    for (let i = 0; i < 9; i++) {
+      const r = skipQuestion(s);
+      expect(r.kind).toBe('question');
+    }
+
+    // 10th skip should exhaust (all 10 starters used)
+    const exhausted = skipQuestion(s);
+    expect(exhausted.kind).toBe('exhausted');
+
+    // No new turn appended on exhaustion
+    const agentTurns = s.turns.filter((t) => t.role === 'agent');
+    expect(agentTurns.length).toBe(10); // 1 opener + 9 replacements, no 10th
   });
 });

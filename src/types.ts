@@ -34,6 +34,8 @@ export type Turn = {
   at: string;
   /** Present on agent turns; the eliciting probe's QuestionForm tag */
   questionForm?: QuestionForm;
+  /** Set in memory when the user skips this agent turn — never persisted to disk */
+  skipped?: true;
 };
 
 export type CutProposal = {

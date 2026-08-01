@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { createVault } from './vault/vault.js';
-import { startSession, userTurn } from './elicitor/elicitor.js';
+import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { propose, decide } from './harvester/harvester.js';
 import type {
   Vault,
@@ -75,6 +75,16 @@ export function createApp(deps: ServerDeps): Hono {
       text: result.text,
       questionForm: result.questionForm,
     });
+  });
+
+  // POST /api/session/:id/skip → question | exhausted
+  app.post('/api/session/:id/skip', (c) => {
+    const sessionId = c.req.param('id');
+    const state = sessions.get(sessionId);
+    if (!state) return c.json({ error: 'session not found' }, 404);
+
+    const result = skipQuestion(state);
+    return c.json(result);
   });
 
   // POST /api/session/:id/end → {proposals, buds}

@@ -16,6 +16,10 @@ type TurnResponse =
   | { kind: 'probe'; text: string; questionForm: QuestionForm }
   | { kind: 'saturated'; proposals: CutProposal[] };
 
+type SkipResponse =
+  | { kind: 'question'; text: string; questionForm: QuestionForm }
+  | { kind: 'exhausted' };
+
 interface EndResponse {
   proposals: CutProposal[];
 }
@@ -183,8 +187,9 @@ function renderExchange() {
     rows: '2',
   });
   const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
+  const skipBtn = el('button', { class: 'harvest-now' }, 'skip');
 
-  answerArea.append(textarea, harvestBtn);
+  answerArea.append(textarea, harvestBtn, skipBtn);
 
   div.append(header, transcript, answerArea);
   main.append(div);
@@ -257,6 +262,33 @@ function renderExchange() {
       renderHarvest();
     } catch (e) {
       showError(String(e));
+    }
+  });
+
+  skipBtn.addEventListener('click', async () => {
+    skipBtn.disabled = true;
+    try {
+      const res = await api<SkipResponse>(
+        `/api/session/${state.sessionId}/skip`,
+      );
+      if (res.kind === 'question') {
+        state.question = res.text;
+        questionBlock.textContent = res.text;
+        textarea.value = '';
+        textarea.style.height = 'auto';
+        textarea.focus();
+      } else {
+        // exhausted — show dimmed note
+        questionBlock.textContent = '';
+        const note = el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.');
+        questionBlock.append(note);
+        skipBtn.disabled = true;
+        harvestBtn.disabled = true;
+        textarea.disabled = true;
+      }
+    } catch (e) {
+      showError(String(e));
+      skipBtn.disabled = false;
     }
   });
 

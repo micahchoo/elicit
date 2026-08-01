@@ -91,7 +91,7 @@ function startServer(app: Hono): Promise<{ server: Server; port: number }> {
 const userText1 = "I've been thinking about my career direction.";
 const userText2 = "I want to work on things that matter but I'm not sure what that looks like.";
 
-/** Three responses: two probes for the elicitor, one JSON cuts for the harvester. */
+/** Five responses: two probes + JSON cuts for the full-scripted session, two spare probes for the skip-flow session. */
 const scriptedResponses = [
   'What do you mean by "career direction"?',
   'What would "things that matter" look like concretely?',
@@ -123,6 +123,8 @@ const scriptedResponses = [
       },
     ],
   }),
+  'What does "my answer here" mean for what you value?',
+  'And how would you know that mattered?',
 ];
 
 // ── Tests ──
@@ -318,5 +320,62 @@ describe('HTTP API e2e', () => {
     const listedIds = listedSnippets.map((s) => s.id);
     expect(listedIds).toContain(approvedSnippet!.id);
     expect(listedIds).toContain(restatedSnippet!.id);
+  });
+
+  it('session skip flow works over HTTP', async () => {
+    // 1. Create session
+    const s1 = await fetch(`${baseUrl}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: { minutes: 25, energy: 'medium' } }),
+    });
+    expect(s1.status).toBe(200);
+    const { sessionId, question } = (await s1.json()) as {
+      sessionId: string;
+      question: string;
+    };
+    expect(sessionId).toBeTruthy();
+    expect(question).toBeTruthy();
+
+    // 2. Skip the opener — get a new question
+    const s2 = await fetch(`${baseUrl}/api/session/${sessionId}/skip`, {
+      method: 'POST',
+    });
+    expect(s2.status).toBe(200);
+    const skipResult = (await s2.json()) as {
+      kind: string;
+      text?: string;
+    };
+    expect(skipResult.kind).toBe('question');
+    expect(skipResult.text).toBeTruthy();
+    expect(skipResult.text).not.toBe(question);
+
+    // 3. Answer the replacement question
+    const s3 = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'My answer here' }),
+    });
+    expect(s3.status).toBe(200);
+    const turnResult = (await s3.json()) as { kind: string };
+    // Should be probe or saturated depending on scripted responses
+    expect(['probe', 'saturated']).toContain(turnResult.kind);
+
+    // 4. End the session
+    const s4 = await fetch(`${baseUrl}/api/session/${sessionId}/end`, {
+      method: 'POST',
+    });
+    expect(s4.status).toBe(200);
+    const endResult = (await s4.json()) as { proposals: unknown[] };
+    expect(Array.isArray(endResult.proposals)).toBe(true);
+
+    // 5. Verify transcript on disk has the skip marker
+    const transcriptPath = join(vaultDir, 'transcripts', `${sessionId}.md`);
+    expect(existsSync(transcriptPath)).toBe(true);
+    const raw = readFileSync(transcriptPath, 'utf-8');
+    // The skipped turn and replacement should be in the transcript
+    // (skipped is an in-memory marker, not on disk — so we just check presence)
+    expect(raw).toContain(question); // original question still in transcript
+    expect(raw).toContain(skipResult.text!); // replacement in transcript
   });
 });
