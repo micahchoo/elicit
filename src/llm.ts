@@ -38,13 +38,17 @@ export function makeComplete(): Complete {
  const model = buildModel();
 
  return async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
-  // pi-ai's Context.messages is Message[] (UserMessage | AssistantMessage | ToolResultMessage),
-  // but at runtime it only inspects role + content. The AssistantMessage extra fields (api,
-  // provider, model, usage, stopReason) are output-only — only real assistant responses need them.
+  // pi-ai serializes assistant content by filtering CONTENT BLOCKS — a plain string
+  // throws inside its provider and surfaces as stopReason 'error' with empty text.
+  // User content may be a string; assistant content must be [{type:'text', text}].
   const messages = turns.map((t) => {
    const now = Date.now();
    if (t.role === 'agent') {
-    return { role: 'assistant' as const, content: t.text, timestamp: now };
+    return {
+     role: 'assistant' as const,
+     content: [{ type: 'text' as const, text: t.text }],
+     timestamp: now,
+    };
    }
    return { role: 'user' as const, content: t.text, timestamp: now };
   });
@@ -60,6 +64,11 @@ export function makeComplete(): Complete {
   };
 
   const response = await complete(model, context, options);
+
+  if (response.stopReason === 'error') {
+   const detail = (response as { errorMessage?: string }).errorMessage ?? 'no detail';
+   throw new Error(`local model call failed: ${detail}`);
+  }
 
   // Collect text content blocks.
   const parts: string[] = [];
