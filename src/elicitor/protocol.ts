@@ -1,8 +1,9 @@
-import type { QuestionForm } from '../types.js';
+import type { QuestionForm, QuestionSource } from '../types.js';
 
 export interface StarterQuestion {
   text: string;
   questionForm: QuestionForm;
+  source?: QuestionSource;
 }
 
 /** Every LLM-generated probe carries this form; the protocol owns classification. */

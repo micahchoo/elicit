@@ -114,6 +114,7 @@ const transcript: Turn[] = [
     text: 'What do you value most in your work?',
     at: '2026-08-01T00:00:00.000Z',
     questionForm: 'deliberative',
+    questionSource: { channel: 'test-channel', blockId: 1 },
   },
   {
     role: 'user',
@@ -125,6 +126,7 @@ const transcript: Turn[] = [
     text: 'Can you recall a specific moment when autonomy made the difference?',
     at: '2026-08-01T00:00:20.000Z',
     questionForm: 'deliberative',
+    questionSource: { channel: 'test-channel', blockId: 2 },
   },
   {
     role: 'user',
@@ -332,6 +334,33 @@ describe('propose', () => {
     expect(proposals).toHaveLength(1);
     expect(proposals[0]!.text).toBe('autonomy above all else');
   });
+
+  it('proposal carries questionSource from eliciting probe', async () => {
+    const json = JSON.stringify({
+      cuts: [
+        {
+          text: 'I pushed back and kept my project',
+          sourceTurn: 1,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'User actively defended their autonomy',
+          standalone: true,
+        },
+      ],
+    });
+
+    const { proposals } = await propose(
+      'sess-1',
+      transcript,
+      fakeComplete(json)
+    );
+
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.questionSource).toEqual({
+      channel: 'test-channel',
+      blockId: 2,
+    });
+  });
 });
 
 describe('decide', () => {
@@ -492,5 +521,40 @@ describe('decide', () => {
     // Type-level: Reading interface has no questionForm property
     // Runtime: no stray properties passed through
     expect((rd as any).questionForm).toBeUndefined();
+  });
+
+  it('questionSource survives propose → decide → snippet provenance', async () => {
+    const json = JSON.stringify({
+      cuts: [
+        {
+          text: 'autonomy above all else',
+          sourceTurn: 0,
+          facet: 'value',
+          stance: 'avowal',
+          reading: 'User values autonomy as their primary driver',
+          standalone: true,
+        },
+      ],
+    });
+
+    const { proposals } = await propose(
+      'sess-1',
+      transcript,
+      fakeComplete(json)
+    );
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.questionSource).toEqual({
+      channel: 'test-channel',
+      blockId: 1,
+    });
+
+    const vault = fakeVault();
+    decide('sess-1', proposals, [{ proposal: 0, action: 'approve' }], vault);
+
+    expect(vault._snippets).toHaveLength(1);
+    expect(vault._snippets[0]!.provenance.questionSource).toEqual({
+      channel: 'test-channel',
+      blockId: 1,
+    });
   });
 });

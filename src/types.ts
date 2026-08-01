@@ -21,6 +21,12 @@ export type Stance =
   | 'superseded';
 
 export type QuestionForm = 'deliberative' | 'theoretical' | 'why';
+export type QuestionSource = {
+  channel: string;
+  channelTitle?: string;
+  blockId: number;
+};
+
 
 export type Mode = {
   minutes: number;
@@ -34,6 +40,8 @@ export type Turn = {
   at: string;
   /** Present on agent turns; the eliciting probe's QuestionForm tag */
   questionForm?: QuestionForm;
+  /** Source provenance when this is a bank-drawn question */
+  questionSource?: QuestionSource;
   /** Set in memory when the user skips this agent turn — never persisted to disk */
   skipped?: true;
 };
@@ -51,6 +59,7 @@ export type CutProposal = {
   question: string;
   /** Copied from the eliciting probe's Turn.questionForm */
   questionForm: QuestionForm;
+  questionSource?: QuestionSource;
 };
 
 export type HarvestDecision = {
@@ -68,6 +77,7 @@ export type Provenance = {
   questionForm: QuestionForm;
   /** Source span in the transcript (harvest only) */
   span?: { start: number; end: number };
+  questionSource?: QuestionSource;
 };
 
 export type Snippet = {
@@ -104,6 +114,8 @@ export type SessionState = {
     vault: Vault;
   };
   turns: Turn[];
+  /** Question bank for opener/skip selection (session-local) */
+  bank?: { text: string; questionForm: QuestionForm; source?: QuestionSource }[];
 };
 
 export type Index = {

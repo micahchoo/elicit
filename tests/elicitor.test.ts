@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { Turn, Vault } from '../src/types.js';
 import { makeScriptedComplete } from './fakes.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
-import { starterBank, MAX_PROBES } from '../src/elicitor/protocol.js';
+import { MAX_PROBES } from '../src/elicitor/protocol.js';
 
 /** In-memory fake Vault that records turns for inspection. */
 function makeFakeVault() {
@@ -49,15 +49,53 @@ describe('elicitor', () => {
   test('opener from starter bank when no topic', () => {
     const vault = makeFakeVault();
     const complete = makeScriptedComplete([]);
+    const bank = [
+      { text: 'What do you value?', questionForm: 'deliberative' as const },
+      { text: 'Why are you here?', questionForm: 'why' as const },
+    ];
     const session = startSession(
       { minutes: 30, energy: 'medium' },
-      { complete, vault },
+      { complete, vault, bank },
     );
 
-    const starterTexts = starterBank.map((s) => s.text);
-    expect(starterTexts).toContain(session.turns[0]!.text);
+    const bankTexts = bank.map((s) => s.text);
+    expect(bankTexts).toContain(session.turns[0]!.text);
     expect(session.turns[0]!.questionForm).toBeDefined();
     expect(session.turns[0]!.role).toBe('agent');
+  });
+
+  test('opener Turn carries questionSource when drawn from bank', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const bank = [
+      {
+        text: 'What?',
+        questionForm: 'deliberative' as const,
+        source: { channel: 'ch', blockId: 42 },
+      },
+    ];
+    const session = startSession(
+      { minutes: 30, energy: 'medium' },
+      { complete, vault, bank },
+    );
+    expect(session.turns[0]!.questionSource).toEqual({
+      channel: 'ch',
+      blockId: 42,
+    });
+  });
+
+  test('session.bank is stored', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const bank = [
+      { text: 'Q1?', questionForm: 'deliberative' as const },
+      { text: 'Q2?', questionForm: 'why' as const },
+    ];
+    const session = startSession(
+      { minutes: 25, energy: 'medium' },
+      { complete, vault, bank },
+    );
+    expect(session.bank).toEqual(bank);
   });
 
   test('opener from topic when mode.topic is set', () => {
@@ -251,23 +289,49 @@ describe('elicitor', () => {
     expect(saturated.kind).toBe('saturated');
   });
 
-  test('skip exhausts after all 10 starters used', () => {
+  test('skip exhausts after all bank starters used', () => {
     const vault = makeFakeVault();
     const complete = makeScriptedComplete([]);
-    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault });
+    const bank = [
+      { text: 'Q1?', questionForm: 'deliberative' as const },
+      { text: 'Q2?', questionForm: 'deliberative' as const },
+    ];
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault, bank });
 
-    // Skip 9 times — the opener used 1 starter, so 9 more skips use the remaining 9
-    for (let i = 0; i < 9; i++) {
-      const r = skipQuestion(s);
-      expect(r.kind).toBe('question');
-    }
+    // opener used 1 bank question, 1 skip uses the other
+    const r1 = skipQuestion(s);
+    expect(r1.kind).toBe('question');
 
-    // 10th skip should exhaust (all 10 starters used)
+    // 2nd skip should exhaust (both used)
     const exhausted = skipQuestion(s);
     expect(exhausted.kind).toBe('exhausted');
 
-    // No new turn appended on exhaustion
-    const agentTurns = s.turns.filter((t) => t.role === 'agent');
-    expect(agentTurns.length).toBe(10); // 1 opener + 9 replacements, no 10th
+    // 1 opener + 1 replacement, no 3rd
+    expect(s.turns.filter((t) => t.role === 'agent').length).toBe(2);
+  });
+
+  test('skip replacement carries questionSource', () => {
+    const vault = makeFakeVault();
+    const complete = makeScriptedComplete([]);
+    const bank = [
+      {
+        text: 'Q1?',
+        questionForm: 'deliberative' as const,
+        source: { channel: 'ch', blockId: 42 },
+      },
+      {
+        text: 'Q2?',
+        questionForm: 'deliberative' as const,
+        source: { channel: 'ch2', blockId: 43 },
+      },
+    ];
+    const s = startSession({ minutes: 25, energy: 'medium' }, { complete, vault, bank });
+
+    const r = skipQuestion(s);
+    expect(r.kind).toBe('question');
+
+    const replacement = s.turns[s.turns.length - 1]!;
+    const entry = bank.find((q) => q.text === replacement.text)!;
+    expect(replacement.questionSource).toEqual(entry.source);
   });
 });

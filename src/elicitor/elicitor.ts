@@ -1,31 +1,40 @@
 import { ulid } from 'ulid';
-import type { Complete, Mode, QuestionForm, SessionState, Turn, Vault } from '../types.js';
+import type { Complete, Mode, QuestionForm, QuestionSource, SessionState, Turn, Vault } from '../types.js';
 import {
  defaultQuestionForm,
  MAX_PROBES,
  REFLECTIVE_INTERVIEW_PROMPT,
- starterBank,
+ type StarterQuestion,
 } from './protocol.js';
+import { loadQuestionBank } from './bank.js';
 
-/** Picks an opener from the starter bank or forms one from mode.topic. */
-function pickOpener(topic?: string): { text: string; questionForm: QuestionForm } {
+/** Picks an opener from the question bank or forms one from mode.topic. */
+function pickOpener(
+ bank: StarterQuestion[],
+ topic?: string,
+): { text: string; questionForm: QuestionForm; source?: QuestionSource } {
  if (topic) {
   return {
    text: `You mentioned ${topic}. What would you like to explore about that?`,
    questionForm: 'deliberative',
   };
  }
- const pick = starterBank[Math.floor(Math.random() * starterBank.length)]!;
- return { text: pick.text, questionForm: pick.questionForm };
+ const pick = bank[Math.floor(Math.random() * bank.length)]!;
+ return {
+  text: pick.text,
+  questionForm: pick.questionForm,
+  ...(pick.source ? { source: pick.source } : {}),
+ };
 }
 
 export function startSession(
  mode: Mode,
- deps: { complete: Complete; vault: Vault },
+ deps: { complete: Complete; vault: Vault; bank?: StarterQuestion[] },
 ): SessionState {
  const id = ulid();
  const started = new Date().toISOString();
- const opener = pickOpener(mode.topic);
+ const bank = deps.bank ?? loadQuestionBank();
+ const opener = pickOpener(bank, mode.topic);
 
  deps.vault.startTranscript(id, { mode, protocol: 'reflective-interview', started });
 
@@ -34,6 +43,7 @@ export function startSession(
   text: opener.text,
   at: started,
   questionForm: opener.questionForm,
+  ...(opener.source ? { questionSource: opener.source } : {}),
  };
 
  deps.vault.appendTurn(id, openerTurn);
@@ -44,6 +54,7 @@ export function startSession(
   protocol: 'reflective-interview',
   deps,
   turns: [openerTurn],
+  bank,
  };
 }
 
@@ -87,15 +98,11 @@ export async function userTurn(
  return { kind: 'probe', text: agentTurn.text, questionForm: defaultQuestionForm };
 }
 
-/** Static lookup of starter question texts. */
-const starterTexts: Record<string, true> = Object.fromEntries(
- starterBank.map((s) => [s.text, true] as const),
-);
-/** Returns the set of starter texts already used (asked or skipped) in this session. */
-function usedStarters(turns: Turn[]): Set<string> {
+/** Returns the set of bank question texts already used (asked or skipped) in this session. */
+function usedStarters(turns: Turn[], bankTexts: Set<string>): Set<string> {
  const used = new Set<string>();
  for (const t of turns) {
-  if (t.role === 'agent' && t.text in starterTexts) {
+  if (t.role === 'agent' && bankTexts.has(t.text)) {
    used.add(t.text);
   }
  }
@@ -104,8 +111,8 @@ function usedStarters(turns: Turn[]): Set<string> {
 
 /**
  * Skip the current question during an exchange.
- * Marks the last agent turn skipped in memory, picks an unused starter,
- * and appends the replacement as a new agent turn.
+ * Marks the last agent turn skipped in memory, picks an unused question from the
+ * session's bank, and appends the replacement as a new agent turn.
  *
  * Skips do not count toward MAX_PROBES (Q-8: append before returning).
  */
@@ -119,8 +126,10 @@ export function skipQuestion(
 
  s.turns[lastAgentIdx]!.skipped = true;
 
- const used = usedStarters(s.turns);
- const available = starterBank.filter((st) => !used.has(st.text));
+ const bank = s.bank ?? [];
+ const bankTexts = new Set(bank.map((q) => q.text));
+ const used = usedStarters(s.turns, bankTexts);
+ const available = bank.filter((st) => !used.has(st.text));
 
  if (available.length === 0) return { kind: 'exhausted' };
 
@@ -130,6 +139,7 @@ export function skipQuestion(
   text: pick.text,
   at: new Date().toISOString(),
   questionForm: pick.questionForm,
+  ...(pick.source ? { questionSource: pick.source } : {}),
  };
 
  // Q-8: append BEFORE returning — the replacement is already in the transcript

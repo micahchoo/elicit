@@ -192,6 +192,7 @@ export async function propose(
       reading: cut.reading,
       question: probe?.text ?? '',
       questionForm: probe?.questionForm ?? 'deliberative',
+      ...(probe?.questionSource ? { questionSource: probe.questionSource } : {}),
     });
   }
 
@@ -209,12 +210,12 @@ export function decide(
   for (const decision of decisions) {
     const proposal = proposals[decision.proposal];
     if (!proposal) continue;
-
     const provenance: Provenance = {
       kind: 'harvest',
       session,
       question: proposal.question,
       questionForm: proposal.questionForm,
+      ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
     };
 
     switch (decision.action) {
@@ -254,6 +255,7 @@ export function decide(
           session,
           question: proposal.question,
           questionForm: proposal.questionForm,
+          ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
         };
         // Restatement is a NEW snippet — no reading created
         const snippet = vault.saveSnippet(decision.text, restateProvenance);
