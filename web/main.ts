@@ -71,7 +71,8 @@ const main = $('main')!;
 /* ─── API ─── */
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method: body !== undefined ? 'POST' : 'GET' };
+  // every API call the screen makes is a mutation — always POST
+  const init: RequestInit = { method: 'POST' };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
     init.body = JSON.stringify(body);
