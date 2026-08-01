@@ -186,8 +186,9 @@ class VaultImpl implements Vault {
             const vb = Number(b.match(/^v(\d+)\.md$/)![1]);
             return vb - va; // newest first
           });
-        if (files.length === 0) continue;
-        const latest = join(dir, files[0]);
+        const newest = files[0];
+        if (!newest) continue;
+        const latest = join(dir, newest);
         const parsed = matter.read(latest);
         const data = parsed.data as {
           id: string;
