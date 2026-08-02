@@ -6,10 +6,6 @@ assignee: claude
 blocked_by: []
 resolution: >
   Fix wave 1, commit 6f44553: log path corrected (vault/log), question-asked carries source, harvest-proposed event, empty-harvest state. Verified 227/227.
-resolution: >
-  Fix wave 1, commit 6f44553: log path corrected (vault/log), question-asked carries source, harvest-proposed event, empty-harvest state. Verified 227/227.
-resolution: >
-  Fix wave 1, commit 6f44553: log path corrected (vault/log), question-asked carries source, harvest-proposed event, empty-harvest state. Verified 227/227.
 ---
 
 ## Question

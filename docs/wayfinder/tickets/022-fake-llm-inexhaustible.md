@@ -6,10 +6,6 @@ assignee: claude
 blocked_by: []
 resolution: >
   Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
-resolution: >
-  Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
-resolution: >
-  Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
 ---
 
 ## Question
