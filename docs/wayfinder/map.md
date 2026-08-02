@@ -196,6 +196,13 @@ unassigned, all blockers closed.
   accept. Extraction runs ahead in the docket. (Resolves ticket 058's design
   question and its long-running open.)
 
+- **Q-59 / Q-60 — imported item identity.** Identity is the content hash; a
+  changed file is a NEW dated sitting, never a new snippet version, because
+  versioning would date 2027 prose to 2018 and corrupt Q-50 at the root — the
+  edited post becomes its own evidence of drift instead. Imported items carry
+  no Target: Q-55 made Target un-relaxable, so wrong is permanent and absent
+  serves both. (Ticket 058's open questions are now all ruled.)
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

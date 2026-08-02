@@ -106,13 +106,18 @@ to catch misleading excision.
   review, in the docket, under 047's single-flight. The cost is paid before the
   person sits down; the browser may close. Review is per-item and resumable —
   each piece commits as its own dated sitting and the next waits.
-- Does an imported item get a Target? The script writes none, on the grounds
-  that nothing was asked and no time was spent, which leaves openers minted
-  from it drawable into either kind of sitting (045). Is that right, or should
-  import ask once per batch?
-- What happens on RE-import of a changed file — a new version (Q-5), a new
-  sitting, or a skip? The script skips by session id; that is the cheap answer,
-  not necessarily the correct one.
+- ~~Does an imported item get a Target?~~ **RULED — Q-60.** None, and no
+  control is offered. Q-55 made Target a filter that never relaxes, so a wrong
+  Target silently removes the material from half of all sittings while an
+  absent one serves both. A heterogeneous folder has no true batch-level
+  answer.
+- ~~What happens on RE-import of a changed file?~~ **RULED — Q-59.** Identity
+  is the content hash; identical → skip. A changed file is a NEW ITEM — a
+  second dated sitting at `lastmod` — never a new snippet version, because
+  versioning it would date 2027 prose to 2018 and corrupt Q-50 at the root.
+  The edited post becomes its own evidence of drift instead.
+
+**All open questions are now ruled. This ticket is ready to plan.**
 
 ### Acceptance
 
