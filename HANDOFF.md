@@ -181,44 +181,40 @@ no way to measure how good the prompts are.
 harvest → close, with composed openers, resonance/juxtaposition (lexical
 only), durable queue, Cover memory, activity log, voice input, in-app auth,
 unprompted entry, defer, expeditions, protocol registry, waiting states,
-facet-intent filtering (shadow-mode). 610 tests, tsc clean.
+facet-intent filtering (shadow-mode).
 
-Landed 2026-08-02 from the persona eval, all four accepted against the real
-model via `scripts/accept-044-047.ts`, not only against tests: harvest
-admissibility (044), the Target filter with its minting path wired (045), the
-authorship honesty pass (046), and the docket moved off the response path
-(047 — measured 1ms response against a 127s docket run).
+**Built 2026-08-02, the long campaign.** 1136 tests, tsc clean.
 
-**IN FLIGHT as of 2026-08-02 ~01:45** — the Clerk campaign is running, and
-this is the part a fresh session most needs:
+- **The Clerk slice, Waves 0–4 in progress.** Committed: the wiki contract and
+  thresholds; `ClaimStore`; mechanical status; zero-LLM lint; reading→ops mint;
+  the contradiction judge; the ops executor; the identity registry; the lexical
+  and referent clash channels; the embedding channel; the five wiki jobs; and
+  the docket integration. **T14 (routes) is in flight; T19 and T15 follow,
+  serial.** Plan: `docs/superpowers/plans/2026-08-02-the-clerk.md`.
+- **Your corpus is in the vault.** 139 snippets across 19 dated sittings,
+  2017-2026, from nine years of published writing (057). Reviewed twice: the
+  harvest proposed 295 cuts, triage kept 139, and seven were other people's
+  words — four sentences of Annemarie Mol, one of Sara Ahmed, one of Shreyas —
+  which drove Q-51's cut-level rule into code. `docs/ingest-triage-2026-08-02.md`
+  holds the per-cut marks.
+- **The reading pass is RUNNING** (062) — `scripts/read-snippets.ts --apply`,
+  detached, ~50s per snippet, writing one Reading per snippet to
+  `vault/wiki/readings/`. Until it finishes the corpus is evidence but not
+  wiki: the Clerk mints Claims from Readings (Q-28). It is idempotent and
+  resumable; re-run it if interrupted.
+- Also landed: the degradation ladder (061), the Randomizer (026), sitting
+  cadence (056), the derived event-kind oracle (063), the harvester facet fix
+  (037), the queue answered-turn (041), and the vault as a git repo (049).
 
-- **Wave 0 is committed** (`0ff5eeb`). T1 landed every type the slice consumes
-  plus `Provenance.channel`; T2 landed `src/wiki/contract.ts` with the
-  `ClaimStore`/`Registry` interfaces, `shadowCollector`, `capPrompt`,
-  `fitPayload`; T5 landed `src/wiki/thresholds.ts` — ten thresholds, six live
-  and four shadow, each with its graduation condition.
-- **Wave 1 is dispatched, six Claude subagents, uncommitted**: T3 store, T4
-  status, T6 mint, T7 contradiction, T8 lint, T17 answered-turn (= ticket 041).
-  Each was told to verify the plan against the tree and report disagreements.
-  Verify each report and commit before dispatching Wave 2 (T9, T10, T11).
-- **The ingest dry run is running** — `scripts/ingest-posts.ts --dry`, writing
-  `docs/ingest-review-2026-08-02.md`. It prints one line per post and the
-  first post is 33 turns, so long silences are normal. `--apply` is
-  deliberately unimplemented.
-
-**Two corrections tonight that a later wave must not undo.** The plan told T1
-to stamp readings with `ELICIT_LLM_MODEL ?? 'bonsai-27b'`; after Q-48 that is
-the ELICITOR, and readings are clerk artifacts — following the plan literally
-would have shipped a false record of who wrote each artifact. And
-`poolCandidates` returned bare claim pairs with no channel tag while T12 must
-persist one, so T12 would have invented a provenance (`d50a7e9`).
-
-**Designed, not built** (slice 3 — the Clerk): the Wiki — Claims with
-mandatory Range and Status, the six-op write contract (Q-29), the
-contradiction pipeline (Q-30), zero-LLM graph lint (Q-31), three-tier
-identity registry (Q-32), model stamps with lazy re-annotation (Q-34), the
-embedding resonance channel (Q-17/T18). Plan at
-`docs/superpowers/plans/2026-08-02-the-clerk.md`.
+**Five things have shipped INERT on this project. This is the failure mode.**
+A parameter no caller passed (045). A method with no caller
+(`Registry.mergeCandidates`). A field written to a type but not to disk
+(`ClashCandidate.attempts` — Q-53's cap silently did not exist). An
+admissibility gate that rejected **0 of 295** real cuts while every one of its
+tests passed (044). A prompt-override the ratchet warned did not exist and had
+had since ticket 034 — so every harvest A/B compared the default against
+itself and reported a verdict. Each was found by measuring against real data or
+by an agent checking the seam end to end. **Assume the next one is live now.**
 
 **Designed, not built** (slice 4 — Composition): zero-LLM Arrangement
 reviewer, candidate Arrangements, Gap detection, set-down. Plan at
@@ -230,26 +226,40 @@ deferred until real claims exist to design against. Seeding (013/014), Coach
 
 ## What the 2026-08-02 review changed
 
-A review of this file found three things that block and four that bite. Two of
-its factual claims were checked: the Q-42 collision was real and lived in THIS
-file (facet balance is ticket 042 under Q-13; the register's Q-42 has only ever
-been composition's two passes) — fixed above. Its claim that the user never
-sees the harvest cuts is wrong: /end returns proposals and the review screen
-takes approve / trim / restate / discard, which is the structural check the
-`standalone` boolean cannot be.
+A review of this file found three things that block and four that bite, and
+produced tickets 048–066. Two of its factual claims were checked and one was
+wrong: it said the user never sees the harvest cuts, but `/end` returns
+proposals and the review screen takes approve / trim / restate / discard.
 
-Tickets 048–056 carry the rest. **008 (the Clerk) is now blocked by 051 and
-052** — the independence predicate and the polarity channel — because both
-change what the Clerk writes on its first run, and both are cheaper to decide
-than to retrofit. 053 (snippet embeddings first) is the sequencing question to
-settle before dispatching the Clerk plan.
+**Its strongest finding was answered by measurement, not argument.** It said no
+channel can see polarity, so contradiction candidates may never form. Q-52
+rules that this is a category error — the channels retrieve *aboutness*, and
+`judgeOpposition` is the polarity organ, anchored to verbatim poles. Ticket
+007 then measured it on the real corpus: rephrased oppositions score 0.429–0.729
+and genuine paraphrases 0.507–0.761. **They are one population.** One fixture
+pair's nearest neighbour is the distractor stating the *opposite* belief,
+ahead of its own paraphrase. Negation-blindness is what makes an opposed pair a
+near-neighbour, which is the mechanism the pipeline depends on.
+
+The same eval found `clash.embeddingCosine = 0.82` was **inert, not
+imprecise** — above the entire distribution of 9,591 real pairs, admitting zero
+and scoring 0/8, which is the lexical baseline through a slower mechanism. Now
+0.70, measured twice independently.
 
 ## Where the truth lives
 
 - `CONTEXT.md` — the domain language (36 terms, every one decided).
-- `docs/decisions/elicit.md` — Q-1..Q-51, the constraint register.
-  Q-50: cite independence is CROSS-SITTING. Q-51: material whose authorship
-  cannot be separated is not admissible corpus — excluded whole, never sampled.
+- `docs/decisions/elicit.md` — **Q-1..Q-61**, the constraint register. The ten
+  from 2026-08-02, briefly: **Q-52** the clash channels retrieve aboutness, not
+  polarity. **Q-53** a re-measure counts only from a different SITTING — the
+  frame, not the clock. **Q-54** context-dependence is a Range refinement, and
+  the dissolution branch was throwing the boundary away. **Q-55** the
+  degradation ladder is two rungs and a composing floor. **Q-56** Q-35 governs
+  *selection*; BOUNDS ship live, because a shadowed cap is not a cap. **Q-57**
+  the importer has one door, a folder of files. **Q-58** the import review IS
+  the harvest review, cuts marked in place. **Q-59/Q-60** imported item
+  identity and no Target. **Q-61** the vault is a git repo and the docket
+  commits it.
 - `docs/eval-2026-08-02-claude-adversarial.md` — a peer Claude session's
   red-team. Found the canon-string drift, silent harvest failure, validator
   gaps, resonance overclaim. Its "learnings" section is the most useful page.
@@ -283,8 +293,18 @@ settle before dispatching the Clerk plan.
   `tests/canon.test.ts` reads the spec files instead.
 - Never trust a model self-reported boolean as a gate (standalone, opposed,
   converged). Structural checks or nothing.
-- **A parameter added but never supplied reads as done and tests as done.**
-  Ticket 045 shipped `SittingContext` through three compose functions with no
-  caller passing one; the filter was live with nothing to filter. When a fix
-  adds an optional argument, acceptance is a CALLER passing it.
+- **A thing that exists and is never invoked reads as done and tests as done.**
+  Five instances so far — see the list above. When a fix adds an optional
+  argument, a method, a field or a gate, acceptance is a CALLER exercising it,
+  and for a gate it is a real input it is supposed to reject. `tests/*` passing
+  is not that.
+- **Test the seam, not the call.** T13's proof that the wiki's LogFn reaches
+  the Activity Log is a test that boots the real app and READS THE LOG FILE
+  BACK. A test asserting "the code called `log`" would have passed for months
+  while every shadow record went nowhere.
+- **Verification commands can be vacuous.** This box runs **ugrep 7.5.0**,
+  where `grep -q` combined with `-v` exits 1 unconditionally — so the plan's
+  `! … | grep -qv …` write-boundary assertion could never fail. A later version
+  of the same assertion then failed on COMMENTS containing the word. A grep
+  cannot tell code from prose; check that a fix both passes and can fail.
 - Q-35: every mechanism runs shadow-first; graduates individually on evidence.
