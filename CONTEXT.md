@@ -13,6 +13,9 @@ Every word in a Piece is written by the user. The agent contributes questions, p
 Agent annotations attached alongside a composed Piece or a Snippet — seam warnings, stale-pin flags, skeleton labels, drift readings. Never part of the Piece text itself.
 _Avoid_: comments, suggestions, edits
 
+**Two Planes**:
+Lineage and knowledge are different planes, connected only by typed, cited edges. Lineage is what happened: Transcripts, Snippet versions, the Activity Log, read-logs. Knowledge is what is claimed on evidence: the Wiki. A lineage observation (a Restatement chain, a re-reading pattern) may become Wiki material only as a claim that cites the lineage it reads — the moment it is written without those citations, the planes have collapsed and the claim is unfalsifiable.
+
 ### The corpus
 
 **Snippet**:
