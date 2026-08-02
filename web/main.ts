@@ -13,6 +13,8 @@ import { formatEvent, relativeTime } from '../src/log/format.js';
 interface SessionResponse {
   sessionId: string;
   question: string;
+  /** Present when the Randomizer dealt the opener (Q-18). */
+  source?: 'deck' | 'resurfacing';
 }
 
 interface TurnData {
@@ -399,10 +401,14 @@ function renderMode(showSetupHint?: boolean) {
   const submit = el('button', { class: 'submit-btn' }, 'begin');
   const errorSlot = el('div', { class: 'error-slot' });
 
-  submit.addEventListener('click', async () => {
+  async function begin(shuffle: boolean) {
     submit.disabled = true;
+    shuffleLink.disabled = true;
     errorSlot.innerHTML = '';
-    const wait = beginWait(errorSlot, 'finding a question…');
+    const wait = beginWait(
+      errorSlot,
+      shuffle ? 'shuffling…' : 'finding a question…',
+    );
     try {
       const mode: Mode = {
         minutes: Number(minSelect.value),
@@ -412,7 +418,10 @@ function renderMode(showSetupHint?: boolean) {
       const t = topicInput.value.trim();
       if (t) mode.topic = t;
 
-      const res = await api<SessionResponse>('/api/session', { mode });
+      const res = await api<SessionResponse>(
+        '/api/session',
+        shuffle ? { mode, shuffle: true } : { mode },
+      );
       state.sessionId = res.sessionId;
       state.question = res.question;
       wait.done();
@@ -420,14 +429,25 @@ function renderMode(showSetupHint?: boolean) {
     } catch (e) {
       wait.failed(e);
       submit.disabled = false;
+      shuffleLink.disabled = false;
     }
-  });
+  }
+
+  // The Randomizer, as a sentence rather than a button row (the document rule
+  // in docs/interface-references.md): the control is the two words that name
+  // what happens, sitting at the point of attention just under "begin".
+  const shuffleRow = el('div', { class: 'mode-aside' });
+  const shuffleLink = el('button', { class: 'nav-link' }, 'shuffle a deck');
+  shuffleRow.append(document.createTextNode('or '), shuffleLink, document.createTextNode('.'));
+
+  submit.addEventListener('click', () => void begin(false));
+  shuffleLink.addEventListener('click', () => void begin(true));
 
   topicInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') submit.click();
   });
 
-  div.append(minutesRow, energyRow, targetRow, topicInput, navRow, submit, errorSlot);
+  div.append(minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot);
   main.append(div);
 }
 

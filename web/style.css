@@ -169,6 +169,14 @@ main {
  color: var(--accent);
 }
 
+/* A sentence with a control inside it, not a second button. */
+.mode-aside {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ padding-top: 0.5rem;
+}
+
 /* ── exchange ── */
 
 .exchange-header {

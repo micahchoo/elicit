@@ -27,6 +27,7 @@ import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
 import { checkQuestion, type GuardVerdict } from './guards.js';
 import { facetIntentForRedLight } from './facet-intent.js';
+import type { RandomizerDraw } from '../randomizer/randomizer.js';
 
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
@@ -68,6 +69,14 @@ export function startSession(
    * target never crashes a caller (Q-19, ticket 042).
    */
   defaultTarget?: Target;
+  /**
+   * The Randomizer's draw (Q-18), passed as a closure so the elicitor never
+   * learns what a deck or a snippet stratum is. `null` means it had nothing to
+   * shuffle, or — for `'system'` — that no coverage ground licensed it.
+   */
+  randomizer?: (invokedBy: 'user' | 'system') => RandomizerDraw | null;
+  /** True when the person chose "shuffle a deck" instead of "begin". */
+  shuffleRequested?: boolean;
  },
 ): SessionState {
  const id = ulid();
@@ -79,14 +88,42 @@ export function startSession(
  // Protocol name: explicit pass-in wins; fall back to first protocol for target
  const protocol = deps.protocolName ?? selectProtocolForTarget(target, 0, loadProtocolDefinitions()).name;
 
- // Opening: draw from queue first, bank fallback
- const queueDraw = deps.queue.draw(normalizedMode, 'opening');
+ // Opening, in this order and the order is a values statement:
+ //   1. the shuffle the person asked for — never vetoed (Q-16, Q-18);
+ //   2. the Queue;
+ //   3. a shuffle nobody asked for, and only on a licensed coverage ground —
+ //      in shadow today, so this rung never fires (Q-35);
+ //   4. the bank.
+ // Position 3 sits after the Queue and before the bank because the Queue is
+ // material this vault minted about this person, and a deck card is not.
+ const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
+ const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode, 'opening');
+ const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
+ const randomDraw = shuffled ?? offered;
  let openerTurn: Turn;
  // The entry whose question is on the table. Held from here so the answering
- // turn can close it; a bank opener leaves it absent, and nothing is marked.
+ // turn can close it; a bank or Randomizer opener leaves it absent, and
+ // nothing is marked.
  let openQueueEntryId: string | undefined;
 
- if (queueDraw) {
+ if (randomDraw) {
+  openerTurn = {
+   role: 'agent',
+   text: randomDraw.question,
+   at: started,
+   questionForm: randomDraw.questionForm,
+   // A deck card keeps the are.na source it was curated from; a resurfaced
+   // snippet has no block behind it, so it carries none rather than a fake.
+   ...(randomDraw.draw.kind === 'deck'
+    ? {
+      questionSource: {
+       channel: randomDraw.draw.channel,
+       blockId: randomDraw.draw.blockId,
+      },
+     }
+    : {}),
+  };
+ } else if (queueDraw) {
   openQueueEntryId = queueDraw.id;
   deps.queue.markAsked(queueDraw.id);
   openerTurn = {

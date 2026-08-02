@@ -22,6 +22,7 @@ import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
+import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
 import type {
   Vault,
   Complete,
@@ -401,9 +402,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     return c.json({ target, recent, declaredRequired: true });
   });
 
-  // POST /api/session {mode} → {sessionId, question, target}
+  // POST /api/session {mode, shuffle?} → {sessionId, question, target, source?}
   app.post('/api/session', async (c) => {
-    const body = await c.req.json<{ mode: Mode }>();
+    const body = await c.req.json<{ mode: Mode; shuffle?: boolean }>();
     const mode = body.mode;
     if (!mode || typeof mode.minutes !== 'number' || !mode.energy) {
       return c.json({ error: 'invalid mode' }, 400);
@@ -419,19 +420,44 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     const sessionCount = listSessions(deps.vaultRoot).length;
     const selectedProtocol = selectProtocolForTarget(target, sessionCount, protocolDefs);
 
+    // The Randomizer (Q-18). Wrapped so the response can say what was dealt:
+    // `startSession` returns a SessionState, and no SessionState carries the
+    // provenance of a draw — the transcript keeps the question, this keeps
+    // the source. NOTE: no apostrophes in comments here. `tests/emitted-kinds`
+    // scans this file for `serverEmit` calls with a string tracker that does
+    // not skip comments, so an odd number of them hides every kind below.
+    const shuffle = createRandomizer({
+      root: deps.vaultRoot,
+      vault: deps.vault,
+      queue: deps.queue,
+    });
+    const dealt: { draw: RandomizerDraw | null } = { draw: null };
+    const randomizer = (invokedBy: 'user' | 'system'): RandomizerDraw | null => {
+      dealt.draw = shuffle(invokedBy);
+      return dealt.draw;
+    };
+
     const state = startSession(normalized, {
       complete: deps.complete,
       vault: deps.vault,
       queue: deps.queue,
       index: currentIndex,
       protocolName: selectedProtocol.name,
+      randomizer,
+      ...(body.shuffle ? { shuffleRequested: true } : {}),
     });
     sessions.set(state.id, state);
     const opener = state.turns[0]!;
 
-    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name}`);
+    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name} shuffle=${body.shuffle === true}`);
 
-    return c.json({ sessionId: state.id, question: opener.text, target });
+    const draw = dealt.draw;
+    return c.json({
+      sessionId: state.id,
+      question: opener.text,
+      target,
+      ...(draw && draw.question === opener.text ? { source: draw.provenance } : {}),
+    });
   });
 
   // POST /api/session/:id/turn {text} → probe | saturated

@@ -26,7 +26,43 @@ export type QuestionSource = {
   channelTitle?: string;
   blockId: number;
 };
-export type QuestionProvenance = 'bank' | 'composed' | 'juxtaposition' | 'probe' | 'close' | 'skip';
+export type QuestionProvenance =
+  | 'bank'
+  | 'composed'
+  | 'juxtaposition'
+  | 'probe'
+  | 'close'
+  | 'skip'
+  // The Randomizer's two channels, and the only two Q-18 allows. Both are
+  // shuffles of material that already exists — a curated deck, or the person's
+  // own older words — so neither can be produced by a model.
+  | 'deck'
+  | 'resurfacing';
+
+/**
+ * How far the writing is from the person reading it now (Q-18,
+ * "depth-stratified"). The bands are age of the WRITING, taken from the
+ * sitting's `started` date, never from when a file happened to be imported.
+ * `src/randomizer/thresholds.ts` holds the boundaries.
+ */
+export type Stratum = 'recent' | 'season' | 'years' | 'deep';
+
+/**
+ * Where a Randomizer question came from, in enough detail to find it again.
+ * Q-18 forbids the agent inventing a "random" question, so every draw must be
+ * able to name the thing it shuffled — the deck and card, or the snippet and
+ * the day it was written.
+ */
+export type DrawProvenance =
+  | { kind: 'deck'; deck: string; channel: string; blockId: number }
+  | {
+    kind: 'resurfacing';
+    snippetId: string;
+    version: number;
+    stratum: Stratum;
+    /** ISO date of the SITTING the snippet came from, not of its import. */
+    wroteAt: string;
+  };
 
 /**
  * One curated Randomizer deck entry. `targetFacet` is the question's INTENT —
@@ -40,7 +76,14 @@ export type DeckEntry = {
   blockId: number;
   /** Deck file the entry belongs to, e.g. 'episodes'. */
   deck: string;
-  targetFacet: Facet;
+  /**
+   * OPTIONAL, and absent means unknown — never guessed (ticket 042's rule for
+   * `QueueEntry.targetFacet`, which this now matches). `scripts/curate-deck.ts`
+   * assigns one to every shipped entry, so nothing there changes; a deck the
+   * person writes by hand in vault markdown may carry none, and the Randomizer
+   * must pass that silence through rather than invent an intent for it (Q-18).
+   */
+  targetFacet?: Facet;
   /** Curation provenance: which script or person selected this entry. */
   curatedBy: string;
 };

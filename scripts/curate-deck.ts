@@ -254,6 +254,10 @@ function main(): void {
 	for (const deck of decks) {
 		const counts = new Map<string, number>();
 		for (const e of deck.entries) {
+			// `DeckEntry.targetFacet` is optional since ticket 026 (a hand-written
+			// vault deck may carry no facet claim). This script only ever emits
+			// classified entries, so the skip is unreachable here by construction.
+			if (!e.targetFacet) continue;
 			counts.set(e.targetFacet, (counts.get(e.targetFacet) ?? 0) + 1);
 		}
 		histogram(`Deck: ${deck.name} (${deck.entries.length})`, counts, deck.entries.length);
