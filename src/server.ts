@@ -8,7 +8,7 @@ import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
-import { propose, decide } from './harvester/harvester.js';
+import { propose, decide, type HarvestDiagnostics } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
@@ -126,6 +126,30 @@ function serverEmit(
   refs?: string[],
 ): void {
   appendEvent(root, { at: new Date().toISOString(), actor, kind, detail, ...(refs ? { refs } : {}) });
+}
+
+/**
+ * The `harvest-proposed` detail line — counts and flags only, never user text.
+ * `parsed=false` distinguishes a collapsed extraction from a genuinely thin
+ * sitting; before ticket 034 both logged as `proposals=0`.
+ */
+function harvestDetail(result: {
+  proposals: unknown[];
+  buds: unknown[];
+  diagnostics: HarvestDiagnostics;
+}): string {
+  const d = result.diagnostics;
+  return [
+    `proposals=${result.proposals.length}`,
+    `buds=${result.buds.length}`,
+    `parsed=${d.parsed}`,
+    `parseMode=${d.parseMode}`,
+    `chunks=${d.chunksParsed}/${d.chunks}`,
+    `chunkErrors=${d.chunkErrors}`,
+    `rawChars=${d.rawChars}`,
+    `fabricationDrops=${d.fabricationDrops}`,
+    `sourceTurnCorrections=${d.sourceTurnCorrections}`,
+  ].join(' ');
 }
 // ── Defer: turning a declared need into Mode needs ──
 
@@ -448,7 +472,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     if (!state) return c.json({ error: 'session not found' }, 404);
 
     const result = await propose(sessionId, state.turns, deps.complete);
-    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', `proposals=${result.proposals.length}`);
+    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
     sessionProposals.set(sessionId, result.proposals);
     return c.json({ proposals: result.proposals, buds: result.buds });
   });
@@ -555,7 +579,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
 
     const result = await propose(sessionId, [turn], deps.complete);
-    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', `proposals=${result.proposals.length}`);
+    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
     sessionProposals.set(sessionId, result.proposals);
 
     return c.json({ sessionId, proposals: result.proposals, buds: result.buds });

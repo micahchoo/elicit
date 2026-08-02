@@ -100,13 +100,15 @@ const userText2 = "I want to work on things that matter but I'm not sure what th
 /**
  * Scripted session data.
  * Each userTurn calls complete twice (redLights + probe), so probes
- * are interleaved with '{}' dummies. End calls complete once for JSON cuts.
+ * are interleaved with '{}' dummies. End calls complete once per user turn —
+ * harvest extracts one chunk at a time (ticket 034).
  */
 const scriptedResponses = [
  '{}',
  'What do you mean by "career direction"?',
  '{}',
  'What would "things that matter" look like concretely?',
+ // Harvest chunk for user turn 0
  JSON.stringify({
   cuts: [
    {
@@ -117,9 +119,14 @@ const scriptedResponses = [
     reading: 'Career direction is an active and acknowledged concern',
     standalone: true,
    },
+  ],
+ }),
+ // Harvest chunk for user turn 1
+ JSON.stringify({
+  cuts: [
    {
     text: 'I want to work on things that matter',
-    sourceTurn: 1,
+    sourceTurn: 0,
     facet: 'value',
     stance: 'commitment',
     reading: 'Values meaningful work as a priority',
@@ -127,7 +134,7 @@ const scriptedResponses = [
    },
    {
     text: "I'm not sure what that looks like",
-    sourceTurn: 1,
+    sourceTurn: 0,
     facet: 'construct',
     stance: 'uncertainty-marked',
     reading: 'Uncertain about the concrete form of meaningful work',
@@ -441,13 +448,19 @@ const fullFlowScripted = [
  '{}', 'Has your mother\'s advice ever led you somewhere unexpected?',
  // Turn 7: redLights + probe — after this, questionCount hits 8, turn 8 close triggers (no complete)
  '{}', 'What would you say to someone facing the same choice today?',
- // End: propose
+ // End: propose — one call per user turn (ticket 034). Ten user turns: the
+ // opener answer, six sequential answers, then the door and bookmark answers.
  JSON.stringify({
   cuts: [
    { text: fullUserAnswer1, sourceTurn: 0, facet: 'intention', stance: 'avowal', reading: 'Career direction is an active concern', standalone: true },
-   { text: fullUserSequential[0], sourceTurn: 1, facet: 'value', stance: 'commitment', reading: 'Values helping people directly', standalone: true },
   ],
  }),
+ JSON.stringify({
+  cuts: [
+   { text: fullUserSequential[0], sourceTurn: 0, facet: 'value', stance: 'commitment', reading: 'Values helping people directly', standalone: true },
+  ],
+ }),
+ ...Array.from({ length: 8 }, () => JSON.stringify({ cuts: [] })),
  // Padding: post-harvest docket composeOpener calls
  'padding a',
  'padding b',

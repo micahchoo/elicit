@@ -335,25 +335,20 @@ async function runHarvest(
   let erroredExchanges = 0;
 
   for (const entry of corpus) {
-    // Capture the raw model output so we can count total vs fabricated cuts
-    // (propose() does not expose its drop count).
-    let lastRaw: string | undefined;
-    const capturing: Complete = async (system, turns, opts) => {
-      const raw = await callWithTimeout(
+    const timed: Complete = async (system, turns, opts) =>
+      callWithTimeout(
         () => complete(system, turns, opts),
         MODEL_TIMEOUT_MS,
         `harvest exchange "${entry.session}"`
       );
-      lastRaw = raw;
-      return raw;
-    };
 
     try {
-      const { proposals, buds } = await propose(entry.session, entry.turns, capturing);
-      const userTexts = entry.turns.filter((t) => t.role === 'user').map((t) => t.text);
-      const rawCuts = lastRaw !== undefined ? parseCuts(lastRaw) : [];
-      const totalCuts = rawCuts.length;
-      const fabricatedCuts = rawCuts.filter((c) => !isVerbatim(c.text, userTexts)).length;
+      // Cut counts come from propose()'s diagnostics. Since ticket 034 the
+      // harvest runs one call per user turn, so the last raw output covers
+      // only the last turn — counting from it would under-report.
+      const { proposals, buds, diagnostics } = await propose(entry.session, entry.turns, timed);
+      const totalCuts = diagnostics.cutsSeen;
+      const fabricatedCuts = diagnostics.fabricationDrops;
 
       const facetDistribution: Record<string, number> = {};
       for (const p of proposals) {
