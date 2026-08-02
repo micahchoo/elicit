@@ -63,23 +63,29 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `session=${ULID} needs=energy`,
   reads: 'deferred a question until you have more energy',
  },
- // The harvest line carries ticket 037's five diagnostics as well as its
- // counts (ticket 066). Two of them — the episode pair — are a Q-35 shadow
- // record, so the line states them whether or not they fired: a counter that
- // renders as silence at zero cannot tell a working check from an inert one,
- // which is exactly how the 044 gate stayed inert for a month with green tests.
+ // The harvest line carries ticket 037's diagnostics as well as its
+ // counts (ticket 066), and ticket 069's admissibility gate counters.
+ // Two of them — the episode pair — are a Q-35 shadow record, so the line
+ // states them whether or not they fired: a counter that renders as silence
+ // at zero cannot tell a working check from an inert one, which is exactly
+ // how the 044 gate stayed inert for a month with green tests. The gate's own
+ // counter (`inadmissibleDrops`) now renders as the most legible sentence of
+ // the new three, because it is the only number that says whether the gate
+ // is doing anything at all (ticket 069).
  {
   kind: 'harvest-proposed',
   detail:
    'proposals=3 buds=4 parsed=true parseMode=json chunks=2/2 chunkErrors=0 rawChars=900 ' +
-   'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=2 outOfVocabularyLabels=1 ' +
+   'fabricationDrops=0 cutsSeen=9 inadmissibleDrops=1 contentFreeSkips=2 ' +
+   'sourceTurnCorrections=0 fragmentBuds=2 outOfVocabularyLabels=1 ' +
    'supersessionCorrections=1 unmarkedIntentions=2 episodeAnchoredTurns=3 episodeBlindTurns=1',
   reads:
    'proposed 3 snippets and 4 buds; ' +
    'held 2 cuts lifted mid-sentence and 1 label outside the vocabulary as buds; ' +
    'corrected 1 stance to superseded and found 2 cuts labelled intention ' +
    'with no want, plan or goal in the words; ' +
-   '3 turns named when something happened, and 1 produced no episode cut',
+   '3 turns named when something happened, and 1 produced no episode cut; ' +
+   'the gate read 9 cuts and rejected 1; skipped 2 turns that had no content',
  },
  { kind: 'session-harvested', detail: 'kept=1 budded=0', reads: 'kept 1, budded 0' },
  { kind: 'transcribed', detail: '820ms 47chars', reads: 'transcribed 47 characters of speech' },
@@ -643,7 +649,8 @@ describe('the harvest diagnostics reach the surface', () => {
    'held 2 cuts lifted mid-sentence and 1 label outside the vocabulary as buds; ' +
    'corrected 1 stance to superseded and found 2 cuts labelled intention ' +
    'with no want, plan or goal in the words; ' +
-   '1 turn named when something happened, and 1 produced no episode cut',
+   '1 turn named when something happened, and 1 produced no episode cut; ' +
+   'the gate read 6 cuts and rejected none; no turn was too thin to harvest',
   );
  });
 
@@ -664,7 +671,8 @@ describe('the harvest diagnostics reach the surface', () => {
    'no cut was lifted mid-sentence and no label fell outside the vocabulary; ' +
    'corrected no stance to superseded and found no intention label ' +
    'without a want, plan or goal; ' +
-   '1 turn named when something happened, and every one produced an episode cut',
+   '1 turn named when something happened, and every one produced an episode cut; ' +
+   'the gate read 2 cuts and rejected none; no turn was too thin to harvest',
   );
  });
 });

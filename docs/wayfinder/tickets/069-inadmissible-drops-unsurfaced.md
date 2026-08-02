@@ -1,8 +1,8 @@
 ---
 title: "Fix: the 044 gate's own counter has never reached a line — and that is why it stayed inert"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude (omp wave 1)
 blocked_by: []
 ---
 
@@ -70,3 +70,48 @@ counters and produces one Bud, so the counters count reasons rather than buds.
 - A gate rejecting nothing is visible in one line, without a special run.
 - `EPISODE_ANCHOR` counts an event-anchored turn, with the "father died"
   sentence as a test case.
+
+## Resolution (2026-08-02)
+
+### What was done
+
+Added `cutsSeen`, `inadmissibleDrops`, and `contentFreeSkips` to
+`harvestDetail` in `src/server.ts`. All three now reach the activity line as
+`key=value` fields.
+
+Added `admissibilityGate()` renderer in `src/log/format.ts` following 066's
+three rendering rules:
+
+- **Zeros render as English:** "the gate read 6 cuts and rejected none" rather
+  than silence. A gate rejecting nothing is visible in one line, without a
+  special harvest.
+- **Absent is not zero:** lines written before ticket 069 carry none of the
+  three fields. The renderer checks `f.cutsSeen !== undefined` before adding
+  the gate sentence, so a pre-069 line never claims a measurement nobody made.
+- **Numbers survive:** the gate sentence states `cutsSeen`, `inadmissibleDrops`,
+  and `contentFreeSkips` as English with the values intact — never stripped by
+  the fallback renderer.
+
+`inadmissibleDrops` carries the most legible sentence: "the gate read N cuts
+and rejected M." It is the only number that says whether the 044 admissibility
+gate is doing anything at all.
+
+### Files touched
+
+- `src/server.ts` — `harvestDetail`: added three fields
+- `src/log/format.ts` — `harvestProposed`: wired `admissibilityGate()` with
+  absent guard
+- `tests/log-format.test.ts` — updated EMITTED entry and both harvest surface
+  test cases with expected gate rendering
+
+### Verification
+
+- `npx tsc --noEmit` passes clean
+- `npm test`: 1257 tests pass (44 files)
+
+### Not done (deferred to another agent)
+
+The EPISODE_ANCHOR regex expansion (event-anchored turns like "the week my
+father died") lives in `src/harvester/harvester.ts`, which another agent owns.
+The "minor" double-counting note (a cut both mid-sentence and badly labelled)
+is also outside this ticket's file footprint.

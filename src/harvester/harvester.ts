@@ -318,6 +318,47 @@ export type HarvestDiagnostics = {
   chunkErrors: number;
 };
 
+/**
+ * Extract up to two sentences immediately preceding the cut in its source turn.
+ * Sentence split on `. `, `! `, `? ` followed by an uppercase letter.
+ * Returns undefined when the cut opens the turn (no preceding sentence).
+ */
+function extractContext(turnText: string, cutText: string): string | undefined {
+  const idx = turnText.indexOf(cutText);
+  if (idx < 0) return undefined;
+
+  const before = turnText.slice(0, idx).trimEnd();
+  if (before.length === 0) return undefined;
+
+  // Split into sentences: . ! ? followed by space and uppercase
+  // We reconstruct by scanning, keeping separators attached to their sentences
+  const sentences: string[] = [];
+  let current = '';
+  for (let i = 0; i < before.length; i++) {
+    const ch = before[i]!;
+    current += ch;
+    // Sentence boundary: punctuation + space + uppercase letter (or end)
+    if (
+      (ch === '.' || ch === '!' || ch === '?') &&
+      (i + 1 >= before.length || (before[i + 1] === ' ' && i + 2 < before.length && /[A-Z]/.test(before[i + 2]!)))
+    ) {
+      sentences.push(current);
+      current = '';
+    }
+  }
+  // Any trailing non-sentence text (shouldn't happen with proper boundaries, but be safe)
+  if (current.trim().length > 0) {
+    sentences.push(current);
+  }
+
+  if (sentences.length === 0) return undefined;
+
+  // Take up to last 2 sentences
+  const last = sentences.slice(-2);
+  const result = last.join('').trim();
+  return result.length > 0 ? result : undefined;
+}
+
 export async function propose(
   session: string,
   transcript: Turn[],
@@ -506,6 +547,7 @@ export async function propose(
       }
       if (cut.facet === 'episode') episodeProposed = true;
 
+      const ctx = extractContext(turn.text, cut.text);
       proposals.push({
         text: cut.text,
         sourceTurn: derivedTurn,
@@ -515,6 +557,7 @@ export async function propose(
         question: probe?.text ?? '',
         questionForm: probe?.questionForm ?? 'deliberative',
         ...(probe?.questionSource ? { questionSource: probe.questionSource } : {}),
+        ...(ctx !== undefined ? { context: ctx } : {}),
       });
     }
 
@@ -591,6 +634,7 @@ export function decide(
       question: proposal.question,
       questionForm: proposal.questionForm,
       ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
+      ...(proposal.context !== undefined ? { context: proposal.context } : {}),
     };
 
     switch (decision.action) {

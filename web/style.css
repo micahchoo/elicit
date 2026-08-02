@@ -422,8 +422,27 @@ main {
 }
 
 .proposal-text {
- font-size: 0.95rem;
- line-height: 1.5;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.proposal-provenance {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  color: var(--dim);
+  line-height: 1.4;
+  margin-bottom: 0.35rem;
+  padding-left: 0.25rem;
+  border-left: 2px solid var(--border);
+}
+
+.proposal-question {
+  margin-bottom: 0.15rem;
+  font-style: italic;
+}
+
+.proposal-context {
+  /* context ends with a hairline marking the cut boundary */
 }
 
 .proposal-reading {

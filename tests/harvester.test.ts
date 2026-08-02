@@ -542,6 +542,133 @@ describe('propose', () => {
       blockId: 2,
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Ticket 073 — antecedent context: the sentences before the cut, mechanically
+  // -------------------------------------------------------------------------
+
+  describe('context extraction', () => {
+    it('extracts preceding sentences for a cut mid-turn', async () => {
+      // The cut "I pushed back and kept my project" is mid-turn in transcript[3]
+      // Its preceding text is "Last year my manager tried to reassign me without asking. "
+      const json = JSON.stringify({
+        cuts: [{
+          text: 'I pushed back and kept my project',
+          sourceTurn: 0,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'Test',
+          standalone: true,
+        }],
+      });
+
+      // Transcript with the cut in turn position 1 (user turn index 1)
+      const tx: Turn[] = [
+        { role: 'agent', text: 'What happened last year?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+        { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project. That was the moment I knew autonomy was non-negotiable.', at: '2026-08-01T00:00:10.000Z' },
+      ];
+
+      const { proposals } = await propose('sess-1', tx, fakeComplete(json));
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]!.context).toBe('Last year my manager tried to reassign me without asking.');
+    });
+
+    it('returns undefined when cut opens its turn', async () => {
+      const json = JSON.stringify({
+        cuts: [{
+          text: 'Last year my manager tried to reassign me without asking.',
+          sourceTurn: 0,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'Test',
+          standalone: true,
+        }],
+      });
+
+      const tx: Turn[] = [
+        { role: 'agent', text: 'What happened?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+        { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.', at: '2026-08-01T00:00:10.000Z' },
+      ];
+
+      const { proposals } = await propose('sess-1', tx, fakeComplete(json));
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]!.context).toBeUndefined();
+    });
+
+    it('context survives propose → decide → snippet provenance', async () => {
+      const json = JSON.stringify({
+        cuts: [{
+          text: 'I pushed back and kept my project',
+          sourceTurn: 0,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'Test',
+          standalone: true,
+        }],
+      });
+
+      const tx: Turn[] = [
+        { role: 'agent', text: 'What happened?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+        { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.', at: '2026-08-01T00:00:10.000Z' },
+      ];
+
+      const { proposals } = await propose('sess-1', tx, fakeComplete(json));
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]!.context).toBe('Last year my manager tried to reassign me without asking.');
+
+      const vault = fakeVault();
+      const { snippets } = decide('sess-1', proposals, [{ proposal: 0, action: 'approve' }], vault);
+      expect(snippets).toHaveLength(1);
+      expect(snippets[0]!.provenance.context).toBe('Last year my manager tried to reassign me without asking.');
+    });
+
+    it('restatement provenance does not carry context', async () => {
+      const json = JSON.stringify({
+        cuts: [{
+          text: 'I pushed back and kept my project',
+          sourceTurn: 0,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'Test',
+          standalone: true,
+        }],
+      });
+
+      const tx: Turn[] = [
+        { role: 'agent', text: 'What happened?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+        { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.', at: '2026-08-01T00:00:10.000Z' },
+      ];
+
+      const { proposals } = await propose('sess-1', tx, fakeComplete(json));
+      const vault = fakeVault();
+      const { snippets } = decide('sess-1', proposals, [{ proposal: 0, action: 'restate', text: 'rewritten version' }], vault);
+      expect(snippets).toHaveLength(1);
+      expect(snippets[0]!.provenance.kind).toBe('restatement');
+      expect(snippets[0]!.provenance.context).toBeUndefined();
+    });
+
+    it('caps at two preceding sentences', async () => {
+      const json = JSON.stringify({
+        cuts: [{
+          text: 'That was the moment I knew.',
+          sourceTurn: 0,
+          facet: 'episode',
+          stance: 'avowal',
+          reading: 'Test',
+          standalone: true,
+        }],
+      });
+
+      const tx: Turn[] = [
+        { role: 'agent', text: 'What happened?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+        { role: 'user', text: 'First sentence of three. Second sentence follows. Third before the cut. That was the moment I knew.', at: '2026-08-01T00:00:10.000Z' },
+      ];
+
+      const { proposals } = await propose('sess-1', tx, fakeComplete(json));
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]!.context).toBe('Second sentence follows. Third before the cut.');
+    });
+  });
 });
 
 // ===========================================================================

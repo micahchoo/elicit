@@ -384,6 +384,7 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
  };
 
  try {
+  await guard('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
   await guard('sweep', () => jobSweep(deps, report, graph, log, model, touched));
   await guard('prime', () => jobPrime(deps, graph, touched));
   await guard('lint', () => jobLint(deps, report, graph, log, thresholds));
@@ -1012,9 +1013,106 @@ async function recoverPoles(
 }
 
 // ---------------------------------------------------------------------------
-// Job 5 — confirmation (Q-30 stages 3-4, Q-53)
+// Pre-sweep confirmation (ticket 070)
 // ---------------------------------------------------------------------------
 
+/**
+ * Judge answered re-measures BEFORE the sweep, so the answer's cite is not yet
+ * absorbed into a pole claim and Q-53's held-sittings check can pass.
+ *
+ * Ticket 070: job 1 (sweep) absorbs the re-measure answer's cite into a pole
+ * claim via UPDATE. When job 5 then judges, `confirmingReadings` computes the
+ * held-sittings set from both claims' cites — which now INCLUDES the answer's
+ * own sitting. Q-53 correctly refuses every reading from that sitting, and the
+ * candidate is stranded permanently at `pending-remeasure`.
+ *
+ * Running this pass first, against a graph where the cite is not yet on any
+ * pole, ensures the answer's sitting is always admissible. `jobConfirmation`
+ * (job 5) still runs after the sweep as a safety net; it skips any candidate
+ * this pass already judged.
+ */
+async function jobPresweepConfirmation(
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ model: string,
+): Promise<void> {
+ const graph = graphOf();
+ const claims = new Map(graph.claims.map((c) => [c.id, c]));
+ const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
+
+ for (const candidate of deps.store.listCandidates()) {
+  if (candidate.status !== 'pending-remeasure') continue;
+  const queueId = candidate.remeasureQueueId;
+  const askedAt = candidate.remeasureAskedAt;
+  if (queueId === undefined || askedAt === undefined) continue;
+
+  if (entries.get(queueId)?.status !== 'answered') continue;
+
+  const a = claims.get(candidate.pair[0]);
+  const b = claims.get(candidate.pair[1]);
+  if (!a || !b) continue;
+
+  const readings = confirmingReadings(graph, askedAt, a, b);
+  if (readings.length === 0) continue;
+
+  try {
+   const result = await deps.judgeConfirmation(
+    candidate,
+    { readings, snippets: graph.snippets },
+    { a, b },
+    deps.complete,
+   );
+   if (!result) continue;
+
+   if (!result.confirmed) {
+    dissolve(deps, candidate, dissolutionOutcome(result.reason));
+    report.candidatesDissolved++;
+    continue;
+   }
+
+   const at = nowIso();
+   const contradiction: Contradiction = {
+    id: ulid(),
+    type: result.type,
+    claims: [a.id, b.id],
+    candidate: candidate.id,
+    remeasureQueueId: queueId,
+    evidence: result.evidence,
+    status: 'open',
+    model,
+    modelAt: at,
+    opened: at,
+    updated: at,
+    body: juxtaposition(a, b, result),
+   };
+   deps.store.writeContradiction(contradiction);
+   log({
+    at,
+    actor: 'clerk',
+    kind: 'contradiction-opened',
+    detail: `type=${result.type} presweep`,
+    refs: [a.id, b.id, candidate.id],
+   });
+   deps.store.writeCandidate({ ...candidate, status: 'confirmed' });
+   report.contradictionsOpened++;
+
+   recomputeStatus([a.id, b.id], deps, graphOf, log, at, model);
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=presweep-confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+   });
+  }
+ }
+}
+
+// ---------------------------------------------------------------------------
+// Job 5 — confirmation (Q-30 stages 3-4, Q-53)
+// ---------------------------------------------------------------------------
 async function jobConfirmation(
  deps: WikiJobDeps,
  report: WikiJobsReport,

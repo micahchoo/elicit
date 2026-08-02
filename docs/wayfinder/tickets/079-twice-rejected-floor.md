@@ -2,7 +2,7 @@
 title: "Fix: a probe the guard rejected twice is emitted anyway when the fallback draw is empty"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp)
 blocked_by: []
 ---
 

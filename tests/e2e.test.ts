@@ -180,10 +180,10 @@ async function call(app: Hono, path: string, body?: unknown): Promise<Response> 
   body === undefined
    ? { method: 'GET' }
    : {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify(body),
-    };
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+   };
  return app.fetch(new Request(`http://localhost${path}`, init), { remoteAddr: '127.0.0.1' });
 }
 
@@ -1796,29 +1796,23 @@ describe('clerk slice: every model call failing still completes the run', () => 
 });
 
 /**
- * CHARACTERIZATION, not an endorsement. This describes a defect found by T15
- * and reported rather than fixed — the source change belongs to whoever owns
- * `src/clerk/wiki-jobs.ts`.
+ * CHARACTERIZATION: the presweep confirmation pass opens the Contradiction
+ * before the sweep can strand the re-measure (ticket 070).
  *
- * Job 1 sweeps the re-measure's answer BEFORE job 5 judges it, and the two read
- * the same field. If the op the sweep applies adds the answer's cite to either
- * pole — an `UPDATE`, which is the natural op for an answer about the very
- * construct the claims are about — then that claim's sitting set grows to
- * include the re-measure's sitting. Job 5 then computes `held` from the
- * POST-SWEEP claims, finds the only admissible reading is from a sitting a pole
- * now rests on, and refuses it.
+ * Before the fix, job 1 (sweep) absorbed the re-measure answer's cite into a
+ * pole claim via UPDATE, and job 5 (confirmation) then computed the
+ * held-sittings set from the POST-SWEEP claims — which included the answer's
+ * own sitting. Q-53 correctly refused every reading, and the candidate was
+ * stranded permanently at `pending-remeasure`.
  *
- * The consequence is not a delay. The queue entry reads `answered`, so it never
- * expires; job 4 skips the candidate because it already has a
- * `remeasureQueueId`; and `poolCandidates` refuses to re-propose a pair at
- * `pending-remeasure`. The pair is stranded for good, and nothing anywhere
- * counts it — the same shape as the drawn-and-abandoned leak the plan records
- * under Open Questions, reached through a much more likely door.
- *
- * The assertions below are what the code does TODAY. When it is fixed, they
- * flip, and that is the point of writing them down.
+ * The fix adds a pre-sweep confirmation pass (jobPresweepConfirmation) that
+ * judges any `pending-remeasure` candidate whose queue entry is `answered`
+ * BEFORE the sweep, against a graph where the cite is not yet on any pole.
+ * The answer's sitting is therefore admissible, Q-53 passes, and the
+ * Contradiction opens. jobConfirmation (job 5) still runs after the sweep as
+ * a safety net; it skips any candidate this pass already judged.
  */
-describe('clerk slice: the sweep can strand its own re-measure (DEFECT, characterized)', () => {
+describe('clerk slice: presweep confirmation opens the Contradiction before the sweep can strand it (ticket 070, CHARACTERIZATION)', () => {
  let vaultDir: string;
  let app: ClerkApp;
 
@@ -1848,24 +1842,21 @@ describe('clerk slice: the sweep can strand its own re-measure (DEFECT, characte
   rmSync(vaultDir, { recursive: true, force: true });
  });
 
- it('opens no Contradiction, and the candidate can never be decided again', async () => {
-  // The answer was harvested and the cite landed on a pole.
+ it('opens a Contradiction from the pre-sweep pass, and the candidate is confirmed', async () => {
+  // The answer's cite was still absorbed by the sweep — that part is fine.
   const claims = app.store.loadSlice().claims;
   const sharpened = claims.find((c) => c.body === BODY_ONE)!;
   expect(sharpened.cites.length).toBe(2);
 
-  // The model was never asked, because no reading was admissible.
-  expect(app.router.count('confirmation')).toBe(0);
-  expect(app.store.loadSlice().contradictions.length).toBe(0);
+  // The presweep pass judged the confirmation before the sweep ran.
+  expect(app.router.count('confirmation')).toBe(1);
+  expect(app.store.loadSlice().contradictions.length).toBe(1);
 
-  // And the pair is now stranded. Another run changes nothing: the entry is
-  // answered so it cannot expire, the candidate has its queue id so job 4
-  // skips it, and the pool refuses a pair at `pending-remeasure`.
+  // Another run sees the confirmed candidate, not a stranded one.
   const next = await bootClerk(vaultDir, { sharpens: [ANSWER_READING] });
   expect(next.store.listCandidates().length).toBe(1);
-  expect(next.store.listCandidates()[0]!.status).toBe('pending-remeasure');
-  expect(next.store.loadSlice().contradictions.length).toBe(0);
-  expect(next.queue.list({ source: 'contradiction-remeasure' }).length).toBe(1);
+  expect(next.store.listCandidates()[0]!.status).toBe('confirmed');
+  expect(next.store.loadSlice().contradictions.length).toBe(1);
  });
 });
 

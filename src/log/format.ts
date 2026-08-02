@@ -160,14 +160,46 @@ function episodeRecord(f: Fields): string {
 }
 
 /**
+ * The 044 admissibility gate's own counter, and the evidence by which its
+ * inertness would have been legible from the first sitting (ticket 069).
+ * `inadmissibleDrops=0`, every run, forever, in plain sight — instead of
+ * needing 295 hand-marked cuts and a dedicated measurement run to discover.
+ *
+ * The gate sentence is the most legible of the three new counters: it states
+ * how many cuts were read and how many the gate rejected, so a gate rejecting
+ * nothing is visible in one line without a special harvest.
+ */
+function admissibilityGate(f: Fields): string {
+ const seen = num(f, 'cutsSeen');
+ const dropped = num(f, 'inadmissibleDrops');
+ const skipped = num(f, 'contentFreeSkips');
+
+ if (seen === 0) {
+  const gate = 'the gate saw no cuts';
+  if (skipped === 0) return `${gate}; no turn was too thin to harvest`;
+  return `${gate}; skipped ${count(skipped, 'turn')} that had no content`;
+ }
+
+ const gate = dropped === 0
+  ? `the gate read ${count(seen, 'cut')} and rejected none`
+  : `the gate read ${count(seen, 'cut')} and rejected ${dropped}`;
+
+ const skips = skipped === 0
+  ? 'no turn was too thin to harvest'
+  : `skipped ${count(skipped, 'turn')} that had no content`;
+
+ return `${gate}; ${skips}`;
+}
+
+/**
  * What the harvester read back from a sitting, or the fact that it could not.
  *
- * The counts come first, because they are what the reader asked. The three
- * clauses after them are ticket 037's diagnostics, which reached nobody until
- * ticket 066. Each clause states its number whether or not the check fired: a
- * check that renders as silence at zero cannot be told apart from a check that
- * is not running, and the 044 admissibility gate spent a month rejecting 0 of
- * 295 cuts with every one of its own tests green.
+ * The counts come first, because they are what the reader asked. The clauses
+ * after them are ticket 037's diagnostics, which reached nobody until ticket
+ * 066, and ticket 069's admissibility gate which would have surfaced the 044
+ * gate's inertness from day one. Each clause states its number whether or not
+ * the check fired: a check that renders as silence at zero cannot be told
+ * apart from a check that is not running.
  */
 function harvestProposed(f: Fields): string {
  if (f.parsed === 'false') return 'could not read the sitting back, so proposed nothing';
@@ -178,7 +210,13 @@ function harvestProposed(f: Fields): string {
  // in front of a reader, which is the failure this whole rendering exists to
  // end. A line with no counters in it says only what it knows.
  if (f.episodeAnchoredTurns === undefined) return counts;
- return [counts, heldAsBuds(f), labelChecks(f), episodeRecord(f)].join('; ');
+ const clauses: string[] = [heldAsBuds(f), labelChecks(f), episodeRecord(f)];
+ // The admissibility gate's counters were added in ticket 069, so a line
+ // written between 066 and 069 carries the episode record but not the gate.
+ // Absent is still not zero: rendering "the gate saw no cuts" on a line that
+ // never recorded cutsSeen would assert a measurement nobody made.
+ if (f.cutsSeen !== undefined) clauses.push(admissibilityGate(f));
+ return [counts, ...clauses].join('; ');
 }
 
 /**

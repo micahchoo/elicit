@@ -1,8 +1,8 @@
 ---
 title: "Fix: the sweep can strand its own re-measure, permanently and silently"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude (omp wave 1)
 blocked_by: []
 ---
 
@@ -73,3 +73,54 @@ existing counters do not reach a surface either.
   rewritten to describe the fixed behaviour rather than the defect.
 - Q-53 still refuses a confirmation from inside a pole's own *original* sitting
   — both directions, as T15 asserted them.
+
+## Resolution (2026-08-02)
+
+Chose option 1 — judge an answered re-measure **before** the sweep runs — with the
+following reasoning:
+
+**Why 1 over 2 (snapshot held-sittings at mint time).** Snapshotting `held` at
+mint time is semantically fragile: Q-53's predicate reads the *current* cites of
+both claims because the whole point is that a confirmation must come from a
+sitting neither claim rests on. Freezing the window at mint time would let a
+later run add a cite from a new sitting that then gets excluded from `held`
+because it wasn't there at mint time — the exact loophole Q-53 exists to close,
+just shifted to a different phase. Option 2 is not "the cheapest" when you
+account for the invariant it weakens.
+
+**Why 1 over 3 (exclude the re-measure's own reading from `held`).** Option 3
+would require `confirmingReadings` to carry the candidate's
+`remeasureQueueId` through to the filter and special-case it. That puts
+confirmation logic in the wrong layer — `confirmingReadings` is a pure function
+over the graph, and injecting candidate state breaks that. It also risks
+re-admitting the lability-under-questioning loophole (Q-53 §rationale) if the
+exclusion is not perfectly gated.
+
+**Implementation.** Added `jobPresweepConfirmation`, structurally identical to
+`jobConfirmation`, placed BEFORE `jobSweep` in `runWikiJobs` via `guard`.
+The pre-sweep pass judges any `pending-remeasure` candidate whose queue entry is
+`answered`, against the PRE-SWEEP graph — where the answer's cite is not yet on
+any pole. Q-53 passes because the answer's sitting is genuinely distinct from
+both claims' sittings. `jobConfirmation` (job 5) still runs after the sweep as a
+safety net; it skips any candidate this pass already judged because the status
+is no longer `pending-remeasure`.
+
+The job order is unchanged for the rest of the run: the pre-sweep pass runs
+first for answered re-measures only (normal candidates whose entry is still
+`asked` are skipped), then the sweep, then everything else unchanged.
+
+**Files changed:**
+- `src/clerk/wiki-jobs.ts`: added `jobPresweepConfirmation` function and its
+  `guard` call before `jobSweep` in `runWikiJobs`.
+- `tests/e2e.test.ts`: characterization test flipped from asserting the defect
+  (0 confirmations, 0 contradictions, stranded candidate) to asserting the
+  corrected behavior (1 confirmation, 1 contradiction, candidate `confirmed`).
+
+**Verified:** `npx tsc --noEmit` (clean), `npm test` (1257/1257 passed,
+including the flipped characterization test).
+
+**Q-53 intact.** The existing test at lines ~1555 — *"a re-measure answered
+from inside one claim's sitting opens nothing"* — still passes. The answer's
+own sitting is still refused by `confirmingReadings` when it genuinely overlaps
+with a pole's original sitting. What changed is only that the answer's sitting
+is no longer *falsely* held because the sweep absorbed the cite first.

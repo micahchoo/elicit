@@ -1043,6 +1043,23 @@ function renderProposal(idx: number, container: HTMLElement) {
 
   const block = el('div', { class: 'proposal-block' });
 
+  // Show the eliciting question and context window, dimmed — lineage, not corpus
+  if (p.question || p.context) {
+    const prov = el('div', { class: 'proposal-provenance' });
+    if (p.question) {
+      const q = el('div', { class: 'proposal-question' });
+      q.textContent = '\u2191 ' + p.question;  // up-arrow: "this asked"
+      prov.append(q);
+    }
+    if (p.context) {
+      const ctx = el('div', { class: 'proposal-context' });
+      // Show context then the cut's boundary marked with a hairline
+      ctx.textContent = p.context + ' \u2500';  // em-dash marks boundary
+      prov.append(ctx);
+    }
+    block.append(prov);
+  }
+
   const textWrapper = el('div', { class: 'proposal-text' });
   textWrapper.textContent = p.text;
 
