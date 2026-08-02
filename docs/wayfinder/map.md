@@ -9,8 +9,8 @@ created: 2026-08-01
 ## Notes
 
 Elicit: local-only agentic elicitation → human-shaped wiki from the user's
-verbatim prose. The domain model is CANON in `CONTEXT.md` (33 terms) and
-`docs/decisions/elicit.md` (Q-1..Q-23); no ticket re-opens a locked decision
+verbatim prose. The domain model is CANON in `CONTEXT.md` (36 terms) and
+`docs/decisions/elicit.md` (Q-1..Q-39); no ticket re-opens a locked decision
 without an explicit escalation. Slice 1 (interview loop) is built; slice 2
 ("it remembers you") is executing via the approved plan
 `docs/superpowers/plans/2026-08-01-it-remembers-you.md`.
@@ -32,20 +32,6 @@ Tracker: local markdown (this dir). Tickets in `tickets/NNN-*.md`; claim =
 unassigned, all blockers closed.
 
 ## Decisions so far
-
-- [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
-  ticket — a peer Claude session's red-team of the whole app) — found the
-  canon-string drift, harvest silent failure, validator gaps, and the
-  resonance honesty problem. Tickets 034-037 carry the fixes; the
-  canon-conformance test (tests/canon.test.ts) closes the class of bug
-  where the test and the implementation share a wrong oracle.
-
-- [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
-  ticket — a peer Claude session's red-team of the whole app) — found the
-  canon-string drift, harvest silent failure, validator gaps, and the
-  resonance honesty problem. Tickets 034-037 carry the fixes; the
-  canon-conformance test (tests/canon.test.ts) closes the class of bug
-  where the test and the implementation share a wrong oracle.
 
 - [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
   ticket — a peer Claude session's red-team of the whole app) — found the
