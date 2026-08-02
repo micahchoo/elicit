@@ -66,8 +66,8 @@ export const PROTOCOLS: Record<Target, string[]> = {
   domain: [CDM_PROMPT, LADDERED_GRID_PROMPT],
 };
 
-export const CLOSING_DOOR_QUESTION = 'What door is this opening?';
-export const CLOSING_BOOKMARK_QUESTION = 'What would you want to remember from this conversation?';
+export const CLOSING_DOOR_QUESTION = "Anything else we didn't touch?";
+export const CLOSING_BOOKMARK_QUESTION = 'Where should we pick up?';
 
 export const starterBank: StarterQuestion[] = [
   {
