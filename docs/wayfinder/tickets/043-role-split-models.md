@@ -1,9 +1,28 @@
 ---
 title: "Build: split models by role — fast elicitor, careful clerk"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Closed 2026-08-02, commit 2cf2085. Elicitor -> bonsai-27b at :8088; clerk ->
+  qwen3.6:35b on Ollama. Both endpoints verified live and serving their own
+  model BEFORE the defaults were trusted; distinct backends confirmed, not two
+  names for one process.
+  Measured (scripts/accept-043.ts, real models): elicitor cold 1159ms, warm
+  mean 619ms, in-sitting call mean 2055ms. Clerk warm mean 39952ms per harvest
+  chunk. A composed question the user waits on got ~65x faster.
+  Q-34 verified as an outcome, not an intention: every Cover stamp in the run
+  read qwen3.6:35b, the model that actually wrote it.
+  The ticket's open question is ANSWERED: harvest stays clerk work. It costs
+  ~40s/chunk, and that is affordable only because 047 moved it off the response
+  path — measured in the same run, /harvest answered in 2ms while its docket
+  tail ran 95s. Moving harvest to the elicitor was not tested and should not
+  be: Q-48's basis is that bonsai-27b collapses on long structured payloads,
+  which is exactly what a harvest call is.
+  Also fixed here: the role-wiring test read `settled` as success. 047 made
+  settling mean ENDED, so a failed run surfaced as a downstream ENOENT. It now
+  reads the activity log and fails with the real reason.
 ---
 
 > UNBLOCKED 2026-08-02: 047 landed, and it is the reason this is now worth
