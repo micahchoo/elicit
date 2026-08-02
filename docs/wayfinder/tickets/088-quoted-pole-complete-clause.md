@@ -2,7 +2,7 @@
 title: "Fix: a quoted pole must be a complete clause — mechanical, on the fragment"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp wave 5)
 blocked_by: []
 ---
 

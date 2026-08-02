@@ -462,6 +462,30 @@ http://localhost:3002/?board=elicit-ideal-state).
   authorship, three values; a Link is no new object; repairs are capped
   Buds with no repair surface. Unblocks the Seeding build.
 
+- [Design the Coach (capability outputs)](tickets/016-design-coach.md) — six
+  rulings, Q-73..Q-78: coached is user-declared (agent offers only); quests
+  are offered as alternative sets, no deadlines, Marginalia-class; returns
+  are ordinary capture with quest provenance, no completion rates; one page
+  per Direction, no global tab; advice event-licensed with one unread note;
+  artifacts are declared pointers whose descriptions harvest — the model
+  never opens one. Build is ticket 090 (plan-first).
+
+- [Design the Coach (capability outputs)](tickets/016-design-coach.md) — six
+  rulings, Q-73..Q-78: coached is user-declared (agent offers only); quests
+  are offered as alternative sets, no deadlines, Marginalia-class; returns
+  are ordinary capture with quest provenance, no completion rates; one page
+  per Direction, no global tab; advice event-licensed with one unread note;
+  artifacts are declared pointers whose descriptions harvest — the model
+  never opens one. Build is ticket 090 (plan-first).
+
+- [Design the Coach (capability outputs)](tickets/016-design-coach.md) — six
+  rulings, Q-73..Q-78: coached is user-declared (agent offers only); quests
+  are offered as alternative sets, no deadlines, Marginalia-class; returns
+  are ordinary capture with quest provenance, no completion rates; one page
+  per Direction, no global tab; advice event-licensed with one unread note;
+  artifacts are declared pointers whose descriptions harvest — the model
+  never opens one. Build is ticket 090 (plan-first).
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

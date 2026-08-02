@@ -2,7 +2,7 @@
 title: "Build: discriminating questions from lint — name the boundary without the contradiction pipeline"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (omp wave 5)
 blocked_by: [008-build-clerk.md]
 ---
 
