@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>claim review — ticket 085</title>
+    <style>
+      /* The ink scale is borrowed from web/style.css, because the distinction
+         under review IS the distinction that stylesheet encodes: the Clerk's
+         sentence is pencil, your own words are ink, and your words are never
+         lighter than a sentence about you (Q-27).
+
+         Every claim in this corpus is `unconfirmed`, so every claim sentence
+         here is at `opening` weight — #6e6e6e. Nothing is blurred: the
+         Clerk's sentence is framed and labelled, and it stays fully legible.
+         Framing separates the two planes; dimming would only hide the thing
+         we are here to judge.
+
+         This is a DEV instrument. It is not a product surface, and the top
+         bar says so. */
+      :root {
+        --bg: #fafaf8;
+        --fg: #1a1a1a;
+        --dim: #999;
+        --border: #e0e0dc;
+        --accent: #555;
+        --ink-opening: #6e6e6e;
+        --font-serif: 'Charter', 'Georgia', serif;
+        --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --line: 1.625;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        font-size: 16px;
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        font-family: var(--font-serif);
+        color: var(--fg);
+        background: var(--bg);
+        line-height: var(--line);
+      }
+
+      /* ── the dev bar: this is an instrument, never a surface ── */
+      .devbar {
+        font-family: var(--font-ui);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+        border-bottom: 1px solid var(--border);
+        padding: 0.55rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 5;
+      }
+      .devbar strong {
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      main {
+        max-width: 44rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 6rem;
+      }
+
+      /* ── header: where this record sits, and nothing else ── */
+      .rec-head {
+        font-family: var(--font-ui);
+        font-size: 0.72rem;
+        color: var(--dim);
+        letter-spacing: 0.04em;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+        margin-bottom: 2rem;
+      }
+      .rec-head .facet {
+        color: var(--accent);
+      }
+
+      /* ── plane one: the Clerk's sentence, framed ──
+         Common region + a label. The frame says "a machine wrote this";
+         the ink says "and nothing of yours stands under it yet". */
+      .claim-frame {
+        border: 1px solid var(--border);
+        border-left: 2px solid #c9c9c4;
+        background: #f4f4f1;
+        padding: 1.1rem 1.25rem 1.2rem;
+        margin-bottom: 2.75rem;
+      }
+      .plane-label {
+        font-family: var(--font-ui);
+        font-size: 0.63rem;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--dim);
+        margin-bottom: 0.6rem;
+      }
+      .claim-sentence {
+        font-size: 1.18rem;
+        line-height: var(--line);
+        color: var(--ink-opening);
+      }
+      .claim-range {
+        font-family: var(--font-ui);
+        font-size: 0.78rem;
+        color: var(--accent);
+        margin-top: 0.7rem;
+        padding-top: 0.6rem;
+        border-top: 1px dotted var(--border);
+      }
+      .claim-range .k {
+        color: var(--dim);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: 0.63rem;
+        margin-right: 0.5rem;
+      }
+      .claim-range em {
+        font-style: normal;
+        color: var(--ink-opening);
+      }
+      .claim-referents {
+        font-family: var(--font-ui);
+        font-size: 0.72rem;
+        color: var(--dim);
+        margin-top: 0.4rem;
+      }
+
+      /* ── plane two: the person's words, the darkest thing on the page ── */
+      .source {
+        margin-bottom: 2.25rem;
+      }
+      .asked {
+        font-family: var(--font-ui);
+        font-size: 0.8rem;
+        color: var(--accent);
+        line-height: 1.5;
+        margin-bottom: 0.85rem;
+        padding-left: 1rem;
+        border-left: 1px solid var(--border);
+      }
+      .asked .k {
+        display: block;
+        font-size: 0.63rem;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--dim);
+        margin-bottom: 0.25rem;
+      }
+      .quote {
+        font-size: 1.05rem;
+        line-height: 1.6;
+        color: var(--fg);
+        border-left: 2px solid var(--fg);
+        padding-left: 1.1rem;
+      }
+      .around {
+        font-size: 0.9rem;
+        line-height: 1.55;
+        color: #7a7a76;
+        margin-top: 0.8rem;
+        padding-left: 1.1rem;
+      }
+      .around .k {
+        display: block;
+        font-family: var(--font-ui);
+        font-size: 0.63rem;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        color: var(--dim);
+        margin-bottom: 0.25rem;
+      }
+      .prov {
+        font-family: var(--font-ui);
+        font-size: 0.68rem;
+        color: var(--dim);
+        margin-top: 0.7rem;
+        padding-left: 1.1rem;
+      }
+      .missing {
+        font-family: var(--font-ui);
+        font-size: 0.85rem;
+        color: #a33;
+      }
+
+      /* ── the note box: free text, nothing structured ── */
+      .noting {
+        margin-top: 3rem;
+        border-top: 1px solid var(--border);
+        padding-top: 1.5rem;
+      }
+      textarea {
+        width: 100%;
+        min-height: 6.5rem;
+        font-family: var(--font-serif);
+        font-size: 1rem;
+        line-height: 1.55;
+        color: var(--fg);
+        background: #fff;
+        border: 1px solid var(--border);
+        padding: 0.85rem 0.95rem;
+        resize: vertical;
+      }
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        margin-top: 0.9rem;
+        flex-wrap: wrap;
+      }
+      button {
+        font-family: var(--font-ui);
+        font-size: 0.82rem;
+        padding: 0.5rem 1rem;
+        min-height: 38px;
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--accent);
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: var(--accent);
+        color: var(--fg);
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      .hint {
+        font-family: var(--font-ui);
+        font-size: 0.72rem;
+        color: var(--dim);
+        margin-left: auto;
+      }
+      .saved {
+        font-family: var(--font-ui);
+        font-size: 0.72rem;
+        color: var(--accent);
+        min-height: 1.1rem;
+        margin-top: 0.6rem;
+      }
+      .prior {
+        font-family: var(--font-ui);
+        font-size: 0.75rem;
+        color: var(--dim);
+        margin-top: 0.9rem;
+        border-left: 1px solid var(--border);
+        padding-left: 0.8rem;
+      }
+      .done {
+        font-size: 1.05rem;
+        color: var(--accent);
+        line-height: var(--line);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="devbar">
+      <span>dev instrument · ticket 085 · <strong id="progress">loading</strong></span>
+      <span id="counts"></span>
+    </div>
+    <main id="main"><p class="done">Loading the claim graph…</p></main>
+
+    <script>
+      const state = {
+        records: [],
+        meta: null,
+        index: 0,
+        notesByClaim: new Map(),
+      };
+
+      const esc = (s) =>
+        String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+
+      async function boot() {
+        const [dataset, notes] = await Promise.all([
+          fetch('/api/dataset').then((r) => r.json()),
+          fetch('/api/notes').then((r) => r.json()),
+        ]);
+        if (dataset.error) {
+          document.getElementById('main').innerHTML =
+            '<p class="missing">' + esc(dataset.error) + '</p>';
+          return;
+        }
+        state.meta = dataset;
+        state.records = dataset.records;
+        for (const n of notes) {
+          if (!state.notesByClaim.has(n.claim)) state.notesByClaim.set(n.claim, []);
+          state.notesByClaim.get(n.claim).push(n);
+        }
+        // Resume where the reviewer stopped: the first record nobody has
+        // touched, note or skip.
+        const firstUntouched = state.records.findIndex((r) => !state.notesByClaim.has(r.id));
+        state.index = firstUntouched === -1 ? state.records.length : firstUntouched;
+        render();
+      }
+
+      function sourceBlock(s) {
+        const p = s.provenance || {};
+        const parts = [];
+        if (p.question && p.question.trim()) {
+          parts.push(
+            '<div class="asked"><span class="k">they were asked</span>' +
+              esc(p.question.trim()) +
+              '</div>'
+          );
+        } else {
+          parts.push(
+            '<div class="asked"><span class="k">they were asked</span>' +
+              '<span style="color:var(--dim)">nothing — ' +
+              esc(p.kind || 'unprompted') +
+              '</span></div>'
+          );
+        }
+        parts.push('<div class="quote">' + esc(s.prose) + '</div>');
+        if (p.context && p.context.trim()) {
+          parts.push(
+            '<div class="around"><span class="k">their surrounding words</span>' +
+              esc(p.context.trim()) +
+              '</div>'
+          );
+        }
+        const bits = [s.id + '@' + s.version];
+        if (p.kind) bits.push(p.kind);
+        if (p.channel) bits.push(p.channel);
+        if (p.questionForm) bits.push(p.questionForm);
+        if (s.captured) bits.push(s.captured.slice(0, 10));
+        parts.push('<div class="prov">' + esc(bits.join(' · ')) + '</div>');
+        return '<div class="source">' + parts.join('') + '</div>';
+      }
+
+      function render() {
+        const main = document.getElementById('main');
+        const total = state.records.length;
+        const sample = state.meta.sampleSize;
+
+        if (state.index >= total) {
+          document.getElementById('progress').textContent = 'all ' + total + ' seen';
+          main.innerHTML =
+            '<p class="done">Every record has been seen. Notes are in ' +
+            'tools/claim-review/notes.jsonl.<br /><br />' +
+            '<button onclick="jump(0)">go back to the first</button></p>';
+          updateCounts();
+          return;
+        }
+
+        const r = state.records[state.index];
+        const n = state.index + 1;
+        document.getElementById('progress').textContent = r.inSample
+          ? n + ' of ' + sample + ' in the diverse sample'
+          : n + ' of ' + total + ' — beyond the sample';
+
+        const prior = state.notesByClaim.get(r.id) || [];
+        const priorWithText = prior.filter((p) => p.note && p.note.trim());
+
+        const head = [
+          '<span class="facet">' + esc(r.facet) + '</span>',
+          esc(r.status),
+          'cluster ' + r.cluster,
+          esc(r.id),
+          esc(r.model || ''),
+        ]
+          .filter(Boolean)
+          .map((h) => '<span>' + h + '</span>')
+          .join('');
+
+        const sources = r.snippets.length
+          ? r.snippets.map(sourceBlock).join('')
+          : '<p class="missing">No snippet resolved for ' +
+            esc(r.cites.join(', ')) +
+            ' — the citation is dangling.</p>';
+
+        main.innerHTML =
+          '<div class="rec-head">' +
+          head +
+          '</div>' +
+          '<div class="claim-frame">' +
+          '<div class="plane-label">the Clerk wrote</div>' +
+          '<div class="claim-sentence">' +
+          esc(r.claim) +
+          '</div>' +
+          '<div class="claim-range"><span class="k">range</span><em>' +
+          esc(r.range || '(none)') +
+          '</em></div>' +
+          (r.referents && r.referents.length
+            ? '<div class="claim-referents">refers to: ' + esc(r.referents.join(', ')) + '</div>'
+            : '') +
+          '</div>' +
+          '<div class="plane-label">from their own words</div>' +
+          sources +
+          '<div class="noting">' +
+          '<textarea id="note" placeholder="Anything wrong, off, or thin — in your own words. Blank and Enter skips."></textarea>' +
+          '<div class="controls">' +
+          '<button class="primary" onclick="save()">save &amp; next</button>' +
+          '<button onclick="skip()">skip</button>' +
+          '<button onclick="jump(state.index - 1)">back</button>' +
+          '<span class="hint">Enter saves · Shift+Enter newline · Esc skips</span>' +
+          '</div>' +
+          '<div class="saved" id="saved"></div>' +
+          (priorWithText.length
+            ? '<div class="prior">already noted: ' +
+              priorWithText.map((p) => esc(p.note)).join(' — ') +
+              '</div>'
+            : '') +
+          '</div>';
+
+        const box = document.getElementById('note');
+        box.focus();
+        box.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            save();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            skip();
+          }
+        });
+        updateCounts();
+      }
+
+      function updateCounts() {
+        const noted = [...state.notesByClaim.values()].filter((v) =>
+          v.some((n) => n.note && n.note.trim())
+        ).length;
+        document.getElementById('counts').textContent =
+          noted + ' noted · ' + state.notesByClaim.size + ' seen · ' + state.records.length + ' claims';
+      }
+
+      async function post(entry) {
+        const res = await fetch('/api/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry),
+        });
+        if (!res.ok) throw new Error('server said ' + res.status);
+        if (!state.notesByClaim.has(entry.claim)) state.notesByClaim.set(entry.claim, []);
+        state.notesByClaim.get(entry.claim).push(entry);
+      }
+
+      async function record(note, skipped) {
+        const r = state.records[state.index];
+        try {
+          await post({ claim: r.id, note, skipped, position: r.position });
+          state.index += 1;
+          render();
+        } catch (err) {
+          const el = document.getElementById('saved');
+          if (el) el.textContent = 'NOT SAVED — ' + err.message + '. Copy your note before moving on.';
+        }
+      }
+
+      function save() {
+        const box = document.getElementById('note');
+        const text = box ? box.value.trim() : '';
+        record(text, text.length === 0);
+      }
+
+      function skip() {
+        record('', true);
+      }
+
+      function jump(i) {
+        state.index = Math.max(0, Math.min(i, state.records.length));
+        render();
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

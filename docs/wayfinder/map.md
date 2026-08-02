@@ -486,6 +486,14 @@ http://localhost:3002/?board=elicit-ideal-state).
   artifacts are declared pointers whose descriptions harvest — the model
   never opens one. Build is ticket 090 (plan-first).
 
+- [Task: an error-discovery pass over the clerk's first claim graph](tickets/085-error-discovery-claim-review.md)
+  — same-day review of 40/144 by Micah: half read clean; the noted half
+  codes into five modes (weak evidence units incl. 074's danglers, a
+  fabricated referent, modality mismatch, agency overreach, dropped
+  context). Taxonomy: docs/claim-review-2026-08-02.md; correctives amended
+  into 087; first field evidence for 033. The verbatim gate holds —
+  interpretation, not invention, is what drifts.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

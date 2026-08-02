@@ -1,0 +1,5007 @@
+{
+  "generated": "2026-08-02T22:29:42.831Z",
+  "claimCount": 144,
+  "snippetVersionCount": 147,
+  "sampleSize": 40,
+  "clusterCount": 10,
+  "unresolvedCites": [],
+  "records": [
+    {
+      "id": "01KZ1JGCNAK7N3AXHYXP9J8QWD",
+      "claim": "They conducted a research project tracing the historical development of cinema halls in Hyderabad.",
+      "range": "in their academic research",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5WWR7V8HJ6YVX0B8SK@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5WWR7V8HJ6YVX0B8SK",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.956Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-mapping-history-of-cinema",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "The research, as far as I saw it, was about tracing the history of cinema halls in Hyderabad"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": true,
+      "position": 0,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EBRXGWZJXXB7S4T0J6",
+      "claim": "They identify hero-worship as the central flaw of design practice.",
+      "range": "when reflecting on design practice",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4WMJXPTDAMFVDQW6B3@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4WMJXPTDAMFVDQW6B3",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.924Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-the-disenfranchisement-of-adivasis-in-kerala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "It was then that I decided (very naively) that I would design better systems for them to inhabit.\n\nBy this point in my research, I was starting to see the kind of bubbles that I was living in. I also gained perspective on how the invisibility of caste is its biggest barrier to annihilation.\n\nAfter reading the histories of the Paniyas, I understood that my assumptions about designing solutions for them were presumptuous and naive."
+          },
+          "prose": "I understand now that the trap lies in the hero-worship that design engages."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": true,
+      "position": 1,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1XBWQB96PN0DAWRW6XTJ5M",
+      "claim": "The IIIF standard is effective but typically requires institutional backing to function properly.",
+      "range": "when discussing digital library standards",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [
+        "iiif"
+      ],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ53C145GX47GCSBJH6H@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53C145GX47GCSBJH6H",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " A group of [dargahs](https://kkregion.com/khwaja-bande-nawaz-dargah/) with objects from centuries-old storied traditions. What each of them wanted was close to the same thing: put a large image on the internet, let someone zoom into it, let someone write a note on a part of it, and keep the note.\n\nI wrote a [long post about this in 2024]()."
+          },
+          "prose": "The short version is that the standard for this already exists, it is called IIIF, it is genuinely good, and almost everything built around it assumes there is an institution behind you."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 2,
+      "inSample": true
+    },
+    {
+      "id": "01KZ26H1PZ3D3VHJCJT5CMNK69",
+      "claim": "Translating across Urdu, Hindi, and English frequently causes lexical access failures and translation slippages.",
+      "range": "when translating between Urdu, Hindi, and English",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2R7GJ9M2R4TBT141N6@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R7GJ9M2R4TBT141N6",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The experience also took to task a lot of my assumptions regarding language and how natural language speakers find its rules. Often when ma'am would translate a word, I would find myself asking her if the word was a composite of two other words and she would not consider that as a good question because it is intuitive."
+          },
+          "prose": "I also would come to points where the English words would dangle at the tip of my pen but the experience of translating from Urdu to Hindi to English would cause many slippages."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": true,
+      "position": 3,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EAE1BVJQFZEX76JX7Z",
+      "claim": "The person designed and facilitated digital storytelling classes using custom tools like Inshot and the Aamne Samne Pi device.",
+      "range": "in a professional collaboration with Janastu",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5R2T9J815ZJT6XJSWS@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5R2T9J815ZJT6XJSWS",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.952Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-kishori-film-festival",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Kishori Film Festival (KiFi) was an 8-week media literacy programme designed for 11th-grade young women from rural Uttar Pradesh."
+          },
+          "prose": "Working with Janastu, I designed and facilitated classes that used reconfigured tools and devices- including Inshot for video-making and the [Aamne Samne Pi](https://open.janastu.org/projects/webinar-pi), a modular open-source device- to support digital storytelling."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": true,
+      "position": 4,
+      "inSample": true
+    },
+    {
+      "id": "01KZ20AQ0MTVRYJYGB8ZRFJJXA",
+      "claim": "They experimented with the Cantaloupe IIIF image server during a specific past period.",
+      "range": "during that time",
+      "facet": "lifetime-period",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5DGFT0Q0E985XGK1RN@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DGFT0Q0E985XGK1RN",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " For a non-technical person like me, it was quite a dense topic to understand. So I tried to learn it by saturation and osmosis."
+          },
+          "prose": "It was during that time that I started experimenting with Cantaloupe, a IIIF image server."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 6,
+      "isSeed": true,
+      "position": 5,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNB0FJTC1FDME0KMQT3",
+      "claim": "The user first encountered systemic caste discrimination while researching the Paniya community in Kerala.",
+      "range": "while studying the Paniya community in Kerala",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5WVCYC84EZRTD3JWZV@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5WVCYC84EZRTD3JWZV",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.956Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-speculative-storytelling-in-wayanad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "While studying the Paniya community in Kerala, I was first introduced to the severity of caste issues in India."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": true,
+      "position": 6,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNAM5KQ8XN193HFWJQG",
+      "claim": "The user aims to observe how network effects allow a community mesh to operate as local infrastructure.",
+      "range": "while investigating community mesh infrastructure",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ4YP3BQJXC760M7FAC4@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4YP3BQJXC760M7FAC4",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.926Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-establishing-a-community-based-generative-wifi-mesh-network",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "I wanted to see the kind of network effects that a community mesh needs to thrive as an infrastructure of the place."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": true,
+      "position": 7,
+      "inSample": true
+    },
+    {
+      "id": "01KZ20AQ0KVZANP4Q5A5HWJRDJ",
+      "claim": "They gained a clearer understanding of a problem over a four-year span.",
+      "range": "over a specific four-year period",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ53W6AX603Y8NWK8GZF@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53W6AX603Y8NWK8GZF",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Each one is someone's earnest attempt to make the thing smaller, and each one still ends with the person who has the collection holding a pipeline of GitHub repositories, scripts and manifest URLs. When our collective did this, we self-hosted it on a server we owned."
+          },
+          "prose": "The four years mostly bought me a clearer picture of the problem."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 8,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNB3REBG6PXN47PZYAX",
+      "claim": "The person implements transparent cost breakdowns for their products to show customers how their purchases support artisans and production.",
+      "range": "for their product offerings",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5WKCM01Y1W10KFNBHW@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5WKCM01Y1W10KFNBHW",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.956Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-habba-redesign",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Additionally, I incorporated a breakdown of the cost-price for each product, allowing customers to see how their money directly supported the artisans and the production process."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": true,
+      "position": 9,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNC88XNTAR801W9M8PP",
+      "claim": "Prioritizes listening to others' existing desires over imposing their own voice.",
+      "range": "when collaborating with others",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ4XATS07M5136HXAMYD@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4XATS07M5136HXAMYD",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.925Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-how-i-use-speculative-design-in-my-practice",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "In my work as a design researcher, I use speculative design to envision alternatives for the Global South."
+          },
+          "prose": "The point was to listen to what people there already wanted, not to speak for them."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": true,
+      "position": 10,
+      "inSample": true
+    },
+    {
+      "id": "01KZ282BKYATBECSM6TYXNBAS0",
+      "claim": "They believe that breaking a task into pieces reveals its actual difficulty to be less than its perceived difficulty.",
+      "range": "when evaluating tasks",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1Y238DZ9H9W6BKTPPSBH28@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1Y238DZ9H9W6BKTPPSBH28",
+          "version": 1,
+          "captured": "2026-08-02T19:08:53.901Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1XFRESMY0N3SRYJZFB2D25",
+            "question": "\"bodily state, mental state, emotional state.\" What specific alternative cues or signals have you found more reliable for deciding whether to proceed?",
+            "questionForm": "deliberative"
+          },
+          "prose": "My theory is that if I think something is too hard, it might not be as hard as it seems if you break it down into pieces."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 11,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNB5MJTS00H1DQQT0MH",
+      "claim": "Wikipedia's knowledge gaps reflect whose histories are considered encyclopaedic rather than being accidental.",
+      "range": "when discussing Wikipedia's content",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5XSVS7GRZMGQX4KMVK@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5XSVS7GRZMGQX4KMVK",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.957Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-external-wikipedia-editathon-dalit-history-month",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Wikipedia's knowledge gaps are not accidental- they reflect whose histories are considered encyclopaedic."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": true,
+      "position": 12,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EB67FWHSJN3WMRXPDA",
+      "claim": "They began their professional involvement by studying the Channapatna team's research and collaborating with Janastu's development team.",
+      "range": "at the start of their professional engagement",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [
+        "channapatna-team",
+        "janastu"
+      ],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5Q4FRXYX42YM1AV65S@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5Q4FRXYX42YM1AV65S",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.951Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-papad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "My involvement began with understanding the research conducted by the Channapatna team and engaging with the development team at Janastu."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 13,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1XBWQBTR0TTPYT9GE3ME65",
+      "claim": "They describe their professional output as inherently scattered across multiple platforms.",
+      "range": "generally",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ58MVY4X04GCZB731TG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ58MVY4X04GCZB731TG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.936Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Are.na is where I've collected things for years; just channels of blocks that you connect to other channels. It's anti-viral by design: you fall sideways into things, follow connections, disappear into rabbit holes."
+          },
+          "prose": "My work is scattered by nature: a Figma file here, a GitHub repo there, a talk on YouTube, an essay on someone else's site."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 14,
+      "inSample": true
+    },
+    {
+      "id": "01KZ25Q0YQQXXADEFW7V4EMQM1",
+      "claim": "They recognize that minimalist aesthetics and clean curves in contemporary design intentionally strip technology of its contextual grounding.",
+      "range": "when reflecting on mainstream design trends",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2P7G6QCHWVV617SCBZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2P7G6QCHWVV617SCBZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Bullgrass is amply available there. They made a container for the device made of bull grass in the shape of a pouch."
+          },
+          "prose": "It started to strike me how the minimalism aesthetic of mainstream design and “clean curves” serves the purpose of delocating the technology."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 15,
+      "inSample": true
+    },
+    {
+      "id": "01KZ26Z4V16MKNZYCBW5PFTP6J",
+      "claim": "The person frequently asked their mother if translated words were composites, but was dismissed because the question seemed unintuitive.",
+      "range": "when translating with their mother",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RFF08J7PTM8WAAGCH@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RFF08J7PTM8WAAGCH",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The nuances of the word, juxtaposed meanings and just the way the word is structured would cause a lot of dissonances when I tried the more obvious choices of translations. The experience also took to task a lot of my assumptions regarding language and how natural language speakers find its rules."
+          },
+          "prose": "Often when ma'am would translate a word, I would find myself asking her if the word was a composite of two other words and she would not consider that as a good question because it is intuitive."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 16,
+      "inSample": true
+    },
+    {
+      "id": "01KZ282BKX1GZ04QSS6QD6Z71E",
+      "claim": "The user considers their work to be inherently collaborative rather than solitary.",
+      "range": "in their professional practice",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1XF984VKJ5WHV71XKB6Q9N@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1XF984VKJ5WHV71XKB6Q9N",
+          "version": 1,
+          "captured": "2026-08-02T18:58:37.444Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1WSG75Z17BSSA2YEKZSXPC",
+            "question": "You wrote: \"metaphors that make sense.\" How do you ensure that specific metaphors remain culturally and contextually appropriate across different user groups?",
+            "questionForm": "deliberative"
+          },
+          "prose": "This cannot be done alone, it has to be done with a group."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 17,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EAPVQJX7FTXTV22TT9",
+      "claim": "They designed a past initiative to empower participants by providing customizable tools for sharing personal narratives.",
+      "range": "during that project",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5R70487WM6XZAPC9T8@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5R70487WM6XZAPC9T8",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.952Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-kishori-film-festival",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Kishori Film Festival (KiFi) was an 8-week media literacy programme designed for 11th-grade young women from rural Uttar Pradesh. Working with Janastu, I designed and facilitated classes that used reconfigured tools and devices- including Inshot for video-making and the [Aamne Samne Pi](https://open.janastu.org/projects/webinar-pi), a modular open-source device- to support digital storytelling.\n\nThe programme aimed to go beyond teaching technical skills."
+          },
+          "prose": "It was about creating space for the participants to tell their own stories using tools they could take apart, understand, and reshape."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 18,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1XBWQBJBDJCESXHZ9K27NS",
+      "claim": "The user found a binder in 2024 that matched their desired shape.",
+      "range": "in 2024",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ58ZGHG231X7T6X52D8@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ58ZGHG231X7T6X52D8",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.936Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Clement Valla's Binder, which I found sometime in 2024, was the shape that I wanted."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 19,
+      "inSample": true
+    },
+    {
+      "id": "01KZ27B1VYSKP00405SDWK8MDM",
+      "claim": "They acknowledged reaching exhaustion and decided to ask for help.",
+      "range": "during the task",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S0246WM96Z95CR288@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S0246WM96Z95CR288",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " When I was working on the choropleth map, I witnessed this. I had been working on the COVID 19 Pune app for a while, constantly updating it and verifying the information that went on it."
+          },
+          "prose": "This, however, soon brought me to a point of exhaustion and I decided to find some help."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 20,
+      "inSample": true
+    },
+    {
+      "id": "01KZ20AQ0KE1TNE0WTCTC906T4",
+      "claim": "The user aims to build a web-based tool for viewing, zooming into, and annotating large images.",
+      "range": "in a past collaborative project",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ53Y6AM0WFP7T1VZT1D@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53Y6AM0WFP7T1VZT1D",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " A [70-year old collector](https://www.instagram.com/livinglabs_net/p/DAtdYkzy0jr/) with pictures of a place from a time when very few pictures of it exist. A group of [dargahs](https://kkregion.com/khwaja-bande-nawaz-dargah/) with objects from centuries-old storied traditions."
+          },
+          "prose": "What each of them wanted was close to the same thing: put a large image on the internet, let someone zoom into it, let someone write a note on a part of it, and keep the note."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 21,
+      "inSample": true
+    },
+    {
+      "id": "01KZ27B1VX4Y2P42DGQ3SN2W6W",
+      "claim": "The person has consistently wondered about the mechanics of participatory activities and how scaffolding enables translation for each participant.",
+      "range": "throughout their life",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2RWX2KM0QMYQFNJ3CJ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RWX2KM0QMYQFNJ3CJ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " At this point, I was only getting used to understanding the idea of an embodied cognition and knowledge practice. I observed through the whole process how the material and their bodies working with the material opened up more associations for them."
+          },
+          "prose": "I have always wondered about the process of participatory activities and how each participant requires a scaffolding that helps create a translation."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 22,
+      "inSample": true
+    },
+    {
+      "id": "01KZ26H1PY6E99K8WA3F5DXR9G",
+      "claim": "The user values the confirmation of structural support through an embodied rehearsal of the future.",
+      "range": "during facilitated sessions",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QKDKRDQCKYMQ648QG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QKDKRDQCKYMQ648QG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The night before the workshop, Naveen was explaining the concept of an embodied knowledge through the way that he and his child count ‘red badam trees’ on the road and how they no longer needed to consciously see and count the trees. It was an aspect, I wanted to be able to encourage them to follow through on."
+          },
+          "prose": "It worked well when they brought the way to make it an embodied rehearsal of the future and demonstrated to me that the scaffolding was fitting in place."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 23,
+      "inSample": true
+    },
+    {
+      "id": "01KZ2106SHTBTMQTSKKC65F95V",
+      "claim": "The user prioritizes archivable and annotable interfaces to create spaces for future reflection.",
+      "range": "in interface design",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ52X6Q8B8T1F1W2RXFA@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ52X6Q8B8T1F1W2RXFA",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.930Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Allow the interface to be archivable and annotable, and we are creating spaces for our future selves to come back and reflect and make meaning."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 24,
+      "inSample": true
+    },
+    {
+      "id": "01KZ263RMBENPVSAFMEYRZKW0G",
+      "claim": "They deliberately choose a non-linear structure for their papers to reflect the actual process of their research.",
+      "range": "when structuring a paper",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PQAXNW18ZS9Y2B0A6@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PQAXNW18ZS9Y2B0A6",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I want to juxtapose my anecdotes, experiences and made objects on the field with how care has been theorised in politics, medical anthropology, STS and feminist geographies. Juxtaposition offers the opportunity of talking and thinking about “difference without the subordination of one in terms of the other” [(Grant 2020, p. 22)](#grant-2020) Also for my purposes, it brings forward the specificity of this research and negates any claim to objectivity and talks about the intersubjectivity of this research."
+          },
+          "prose": "The decision to structure my paper in this way was a conscious one taking into consideration the non-linear nature of the work."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": false,
+      "position": 25,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNBQHFS5X2E6EK4BY8R",
+      "claim": "The person knows someone's name because they make regular payments to them via Google Pay.",
+      "range": "during their financial routines",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ4XVJ86K24317EDF4NW@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4XVJ86K24317EDF4NW",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.925Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-koramangala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Chalapathi,"
+          },
+          "prose": "I know his name, because I pay him every two months on Google Pay"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 26,
+      "inSample": true
+    },
+    {
+      "id": "01KZ26Z4V29T1N09F6B0QEWZ2G",
+      "claim": "The person spent a period gradually familiarizing themselves with embodied cognition and knowledge practice.",
+      "range": "at this point",
+      "facet": "lifetime-period",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RTSJKDJSXDJWRYZDG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RTSJKDJSXDJWRYZDG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " We offered clay, paper cuttings and writing material and told them to use whatever they wanted and make something in response to the sections of the song being played.\n\nThe clay helped the Kumbhara women to quickly start making things which they were most comfortable with. However, their annotations started to come out more in the things they said and the songs they sang in response."
+          },
+          "prose": "At this point, I was only getting used to understanding the idea of an embodied cognition and knowledge practice."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 6,
+      "isSeed": false,
+      "position": 27,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1XBWQB3AFY8SMSSDCYC8HR",
+      "claim": "The user developed a project called Archie to combine four parts into one window.",
+      "range": "in this instance",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [
+        "archie"
+      ],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ53F8RXWCXKBX5JTYVT@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53F8RXWCXKBX5JTYVT",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Archie is my attempt at those four parts in one window."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 28,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EA9C2WSFRNE4GWT7S1",
+      "claim": "The programme's goal was to extend beyond technical instruction.",
+      "range": "when describing the programme's objective",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5RME9X5B523GWT2M6Q@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5RME9X5B523GWT2M6Q",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.952Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-kishori-film-festival",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Kishori Film Festival (KiFi) was an 8-week media literacy programme designed for 11th-grade young women from rural Uttar Pradesh. Working with Janastu, I designed and facilitated classes that used reconfigured tools and devices- including Inshot for video-making and the [Aamne Samne Pi](https://open.janastu.org/projects/webinar-pi), a modular open-source device- to support digital storytelling."
+          },
+          "prose": "The programme aimed to go beyond teaching technical skills."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 29,
+      "inSample": true
+    },
+    {
+      "id": "01KZ25Q0YPQF5Z2PQQRGSDFX0N",
+      "claim": "They frame their network participation as alternating between two modes: being and doing.",
+      "range": "when reflecting on their involvement in networks",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2N7R8N9A3QEWW7ENRB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2N7R8N9A3QEWW7ENRB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.853Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "I imagine, retrospectively that there are two ways that I envision my participation in these networks-through being and through doing."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 30,
+      "inSample": true
+    },
+    {
+      "id": "01KZ27PDVYPM592555C8ZHMDRS",
+      "claim": "The user frequently hits an internal wall when processing information or creating work.",
+      "range": "when engaging in deep work",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SZEJV0QRZZ6XH90TT@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SZEJV0QRZZ6XH90TT",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Contri whenever possible, keep things shared so others can pick up if you’re down. Keep things moving but sustainable.”\n\nOperationally, it offers an alternative way of working which has its merit."
+          },
+          "prose": "However, this often brought me up to an “internal wall”."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 31,
+      "inSample": true
+    },
+    {
+      "id": "01KZ2106SFBATXGBZAHC217QA0",
+      "claim": "The user discovered that the viewing experiences relied on a shared, standard codebase instead of unique, custom-built systems.",
+      "range": "when realizing the underlying architecture of the viewing experiences",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ5DV9T1T39FDYSYN2EZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DV9T1T39FDYSYN2EZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Yet I saw [Archive after Archive](https://web.archive.org/web/20200717185455/https://iiif.io/apps-demos/) listed as examples."
+          },
+          "prose": "I couldn't believe that these viewing experiences weren't custom-built monoliths and were based on a standard implementation that I could use if I tried."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 32,
+      "inSample": true
+    },
+    {
+      "id": "01KZ26Z4V1JK9B8B29R7PCZTS9",
+      "claim": "The person suggested adding clay and paper cuttings to an activity's materials.",
+      "range": "during an activity",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RFC75N2764ZGA3G2N@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RFC75N2764ZGA3G2N",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The Shayaras however, were given photos from different places, peoples and practices in Bidar and asked to annotate it through freewriting, prose or poem. I was only present when the second workshop was being planned."
+          },
+          "prose": "I introduced the idea of adding some more mediums such as clay and paper cuttings to the activity."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 33,
+      "inSample": true
+    },
+    {
+      "id": "01KZ25Q0YQ3BFZ8DEBTKQQFRSB",
+      "claim": "The user perceives a particular gesture or object as gentle and mudra-like.",
+      "range": "during this observation",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2PACD23D4VYNFZJ50Z@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PACD23D4VYNFZJ50Z",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " There’s a long stick that fits into the notch of the wheel where you fit and rotate it forcefully and with a rhythm. He then showed us the exact hand positions that we need to mould the diya."
+          },
+          "prose": "I was immediately struck by how gentle and mudra-like it seemed."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 34,
+      "inSample": true
+    },
+    {
+      "id": "01KZ25Q0YM7GREB0H86JTTEPSZ",
+      "claim": "The user intends to structure their capstone project as a collaborative, participatory object that generates multiple smaller outcomes rather than a traditional single thesis.",
+      "range": "for the capstone project",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2KYCBVJZRV0CCETZGG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2KYCBVJZRV0CCETZGG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.852Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "I wanted to do the capstone not as a single thesis or problem-solution but rather as an object produced from participation and collaboration which in turn produces multiple smaller outcomes, outputs, practices and reflections."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 35,
+      "inSample": true
+    },
+    {
+      "id": "01KZ25Q0YPC1VQD7B7T4ZXGNVR",
+      "claim": "The user intended to understand how care manifests in networks and structure their learnings through outcomes, outputs, practices, and reflection.",
+      "range": "when describing the programme's objective",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2NA5F7G77CYH6GD8TG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2NA5F7G77CYH6GD8TG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.853Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "The aim was for me to be able to first understand how care manifests in networks, frame my learnings on care through the outcomes, outputs, practices and reflection."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 36,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1W20EARF0C9G18W3TFYWFY",
+      "claim": "The person recognizes they have been living in an insulated environment or perspective.",
+      "range": "when reflecting on their surroundings",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4W167ZX408FJFZC6MZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4W167ZX408FJFZC6MZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.924Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-the-disenfranchisement-of-adivasis-in-kerala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "It was then that I decided (very naively) that I would design better systems for them to inhabit.\n\nBy this point in my research,"
+          },
+          "prose": "I was starting to see the kind of bubbles that I was living in."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 37,
+      "inSample": true
+    },
+    {
+      "id": "01KZ27PDVYA6ZWKBCT6B9883D1",
+      "claim": "The user consciously decided to keep their project small-scale instead of pursuing large-scale solutions.",
+      "range": "when building ICAN",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SNR2Z0GJ4EGDZ49A2@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SNR2Z0GJ4EGDZ49A2",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "I wrote before about ICAN, and how there was a conscious unspoken decision to stay at a small scale and not “solve” anything."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 38,
+      "inSample": true
+    },
+    {
+      "id": "01KZ1JGCNBNJ77JZASCP6KBQH1",
+      "claim": "The user enjoys color bending, considering it both a form of visual protest and a stimming activity.",
+      "range": "in their personal practice",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5RGFE70JQBGSA7NMQB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5RGFE70JQBGSA7NMQB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.952Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-glitch-art",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "A form of visual protest and stimming, I find color bending to be quite fun"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 39,
+      "inSample": true
+    },
+    {
+      "id": "01KZ27PDVYHQ38X6BJGXGTR1W4",
+      "claim": "The user attributes team expansion to practical constraints like convenience and bandwidth rather than hidden leadership directives.",
+      "range": "regarding team expansion",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SJ0602ZQW0CB2WR1J@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SJ0602ZQW0CB2WR1J",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I was bewildered by this. As I worked with DLL longer, I saw this in the context of how relationships were formed, taking into consideration personal feelings, larger engagements."
+          },
+          "prose": "I started to understand how adding people was less about the opacity of the “top management” but rather the convenience and bandwidth of the collaborators."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": false,
+      "position": 40,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0M2QGRXKTR38Q753PD",
+      "claim": "The user has spent years searching for an organized, no-code or low-code solution to host various types of online content.",
+      "range": "for the last few years",
+      "facet": "lifetime-period",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5DP2M6GN2NF2FC63TF@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DP2M6GN2NF2FC63TF",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "For the last few years, I have been in search of a way to host images, text and other types of content on the internet in a no-code or low-code but organized and categorized setup."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 6,
+      "isSeed": false,
+      "position": 41,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0MS4WRZDGWV9KBKQXV",
+      "claim": "The person belongs to several collectives dedicated to cultural and creative practice-based research in Karnataka, India.",
+      "range": "in Karnataka, India",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5DMRD5J3N9NHPHBPHG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DMRD5J3N9NHPHBPHG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This has led me to many interesting places and ways of doing this. In this article, I want to talk about hosting images using self-hostable tools.\n\nTo briefly talk about why I set about looking for such solutions -"
+          },
+          "prose": "I am part of few collectives that work with cultural and creative practice-based research in Karnataka, India."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 42,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YPYDKMRG714JDHS6QJ",
+      "claim": "They prefer taking an engaged, partial stance rather than maintaining detached neutrality.",
+      "range": "when reflecting on their role",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2P4NG70F0GGRYGT58D@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2P4NG70F0GGRYGT58D",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The last time a student came to learn from us, he was quite consistent and came every day for a month. We liked him a lot.” I started to play with the idea of researching through doing, but doing through learning."
+          },
+          "prose": "It sparked the idea of being an active and partial participant rather than an impartial and distant observer."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 43,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PXBFJAB6HJ4KEPDSPP",
+      "claim": "They relied on intuition to grasp Hindi words but took extra time to verify their meanings with someone else.",
+      "range": "when learning Hindi",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QJBM59EYTFF22BDAX@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QJBM59EYTFF22BDAX",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Hindi was the in-between language and a second language to both of us. It was interesting, however, because I am a writer too and I was constantly watching for my style overpowering her prose."
+          },
+          "prose": "Sometimes, I would understand a phrase or word through intuition, however, the process of confirming the meaning from her in Hindi took a lot more time."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 44,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1JGCNB9MAC2YNHQG6ABMJ3",
+      "claim": "The person created participatory methods to recognize, experiment with, and encourage the use of an archive during a pilot project.",
+      "range": "during a pilot project",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5S77XM071PMHTHDSFQ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5S77XM071PMHTHDSFQ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.953Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-enableindia-le",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "As part of this Pilot, my role was to create participatory ways of recognizing, experimenting and encouraging the use of the archive"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 45,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMC6MJPBZYTJNTKD59Z",
+      "claim": "The person aims to help children feel comfortable and gradually understand the purpose of collaborative brainstorming sessions.",
+      "range": "when facilitating collaborative sessions with children",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2QGJ3M5FFBTSTR7E67@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QGJ3M5FFBTSTR7E67",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " We had a strict deadline which wasn’t possible with our earlier plan so Supriya and I decided to change the structure to make some things faster. An initial briefing was done from me and"
+          },
+          "prose": "I intended to get the children comfortable with speaking to us and also slowly understanding the idea of what things we wanted to brainstorm and experiment with them."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 46,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VYZT802YWZM8H10PEX",
+      "claim": "The person experiences physical exhaustion after an attempt fails.",
+      "range": "following a failed attempt",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S9H134XFWGGGWDAGE@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S9H134XFWGGGWDAGE",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This, however, soon brought me to a point of exhaustion and I decided to find some help. That is when I started working with the Viral Kindness group for Pune the map was to have a collaborative object for us to work on together."
+          },
+          "prose": "But when that didn’t work out, I could feel the exhaustion in my body."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 47,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20E8GP57DQ7DCWWK143E",
+      "claim": "The user considers modifying accessible hardware to be inherently educational.",
+      "range": "when working with cheap, hackable devices",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4XZ7BX8GPB108TEXWR@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4XZ7BX8GPB108TEXWR",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.925Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-how-i-use-speculative-design-in-my-practice",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "In my work as a design researcher, I use speculative design to envision alternatives for the Global South.\n\nThe point was to listen to what people there already wanted, not to speak for them."
+          },
+          "prose": "Reconfiguring a cheap, hackable device like a Raspberry Pi is itself the lesson: the tool is yours to open and change."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 48,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1JGCNC59VDN1EHKA36052P",
+      "claim": "The user believes that paying people in cash causes them to forget those individuals' names.",
+      "range": "when reflecting on payment methods",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ4XZR1G403AVQ7F6F9G@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4XZR1G403AVQ7F6F9G",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.925Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-koramangala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Chalapathi, I know his name, because I pay him every two months on Google Pay"
+          },
+          "prose": "I can't seem to remember the names of anyone else because I pay them cash"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": false,
+      "position": 49,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YP5MG3V6BDRXH78YQ3",
+      "claim": "They define outputs broadly as any actions or states that help understand care within networks.",
+      "range": "in their research design",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2P4Q8T2AK1BRE938RT@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2P4Q8T2AK1BRE938RT",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Juxtaposition offers the opportunity of talking and thinking about “difference without the subordination of one in terms of the other” [(Grant 2020, p. 22)](#grant-2020) Also for my purposes, it brings forward the specificity of this research and negates any claim to objectivity and talks about the intersubjectivity of this research.\n\nThe decision to structure my paper in this way was a conscious one taking into consideration the non-linear nature of the work. By not isolating aspects of the work in distinct chapters, I use the current structure to move between binaries like theory and practice, designed artefacts and reflections, methodologies and personal connections to the research."
+          },
+          "prose": "Another decision was to use micro-outputs by defining outputs as any “do-ings, be-ings or make-ings” that helped me understand care in networks."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 50,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYZF4Z6G7RQPV7R5K3",
+      "claim": "The user considers an archive activated only when the community has agency over it and derives utility from it.",
+      "range": "in the system design",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QR32VXBG8X8XHA9Q9@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QR32VXBG8X8XHA9Q9",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Shreyas and I were discussing the role of an archive in a community and how it has to move beyond a dead store."
+          },
+          "prose": "The activation of an archive happens when the community has agency over it and derives a utility from it."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 51,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V2HVEYJBYSNSV7WBVT",
+      "claim": "The person conducts extensive online research while frequently doubting whether the gathered information is sufficiently verified.",
+      "range": "during periods of deep research",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RGA9YS8BA9TWTSD73@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RGA9YS8BA9TWTSD73",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Other than that I decided to create a separate tab for people to find organisations easily to donate to. Both of these organisations’ information had to be personally checked by the nature of the spreadsheets I created."
+          },
+          "prose": "This involved long nights trawling the internet for information and constantly second-guessing if the amount of information was verified enough."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 52,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V2TS5H4ZK11QJDVH05",
+      "claim": "The person experiments with Figma's prototyping features based on a hunch about its potential utility for a specific task.",
+      "range": "when exploring new software capabilities",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RWK6VKRYS4SEP42T7@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RWK6VKRYS4SEP42T7",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " We needed to find a collaborative tool that was browser-based and quick enough to pick up. Especially in a time-sensitive context, we needed something so that many people could work on something so that we could put things out faster and constantly revise."
+          },
+          "prose": "I started to play with the UX prototyping features of Figma with a hunch that we could use it for the task."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 53,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0KBMWW0NVMM29JAFX7",
+      "claim": "They once tried to learn something by passively absorbing it instead of studying actively.",
+      "range": "in a past attempt",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5DDVEAQB92NYP65VM1@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DDVEAQB92NYP65VM1",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I couldn't believe that these viewing experiences weren't custom-built monoliths and were based on a standard implementation that I could use if I tried.\n\nI started reading up about it and coming back to it every two months. For a non-technical person like me, it was quite a dense topic to understand."
+          },
+          "prose": "So I tried to learn it by saturation and osmosis."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 54,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V2KD9ZY04XPRP8QQAX",
+      "claim": "The user intended to distribute data update responsibilities across the team rather than centralizing them on themselves.",
+      "range": "early on",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RRA83QEF7BZ47C89Q@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RRA83QEF7BZ47C89Q",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " However, the wards in PCMC had now been administratively grouped into zones and it was quite difficult to find a shapefile of that. However, using the maps that PCMC put out on Instagram as a reference I reshaped them and dealt with all the errors of my inexperience with QGIS."
+          },
+          "prose": "I decided early on that if I had to make this, the numbers data would need to be something that people can change daily and it wouldn’t just be my responsibility."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 55,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMCVNW5600W7Y9Y17MG",
+      "claim": "The person has deepened their practical grasp of opposing design authorship through direct application.",
+      "range": "in practice",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2Q2ZRVH42X1YAMC3JH@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2Q2ZRVH42X1YAMC3JH",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Naveen told me how now I am part of the workshop for all its ‘good’ and ‘bad’ implications. As long as I understood some of my biases and the apparent “don’ts”, I would be part of shaping the workshop and that is okay."
+          },
+          "prose": "This helped me understand and augment my understanding of opposing design authorship practically."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 56,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0KZRJBCYFWCJGVB2DK",
+      "claim": "The user considers \"Readings\" to be their primary area of interest.",
+      "range": "generally",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ54NZTM01CD9ZEJ0VAT@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ54NZTM01CD9ZEJ0VAT",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.932Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "The part I find most interesting is Readings."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 57,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20EBMR3VTVNJ1G73JBSN",
+      "claim": "The person considers the invisibility of caste its main barrier to being abolished.",
+      "range": "in this reflection",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4WPYTG5BKRE60NVSFR@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4WPYTG5BKRE60NVSFR",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.924Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-the-disenfranchisement-of-adivasis-in-kerala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "It was then that I decided (very naively) that I would design better systems for them to inhabit.\n\nBy this point in my research, I was starting to see the kind of bubbles that I was living in."
+          },
+          "prose": "I also gained perspective on how the invisibility of caste is its biggest barrier to annihilation."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": false,
+      "position": 58,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1JGCNCAP77ZTYZEAV1WJWZ",
+      "claim": "They identify as a design researcher who uses speculative design to envision alternatives for the Global South.",
+      "range": "in their professional work",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ4XMY8X4V22E4PH8DXB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4XMY8X4V22E4PH8DXB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.925Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-how-i-use-speculative-design-in-my-practice",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "In my work as a design researcher, I use speculative design to envision alternatives for the Global South."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 59,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVY0683R3F33BAHH5QD",
+      "claim": "The user recognizes that speaking Puneri Marathi established a social hierarchy that stigmatized non-speakers as village-folk.",
+      "range": "when reflecting on Puneri Marathi",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SKDYFAS9825G9QH1N@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SKDYFAS9825G9QH1N",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " That got me thinking about how the differences between formal and informal language is often a story of imperialism or colonialism. Instantly transported back to school, how even though I could read and write literary Marathi, I wouldn’t be able to speak colloquial Marathi."
+          },
+          "prose": "It was only later that I realised the differences lay in the Brahmanistic influence on Marathi and the relation to whoever couldn’t speak the “Puneri” Marathi was considered “gavthi”(a slur that means village-folk)."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 60,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQ9DQTNZQ85HQNJFNX9",
+      "claim": "Audio recording is the preferred, intuitive method for documenting knowledge and daily practices in their community.",
+      "range": "in their community",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ5QRT4HZNF9Y99FE95H@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5QRT4HZNF9Y99FE95H",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.951Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-papad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "| Description | Implications/Actions |\n|-------------|----------------------|\n|"
+          },
+          "prose": "Audio was a much more natural way for many in the community to record knowledge and daily practices"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 61,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20ECD25C94TD98VXAWDG",
+      "claim": "They synthesized team input into a feature list to establish the site's information architecture.",
+      "range": "during the site design process",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5QFJ4T2WMH2GS6FMJW@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5QFJ4T2WMH2GS6FMJW",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.951Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-papad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Based on discussions with both teams, I compiled a comprehensive feature list and used it to establish the information architecture that would support these features."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 62,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YPSXJE7NP88167QSQX",
+      "claim": "The user realized after participating in specific networks that their work there should be included in their capstone project.",
+      "range": "after participating in those networks",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2NN1BS6AGFPN3B9KHY@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2NN1BS6AGFPN3B9KHY",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.853Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "I was, first, part of those networks and be-ing in them and only then did it occur to me to include the work in my capstone."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 63,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0MKGQF1K967P7HYH0A",
+      "claim": "The person identifies as non-technical and finds dense subjects hard to grasp.",
+      "range": "when assessing their own technical proficiency",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5DH0M1K2GS9HQMMQK5@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DH0M1K2GS9HQMMQK5",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Yet I saw [Archive after Archive](https://web.archive.org/web/20200717185455/https://iiif.io/apps-demos/) listed as examples. I couldn't believe that these viewing experiences weren't custom-built monoliths and were based on a standard implementation that I could use if I tried.\n\nI started reading up about it and coming back to it every two months."
+          },
+          "prose": "For a non-technical person like me, it was quite a dense topic to understand."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 64,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SG964CC3TGKXXNJ3GX",
+      "claim": "The user holds that reducing friction is a worthwhile goal but cannot by itself provide adequate orientation for users.",
+      "range": "in platform design philosophy",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ51KQJ647PT9FMAWRV0@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ51KQJ647PT9FMAWRV0",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.929Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "minimizing inconvenience and friction are good goals to have in general, these are insufficient to help the user orient themselves on the platform."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 65,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYSX8484302NPC5BNY",
+      "claim": "The user delegates critical parts of conversations to colleagues when they anticipate struggling with the topic themselves.",
+      "range": "when anticipating difficult conversations",
+      "facet": "causal-theory",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QP6C13FBJXSQR1VBN@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QP6C13FBJXSQR1VBN",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This helped me understand and augment my understanding of opposing design authorship practically. I also faced some situations where I couldn’t articulate the right thing to do for some students who were surfacing their own biases while working in the field."
+          },
+          "prose": "From the knowledge that I have struggled with the same thing in the past, I decided to take a safer route for the conversation and leave the critical parts of it to Vinay and Naveen, which they handled well."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 2,
+      "isSeed": false,
+      "position": 66,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SGA9WBVYCGAKFQBAA1",
+      "claim": "The user perceives that producing this type of content is significantly easier within closed, walled-garden ecosystems.",
+      "range": "when considering platform ecosystems",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ5DVQFHP0HF30H2JV70@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DVQFHP0HF30H2JV70",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Back in 2021, I experienced how arbitrary and niche the process of creating a panable, zoomable and annotable image was.\n\nAt that time, I was using OpenSeadragon+Annotorious as a way to create the map in [this Compost.mag piece]() It felt like magic to be able to path that together with whatever little code I knew, like I had cracked it.\n\n**\"This could be used EVERYWHERE!\"**\n\nBut I found out soon enough - not really!\n\nIt felt like every new image I wanted to use this in way would need its own unique pipeline and dedicated resources.\n\nThis felt wrong, that something like this wasn't a native web standard like html. If we are able to annotate text this easily why are images so much harder."
+          },
+          "prose": "It seemed to be something that could only easily be made in walled-garden platforms."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 67,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQAAC9MZS7MD67RMEXJ",
+      "claim": "The user maintains a long-standing practice of collecting and connecting ideas through channels on Are.na.",
+      "range": "in their digital workflow",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ57QPJ8B39KH25KDFG1@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ57QPJ8B39KH25KDFG1",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.935Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Are.na is where I've collected things for years; just channels of blocks that you connect to other channels."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 68,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0KCG1969PBEMY07PTG",
+      "claim": "In 2021, they found the workflow for creating interactive images to be arbitrary and overly niche.",
+      "range": "in 2021",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5D5JBQX3FXNPWFY3QD@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5D5JBQX3FXNPWFY3QD",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " In this article, I want to talk about hosting images using self-hostable tools.\n\nTo briefly talk about why I set about looking for such solutions - I am part of few collectives that work with cultural and creative practice-based research in Karnataka, India. As is, in the course of our work, we come across some interesting collections and collectors of images for different purposes.\n\nEach of these examples, require a hosting and publishing solution customizable and annotable metadata and a relatively simple user-management featureset."
+          },
+          "prose": "Back in 2021, I experienced how arbitrary and niche the process of creating a panable, zoomable and annotable image was."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 69,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PY3JPSEQWPDZ05KGY1",
+      "claim": "The user felt anxious about potentially misleading participants while facilitating a workshop and discussed this concern with Naveen.",
+      "range": "while facilitating a workshop",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QSA0TTJS1TAB9GSPA@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QSA0TTJS1TAB9GSPA",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Some of them had difficulties understanding the workshop’s intention because of the popular use of Hindi and the academic use of English. After a session of reflection, I would sit with some of them and try to work out with them the way that they interpreted Naveen’s sessions about the workshop."
+          },
+          "prose": "There was a point in the workshop where I was the facilitator for a few days, which gave me a little anxiety on whether I would send someone down the wrong direction and I spoke to Naveen about it."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 70,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YQZ1W26HCDG5MY71KM",
+      "claim": "The user intends to juxtapose their fieldwork anecdotes, experiences, and objects against academic theories of care across multiple disciplines.",
+      "range": "in this research project",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2P9SS3HHGC3240RC9Z@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2P9SS3HHGC3240RC9Z",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "As much as the scope of the research goes, I want to emphasize on the specificity of the research, and how if the same participation was undertaken with another set of networks then my descriptions of care would change. However, I would like to outline the processes of research like this, which could be adapted and used according to context.\n\nJuxtaposition is a method I am borrowing from Jenna Grant to translate between concepts of care and practice of care in networks of collaboration."
+          },
+          "prose": "I want to juxtapose my anecdotes, experiences and made objects on the field with how care has been theorised in politics, medical anthropology, STS and feminist geographies."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 71,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYWY0VHSTY253F0R2K",
+      "claim": "The person consciously monitors their writing style to avoid overpowering another writer's work.",
+      "range": "while collaborating on prose",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QPHJX69VJAWQPJXJB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QPHJX69VJAWQPJXJB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Hindi was the in-between language and a second language to both of us. It was interesting, however, because"
+          },
+          "prose": "I am a writer too and I was constantly watching for my style overpowering her prose."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 72,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVYXZA6HM5D4R6NEX3Q",
+      "claim": "The person acknowledges that alternative operational approaches can hold merit.",
+      "range": "when assessing operational alternatives",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SHQ7DCYYCAMEZ2KWS@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SHQ7DCYYCAMEZ2KWS",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Contri whenever possible, keep things shared so others can pick up if you’re down. Keep things moving but sustainable.”"
+          },
+          "prose": "Operationally, it offers an alternative way of working which has its merit."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 73,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20EB2AKQMWM332X8AKXV",
+      "claim": "The user once realized their assumptions about designing solutions for others were presumptuous and naive.",
+      "range": "when reflecting on past design work",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4WSD2FPC64YWG7NBMW@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4WSD2FPC64YWG7NBMW",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.924Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-the-disenfranchisement-of-adivasis-in-kerala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "It was then that I decided (very naively) that I would design better systems for them to inhabit.\n\nBy this point in my research, I was starting to see the kind of bubbles that I was living in. I also gained perspective on how the invisibility of caste is its biggest barrier to annihilation.\n\nAfter reading the histories of the Paniyas,"
+          },
+          "prose": "I understood that my assumptions about designing solutions for them were presumptuous and naive."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 74,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SGS7PXB3F8ZX0M81RQ",
+      "claim": "The person questions their capacity to verify the accuracy of information they encounter.",
+      "range": "when evaluating information online",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ518Y17E3WHNS0ED48W@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ518Y17E3WHNS0ED48W",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.929Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "How do you tell what is true on there anymore?"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 75,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQBB5PC0NKM7F4C33S5",
+      "claim": "The person has been intermittently working on a single problem for several years.",
+      "range": "since about 2020",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ539XVS9S6BHVX9T85P@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ539XVS9S6BHVX9T85P",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Since about 2020 I have been picking at the same problem, on and off."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 76,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SD1EXTVHN3MSTSFFM9",
+      "claim": "They host their projects on servers owned by their collective.",
+      "range": "in their technical infrastructure",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ5DQTEDF7F4J8ADBHAY@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5DQTEDF7F4J8ADBHAY",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " For a non-technical person like me, it was quite a dense topic to understand. So I tried to learn it by saturation and osmosis.\n\nIt was during that time that I started experimenting with Cantaloupe, a IIIF image server."
+          },
+          "prose": "We self-hosted it on a server that our [collective](https://linktr.ee/llnaf) owned."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 77,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVX1NJPKPPPPEWJDFW3",
+      "claim": "The user discontinued all self-initiated projects and stopped managing a specific Slack channel.",
+      "range": "after that point",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SHA55FCCDV5T6HYA5@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SHA55FCCDV5T6HYA5",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The reason that this was important was that I was hoping to create a collaborative sheet with the Viral Kindness group and we could collectively update it. This was a struggle that went on for a while and the emotional toll of the lockdown had caught up to me."
+          },
+          "prose": "It was after that point that I discontinued all the self-initiated projects including the work of managing the Slack channel of DB."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 78,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20EA39P7H72NNZ1B58HJ",
+      "claim": "The person decided to design better systems for others to inhabit, despite initially underestimating the difficulty of the task.",
+      "range": "during a past phase of life",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ4VR58XDR38KYZFHAZF@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ4VR58XDR38KYZFHAZF",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.924Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-the-disenfranchisement-of-adivasis-in-kerala",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "It was then that I decided (very naively) that I would design better systems for them to inhabit."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 79,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VZRVGDWB38BVZ0R7G9",
+      "claim": "The person views their internal mental networks as breakable, seeing the manifestation of barriers as confirmation of this mutability.",
+      "range": "in their self-conception",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2SCD5A29Z7KN7KB1Y1@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SCD5A29Z7KN7KB1Y1",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Work couldn’t possibly be done in this way, could it? There’s no way that a group like this could have an impact, can it?"
+          },
+          "prose": "When some of my internal walls manifest and realise themselves, it's a confirmation of these assumptions of these networks being breakable."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 9,
+      "isSeed": false,
+      "position": 80,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKXVJC7F7648W5Z6Z7Z",
+      "claim": "The user considers co-designing and co-writing metaphors an essential part of their work.",
+      "range": "at work",
+      "facet": "value",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1XF984DVPXD0DTZWEJ1A6V@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1XF984DVPXD0DTZWEJ1A6V",
+          "version": 1,
+          "captured": "2026-08-02T18:58:37.444Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1WSG75Z17BSSA2YEKZSXPC",
+            "question": "You wrote: \"metaphors that make sense.\" How do you ensure that specific metaphors remain culturally and contextually appropriate across different user groups?",
+            "questionForm": "deliberative",
+            "context": "This cannot be done alone, it has to be done with a group."
+          },
+          "prose": "Co designing and co writing, uh metaphors is an essential part of the job."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 3,
+      "isSeed": false,
+      "position": 81,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1W20EBRYTRBBBJKQYY9T9N",
+      "claim": "They concentrate their primary design work on wireframing and prototyping the audio fragment cards.",
+      "range": "while designing the audio fragment cards",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:33:53.863Z",
+      "cites": [
+        "01KZ0WPJ5Q2P5YH3N66WEY5J9K@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5Q2P5YH3N66WEY5J9K",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.951Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-papad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Next,"
+          },
+          "prose": "I focused on wireframing and prototyping one of the most critical components of the design: the audio fragment cards."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 82,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SH5KQ04EQ01S9N5N7N",
+      "claim": "The user advocates directly tasting icebergs while submerged as a difficult but effective method of cold exposure.",
+      "range": "when discussing cold water immersion techniques",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ52WRKNX5126QEY2GJY@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ52WRKNX5126QEY2GJY",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.930Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "A much harder but effective way, however, is to experience a taste of the iceberg while they are in the water."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 83,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQBMCT2KXDW253WW97H",
+      "claim": "They found that every portfolio tool they tried produced the opposite of the stackable, composable, and generic design they wanted.",
+      "range": "when evaluating portfolio tools",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ58ZX932FN5SZWVH1G3@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ58ZX932FN5SZWVH1G3",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.936Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " It's anti-viral by design: you fall sideways into things, follow connections, disappear into rabbit holes. My work is scattered by nature: a Figma file here, a GitHub repo there, a talk on YouTube, an essay on someone else's site."
+          },
+          "prose": "Every portfolio tool I tried made the opposite of the stackable, composable, generic, rabbithol-able portfolio I wanted."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 84,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYF55AY4S2EB0ZZ8RP",
+      "claim": "They sought active, hands-on methods of interacting with archives instead of merely viewing them from a distance.",
+      "range": "when working with archives",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QY4ESBMJCT4F8PSM9@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QY4ESBMJCT4F8PSM9",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Naveen spoke about the way that archives are designed in a way that musemises people and practices. He wanted to co-experiment in the living labs for alternative imaginations of archives and how they can be used by the people to whom it must belong."
+          },
+          "prose": "I also tried a few ways to use archives in a way that channels more than just seeing them from behind a literal or metaphorical glass case."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 85,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1JGCNB674HT571GCWW38VF",
+      "claim": "The user designed both an annotation mechanism and the visual appearance of a specific archival object.",
+      "range": "on a past project",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T15:46:59.369Z",
+      "cites": [
+        "01KZ0WPJ5S31P75RC640PSY5J4@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5S31P75RC640PSY5J4",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.953Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-milli",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Of these,"
+          },
+          "prose": "I worked on making a mechanism for annotating an archival object as well as how the archival object looked."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 86,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0JXGVYED1PBH39WBQD",
+      "claim": "They aimed to provide multiple annotation methods and link objects using W3C and IIIF standards.",
+      "range": "when describing the project's objective",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ53V8WTH0DAACWXKQR0@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53V8WTH0DAACWXKQR0",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.932Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Archie is my attempt at those four parts in one window. It is a web app - media goes in, notes go on the media, and what comes out is a folder of static files which can be hosted directly on something like Github Pages."
+          },
+          "prose": "Mainly I wanted to offer multiple ways of annotating the same objects and creating inter-relationships between objects, annotations using the Open web standard W3C and IIIF."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 87,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQ9CGEREGMD6ZCXG6Y7",
+      "claim": "The author notes that limited hardware access and technical friction historically required novel authentication and moderation approaches.",
+      "range": "when designing for low-resource users",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ5QTMG9TG5B7P49HWYV@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5QTMG9TG5B7P49HWYV",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.951Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-papad",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "| Description | Implications/Actions |\n|-------------|----------------------|\n| Audio was a much more natural way for many in the community to record knowledge and daily practices | Consider prioritizing audio-based recording methods in future projects <br> Explore ways to enhance accessibility and usability of audio recording tools |\n| The ability to split audio into annotated fragments was important to the sensemaking process | Implement features that enable users to easily annotate and segment audio content <br> Emphasize the importance of segmenting audio in training or educational materials |\n| Different ways of highlighting relationships in audio content were explored and well received - tagging, storyboarding | Continue to develop and refine tagging and storyboarding features based on user feedback |\n|"
+          },
+          "prose": "Most people didn't have a personal device or enough affordance to maintain a user account and password, so user authentication and moderation would need a whole new approach"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 88,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YNBMG3E6937DN3ZGBE",
+      "claim": "They approach network engagement by prioritizing care and inductive inquiry over imposing external agendas.",
+      "range": "when engaging with networks",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2N66XJ8A510B5C1975@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2N66XJ8A510B5C1975",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.853Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Care as a general inquiry helped me build an inductive experience of the network not by forcing my agenda but by involving myself with the activities of the networks themselves."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 89,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMBCCKXABVGEKN5NN9M",
+      "claim": "The person consistently prioritizes group welfare over rigid adherence to schedules or tasks.",
+      "range": "when acting as a facilitator",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PHRH7H1FHV22TYNRB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PHRH7H1FHV22TYNRB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " While I was puzzled, Naveen got it immediately that it was probably due to fatigue of having 3 sessions in 4 days with us. He decided then that the workshop phases which were planned for more sessions of community participation wouldn’t happen."
+          },
+          "prose": "It was interesting to see how the facilitator in him was constantly on the lookout for the interests of the groups and not the interest of the activities and was willing to take a day off in the middle of a packed schedule."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 90,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PZBNXKG4ZY8YN2SGFW",
+      "claim": "The user's passive role as a facilitator undermined the co-creationary purpose of a specific workshop.",
+      "range": "at that workshop",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2R4B0GXHR018WH67YM@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R4B0GXHR018WH67YM",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " However, in the whole process, her husband started helping her and a conversation started to form around the group. It was a bit of a learning experience for me and something I reflected on later as to the nature of participatory workshops."
+          },
+          "prose": "We, the facilitators weren't actively a part of the workshop which took away the meaning of a co-creationary workshop."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 91,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YP6WKSWQDXZA4XNX9Z",
+      "claim": "They aimed to develop a cross-disciplinary practice centered on responsive human-nonhuman networks across academia, activism, technology, and design.",
+      "range": "during their capstone project",
+      "facet": "intention",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2NKF2MJA30Q9ZZFS4W@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2NKF2MJA30Q9ZZFS4W",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.853Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Through this capstone, I hoped to rehearse a practice I wanted to develop for myself, one that moved in between academia, activism, technology and design that is heavily centred in responsive human-nonhuman networks."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 1,
+      "isSeed": false,
+      "position": 92,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQAVVAG6EK19CXJ1Z6R",
+      "claim": "The user considers the hyperlinking feature a key strength of Are.na.",
+      "range": "when exploring the platform",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [
+        "are-na"
+      ],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ58837WYMHW22Q2K0XZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ58837WYMHW22Q2K0XZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.936Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "There is a canonical are.na channel that can be added to `config.json`. This is the root channel."
+          },
+          "prose": "But as I started exploring, I realised how powerful the hyperlinking in Are.na is."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 93,
+      "inSample": false
+    },
+    {
+      "id": "01KZ25Q0YQ1F9FE6259SS02YFW",
+      "claim": "Physical embodiment acts as a primary vessel for storing and executing knowledge.",
+      "range": "generally",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:22:39.699Z",
+      "cites": [
+        "01KZ0WPJ2PCZCVEV5HAYTFZP39@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PCZCVEV5HAYTFZP39",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I was immediately struck by how gentle and mudra-like it seemed. I had a lot of issues managing my hand pressure and keeping my body upright in a squatting position."
+          },
+          "prose": "Reflecting on it, the experience demonstrated to me how important bodies are, as a vessel of knowledge and practice."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 94,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMBSQS7735JYGBNZC2K",
+      "claim": "The user struggled with maintaining proper hand pressure and an upright posture while squatting.",
+      "range": "when performing squats",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PE58FAZQVFHWKEH0J@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PE58FAZQVFHWKEH0J",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " He then showed us the exact hand positions that we need to mould the diya. I was immediately struck by how gentle and mudra-like it seemed."
+          },
+          "prose": "I had a lot of issues managing my hand pressure and keeping my body upright in a squatting position."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 95,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V2GVEAYEB164MFT53V",
+      "claim": "A past experience forced them to reconsider their assumptions about how natural language speakers discover rules.",
+      "range": "during a past experience",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RWHM597TH224VMP21@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RWHM597TH224VMP21",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Sometimes, I would understand a phrase or word through intuition, however, the process of confirming the meaning from her in Hindi took a lot more time. The nuances of the word, juxtaposed meanings and just the way the word is structured would cause a lot of dissonances when I tried the more obvious choices of translations."
+          },
+          "prose": "The experience also took to task a lot of my assumptions regarding language and how natural language speakers find its rules."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 96,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQAKHEJ88HRHSEMV9ET",
+      "claim": "The user observes that linking a single root channel automatically connected them to many others, mirroring the six degrees of separation principle.",
+      "range": "when navigating channels",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ58CF8MJ5VDY43FRSKK@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ58CF8MJ5VDY43FRSKK",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.936Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-commonplace-a-notebook-for-the-internet",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This is the root channel. But as I started exploring, I realised how powerful the hyperlinking in Are.na is."
+          },
+          "prose": "Even though I only addded one channel as the root channel, the linkages were taking me to various other channels almost in a test of the six degrees of separation rule."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 8,
+      "isSeed": false,
+      "position": 97,
+      "inSample": false
+    },
+    {
+      "id": "01KZ1XBWQB2ZNXFEQP3ZY842FD",
+      "claim": "They express moderate confidence in the general structure of an answer while maintaining significant doubt about its precise correctness.",
+      "range": "when evaluating answers",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T18:56:46.313Z",
+      "cites": [
+        "01KZ0WPJ53RPWM1REKGGNV2AEB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ53RPWM1REKGGNV2AEB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.931Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " When our collective did this, we self-hosted it on a server we owned. The four years mostly bought me a clearer picture of the problem."
+          },
+          "prose": "I am fairly sure the shape of the answer is something like this, and much less sure that this is it."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 98,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMBM568ESPF9ERWG794",
+      "claim": "The person views situating technology as an active process of using context to shape both its tangible and intangible perception.",
+      "range": "when designing or evaluating technology",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PDVW882KF8Y8D4BFF@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PDVW882KF8Y8D4BFF",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " They made a container for the device made of bull grass in the shape of a pouch. It started to strike me how the minimalism aesthetic of mainstream design and “clean curves” serves the purpose of delocating the technology."
+          },
+          "prose": "Situating the technology would also involve the effort of using context to shape how the technology is perceived and felt - tangibly as well as intangibly."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 99,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V1PRCP45ACVA213VRW",
+      "claim": "The user finds that attempting direct translations consistently triggers cognitive dissonance due to a word's complex structure and layered meanings.",
+      "range": "when attempting direct translations",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2R9MQZ4SX26VG1QMW6@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R9MQZ4SX26VG1QMW6",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " It was interesting, however, because I am a writer too and I was constantly watching for my style overpowering her prose. Sometimes, I would understand a phrase or word through intuition, however, the process of confirming the meaning from her in Hindi took a lot more time."
+          },
+          "prose": "The nuances of the word, juxtaposed meanings and just the way the word is structured would cause a lot of dissonances when I tried the more obvious choices of translations."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 100,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V2NFF08GA482HMFHWH",
+      "claim": "They stopped working on their project completely upon realizing they could not return to Bidar due to COVID.",
+      "range": "when the pandemic prevented travel to Bidar",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RJ7W9HNAFD8FBRWEY@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RJ7W9HNAFD8FBRWEY",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "After seminar 2 when it became clear to me that I couldn't go back to Bidar because of COVID, I stopped working on the project completely."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 101,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMC5RWT7MX8427TMZ9H",
+      "claim": "The user prefers text over audio because it offers greater modularity.",
+      "range": "when evaluating information formats",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2Q0RQYZT91ZNMHTYRB@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2Q0RQYZT91ZNMHTYRB",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I also tried a few ways to use archives in a way that channels more than just seeing them from behind a literal or metaphorical glass case. In what ways can archives invite responses and collective building of the archives if the input methods were designed by allowing for more bodily agency.\n\nWe were also using audio as the medium of archiving."
+          },
+          "prose": "However, there are many problems with audio, one that it doesn’t offer the modularity that text gives."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 102,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VYEWZFAWN67887BJVZ",
+      "claim": "Care work routinely requires negotiating identity boundaries through explicit discussion and choice.",
+      "range": "in care work",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S9YEGHFRJ3SBAN2GY@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S9YEGHFRJ3SBAN2GY",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " These connections are of many types-some fragile, some symbiotic, some parasitic and most others a hybrid of these. These connections are also different manifestations, linkages, relationships between many different identities."
+          },
+          "prose": "The practice of care often involves discussions and decisions about the packing and unpacking, the integration and differentiation of these identities."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 103,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMCG1PDEHAS4HBY1QGQ",
+      "claim": "The person conceptualizes research and action as mutually reinforcing processes where doing informs learning and learning informs doing.",
+      "range": "in their methodological framework",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PY0KSC7SEPWM0GW4A@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PY0KSC7SEPWM0GW4A",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " The last time a student came to learn from us, he was quite consistent and came every day for a month. We liked him a lot.”"
+          },
+          "prose": "I started to play with the idea of researching through doing, but doing through learning."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 104,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VYFM156SS7VX2358GM",
+      "claim": "The user has previously observed how networks manipulate beliefs to exploit their members.",
+      "range": "previously",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S17Q1R60EMNAD06AS@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S17Q1R60EMNAD06AS",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " However, they assumed accountability for them. This comes from the shared understanding that they are part of something fragile."
+          },
+          "prose": "I have also previously seen the manipulation of these beliefs by networks to exploit their members."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 105,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VZKM6KS399EBTAJJ08",
+      "claim": "During the lockdown, a prolonged personal struggle eventually exacted an emotional toll.",
+      "range": "during the lockdown",
+      "facet": "episode",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2SGSP8YRH2GHV9HD44@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SGSP8YRH2GHV9HD44",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " There was no way to separate the data of the numbers from the shape data. The reason that this was important was that I was hoping to create a collaborative sheet with the Viral Kindness group and we could collectively update it."
+          },
+          "prose": "This was a struggle that went on for a while and the emotional toll of the lockdown had caught up to me."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 4,
+      "isSeed": false,
+      "position": 106,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0KT6CA7YQB70VM5MTN",
+      "claim": "The user felt a sense of magical breakthrough when combining their limited coding knowledge with another tool.",
+      "range": "in a past experience",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ5D5HFB8CPN01WGSWZN@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ5D5HFB8CPN01WGSWZN",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.941Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-iiif-images",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " As is, in the course of our work, we come across some interesting collections and collectors of images for different purposes.\n\nEach of these examples, require a hosting and publishing solution customizable and annotable metadata and a relatively simple user-management featureset. Back in 2021, I experienced how arbitrary and niche the process of creating a panable, zoomable and annotable image was.\n\nAt that time, I was using OpenSeadragon+Annotorious as a way to create the map in [this Compost.mag piece]()"
+          },
+          "prose": "It felt like magic to be able to path that together with whatever little code I knew, like I had cracked it."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 107,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMCG7R40SX60V6ZD931",
+      "claim": "The user explores a conceptual framework that contrasts standard archival input methods with designs prioritizing bodily agency to foster collaborative practices.",
+      "range": "in their archival theory explorations",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2Q1S8HZWBAGBD80S8B@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2Q1S8HZWBAGBD80S8B",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " He wanted to co-experiment in the living labs for alternative imaginations of archives and how they can be used by the people to whom it must belong. I also tried a few ways to use archives in a way that channels more than just seeing them from behind a literal or metaphorical glass case."
+          },
+          "prose": "In what ways can archives invite responses and collective building of the archives if the input methods were designed by allowing for more bodily agency."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 108,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVYEWHMY5JGSVVTS2EX",
+      "claim": "They previously relied on the honour system as their primary guiding principle.",
+      "range": "in the past",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SWZYRXJQVG1Y6SC1T@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SWZYRXJQVG1Y6SC1T",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Another implication of this fragility that I saw was the move from liability to accountability. In the app that I made to handle fund disbursals for volunteer teams,"
+          },
+          "prose": "the honour system was the core operating principle that I used"
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 109,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYYEHDQVV7F9NAHJX5",
+      "claim": "They view physical manipulation of materials as a catalyst for generating new associations.",
+      "range": "when physically engaging with materials",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2R2XA1M31VE52VX6T9@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R2XA1M31VE52VX6T9",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " However, their annotations started to come out more in the things they said and the songs they sang in response. At this point, I was only getting used to understanding the idea of an embodied cognition and knowledge practice."
+          },
+          "prose": "I observed through the whole process how the material and their bodies working with the material opened up more associations for them."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 110,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKYEYCFGES7G9WA9BCC",
+      "claim": "The user habitually decides whether to act based on their current internal physical and emotional state.",
+      "range": "currently",
+      "facet": "general-event",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1Y238C281QDNR8Q22HP8DG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1Y238C281QDNR8Q22HP8DG",
+          "version": 1,
+          "captured": "2026-08-02T19:08:53.900Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1XFRESMY0N3SRYJZFB2D25",
+            "question": "You wrote: \"policing my urge for creative outputs.\" How do you decide which constraints are most important to prioritize when you feel overwhelmed?",
+            "questionForm": "deliberative"
+          },
+          "prose": "Currently I just decide if I am feeling up to it and that includes things like bodily state, mental state, emotional state, etc."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 7,
+      "isSeed": false,
+      "position": 111,
+      "inSample": false
+    },
+    {
+      "id": "01KZ20AQ0KX2JT8ECSEP8DPDH2",
+      "claim": "The user defines a deployment rule where artifacts are distributed either by placing a folder on any host or by providing an `.archie.zip` file without a host.",
+      "range": "in deployment",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T19:48:33.425Z",
+      "cites": [
+        "01KZ0WPJ54Z0Q612H4WAXBJZ1J@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ54Z0Q612H4WAXBJZ1J",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.932Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-archie",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Publishing produces static HTML, JSON and media files."
+          },
+          "prose": "That folder goes on any host, or the `.archie.zip` gets handed over with no host at all."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 112,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V28S7S8XQH144GWYTC",
+      "claim": "The person views translation as an inherently imprecise process where meaning shifts, particularly when working across languages.",
+      "range": "when discussing language and translation",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2RSG115X6063TKMYFF@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RSG115X6063TKMYFF",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I have always wondered about the process of participatory activities and how each participant requires a scaffolding that helps create a translation. This translation is so much more important when it is a matter of language, privilege and concept dictionaries."
+          },
+          "prose": "In the process of linguistic translation, there is a lot of slippage because of how nebulous language itself is and how this slippage is aggravated through a second language."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 113,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VYZYACG09RMCXXHGV3",
+      "claim": "The person views care as a political act that shapes collective dynamics.",
+      "range": "when discussing collectives",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S6Z3QRARW35EXNQX3@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S6Z3QRARW35EXNQX3",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " It was only later that I realised the differences lay in the Brahmanistic influence on Marathi and the relation to whoever couldn’t speak the “Puneri” Marathi was considered “gavthi”(a slur that means village-folk). These actions require us to constantly think about how we talk about our work, what is our work, how was it done, why it was done in a certain way and question everything."
+          },
+          "prose": "Care is a very political act in the sense of what it questions and that has reflected in these collectives."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 114,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SG1XSPSSQGJQB7MN2G",
+      "claim": "The user argues that certain interface designs are intentionally used to hide manipulative behavior by platforms toward users.",
+      "range": "in their analysis of digital platforms",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ51YZQ5RXXTPKHPRC5V@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ51YZQ5RXXTPKHPRC5V",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.929Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Terms like 'surge pricing' which entered the [Overton Window](https://en.wikipedia.org/wiki/Overton_window) of acceptable concepts through other [Algorithm abusers like Uber](https://www.latimes.com/business/technology/story/2023-04-11/algorithmic-wage-discrimination) are poised to become a ubiquitous concept in the brick and mortar shopping spaces. It is already hard to tell if all the supply of a certain product is from o[ne single parent brand that has 15 different sub-brands.](https://seekingalpha.com/article/3967484-duopoly-and-oligopoly-shopping-list) Now we will be faced with the uncertainty of how [the weather forecast](https://www.reuters.com/business/retail-consumer/changing-climate-retailers-turning-weather-strategies-2024-11-04/) will change the prices of goods in the evening.\n️\nAll this to say,"
+          },
+          "prose": "interfaces like the E-ink signage, the [infinite scroll](https://www.theguardian.com/lifeandstyle/2024/feb/17/are-dating-apps-fuelling-addiction-lawsuit-against-tinder-hinge-and-match-claims-so) and Youtube creator tools become spaces on the interface to mask hostile or manipulative behaviour by multiple \"stakeholders\" of the platform toward the \"user\""
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 115,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VZ22J5P498WFK42YDY",
+      "claim": "The user considers fragility to be a core concept underlying both the operational environments and structural makeup of certain collectives.",
+      "range": "in their model of collectives",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2SBX7GK5YP9F1SPVYJ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SBX7GK5YP9F1SPVYJ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Underlying these collectives is the core idea of fragility which manifests itself in many spaces that the collectives must operate in as well as the structure of the network itself."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 116,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SG4NPF2KG6J8Q194GV",
+      "claim": "The user considers major e-commerce platforms unreliable because they lack definitive information.",
+      "range": "when shopping on major e-commerce platforms",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ51QXC0SNYEE35BJM9V@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ51QXC0SNYEE35BJM9V",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.929Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Sites like Amazon start to feel a little slippy, because there is no way to approach ground truth."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 117,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VZYC2R7CGWH4H9RWHS",
+      "claim": "The user interprets the divide between formal and informal language as a narrative of imperialism or colonialism.",
+      "range": "generally",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2SC8KSF34TH28DX84J@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SC8KSF34TH28DX84J",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " At first glance, the output seems okay but often quite formal. After reviewing my work, Naveen re-edited once and told me how he had to “de-sanskritise” it."
+          },
+          "prose": "That got me thinking about how the differences between formal and informal language is often a story of imperialism or colonialism."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 118,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SGD748487GXEAQ7T00",
+      "claim": "They perceive their professional environment at Amazon as unstable due to the platform's algorithm.",
+      "range": "at Amazon",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ51ETMGMDGKFMYSA7BV@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ51ETMGMDGKFMYSA7BV",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.929Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Our entire reality on Amazon is on the shaky ground because of its algorithm."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 119,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVY5A4YGVMA3A7SZCEK",
+      "claim": "They view technology as a situated tool rather than a universal solution.",
+      "range": "generally",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2STBQBPNZ5T9HVD8EJ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2STBQBPNZ5T9HVD8EJ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "I wrote before about ICAN, and how there was a conscious unspoken decision to stay at a small scale and not “solve” anything."
+          },
+          "prose": "The saviour idea of technology is looked at quite humbly and seen as a tool that needs to be situated."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 120,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SGS39FC8SGZW2G7BD3",
+      "claim": "The user believes that certain media is designed to provoke quick emotional reactions by exploiting human cognitive biases.",
+      "range": "in general",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ52SJFF4JSK7CB8MVZ0@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ52SJFF4JSK7CB8MVZ0",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.930Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "It is content meant to hit our synapses intimately, aggressively and quickly and humans famously are not great decision makers."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 121,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVY96Y0QW18BQ2VHY6N",
+      "claim": "They classify interpersonal connections as fragile, symbiotic, parasitic, or hybrids thereof.",
+      "range": "in their conceptual framework",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SX0GRTQANR692Y7Y1@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SX0GRTQANR692Y7Y1",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I have also previously seen the manipulation of these beliefs by networks to exploit their members. This also is an indicator of the connections that these actants and the networks have among each other and with other enabling institutions."
+          },
+          "prose": "These connections are of many types-some fragile, some symbiotic, some parasitic and most others a hybrid of these."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 122,
+      "inSample": false
+    },
+    {
+      "id": "01KZ2106SGT1KNAX6G07TDPJEZ",
+      "claim": "They define algorithmic convenience by its speed and personalized targeting.",
+      "range": "when defining algorithmic convenience",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T20:00:17.709Z",
+      "cites": [
+        "01KZ0WPJ52P2EAJPTXS7D6146B@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ52P2EAJPTXS7D6146B",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.930Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-counter-design",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "The characteristic of algorithmic convenience is lightspeediness and personal targeting."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 123,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVYP0TB4YHZPVJX3M5P",
+      "claim": "The user values contributing to a collective more highly than relying solely on individual skill or capital.",
+      "range": "generally",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SXJZXVES7Y3V00DNG@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SXJZXVES7Y3V00DNG",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "If this is what fragility means for individuals, how does this translate to the collective sees the world."
+          },
+          "prose": "Practices such as adding to the collective then go much further than mere skill or capital, whether it is for people, other collectives, institutions or corporations."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 124,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMBDMVP0T7MPBXJGYHW",
+      "claim": "They view futures thinking as a tool for envisioning collaborative frameworks.",
+      "range": "generally",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PNY7YG199RKS052HP@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PNY7YG199RKS052HP",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "The preface of this paper introduces systems-networks as I have come to understand through my practice in Srishti and speculates how"
+          },
+          "prose": "futures thinking can help us imagine new paradigms of collaboration."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 125,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVYX41F3XF7057TPJJB",
+      "claim": "Shared assumptions allow collectives to establish their own foundations and transcend standard network behaviors.",
+      "range": "within groups",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2TMV0X31P5Y19XCNR6@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2TMV0X31P5Y19XCNR6",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "The shared assumptions carried by these collectives often enable them to ground themselves and move beyond the few normative methods of being and doing in a network."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 126,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMC2X63VNABANF5SASV",
+      "claim": "The author employs juxtaposition, adapted from Jenna Grant, to connect theoretical concepts of care with its practical application in collaborative networks.",
+      "range": "in collaborative work",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2PT4MFWKCZJVQZYVPR@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2PT4MFWKCZJVQZYVPR",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.854Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "As much as the scope of the research goes, I want to emphasize on the specificity of the research, and how if the same participation was undertaken with another set of networks then my descriptions of care would change. However, I would like to outline the processes of research like this, which could be adapted and used according to context."
+          },
+          "prose": "Juxtaposition is a method I am borrowing from Jenna Grant to translate between concepts of care and practice of care in networks of collaboration."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 127,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKWW8STPW7QD152CSF1",
+      "claim": "The user sees the collective as fundamentally diseased and broken, contradicting its claims of being optimized.",
+      "range": "when describing the collective",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ0WPJ2TTDVEKZA5R4BWEXTZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2TTDVEKZA5R4BWEXTZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " In pieces. Becoming army” [(Ahmed 2017, p.186)](#ahmed-2017)"
+          },
+          "prose": "It is a “diseased” collective in a world that claims to be effective and optimised."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 128,
+      "inSample": false
+    },
+    {
+      "id": "01KZ263RMCAM40SMAK7P1C8KDK",
+      "claim": "They are willing to help design a workshop provided they first recognize their own biases and the established constraints.",
+      "range": "when considering contributing to a workshop's design",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:29:37.163Z",
+      "cites": [
+        "01KZ0WPJ2QBWCMXAA0BV8C55XS@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QBWCMXAA0BV8C55XS",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " After a session of reflection, I would sit with some of them and try to work out with them the way that they interpreted Naveen’s sessions about the workshop.\n\nThere was a point in the workshop where I was the facilitator for a few days, which gave me a little anxiety on whether I would send someone down the wrong direction and I spoke to Naveen about it. Naveen told me how now I am part of the workshop for all its ‘good’ and ‘bad’ implications."
+          },
+          "prose": "As long as I understood some of my biases and the apparent “don’ts”, I would be part of shaping the workshop and that is okay."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 129,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKX0CDPPNNEQ7QEKGFY",
+      "claim": "The user views fragility as a key lens that alters how incentives and punishments function as motivators.",
+      "range": "in their view of motivation",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ0WPJ2TZ7JXD9M1AYXV73MQ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2TZ7JXD9M1AYXV73MQ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Fragility is an honest and important understanding in this sense because it changes the way we look at incentives and penalisations as a motivation."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 130,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PYQSDZ9DASW39BSW2G",
+      "claim": "They believe that modular design would expand the available methods for annotating audio recordings.",
+      "range": "in audio annotation workflows",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2QPD5WR70VEJ9VRY0J@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2QPD5WR70VEJ9VRY0J",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.855Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " In what ways can archives invite responses and collective building of the archives if the input methods were designed by allowing for more bodily agency.\n\nWe were also using audio as the medium of archiving. However, there are many problems with audio, one that it doesn’t offer the modularity that text gives."
+          },
+          "prose": "This modularity would allow for more ways to annotate a voice clip or song."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 131,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKXGZNVRVKVNY5Y0MXF",
+      "claim": "The user maintains that annotating media requires acknowledging and recording its multiple possible interpretations.",
+      "range": "when annotating media",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1XF97K9CSVGVGMN73Q31EJ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1XF97K9CSVGVGMN73Q31EJ",
+          "version": 1,
+          "captured": "2026-08-02T18:58:37.427Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1WSG75Z17BSSA2YEKZSXPC",
+            "question": "You wrote: \"The part I find most interesting is Readings.\" What continues to pull your attention toward that specific focus?",
+            "questionForm": "deliberative"
+          },
+          "prose": "I think when annotating any piece of media there are multiple interpret and it is important to record these interpretations."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 132,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26H1PZGCFYXASTNVK2RVWW",
+      "claim": "The stakes of translation rise significantly when language, privilege, and concept dictionaries are involved.",
+      "range": "when addressing matters of language, privilege, and concept dictionaries",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:36:52.445Z",
+      "cites": [
+        "01KZ0WPJ2R40FGWNMERCF2337C@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R40FGWNMERCF2337C",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " I observed through the whole process how the material and their bodies working with the material opened up more associations for them. I have always wondered about the process of participatory activities and how each participant requires a scaffolding that helps create a translation."
+          },
+          "prose": "This translation is so much more important when it is a matter of language, privilege and concept dictionaries."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 133,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKXVYGCXMBSW8CP7TYB",
+      "claim": "Accepting the illness as a permanent reality makes ongoing care the most effective way to manage it.",
+      "range": "when framing the illness as a permanent condition",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ0WPJ2TTK286235GQZPS6WJ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2TTK286235GQZPS6WJ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " In pieces. Becoming army” [(Ahmed 2017, p.186)](#ahmed-2017)\n\nIt is a “diseased” collective in a world that claims to be effective and optimised."
+          },
+          "prose": "If living with the disease isn’t seen as a temporary thing, but rather as the norm then maybe care is the best way to navigate that."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 134,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V1NKHVP9QM01691C62",
+      "claim": "The system allowed members to work extensively and document precise stopping points for seamless handoffs.",
+      "range": "during collaborative work",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2R85NPX95DWMST5X55@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2R85NPX95DWMST5X55",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This further complicated things so I made a rough spreadsheet which I shared with Padmini to discuss workflow. The spreadsheet allowed for a more minute scale of accountability and tracking."
+          },
+          "prose": "It also allowed members to work as much as they could and document precisely where they stopped to allow someone else to pick it up from there."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 135,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKXYSHNY76JY6EZVAGQ",
+      "claim": "Newer networked practices emerge primarily as a reaction against established hierarchies and hegemonic structures.",
+      "range": "when discussing newer networked practices",
+      "facet": "construct",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ0WPJ2TW1CTTA799KBVEQVQ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2TW1CTTA799KBVEQVQ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.858Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": "Fragility is an honest and important understanding in this sense because it changes the way we look at incentives and penalisations as a motivation. I imagine this in the sense of “broken world thinking” and how honesty helps us to better appreciate care practices.([Grant 2020](#grant-2020); [Jackson 2013](#jackson-2013)) The relationships of these collectives are pluralistic and multi-faceted, each requiring a different aspect of care practice."
+          },
+          "prose": "I think that a large portion of these newer networked practices emerges as a result of their stand against a hegemony of materials, knowledge, scales, relationships and hierarchies."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 5,
+      "isSeed": false,
+      "position": 136,
+      "inSample": false
+    },
+    {
+      "id": "01KZ26Z4V1XGV1MS00AF5TDS66",
+      "claim": "The user believes clay was instrumental in the translation process.",
+      "range": "regarding the translation process",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:44:34.401Z",
+      "cites": [
+        "01KZ0WPJ2REXHTSGSVM6QF5D3B@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2REXHTSGSVM6QF5D3B",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " This translation is so much more important when it is a matter of language, privilege and concept dictionaries. In the process of linguistic translation, there is a lot of slippage because of how nebulous language itself is and how this slippage is aggravated through a second language."
+          },
+          "prose": "I posit that the clay was instrumental in becoming the medium of that translation."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 137,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VY6JRPN0X0FJT1XWS6",
+      "claim": "The user observes that fragility permeates these networks at both macro and micro levels.",
+      "range": "in these networks",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2S4BBW7HVKB5J8JKWZ@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2S4BBW7HVKB5J8JKWZ",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "These networks demonstrate this fragility in both an overarching manner as well as in the everydayness of it."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 138,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27B1VYA8MH27BCC5V1DJBQ",
+      "claim": "The user deliberately offered information in two formats to accommodate differences in devices and reading capabilities.",
+      "range": "when designing information delivery",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:51:04.573Z",
+      "cites": [
+        "01KZ0WPJ2RY4ZTAAC45N62YRYE@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2RY4ZTAAC45N62YRYE",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.856Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted",
+            "context": " Both of these organisations’ information had to be personally checked by the nature of the spreadsheets I created. This involved long nights trawling the internet for information and constantly second-guessing if the amount of information was verified enough."
+          },
+          "prose": "The reason the same information was made available in two forms was so that we could provide alternative access means to the same information assuming differences in devices and reading capability."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 139,
+      "inSample": false
+    },
+    {
+      "id": "01KZ27PDVYX5EA3V8SY37ZYEGE",
+      "claim": "The user defines archetypes as the specific roles that care-practitioners assume within collectives to manage particular tasks.",
+      "range": "within their collectives",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T21:57:17.309Z",
+      "cites": [
+        "01KZ0WPJ2SM38E117VFG190BH8@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ0WPJ2SM38E117VFG190BH8",
+          "version": 1,
+          "captured": "2026-08-02T09:25:52.857Z",
+          "provenance": {
+            "kind": "unprompted",
+            "session": "post-blog-carefull-collectives-and-their-care-practices",
+            "question": "",
+            "questionForm": "deliberative",
+            "channel": "pasted"
+          },
+          "prose": "Archetypes are roles that care-practitioners in these collectives undertake for specific types of efforts and work."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 140,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKX9CMSTYJ4068J7SGS",
+      "claim": "They evaluate systems and designs by considering linguistic accessibility, design accessibility, meaningful metaphors, and contextually appropriate workflows.",
+      "range": "when evaluating a system or design",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1XF983F9WFJX79E55MTSRT@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1XF983F9WFJX79E55MTSRT",
+          "version": 1,
+          "captured": "2026-08-02T18:58:37.443Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1WSG75Z17BSSA2YEKZSXPC",
+            "question": "You mentioned that the tools have to be accessible \"multiple interpretations in the context that I work in.\" How do you plan to ensure that all team members can access those tools without creating a bottleneck?",
+            "questionForm": "deliberative"
+          },
+          "prose": "It depends on multiple factors like linguistic accessibility, design accessibility, metaphors that make sense, workflows that make sense in the context that they are based in."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 141,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKX9FDC1QD5M78B19M1",
+      "claim": "The user requires accessible tools to function effectively in their professional context.",
+      "range": "at work",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1XF983GJS5GJA0PDXZRMN7@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1XF983GJS5GJA0PDXZRMN7",
+          "version": 1,
+          "captured": "2026-08-02T18:58:37.443Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1WSG75Z17BSSA2YEKZSXPC",
+            "question": "You wrote: \"I think when annotating any piece of media there are multiple interpret and it is important to record these interpretations.\" How does your current emphasis on recording interpretive plurality connect to your earlier concern about choosing between tools that are \"there are multiple\" options with different trade-offs?",
+            "questionForm": "deliberative"
+          },
+          "prose": "And then to record multiple interpretations in the context that I work in, the tools have to be accessible."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 142,
+      "inSample": false
+    },
+    {
+      "id": "01KZ282BKX9H8CXCCFV1TFA8MS",
+      "claim": "They determine if a problem is manageable by verifying that its broken-down pieces can be completed sequentially.",
+      "range": "when breaking down problems",
+      "facet": "fact",
+      "status": "unconfirmed",
+      "referents": [],
+      "attested": false,
+      "model": "qwen3.6:35b",
+      "created": "2026-08-02T22:03:48.220Z",
+      "cites": [
+        "01KZ1Y238D9WJ8E642C7M5Z76E@1"
+      ],
+      "snippets": [
+        {
+          "id": "01KZ1Y238D9WJ8E642C7M5Z76E",
+          "version": 1,
+          "captured": "2026-08-02T19:08:53.901Z",
+          "provenance": {
+            "kind": "harvest",
+            "session": "01KZ1XFRESMY0N3SRYJZFB2D25",
+            "question": "\"bodily state, mental state, emotional state.\" What specific alternative cues or signals have you found more reliable for deciding whether to proceed?",
+            "questionForm": "deliberative",
+            "context": "My theory is that if I think something is too hard, it might not be as hard as it seems if you break it down into pieces."
+          },
+          "prose": "And the signals that I'm waiting for are essentially that the broken down pieces can be done one after another."
+        }
+      ],
+      "unresolved": [],
+      "cluster": 0,
+      "isSeed": false,
+      "position": 143,
+      "inSample": false
+    }
+  ]
+}
