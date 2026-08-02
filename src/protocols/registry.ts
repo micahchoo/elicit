@@ -1,0 +1,109 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import matter from 'gray-matter';
+import type { Target, QuestionForm } from '../types.js';
+
+// ── Types ──
+
+export interface ProtocolDef {
+ name: string;
+ targets: Target[];
+ prerequisites: string[];
+ questionForm: QuestionForm;
+ prompt: string;
+}
+
+// ── Lazy singleton ──
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DEFS_DIR = join(__dirname, 'defs');
+
+let _defs: Map<string, ProtocolDef> | undefined;
+
+/** Parse frontmatter targets field — handles YAML array or single string. */
+function parseTargets(raw: unknown): Target[] {
+ if (Array.isArray(raw)) return raw.filter((t): t is Target => t === 'self' || t === 'domain');
+ if (typeof raw === 'string' && (raw === 'self' || raw === 'domain')) return [raw];
+ return [];
+}
+
+/** Parse frontmatter prerequisites field. */
+function parsePrerequisites(raw: unknown): string[] {
+ if (Array.isArray(raw)) return raw.filter((p): p is string => typeof p === 'string');
+ return [];
+}
+
+function parseQuestionForm(raw: unknown): QuestionForm {
+ if (typeof raw === 'string' && (raw === 'deliberative' || raw === 'theoretical' || raw === 'why')) {
+  return raw;
+ }
+ return 'deliberative';
+}
+
+function loadFromDisk(): Map<string, ProtocolDef> {
+ const defs = new Map<string, ProtocolDef>();
+ let files: string[];
+ try {
+  files = readdirSync(DEFS_DIR);
+ } catch {
+  return defs; // no defs directory — empty
+ }
+
+ for (const file of files) {
+  if (!file.endsWith('.md')) continue;
+  const path = join(DEFS_DIR, file);
+  const raw = readFileSync(path, 'utf-8');
+  const parsed = matter(raw);
+  const data = parsed.data as Record<string, unknown>;
+
+  const name = typeof data.name === 'string' ? data.name : file.replace(/\.md$/, '');
+  const def: ProtocolDef = {
+   name,
+   targets: parseTargets(data.targets),
+   prerequisites: parsePrerequisites(data.prerequisites),
+   questionForm: parseQuestionForm(data.questionForm),
+   prompt: (parsed.content ?? '').trim(),
+  };
+
+  if (def.name.length > 0) {
+   defs.set(def.name, def);
+  }
+ }
+
+ return defs;
+}
+
+/**
+ * Load all protocol definitions from `defs/*.md`.
+ * Result is cached; subsequent calls return the same map.
+ */
+export function loadProtocolDefinitions(): Map<string, ProtocolDef> {
+ if (_defs) return _defs;
+ _defs = loadFromDisk();
+ return _defs;
+}
+
+/**
+ * Select a protocol for the given target using deterministic rotation.
+ * `sessionIndex` is the count of prior sessions (0-based for the first).
+ */
+export function selectProtocolForTarget(
+ target: Target,
+ sessionIndex: number,
+ defs: Map<string, ProtocolDef>,
+): ProtocolDef {
+ const candidates = [...defs.values()].filter((d) => d.targets.includes(target));
+ if (candidates.length === 0) {
+  // No protocol for this target — fall back to reflective
+  return defs.get('reflective') ?? [...defs.values()][0]!;
+ }
+ return candidates[sessionIndex % candidates.length]!;
+}
+
+/**
+ * Get a protocol definition by name.  Returns undefined if not found.
+ */
+export function getProtocol(name: string): ProtocolDef | undefined {
+ return loadProtocolDefinitions().get(name);
+}

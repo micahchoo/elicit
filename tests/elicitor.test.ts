@@ -276,7 +276,7 @@ describe('elicitor', () => {
 
   expect(session.mode.minutes).toBe(15);
   expect(session.mode.energy).toBe('low');
-  expect(session.protocol).toBe('self');
+  expect(session.protocol).toBe('reflective');
   expect(session.id).toBeTruthy();
  });
 

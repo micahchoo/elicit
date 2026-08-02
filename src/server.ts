@@ -19,6 +19,7 @@ import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
+import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
 import type {
   Vault,
   Complete,
@@ -31,6 +32,7 @@ import type {
   LexicalIndex,
   QueueEntry,
   Turn,
+  Target,
 } from './types.js';
 export interface ServerDeps {
   vault: Vault;
@@ -304,17 +306,25 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       return c.json({ error: 'invalid mode' }, 400);
     }
     // Normalize absent target to 'self'
-    const normalized: Mode = { ...mode, target: mode.target ?? 'self' };
+    const target: Target = mode.target ?? 'self';
+    const normalized: Mode = { ...mode, target };
+
+    // Protocol selection: load defs, count prior sessions, rotate deterministically
+    const protocolDefs = loadProtocolDefinitions();
+    const sessionCount = listSessions(deps.vaultRoot).length;
+    const selectedProtocol = selectProtocolForTarget(target, sessionCount, protocolDefs);
+
     const state = startSession(normalized, {
       complete: deps.complete,
       vault: deps.vault,
       queue: deps.queue,
       index: currentIndex,
+      protocolName: selectedProtocol.name,
     });
     sessions.set(state.id, state);
     const opener = state.turns[0]!;
 
-    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${normalized.target}`);
+    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} protocol=${selectedProtocol.name}`);
 
     return c.json({ sessionId: state.id, question: opener.text });
   });

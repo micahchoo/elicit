@@ -14,11 +14,11 @@ import type {
 } from '../types.js';
 import {
  defaultQuestionForm,
- PROTOCOLS,
  CLOSING_DOOR_QUESTION,
  CLOSING_BOOKMARK_QUESTION,
  type StarterQuestion,
 } from './protocol.js';
+import { getProtocol, selectProtocolForTarget, loadProtocolDefinitions } from '../protocols/registry.js';
 import { loadQuestionBank } from './bank.js';
 import { resonate } from '../index/lexical.js';
 import { isContentFree } from './answer-shape.js';
@@ -56,6 +56,7 @@ export function startSession(
   queue: QueueStore;
   index: LexicalIndex;
   bank?: StarterQuestion[];
+  protocolName?: string;
  },
 ): SessionState {
  const id = ulid();
@@ -63,6 +64,9 @@ export function startSession(
  const target: Target = mode.target ?? 'self';
  const normalizedMode: Mode = { ...mode, target };
  const bank = deps.bank ?? loadQuestionBank();
+
+ // Protocol name: explicit pass-in wins; fall back to first protocol for target
+ const protocol = deps.protocolName ?? selectProtocolForTarget(target, 0, loadProtocolDefinitions()).name;
 
  // Opening: draw from queue first, bank fallback
  const queueDraw = deps.queue.draw(normalizedMode, 'opening');
@@ -89,7 +93,7 @@ export function startSession(
 
  deps.vault.startTranscript(id, {
   mode: normalizedMode,
-  protocol: target,
+  protocol,
   started,
  });
  deps.vault.appendTurn(id, openerTurn);
@@ -97,7 +101,7 @@ export function startSession(
  return {
   id,
   mode: normalizedMode,
-  protocol: target,
+  protocol,
   deps: {
    complete: deps.complete,
    vault: deps.vault,
@@ -279,11 +283,9 @@ export async function userTurn(
   }
  }
 
- // Priority 3: generic LLM probe (Target-aware protocol)
- const target: Target = s.mode.target ?? 'self';
- const protocols = PROTOCOLS[target] ?? PROTOCOLS.self;
- const probeIndex = s.questionCount;
- const systemPrompt = protocols[probeIndex % protocols.length]!;
+ // Priority 3: generic LLM probe (protocol from registry)
+ const protocolDef = getProtocol(s.protocol);
+ const systemPrompt = protocolDef?.prompt ?? (() => { throw new Error(`Unknown protocol "${s.protocol}"`); })();
 
  const response = await s.deps.complete(systemPrompt, s.turns, {
   temperature: 0.8,
