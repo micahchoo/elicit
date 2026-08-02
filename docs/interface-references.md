@@ -27,3 +27,32 @@ Per-screen consequences:
 - **Reviewer**: stacking stays subdued — Snippet blocks read as paragraphs
   first, blocks second. Marginalia sits literally in the margin, dimmed
   until hovered. Gaps are quiet empty slots, not alert boxes.
+
+## The document rule (added 2026-08-01, after the first wireframe pass)
+
+The first end-state wireframes failed by accretion: button rows, status
+chips, managed lists — an admin panel in quiet colors. The correction is one
+rule that subsumes the bullets above: **every surface is a page of text;
+controls exist only at the point of attention, in the margin, on focus.**
+
+Consequences the board (`elicit-interface`) now encodes:
+
+- The home surface is a dated page that *says* what waits, in sentences —
+  not a dashboard of lists. Navigation is two dimmed words in a margin.
+- Mode declaration is a typed sentence ("10 quiet minutes, about myself"),
+  not three dropdowns.
+- Harvest is re-reading your own words as continuous prose with proposed
+  cuts pre-underlined — keep by touching a span, trim by dragging its edge.
+  Never rows with per-row button sets.
+- The wiki reads as a long essay in two inks: agent claims in light ink,
+  the user's quoted words in dark serif. Range is an em-dash clause in the
+  sentence; cites ARE the dated quotes. Facets are section headings.
+- Claim verbs appear only when a claim is focused, as six small margin
+  words (yes · no · narrower · unlink · push down · rewrite); the page dims
+  around the focused claim.
+- A contradiction is typeset as two facing quotes with dates — an exhibit,
+  never an alert. Status is carried typographically (ink weight), not by
+  chips.
+- Time is a scrollbar: dragging back re-renders the essay as it stood then
+  (the re-reading surface is the wiki under a time lens, not a separate
+  room).
