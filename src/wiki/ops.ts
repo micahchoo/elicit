@@ -570,6 +570,19 @@ export function recomputeStatus(touched: string[], deps: ApplyDeps, now: string)
   const push = (id: string): void => {
     if (!targets.includes(id)) targets.push(id);
   };
+  // NOTE, added after T15 measured it: this propagation is currently a NO-OP.
+  // The only claims it adds are members of an OPEN Contradiction, and
+  // `computeStatus` rule 1 returns `contested` for exactly those — which is
+  // already their status — so the `live === claim.status` guard below skips
+  // every one. Deleting the two `push` calls leaves the whole suite green.
+  //
+  // It is kept rather than deleted because it is a correctness guard against a
+  // FUTURE status rule, not dead weight today: the moment any rule makes a
+  // contradiction member's status depend on something other than membership,
+  // the partner must recompute or it goes stale. But nothing may claim it does
+  // work now — an earlier commit message of mine said this version "propagates
+  // to a contradiction's partner claim, which the local one did not", and that
+  // was wrong.
   const isTouched = new Set(touched);
   for (const k of after.contradictions) {
     if (k.status !== 'open') continue;

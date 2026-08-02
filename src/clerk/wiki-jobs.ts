@@ -269,22 +269,6 @@ function byId<T extends { id: string }>(a: T, b: T): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/**
- * Which sittings a set of cites rests on — Q-50's rule, and Q-53's second use
- * of it.
- *
- * The keying matches `src/wiki/status.ts`'s Q-50 arithmetic exactly: a snippet
- * with no session gets a key of its OWN, because absent is not equal and two
- * sessionless snippets are two sittings rather than one.
- *
- * **This is a second implementation of that resolution, and it should not be.**
- * `status.ts` computes it inside a private `resolve`, exports no helper for it,
- * and is not this task's file to change. The right shape is one exported
- * `sittingsOfCites` in `status.ts` that both callers read; until then the two
- * are kept token-for-token identical, and the divergence is a reported debt
- * rather than a hidden one.
- */
-
 /** The prose of the first cite that resolves, or the empty string. */
 function quoteFor(claim: Claim, graph: ClaimGraph): string {
   for (const cite of claim.cites) {
