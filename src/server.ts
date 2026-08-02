@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import matter from 'gray-matter';
 import { join, extname } from 'node:path';
-import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
@@ -26,7 +26,6 @@ import type {
   Complete,
   Mode,
   SessionState,
-  Snippet,
   CutProposal,
   HarvestDecision,
   QueueStore,
@@ -46,6 +45,12 @@ export interface ServerDeps {
   sttClient?: SttClient;
   /** Model id stamped on agent-authored artifacts (Q-34). */
   modelName?: string;
+  /**
+   * Called after each background docket run settles, success or failure. The
+   * docket runs off the response path (ticket 047), so this is the only seam
+   * an embedder has to know that a run finished.
+   */
+  onDocketSettled?: () => void;
 }
 
 // ── MIME map for static serving ──
@@ -198,34 +203,81 @@ function readTranscript(root: string, session: string): string {
 // ── Create app ──
 
 export async function createApp(deps: ServerDeps): Promise<Hono> {
-  // Boot: run docket to mint openers and build a fresh index
+  // The index every handler reads. It starts as the one handed in, so a fresh
+  // process answers from what the vault already holds, and it is replaced only
+  // by a completed DocketReport — the report stays the single index source.
   let currentIndex = deps.index;
   const snippetMap = new Map(Object.values(deps.vault.rebuildIndex().snippets).map((s) => [s.id, s]));
 
-  const bootReport = await runDocket({
-    vault: deps.vault,
-    queue: deps.queue,
-    complete: deps.complete,
-    buildIndex: (snippets) => buildIndex(snippets),
-    composeOpener,
-    composeStillTrue,
-    composeExpedition,
-    listSessions,
-    nextConsolidation,
-    saveSummary,
-    loadSummaries,
-    readTranscript,
-    ...(deps.modelName ? { modelName: deps.modelName } : {}),
-    log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-    vaultRoot: deps.vaultRoot,
-  });
-  currentIndex = bootReport.index;
-  // Update snippet map with any new snippets
-  for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
-    snippetMap.set(s.id, s);
+  // ── The docket, off the response path (ticket 047) ──
+  // Opener minting is one LLM call per uncited snippet, so a docket run grows
+  // with the vault. No request waits for one: handlers write to the vault,
+  // answer, and the index catches up when the run finishes.
+
+  /** True while a run is in flight. Two runs never overlap. */
+  let docketRunning = false;
+  /** A trigger that arrived mid-run, replayed once the run finishes. */
+  let pendingTrigger: string | null = null;
+
+  async function runDocketNow(trigger: string): Promise<void> {
+    try {
+      const report = await runDocket({
+        vault: deps.vault,
+        queue: deps.queue,
+        complete: deps.complete,
+        buildIndex: (snippets) => buildIndex(snippets),
+        composeOpener,
+        composeStillTrue,
+        composeExpedition,
+        listSessions,
+        nextConsolidation,
+        saveSummary,
+        loadSummaries,
+        readTranscript,
+        ...(deps.modelName ? { modelName: deps.modelName } : {}),
+        log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+        vaultRoot: deps.vaultRoot,
+      });
+      currentIndex = report.index;
+      for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
+        snippetMap.set(s.id, s);
+      }
+      serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${report.minted.length}, expired ${report.expired}`);
+    } catch (err) {
+      // Every write the run was meant to follow is already on disk. Only the
+      // index is behind, so keep the one that was standing and say why.
+      console.error(`docket (${trigger}) failed — held index unchanged:`, String(err));
+      serverEmit(deps.vaultRoot, 'clerk', 'docket-run-failed', `trigger=${trigger} ${String(err)}`);
+    } finally {
+      docketRunning = false;
+      const next = pendingTrigger;
+      pendingTrigger = null;
+      if (next) startDocket(next);
+      deps.onDocketSettled?.();
+    }
   }
 
-  serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${bootReport.minted.length}, expired ${bootReport.expired}`);
+  /** Start a docket run behind whatever called this. Never throws, never waits. */
+  function startDocket(trigger: string): void {
+    if (docketRunning) {
+      // A second trigger starts nothing — runDocket's own lock would make it a
+      // no-op anyway, and that no-op returns an empty index. Remember it
+      // instead, so snippets harvested mid-run still reach the index.
+      pendingTrigger = trigger;
+      console.error(`docket (${trigger}) deferred — a run is already in flight`);
+      return;
+    }
+    docketRunning = true;
+    // Next tick, not this one: runDocket reads every snippet file in the vault
+    // before its first await, and the response (or the listen call) goes first.
+    // The catch is the backstop: nothing here is awaited, so a throw that got
+    // past runDocketNow would surface as an unhandled rejection.
+    setImmediate(() => {
+      runDocketNow(trigger).catch((err: unknown) => {
+        console.error(`docket (${trigger}) could not report its own failure:`, String(err));
+      });
+    });
+  }
 
   const app = new Hono();
   const sessions = new Map<string, SessionState>();
@@ -532,34 +584,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 
     serverEmit(deps.vaultRoot, 'harvester', 'session-harvested', `kept=${result.snippets.length} budded=${result.buds.length}`, result.snippets.map((s) => s.id));
 
-    // Re-run docket after harvest to refresh index and mint new questions
-    try {
-      const newReport = await runDocket({
-        vault: deps.vault,
-        queue: deps.queue,
-        complete: deps.complete,
-        buildIndex: (snippets) => buildIndex(snippets),
-        composeOpener,
-        composeStillTrue,
-        composeExpedition,
-        listSessions,
-        nextConsolidation,
-        saveSummary,
-        loadSummaries,
-        readTranscript,
-        ...(deps.modelName ? { modelName: deps.modelName } : {}),
-        log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-        vaultRoot: deps.vaultRoot,
-      });
-      currentIndex = newReport.index;
-      for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
-        snippetMap.set(s.id, s);
-      }
-      serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${newReport.minted.length}, expired ${newReport.expired}`);
-    } catch (err) {
-      console.error('harvest: post-harvest docket run failed — snippets saved, index stale:', String(err));
-      serverEmit(deps.vaultRoot, 'clerk', 'docket-run-failed', `post-harvest docket failed: ${String(err)}`);
-    }
+    // The snippets are on disk, so the answer is ready. The docket that
+    // reindexes them and mints their openers runs behind this response.
+    startDocket('harvest');
 
     return c.json({ snippets: result.snippets, buds: result.buds });
   });
@@ -735,6 +762,10 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     });
   });
 
+  // Boot docket last: the app is wired, so requests that arrive while it runs
+  // are served from the index we were handed instead of waiting for a new one.
+  startDocket('boot');
+
   return app;
 }
 
@@ -877,5 +908,6 @@ if (isDirect) {
 
   const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
   await serveApp(app, port);
-  console.error(`  ready → http://${bindHost}:${port}\n`);
+  console.error(`  ready → http://${bindHost}:${port}`);
+  console.error('  the clerk is reading the vault in the background\n');
 }

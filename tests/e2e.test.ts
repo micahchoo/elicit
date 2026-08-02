@@ -17,6 +17,7 @@ import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
+import type { Complete, Vault } from '../src/types.js';
 
 // ── Helpers ──
 
@@ -92,6 +93,79 @@ function startServer(app: Hono): Promise<{ server: Server; port: number }> {
  });
 }
 
+/**
+ * Counts settled background docket runs and lets a test wait for one.
+ * The docket runs off the response path (ticket 047), so a test that wants to
+ * see its effects has to ask for them.
+ */
+function docketBarrier() {
+ let settled = 0;
+ const waiting: (() => void)[] = [];
+ return {
+  onDocketSettled(): void {
+   settled++;
+   for (const w of waiting.splice(0)) w();
+  },
+  get count(): number {
+   return settled;
+  },
+  async waitFor(n: number): Promise<void> {
+   while (settled < n) await new Promise<void>((r) => waiting.push(r));
+  },
+ };
+}
+
+/**
+ * A scripted Complete that can be held shut. After `close()` every call blocks
+ * until `release()` — which is how a test freezes a docket run mid-flight and
+ * looks at what the server does meanwhile. Runs past the script answer '{}'.
+ */
+function gatedComplete(responses: string[]) {
+ let i = 0;
+ let gate: Promise<void> | null = null;
+ let open: (() => void) | null = null;
+ const complete: Complete = async () => {
+  if (gate) await gate;
+  return responses[i++] ?? '{}';
+ };
+ return {
+  complete,
+  close(): void {
+   gate = new Promise<void>((r) => {
+    open = r;
+   });
+  },
+  release(): void {
+   open?.();
+   gate = null;
+   open = null;
+  },
+ };
+}
+
+/** One turn of the event loop plus a margin — enough for a setImmediate to fire. */
+function tick(): Promise<void> {
+ return new Promise<void>((r) => setTimeout(r, 20));
+}
+
+/** Call the app directly from loopback, no listening socket in the way. */
+async function call(app: Hono, path: string, body?: unknown): Promise<Response> {
+ const init: RequestInit =
+  body === undefined
+   ? { method: 'GET' }
+   : {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify(body),
+    };
+ return app.fetch(new Request(`http://localhost${path}`, init), { remoteAddr: '127.0.0.1' });
+}
+
+/** How many events of one kind the vault's activity log holds. */
+function kindCount(vaultDir: string, kind: string): number {
+ return readEvents(vaultDir).filter((e) => e.kind === kind).length;
+}
+
 // ── Scripted session data ──
 
 const userText1 = "I've been thinking about my career direction.";
@@ -160,6 +234,7 @@ describe('HTTP API e2e', () => {
  let server: Server;
  let baseUrl: string;
  let vaultDir: string;
+ const barrier = docketBarrier();
 
  beforeAll(async () => {
   vaultDir = mkdtempSync(join(tmpdir(), 'elicit-e2e-'));
@@ -169,7 +244,10 @@ describe('HTTP API e2e', () => {
   const indexData = vault.rebuildIndex();
   const index = buildIndex(Object.values(indexData.snippets));
   const authStore = createFileAuth(join(vaultDir, '.auth.json'));
-  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore });
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore, onDocketSettled: barrier.onDocketSettled });
+  // The boot docket no longer blocks createApp, so wait for it here: the
+  // scripted responses below are consumed in a fixed order.
+  await barrier.waitFor(1);
   const result = await startServer(app);
   server = result.server;
   baseUrl = `http://127.0.0.1:${result.port}`;
@@ -241,6 +319,7 @@ describe('HTTP API e2e', () => {
   expect(proposals.length).toBe(3);
 
   // ── Step 4: Harvest — one approve, one restate, one discard ──
+  const settledBefore = barrier.count;
   const harvestRes = await fetch(
    `${baseUrl}/api/session/${sessionId}/harvest`,
    {
@@ -269,6 +348,10 @@ describe('HTTP API e2e', () => {
    }>;
   };
   expect(snippets.length).toBe(2); // approve + restate
+
+  // The harvest answered without waiting for the docket. Let that run finish
+  // before the next test draws on the same scripted responses.
+  await barrier.waitFor(settledBefore + 1);
 
   // ── Step 5: Verify files on disk ──
 
@@ -472,6 +555,7 @@ describe('full session with docket and juxtaposition', () => {
  let server: Server;
  let baseUrl: string;
  let vaultDir: string;
+ const barrier = docketBarrier();
 
  beforeAll(async () => {
   vaultDir = mkdtempSync(join(tmpdir(), 'elicit-full-'));
@@ -511,7 +595,9 @@ describe('full session with docket and juxtaposition', () => {
    index: docketReport.index,
    vaultRoot: vaultDir,
    authStore,
+   onDocketSettled: barrier.onDocketSettled,
   });
+  await barrier.waitFor(1); // the boot docket, which no longer blocks createApp
   const result = await startServer(app);
   server = result.server;
   baseUrl = `http://127.0.0.1:${result.port}`;
@@ -612,6 +698,7 @@ describe('full session with docket and juxtaposition', () => {
   const { proposals } = (await endRes.json()) as { proposals: Array<{ text: string }> };
   expect(proposals.length).toBe(2);
 
+  const settledBefore = barrier.count;
   const harvestRes = await fetch(`${baseUrl}/api/session/${sessionId}/harvest`, {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
@@ -625,6 +712,7 @@ describe('full session with docket and juxtaposition', () => {
   expect(harvestRes.status).toBe(200);
   const { snippets } = (await harvestRes.json()) as { snippets: Array<{ id: string }> };
   expect(snippets.length).toBe(2);
+  await barrier.waitFor(settledBefore + 1);
 
   // ── Step 7: GET /api/queue — should have user-declared entry from bookmark ──
   const qRes = await fetch(`${baseUrl}/api/queue`);
@@ -973,5 +1061,204 @@ describe('stt transcribe', () => {
   });
   const res = await app.fetch(req, { remoteAddr: '127.0.0.1' });
   expect(res.status).toBe(401);
+ });
+});
+
+// ── The docket runs behind the response, never in front of it (ticket 047) ──
+
+const careerProse = "I've been thinking about my career direction.";
+
+/** One cut of the prose above — the shortest path from text to a saved snippet. */
+const oneCut = JSON.stringify({
+ cuts: [
+  {
+   text: careerProse,
+   sourceTurn: 0,
+   facet: 'intention',
+   stance: 'avowal',
+   reading: 'Career direction is an active concern',
+   standalone: true,
+  },
+ ],
+});
+
+/** A composed opener that quotes the snippet and sets the quote off, so it passes the gate. */
+const openerQuestion = 'You wrote about "my career direction." Has anything shifted since then?';
+
+const someMode = { minutes: 10, energy: 'medium', target: 'self' };
+
+describe('docket off the response path', () => {
+ let vaultDir: string;
+
+ beforeEach(() => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-047-'));
+ });
+
+ afterEach(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('answers the harvest while the docket is still running, then catches the index up', async () => {
+  const vault = createVault(vaultDir);
+  const gate = gatedComplete([oneCut, openerQuestion]);
+  const barrier = docketBarrier();
+  const app = await createApp({
+   vault,
+   complete: gate.complete,
+   queue: createQueueStore(vaultDir),
+   index: buildIndex([]),
+   vaultRoot: vaultDir,
+   authStore: createFileAuth(join(vaultDir, '.auth.json')),
+   onDocketSettled: barrier.onDocketSettled,
+  });
+  await barrier.waitFor(1); // boot docket over an empty vault
+
+  const entryRes = await call(app, '/api/unprompted', { text: careerProse });
+  const entry = (await entryRes.json()) as { sessionId: string; proposals: unknown[] };
+  expect(entry.proposals.length).toBe(1);
+
+  // Every model call from here blocks: the docket the harvest starts cannot finish.
+  gate.close();
+
+  const settledBefore = barrier.count;
+  const harvestRes = await call(app, `/api/session/${entry.sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'approve' }],
+  });
+  expect(harvestRes.status).toBe(200);
+  const { snippets } = (await harvestRes.json()) as { snippets: Array<{ id: string }> };
+  expect(snippets.length).toBe(1);
+
+  // The client has its answer and the run it started is still going.
+  await tick();
+  expect(kindCount(vaultDir, 'run-started')).toBe(2); // boot, then this one
+  expect(kindCount(vaultDir, 'docket-run')).toBe(1); // only boot has finished
+  expect(barrier.count).toBe(settledBefore);
+
+  gate.release();
+  await barrier.waitFor(settledBefore + 1);
+  expect(kindCount(vaultDir, 'docket-run')).toBe(2);
+
+  // The held index now carries the harvested snippet: an echo of it comes back
+  // as a juxtaposition, which nothing but the index can produce.
+  const sessRes = await call(app, '/api/session', { mode: someMode });
+  const { sessionId } = (await sessRes.json()) as { sessionId: string };
+  const turnRes = await call(app, `/api/session/${sessionId}/turn`, {
+   text: 'What about my career direction now?',
+  });
+  const turn = (await turnRes.json()) as { juxtaposition?: { snippetText: string } };
+  expect(turn.juxtaposition?.snippetText).toBe(careerProse);
+ });
+
+ it('keeps the held index when a background docket run fails', async () => {
+  const real = createVault(vaultDir);
+  real.saveSnippet(careerProse, {
+   kind: 'harvest',
+   session: 'prior-session',
+   question: 'What has been on your mind?',
+   questionForm: 'deliberative',
+  });
+
+  // A vault that stops being readable partway through the run.
+  let unreadable = false;
+  const vault: Vault = {
+   saveSnippet: (prose, provenance) => real.saveSnippet(prose, provenance),
+   saveVersion: (id, prose) => real.saveVersion(id, prose),
+   saveReading: (r) => real.saveReading(r),
+   saveBud: (fragment, failures, session) => real.saveBud(fragment, failures, session),
+   startTranscript: (session, meta) => real.startTranscript(session, meta),
+   appendTurn: (session, t) => real.appendTurn(session, t),
+   rebuildIndex: () => {
+    if (unreadable) throw new Error('vault unreadable');
+    return real.rebuildIndex();
+   },
+  };
+
+  const gate = gatedComplete([oneCut]);
+  const barrier = docketBarrier();
+  const app = await createApp({
+   vault,
+   complete: gate.complete,
+   queue: createQueueStore(vaultDir),
+   index: buildIndex(Object.values(real.rebuildIndex().snippets)),
+   vaultRoot: vaultDir,
+   authStore: createFileAuth(join(vaultDir, '.auth.json')),
+   onDocketSettled: barrier.onDocketSettled,
+  });
+  await barrier.waitFor(1);
+
+  const entryRes = await call(app, '/api/unprompted', { text: careerProse });
+  const entry = (await entryRes.json()) as { sessionId: string };
+
+  unreadable = true;
+  const settledBefore = barrier.count;
+  const harvestRes = await call(app, `/api/session/${entry.sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'approve' }],
+  });
+  expect(harvestRes.status).toBe(200); // the snippets are saved either way
+
+  await barrier.waitFor(settledBefore + 1);
+  const failures = readEvents(vaultDir).filter((e) => e.kind === 'docket-run-failed');
+  expect(failures.length).toBe(1);
+  expect(failures[0]!.detail).toContain('vault unreadable');
+
+  // The index from before the failed run still answers — not an empty one.
+  const sessRes = await call(app, '/api/session', { mode: someMode });
+  const { sessionId } = (await sessRes.json()) as { sessionId: string };
+  const turnRes = await call(app, `/api/session/${sessionId}/turn`, {
+   text: 'What about my career direction now?',
+  });
+  const turn = (await turnRes.json()) as { juxtaposition?: { snippetText: string } };
+  expect(turn.juxtaposition?.snippetText).toBe(careerProse);
+ });
+
+ it('serves requests while the boot docket is still running', async () => {
+  const vault = createVault(vaultDir);
+  const at = new Date().toISOString();
+  vault.startTranscript('prior-session', {
+   mode: { minutes: 10, energy: 'medium', target: 'self' },
+   protocol: 'reflective',
+   started: at,
+  });
+  vault.appendTurn('prior-session', { role: 'user', text: careerProse, at });
+  vault.saveSnippet(careerProse, {
+   kind: 'harvest',
+   session: 'prior-session',
+   question: 'What has been on your mind?',
+   questionForm: 'deliberative',
+  });
+
+  const gate = gatedComplete([openerQuestion]);
+  gate.close(); // the boot docket stalls on its first opener
+  const barrier = docketBarrier();
+  const app = await createApp({
+   vault,
+   complete: gate.complete,
+   queue: createQueueStore(vaultDir),
+   index: buildIndex(Object.values(vault.rebuildIndex().snippets)),
+   vaultRoot: vaultDir,
+   authStore: createFileAuth(join(vaultDir, '.auth.json')),
+   onDocketSettled: barrier.onDocketSettled,
+  });
+
+  await tick();
+  expect(kindCount(vaultDir, 'run-started')).toBe(1);
+  expect(barrier.count).toBe(0); // still running
+
+  const queueRes = await call(app, '/api/queue');
+  expect(queueRes.status).toBe(200);
+
+  const sessRes = await call(app, '/api/session', { mode: someMode });
+  expect(sessRes.status).toBe(200);
+  const { question } = (await sessRes.json()) as { question: string };
+  expect(question.length).toBeGreaterThan(0);
+
+  const activityRes = await call(app, '/api/activity');
+  expect(activityRes.status).toBe(200);
+  const { events } = (await activityRes.json()) as { events: ActivityEvent[] };
+  expect(events.some((e) => e.kind === 'run-started')).toBe(true);
+
+  gate.release();
+  await barrier.waitFor(1);
+  expect(kindCount(vaultDir, 'docket-run')).toBe(1);
  });
 });
