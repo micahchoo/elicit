@@ -304,6 +304,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'called from runImportJobsNow (server.ts) as the docket last job',
  },
 
+ // ── src/import/commit.ts ──
+ {
+  module: 'src/import/commit',
+  name: 'commitImport',
+  status: 'unwired',
+  reason: 'no production caller yet — the decisions route (T9) calls it in a later wave; tests do not count',
+ },
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },

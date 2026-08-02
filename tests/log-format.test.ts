@@ -378,9 +378,34 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
  },
 
- // The docket's import job (T6): one line per run, the three counts. The
- // sentence shows what moved and what is still to be read; a non-zero
- // `failed` adds the failing clause.
+// The commit step (T7): one line per item that passed every gate, and one
+// per refusal. The DATE is the point of the first (Q-50) — one accepted
+// piece became one sitting dated to the day it was written; the reason is
+// the point of the second, and every refusal ends in the same consequence.
+{
+ kind: 'import-committed',
+ detail: 'path=vault/posts/dated-essay.md session=import-abc123def456 snippets=2 date=2018-09-01',
+ reads: 'saved 2 pieces from dated-essay.md as one sitting dated 2018-09-01',
+},
+{
+ kind: 'import-commit-refused',
+ detail: 'reason=stale hash=abc123def456',
+ reads: 'a file changed since it was read — nothing was saved',
+},
+{
+ kind: 'import-commit-refused',
+ detail: 'reason=not-extracted hash=abc123def456',
+ reads: 'nothing had been extracted — nothing was saved',
+},
+{
+ kind: 'import-commit-refused',
+ detail: 'reason=unverifiable hash=abc123def456',
+ reads: 'a cut could not be verified against the source — nothing was saved',
+},
+
+// The docket's import job (T6): one line per run, the three counts. The
+// sentence shows what moved and what is still to be read; a non-zero
+// `failed` adds the failing clause.
  {
   kind: 'import-run',
   detail: 'extracted=2 remaining=1 failed=0',

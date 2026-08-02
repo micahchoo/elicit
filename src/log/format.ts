@@ -284,11 +284,23 @@ function channels(raw: string | undefined): string {
  * for a field that is already there (standing rule 3).
  */
 const IMPORT_REFUSED: Record<string, string> = {
- 'no-frontmatter': 'has no frontmatter — not imported',
- 'no-date': 'has no date in its frontmatter — not imported',
- 'unparsable-date': 'has a date that could not be read — not imported',
- 'empty-body': 'is frontmatter and nothing else — not imported',
- 'no-lastmod': 'changed since it was imported, and has no lastmod to date the new version — not imported',
+'no-frontmatter': 'has no frontmatter — not imported',
+'no-date': 'has no date in its frontmatter — not imported',
+'unparsable-date': 'has a date that could not be read — not imported',
+'empty-body': 'is frontmatter and nothing else — not imported',
+'no-lastmod': 'changed since it was imported, and has no lastmod to date the new version — not imported',
+};
+
+/**
+ * One sentence per commit refusal reason (T7). `import-commit-refused`
+ * renders them. All three are verification failures — the item was refused
+ * whole and nothing was written — so each sentence ends in the same
+ * consequence and differs in the reason, which is the point.
+ */
+const COMMIT_REFUSED: Record<string, string> = {
+ stale: 'a file changed since it was read — nothing was saved',
+ 'not-extracted': 'nothing had been extracted — nothing was saved',
+ unverifiable: 'a cut could not be verified against the source — nothing was saved',
 };
 
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
@@ -564,6 +576,24 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 'import-quoted-dropped': (f, d) => {
  const file = (f.path ?? d).split('/').pop() || 'a file';
  return `set aside ${count(num(f, 'cuts'), 'cut')} from ${file}: it sits inside a quotation in the source file`;
+},
+
+// Emitted by commit (T7), one line per item that passed every gate. The
+// detail carries the path, session, count and date — `path=…/dated-essay.md
+// session=import-abc123 snippets=2 date=2018-09-01` — and the date is the
+// point (Q-50): one accepted piece became one sitting dated to the day it
+// was written, which is the only independence evidence the import carries.
+'import-committed': (f, d) => {
+ const file = (f.path ?? d).split('/').pop() || 'a file';
+ return `saved ${count(num(f, 'snippets'), 'piece')} from ${file} as one sitting dated ${f.date ?? 'its source date'}`;
+},
+// Emitted by commit (T7) when an item fails a verification gate: the whole
+// item is refused and nothing is written. One sentence per reason (the
+// reason is the point, same rule as `import-refused`); the detail carries
+// `reason=…` and the hash.
+'import-commit-refused': (f, d) => {
+ const reason = f.reason ?? d.split(/\s+/).pop() ?? 'unverifiable';
+ return COMMIT_REFUSED[reason] ?? 'nothing was saved';
 },
 
 // The docket's import job (T6): one line per run, the three counts. The
