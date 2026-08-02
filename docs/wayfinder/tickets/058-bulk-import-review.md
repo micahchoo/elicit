@@ -2,7 +2,7 @@
 title: "Build: bulk import and review — bringing an existing body of writing into the vault"
 labels: [wayfinder:task]
 status: open
-assignee: claude (planning)
+assignee: claude (omp executing)
 blocked_by: []
 ---
 

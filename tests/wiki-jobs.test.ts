@@ -8,9 +8,11 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { formatEvent, hasSentence } from '../src/log/format.js';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import matter from 'gray-matter';
 
 import {
   RANGE_DISCRIMINATED,
@@ -266,6 +268,7 @@ function harness(opts: HarnessOptions = {}): {
   queue: FakeQueue;
   rec: Recorded;
   run: () => Promise<WikiJobsReport>;
+  index: Index;
 } {
   const root = mkdtempSync(join(tmpdir(), 'wiki-jobs-'));
   roots.push(root);
@@ -328,7 +331,7 @@ function harness(opts: HarnessOptions = {}): {
     sittingOf: () => ({}),
   };
 
-  return { deps, store, queue, rec, run: () => runWikiJobs(deps) };
+  return { deps, store, queue, rec, run: () => runWikiJobs(deps), index };
 }
 
 afterEach(() => {
@@ -363,6 +366,7 @@ const OWNED_KINDS = new Set([
   'mint-oversized',
   'claim-status-changed',
   'wiki-jobs-failed',
+  'wiki-job-skipped',
 ]);
 
 /**
@@ -1159,12 +1163,18 @@ describe('confirmation', () => {
       confirm: async () => ({ confirmed: false, reason: 'no' }),
       opposition: async () => ({ opposed: true, poleA: 'estimates are for coordination', poleB: 'estimates are promises' }),
     });
-    await h.run();
+    const first = await h.run();
+    // The run that dissolved it also refused to re-pool the pair.
+    expect(first.pool.size).toBe(0);
+    expect(first.pool.suppressed).toBe(1);
     const after = await h.run();
-
     expect(h.store.listCandidates()).toHaveLength(1);
+    // Ticket 076: nothing changed since the watermark the first run wrote, so the
+    // candidates pass is skipped and logged — the empty pool is the skip, not a
+    // re-pool that found the pair admissible.
     expect(after.pool.size).toBe(0);
-    expect(after.pool.suppressed).toBe(1);
+    const skipped = h.rec.events.filter((e) => e.kind === 'wiki-job-skipped');
+    expect(skipped.some((e) => e.detail.startsWith('job=candidates '))).toBe(true);
   });
 
   it('a candidate whose entry is still asked is skipped', async () => {
@@ -1283,7 +1293,7 @@ describe('the second prime', () => {
 
   it('pairs a claim minted this run in the SAME run, with a live threshold', async () => {
     const live: Threshold = { name: 'clash.embeddingCosine', value: 0.82, live: true, graduatesWhen: 'test seam' };
-    const { h, fake } = setup({ threshold: live });
+    const { h, fake, store } = setup({ threshold: live });
 
     const first = await h.run();
 
@@ -1302,8 +1312,16 @@ describe('the second prime', () => {
     // FIRST run that used to be blind, not the channel.
     const second = await h.run();
     expect(second.swept).toBe(0);
-    expect(second.candidates['embedding']).toBe(1);
+    // Ticket 076: an unchanged vault skips the index passes — the pool is not
+    // recomputed, and the skip is logged as its own outcome, never silence.
+    // The skips travel the harness's own log (`deps.log`), never the channel's
+    // shadow-record log the setup closure captured.
+    const skipped = h.rec.events.filter((e) => e.kind === 'wiki-job-skipped');
+    expect(skipped.some((e) => e.detail.startsWith('job=candidates '))).toBe(true);
     expect(fake.texts).toEqual([MINTED]);
+    // The pair the first run pooled is still in the channel's cache — the
+    // channel retained it; only the recomputation was skipped.
+    expect(store.rows.map((r) => r.claimId).sort()).toEqual(['c-old', mintedClaim!.id].sort());
   });
 
   it('puts the fresh pair into the Q-35 shadow record on the run that minted it', async () => {
@@ -1666,5 +1684,237 @@ describe('the run', () => {
     const report = await h.run();
     const wiki: NonNullable<DocketReport['wiki']> = report;
     expect(wiki.swept).toBe(0);
+  });
+});
+
+// ── Ticket 076: the docket's two gates ──
+
+/**
+ * `runWikiJobs` now gates the seven jobs: the four queue-driven jobs on the
+ * vault's git diff, the three index passes on the watermark it wrote. A
+ * skipped job is a log line, never silence — `wiki-job-skipped` with the job
+ * and the reason. These tests hold the gates to that contract using a REAL
+ * git repo in the harness tmp dir (the harness's own claim files are
+ * committed first), and the real `embeddingChannel` where the watermark's
+ * narrowing is on trial.
+ */
+describe('the docket gates (ticket 076)', () => {
+  const GATE_MODEL = 'test-clerk-model';
+
+  function gitInit(root: string, author: { name: string; email: string } = { name: 'elicit-clerk', email: 'clerk@localhost' }): void {
+    execFileSync('git', ['-C', root, 'init', '-q']);
+    execFileSync('git', ['-C', root, 'config', 'user.name', author.name]);
+    execFileSync('git', ['-C', root, 'config', 'user.email', author.email]);
+    execFileSync('git', ['-C', root, 'config', 'commit.gpgsign', 'false']);
+  }
+
+  function gitCommitAll(root: string, message = 'test'): void {
+    execFileSync('git', ['-C', root, 'add', '-A']);
+    execFileSync('git', ['-C', root, 'commit', '-q', '-m', message]);
+  }
+
+  /** A reading file on disk in the vault's own shape — the git gate's input. */
+  function writeReadingFile(root: string, r: Reading): void {
+    const dir = join(root, 'wiki', 'readings');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${r.id}.md`), matter.stringify(r.reading, { id: r.id, facet: r.facet, stance: r.stance, cites: r.cites, at: r.at }), 'utf-8');
+  }
+
+  /** A snippet file on disk — the git gate's input. */
+  function writeSnippetFile(root: string, s: Snippet): void {
+    const dir = join(root, 'snippets', s.id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `v${s.version}.md`), matter.stringify(s.prose, { id: s.id, version: s.version, captured: s.captured, provenance: s.provenance }), 'utf-8');
+  }
+
+  const skippedDetails = (h: { rec: Recorded }): string[] =>
+    h.rec.events.filter((e) => e.kind === 'wiki-job-skipped').map((e) => e.detail);
+
+  // The embedding helpers, duplicated from 'the second prime' — the watermark
+  // narrowing is a property of the REAL channel, so the fakes it needs are
+  // the same ones that describe already proved.
+  /** Unit vectors in the plane: the cosine between two of them is cos(a − b). */
+  const ray = (radians: number): number[] => [Math.cos(radians), Math.sin(radians), 0];
+
+  const OLD = 'They treat estimates as coordination.';
+  const MINTED = 'They keep treating estimates as a way to coordinate.';
+  const COLD = 'They keep a paper notebook beside the bed.';
+
+  /** `OLD` and `MINTED` sit 0.2 radians apart — cosine ≈ 0.980. `COLD` is far. */
+  const VECTORS: Record<string, number[]> = { [OLD]: ray(0), [MINTED]: ray(0.2), [COLD]: ray(1.4) };
+
+  const EMBED_MODEL = 'fake-embed';
+
+  function memStore(seed: EmbeddingRecord[] = []): EmbeddingIndexStore & { rows: EmbeddingRecord[] } {
+    const holder = {
+      rows: [...seed],
+      load: () => holder.rows.map((r) => ({ ...r, vector: [...r.vector] })),
+      save: (records: EmbeddingRecord[]) => {
+        holder.rows = records.map((r) => ({ ...r, vector: [...r.vector] }));
+      },
+    };
+    return holder;
+  }
+
+  /** Every text this run asked the embedder for — the narrowing's only honest witness. */
+  function embedder(): { embed: Embed; texts: string[] } {
+    const texts: string[] = [];
+    return {
+      texts,
+      embed: async (batch) => {
+        texts.push(...batch);
+        return batch.map((t) => VECTORS[t] ?? [0, 0, 1]);
+      },
+    };
+  }
+
+  /** A vector as a previous run — or `src/server.ts`'s pre-run prime — left it. */
+  function cached(claimId: string, body: string): EmbeddingRecord {
+    return { claimId, hash: bodyHash(body), model: EMBED_MODEL, vector: VECTORS[body] ?? [0, 0, 1] };
+  }
+
+  it('skips every job on an unchanged vault and logs each skip with its reason', async () => {
+    const s1 = snippet('s1', 'A snippet.');
+    const r1 = reading('r-1', ['s1@1'], 'A reading.');
+    const h = harness({
+      claims: [claim('c-1', 'A claim.', { cites: ['s1@1'] })],
+      readings: [r1],
+      snippets: [s1],
+    });
+    gitInit(h.deps.vaultRoot);
+    writeSnippetFile(h.deps.vaultRoot, s1);
+    writeReadingFile(h.deps.vaultRoot, r1);
+    gitCommitAll(h.deps.vaultRoot);
+
+    // First run: no watermark, so the index passes run and write one; the git
+    // tree is clean, so the queue-driven jobs are skipped.
+    const first = await h.run();
+    expect(first.swept).toBe(0);
+    const afterFirst = skippedDetails(h);
+    expect(afterFirst.filter((d) => d.startsWith('job=presweep-confirmation '))).toHaveLength(1);
+    expect(afterFirst.filter((d) => d.startsWith('job=sweep '))).toHaveLength(1);
+    expect(afterFirst.filter((d) => d.startsWith('job=remeasure '))).toHaveLength(1);
+    expect(afterFirst.filter((d) => d.startsWith('job=confirmation '))).toHaveLength(1);
+
+    // Second run: the watermark is current and the tree is still clean — every
+    // job skips, each with its reason.
+    const second = await h.run();
+    expect(second.swept).toBe(0);
+    const all = skippedDetails(h);
+    // 11 lines: run 1 gated out the four queue jobs on the clean tree (4), run
+    // 2 gated out all seven (7) — so the git-gated jobs log twice and the
+    // watermark-gated passes once.
+    expect(all).toHaveLength(11);
+    for (const job of ['presweep-confirmation', 'sweep', 'remeasure', 'confirmation']) {
+      expect(all.filter((d) => d.startsWith(`job=${job} `)), `skip for ${job}`).toHaveLength(2);
+    }
+    for (const job of ['prime', 'lint', 'candidates']) {
+      expect(all.filter((d) => d.startsWith(`job=${job} `)), `skip for ${job}`).toHaveLength(1);
+    }
+    expect(h.rec.proposeCalls).toHaveLength(0);
+    expect(h.rec.oppositionCalls).toHaveLength(0);
+    // The two gate families name different reasons.
+    expect(all.find((d) => d.startsWith('job=sweep '))).toContain('reason=no-diff');
+    expect(all.find((d) => d.startsWith('job=candidates '))).toContain('reason=index-current');
+  });
+
+  it('a run after one new reading processes only that reading', async () => {
+    const s1 = snippet('s1', 'A snippet.');
+    const r1 = reading('r-1', ['s1@1'], 'A reading.');
+    const r2 = reading('r-2', ['s1@1'], 'A second reading.');
+    const h = harness({
+      claims: [claim('c-1', 'A claim.', { cites: ['s1@1'] })],
+      readings: [r1],
+      snippets: [s1],
+      propose: async () => mintResult([{ op: 'KEEP', reading: 'r-2' }]),
+    });
+    gitInit(h.deps.vaultRoot);
+    writeSnippetFile(h.deps.vaultRoot, s1);
+    writeReadingFile(h.deps.vaultRoot, r1);
+    // r-1's sweep line predates the baseline — an earlier real run already
+    // processed it, and the ledger is where that fact lives. The gate skips
+    // work a run already did; it never forgets work a run never got to.
+    h.store.appendSweep({ readingId: 'r-1', op: 'KEEP', at: T0, model: GATE_MODEL });
+    gitCommitAll(h.deps.vaultRoot);
+    await h.run(); // baseline: watermark written, r-1 swept
+
+    // A new reading lands — a file the git tree has not seen, and a graph the
+    // watermark has not seen.
+    writeReadingFile(h.deps.vaultRoot, r2);
+    h.index.readings['r-2'] = r2;
+    await h.run();
+
+    expect(h.rec.proposeCalls.map((c) => c.reading.id)).toEqual(['r-2']);
+    // The jobs whose inputs did not change are skipped and say so. remeasure
+    // skips on BOTH runs — run 2's change is a reading, and readings are not
+    // one of its inputs — while presweep-confirmation's inputs include
+    // readings, so run 2 gates it in (nothing to confirm, nothing changes).
+    const all = skippedDetails(h);
+    expect(all.filter((d) => d.startsWith('job=remeasure '))).toHaveLength(2);
+    expect(all.filter((d) => d.startsWith('job=presweep-confirmation '))).toHaveLength(1);
+  });
+
+  it('without git, the watermark still gates the index passes while the queue jobs run', async () => {
+    const s1 = snippet('s1', 'A snippet.');
+    const r1 = reading('r-1', ['s1@1'], 'A reading.');
+    const h = harness({
+      claims: [claim('c-1', 'A claim.', { cites: ['s1@1'] })],
+      readings: [r1],
+      snippets: [s1],
+      propose: async () => mintResult([{ op: 'KEEP', reading: 'r-1' }]),
+    });
+    await h.run(); // everything runs: no git, no watermark
+    const callsAfterFirst = h.rec.proposeCalls.length;
+    await h.run(); // index passes skip on the watermark; the queue jobs run as today
+
+    const all = skippedDetails(h);
+    expect(all.map((d) => d.split(' ')[0]?.replace('job=', ''))).toEqual(['prime', 'lint', 'candidates']);
+    expect(h.rec.proposeCalls.length).toBe(callsAfterFirst);
+    expect(all.every((d) => d.includes('reason=index-current'))).toBe(true);
+  });
+
+  it('narrows the embedding work list by the watermark delta and never the graph (067)', async () => {
+    const s1 = snippet('s1', 'A snippet.');
+    const fake = embedder();
+    const store = memStore([cached('c-old', OLD), cached('c-keep', COLD)]);
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] }), claim('c-keep', COLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      channels: [embeddingChannel({ embed: fake.embed, model: EMBED_MODEL, store, log: () => {} })],
+    });
+    await h.run(); // watermark absent: the delta cannot be computed, so nothing narrows it
+    // A claim is hand-edited between runs — a body change no sweep touched.
+    h.store.writeClaim(claim('c-old', MINTED, { cites: ['s1@1'] }));
+    await h.run();
+
+    expect(fake.texts).toEqual([MINTED]);
+    // The graph handed to prime stayed WHOLE: the untouched claim's vector
+    // survived the persist prune (ticket 067 — the narrowing filters the work
+    // list, never the graph).
+    expect(store.rows.map((r) => r.claimId).sort()).toEqual(['c-keep', 'c-old'].sort());
+    expect(store.rows.find((r) => r.claimId === 'c-old')?.hash).toBe(bodyHash(MINTED));
+  });
+
+  it('deleting the watermark forces the full rebuild that is today\'s path', async () => {
+    const s1 = snippet('s1', 'A snippet.');
+    const fake = embedder();
+    const store = memStore([cached('c-old', OLD)]);
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      channels: [embeddingChannel({ embed: fake.embed, model: EMBED_MODEL, store, log: () => {} })],
+      propose: async () => mintResult([{ op: 'KEEP', reading: 'r-1' }]),
+      readings: [reading('r-1', ['s1@1'], 'A reading.')],
+    });
+    const first = await h.run(); // today's path: the passes all run
+    rmSync(join(h.deps.vaultRoot, 'index', 'watermark.json'));
+    const second = await h.run();
+
+    expect(second.pool).toEqual(first.pool);
+    // The index passes ran again — no skip for them — and rewrote the watermark.
+    const all = skippedDetails(h);
+    expect(all.filter((d) => d.startsWith('job=candidates '))).toEqual([]);
+    expect(all.filter((d) => d.startsWith('job=prime '))).toEqual([]);
+    expect(existsSync(join(h.deps.vaultRoot, 'index', 'watermark.json'))).toBe(true);
   });
 });

@@ -426,7 +426,7 @@ main {
   line-height: 1.5;
 }
 
-.proposal-provenance {
+.lineage-provenance {
   font-family: var(--font-ui);
   font-size: 0.72rem;
   color: var(--dim);
@@ -436,12 +436,12 @@ main {
   border-left: 2px solid var(--border);
 }
 
-.proposal-question {
+.lineage-question {
   margin-bottom: 0.15rem;
   font-style: italic;
 }
 
-.proposal-context {
+.lineage-context {
   /* context ends with a hairline marking the cut boundary */
 }
 

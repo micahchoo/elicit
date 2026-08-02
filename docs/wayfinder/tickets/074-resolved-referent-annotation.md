@@ -19,6 +19,15 @@ It is never a gate: it cannot drop, route, or rewrite a snippet. Input is
 the snippet plus its `Provenance.context` and `Provenance.question` from 073
 — never the whole transcript.
 
+**Prerequisite — DONE 2026-08-02:** the labelled set is
+[docs/dangler-labels-2026-08-02.md](../../dangler-labels-2026-08-02.md).
+Measured: 96/139 snippets dangle (69.1%); 71 of 96 resolve from the
+mechanical 2-sentence window alone (74%); 25 are unresolvable — the exact
+set where the annotation must stay silent. The eliciting-question bucket is
+0 BY CONSTRUCTION: this vault is 100% imported prose, so question-anaphora
+is unmeasured, not absent — re-measure when conversational snippets
+accumulate. Original prerequisite text follows for context.
+
 **Prerequisite, inside this ticket:** the labelled dangler set 072 called
 for. RULED by Micah 2026-08-02: an agent may do the labelling (supersedes
 the hand-label default this ticket inherited from 037's precedent). Label

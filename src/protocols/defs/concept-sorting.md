@@ -4,6 +4,9 @@ targets:
   - domain
 prerequisites: []
 questionForm: deliberative
+# The fixed probe served when the guard rejects twice and every fallback is
+# empty (ticket 079): one sentence, no conversation reference, no placeholders.
+floorProbe: "What do the things that belong together share that the others do not?"
 ---
 You are conducting a concept-sorting interview about a domain the user knows well. Surface the categories and dimensions they use — consciously or not — to organize their field.
 

@@ -3,7 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import matter from 'gray-matter';
-import { createClaimStore } from '../src/wiki/store.js';
+import {
+  appendSweepDeferral,
+  createClaimStore,
+  readSweepDeferral,
+  readStillTrueCursor,
+  writeStillTrueCursor,
+} from '../src/wiki/store.js';
 import type {
   Claim,
   ClashCandidate,
@@ -532,5 +538,63 @@ describe('ClashCandidate.attempts survives the round trip (Q-53)', () => {
 
     const readBack = createClaimStore(root).listCandidates().find((c) => c.id === '01KLEGACY');
     expect(readBack?.attempts).toBe(1);
+  });
+});
+
+describe('Sweep deferral and still-true cursor (075)', () => {
+  it('appendSweepDeferral appends one line per call; readSweepDeferral returns the LAST', () => {
+    appendSweepDeferral(root, 30);
+    appendSweepDeferral(root, 18);
+    appendSweepDeferral(root, 0);
+
+    const last = readSweepDeferral(root);
+    expect(last).toEqual({ at: expect.any(String), remaining: 0 });
+
+    const raw = readFileSync(join(root, 'wiki', 'sweep-deferral.jsonl'), 'utf-8');
+    const lines = raw.trimEnd().split('\n');
+    expect(lines).toHaveLength(3);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ remaining: 30 });
+    expect(JSON.parse(lines[1]!)).toMatchObject({ remaining: 18 });
+  });
+
+  it('a missing deferral file reads null', () => {
+    expect(readSweepDeferral(root)).toBeNull();
+  });
+
+  it('skips a corrupt LAST deferral line and returns the previous one', () => {
+    appendSweepDeferral(root, 18);
+    writeFileSync(
+      join(root, 'wiki', 'sweep-deferral.jsonl'),
+      `${readFileSync(join(root, 'wiki', 'sweep-deferral.jsonl'), 'utf-8')}{not json\n`,
+      'utf-8'
+    );
+    expect(readSweepDeferral(root)).toMatchObject({ remaining: 18 });
+  });
+
+  it('a deferral file with only corrupt lines reads null', () => {
+    mkdirSync(join(root, 'wiki'), { recursive: true });
+    writeFileSync(
+      join(root, 'wiki', 'sweep-deferral.jsonl'),
+      '{not json\n{"remaining": "twelve"}\n',
+      'utf-8'
+    );
+    expect(readSweepDeferral(root)).toBeNull();
+  });
+
+  it('writeStillTrueCursor round-trips; the file lives at the expected path', () => {
+    writeStillTrueCursor(root, 7);
+    expect(readStillTrueCursor(root)).toBe(7);
+    expect(JSON.parse(readFileSync(join(root, 'wiki', 'still-true-cursor.json'), 'utf-8'))).toEqual({ offset: 7 });
+  });
+
+  it('a missing or corrupt cursor file reads 0', () => {
+    expect(readStillTrueCursor(root)).toBe(0);
+
+    mkdirSync(join(root, 'wiki'), { recursive: true });
+    writeFileSync(join(root, 'wiki', 'still-true-cursor.json'), 'not json', 'utf-8');
+    expect(readStillTrueCursor(root)).toBe(0);
+
+    writeFileSync(join(root, 'wiki', 'still-true-cursor.json'), '{"offset": "seven"}', 'utf-8');
+    expect(readStillTrueCursor(root)).toBe(0);
   });
 });

@@ -19,15 +19,30 @@ import {
  CLOSING_BOOKMARK_QUESTION,
  type StarterQuestion,
 } from './protocol.js';
-import { getProtocol, selectProtocolForTarget, loadProtocolDefinitions } from '../protocols/registry.js';
+import {
+ getProtocol,
+ selectProtocolForTarget,
+ loadProtocolDefinitions,
+ DEFAULT_FLOOR_PROBE,
+} from '../protocols/registry.js';
+import { appendEvent } from '../log/activity.js';
 import { loadQuestionBank } from './bank.js';
-import { resonate } from '../index/lexical.js';
+import { quotablePhrase, resonateHybrid, type SemanticIndex } from '../index/semantic.js';
 import { isContentFree } from './answer-shape.js';
 import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
 import { checkQuestion, type GuardVerdict } from './guards.js';
 import { facetIntentForRedLight } from './facet-intent.js';
 import type { RandomizerDraw } from '../randomizer/randomizer.js';
+
+/**
+ * The vault root per live session, keyed by session id. `startSession` records
+ * it when the caller supplies it; the guard-floor path reads it back so the
+ * elicitor can write its own activity events without holding the root on the
+ * session (which lives in src/types.ts and is shared). Sessions are short-lived;
+ * the map never clears, exactly like the server's own session table.
+ */
+const sessionVaultRoots = new Map<string, string>();
 
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
@@ -60,6 +75,13 @@ export function startSession(
   vault: Vault;
   queue: QueueStore;
   index: LexicalIndex;
+  /**
+   * The semantic resonance channel (Q-17, ticket 068). Optional: absent is
+   * the ordinary cold state, in which the hybrid degrades to the trigram
+   * index — the system works with the embedding server switched off because
+   * it works with it switched off today.
+   */
+  semantic?: SemanticIndex;
   bank?: StarterQuestion[];
   protocolName?: string;
   /**
@@ -77,6 +99,13 @@ export function startSession(
   randomizer?: (invokedBy: 'user' | 'system') => RandomizerDraw | null;
   /** True when the person chose "shuffle a deck" instead of "begin". */
   shuffleRequested?: boolean;
+  /**
+   * The vault root the session's activity log lives in. The caller holds it
+   * (the server owns the vault path); passed so the elicitor can log the
+   * guard floor it reaches (ticket 079). Absent means the floor is served
+   * silently — the log is evidence, not a dependency.
+   */
+  vaultRoot?: string;
  },
 ): SessionState {
  const id = ulid();
@@ -116,11 +145,11 @@ export function startSession(
    // snippet has no block behind it, so it carries none rather than a fake.
    ...(randomDraw.draw.kind === 'deck'
     ? {
-      questionSource: {
-       channel: randomDraw.draw.channel,
-       blockId: randomDraw.draw.blockId,
-      },
-     }
+     questionSource: {
+      channel: randomDraw.draw.channel,
+      blockId: randomDraw.draw.blockId,
+     },
+    }
     : {}),
   };
  } else if (queueDraw) {
@@ -150,6 +179,11 @@ export function startSession(
  });
  deps.vault.appendTurn(id, openerTurn);
 
+ // The activity-log root for this session, if the caller supplied one. The
+ // floor path below is the only reader; every other sitting event is emitted
+ // at the server seam, which holds the root itself.
+ if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
+
  return {
   id,
   mode: normalizedMode,
@@ -159,6 +193,7 @@ export function startSession(
    vault: deps.vault,
    queue: deps.queue,
    index: deps.index,
+   ...(deps.semantic ? { semantic: deps.semantic } : {}),
   },
   turns: [openerTurn],
   bank,
@@ -319,11 +354,26 @@ export async function userTurn(
  // ── Probe flow: juxtaposition > red-light compose > generic LLM probe ──
 
  // Priority 1: resonance → juxtaposition
- const hits = resonate(s.deps.index, text);
+ const hits = await resonateHybrid(s.deps.index, s.deps.semantic, text);
  for (const hit of hits) {
+  // Q-12 requires the composed question to quote a verbatim substring, and a
+  // semantic hit shares no such substring with the turn — the whole point of
+  // the channel. The 068 ruling: the semantic path quotes the SNIPPET's own
+  // words, the person's past prose framed then-versus-now. The lexical arm
+  // passes through unchanged: its sharedPhrase is the reason the two texts
+  // are connected.
+  const quotable = hit.channel === 'lexical'
+   ? hit
+   : {
+    snippetId: hit.snippetId,
+    version: hit.version,
+    snippetText: hit.snippetText,
+    sharedPhrase: quotablePhrase(hit.snippetText),
+    score: hit.score,
+   };
   const juxtaposed = await composeJuxtaposition(
    text,
-   hit,
+   quotable,
    s.deps.complete,
   );
   if (!juxtaposed) continue;
@@ -390,10 +440,45 @@ export async function userTurn(
    );
    const fb = drawFallback(s);
    if (fb) return fb;
+
+   // Guard floor (ticket 079): the composed question was rejected twice and
+   // nothing remains to draw. Q-55's own principle — a composed floor beats a
+   // bad draw — cuts the other way here: a FIXED protocol-appropriate probe
+   // constant beats text that failed validation twice. Drawn from the active
+   // protocol's own material (defs/*.md), deterministic and zero-LLM, so the
+   // failure path needs nothing that can itself fail. Served unchecked, like
+   // any canned draw — it is what the guards fall back TO. This return is
+   // what makes the fallthrough below unreachable: probeText was rejected
+   // twice and must never reach the person.
+   emitGuardFloor(s, verdict);
+   const floorText = getProtocol(s.protocol)?.floorProbe ?? DEFAULT_FLOOR_PROBE;
+   return emitProbe(s, floorText, defaultQuestionForm, 'probe');
   }
  }
 
  return emitProbe(s, probeText, defaultQuestionForm, 'probe');
+}
+
+/**
+ * Log the guard floor honestly (ticket 079): twice rejected, fallback empty,
+ * fixed probe served. A distinct kind, because Q-55's ladder work (061)
+ * established that which rung emptied the pool must be legible — the queue's
+ * own floor is logged separately, and this is the elicitor's rung beyond it.
+ * Never the probe text, only what happened and to whom (Q-22).
+ */
+function emitGuardFloor(s: SessionState, verdict: GuardVerdict): void {
+ const root = sessionVaultRoots.get(s.id);
+ if (root === undefined) return; // caller holds the root; the log is evidence, not a dependency
+ try {
+  appendEvent(root, {
+   at: new Date().toISOString(),
+   actor: 'elicitor',
+   kind: 'guard-floor',
+   detail: `protocol=${s.protocol} verdict=${verdict} queue=0 bank=0`,
+  });
+ } catch {
+  // Deliberately silent, exactly as the queue's draw logging is.
+ }
 }
 
 /**

@@ -135,11 +135,11 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import {
-  bodyHash,
-  cosine,
-  type Embed,
-  type EmbeddingIndexStore,
-  type EmbeddingRecord,
+ bodyHash,
+ cosine,
+ type Embed,
+ type EmbeddingIndexStore,
+ type EmbeddingRecord,
 } from '../wiki/embedding.js';
 import { shadowDecision, type Threshold, type ThresholdLogFn } from '../wiki/thresholds.js';
 import type { LexicalIndex, ResonanceHit, Snippet } from '../types.js';
@@ -158,13 +158,13 @@ import { resonate } from './lexical.js';
  * just said them.
  */
 export type SemanticHit = {
-  snippetId: string;
-  version: number;
-  /** Raw cosine. Ordering is the signal; the absolute value is not portable. */
-  score: number;
-  /** 1-based position in this query's returned list. */
-  rank: number;
-  snippetText: string;
+ snippetId: string;
+ version: number;
+ /** Raw cosine. Ordering is the signal; the absolute value is not portable. */
+ score: number;
+ /** 1-based position in this query's returned list. */
+ rank: number;
+ snippetText: string;
 };
 
 /**
@@ -175,8 +175,35 @@ export type SemanticHit = {
  * the compiler will not let it forget.
  */
 export type HybridHit =
-  | ({ channel: 'lexical' } & ResonanceHit)
-  | ({ channel: 'semantic' } & SemanticHit);
+ | ({ channel: 'lexical' } & ResonanceHit)
+ | ({ channel: 'semantic' } & SemanticHit);
+
+/** Words of a snippet a semantic juxtaposition may quote — see `quotablePhrase`. */
+const QUOTE_WORDS = 4;
+
+/**
+ * The verbatim run of a snippet's own words that a semantic juxtaposition may
+ * quote (ticket 068's ruling).
+ *
+ * `SemanticHit` deliberately carries no `sharedPhrase`: nothing verbatim is
+ * shared with the turn, and a field claiming otherwise is how a composer ends
+ * up quoting the person's past words back as if they had just said them. But
+ * the composed question still has to quote SOMETHING verbatim — Q-12 is
+ * enforced in code. This is the answer the ruling chose: the snippet's own
+ * prose, framed then-versus-now. Every quoted word is the person's; the
+ * framing, not an echo, is what justifies the connection.
+ *
+ * The first `QUOTE_WORDS` whitespace-separated tokens, edge punctuation
+ * trimmed — the same shape the lexical channel treats as quotable, which
+ * requires a phrase of at least three words. The return is always an exact
+ * substring of `snippetText`: never an invented phrase.
+ */
+export function quotablePhrase(snippetText: string): string {
+ const words = snippetText.split(/\s+/).filter((w) => w.length > 0);
+ let phrase = words.slice(0, QUOTE_WORDS).join(' ');
+ phrase = phrase.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
+ return phrase.length > 0 ? phrase : snippetText.trim();
+}
 
 // ── The bounds (Q-56: a bound ships LIVE and owes a clip record) ──
 
@@ -245,38 +272,38 @@ const EMBED_BATCH = 16;
  * `graduatesWhen` beside it — holds either way.
  */
 export const SEMANTIC_FLOOR: Threshold = {
-  name: 'resonance.semanticFloor',
-  value: 0.5,
-  live: false,
-  graduatesWhen:
-    'The shadow record shows it would drop hits a reader agrees are unrelated, and drops none the reader wanted. 0.50 is measured, not guessed: on the paraphrase fixture it sits below every true pair (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064).',
+ name: 'resonance.semanticFloor',
+ value: 0.5,
+ live: false,
+ graduatesWhen:
+  'The shadow record shows it would drop hits a reader agrees are unrelated, and drops none the reader wanted. 0.50 is measured, not guessed: on the paraphrase fixture it sits below every true pair (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064).',
 };
 
 /** Live. A per-run bound; see `PRIME_CAP` for why it is not a recency window. */
 export const PRIME_CAP_BOUND: Threshold = {
-  name: 'resonance.primeCap',
-  value: PRIME_CAP,
-  live: true,
-  graduatesWhen:
-    'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
+ name: 'resonance.primeCap',
+ value: PRIME_CAP,
+ live: true,
+ graduatesWhen:
+  'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
 };
 
 /** Live. The cold-start ceiling for a background pass. */
 export const PRIME_BUDGET_BOUND: Threshold = {
-  name: 'resonance.primeBudgetMs',
-  value: PRIME_BUDGET_MS,
-  live: true,
-  graduatesWhen:
-    'Already live per Q-56. The value is ticket 007\'s cold-start measurement — 370 s then HTTP 500 on an unloaded model — and the clip record says how often a run stops here rather than finishing.',
+ name: 'resonance.primeBudgetMs',
+ value: PRIME_BUDGET_MS,
+ live: true,
+ graduatesWhen:
+  'Already live per Q-56. The value is ticket 007\'s cold-start measurement — 370 s then HTTP 500 on an unloaded model — and the clip record says how often a run stops here rather than finishing.',
 };
 
 /** Live. The one bound a person waits on. */
 export const QUERY_BUDGET_BOUND: Threshold = {
-  name: 'resonance.queryBudgetMs',
-  value: QUERY_BUDGET_MS,
-  live: true,
-  graduatesWhen:
-    'Already live per Q-56, and this one is not a background bound: it is how long a person waits mid-turn for a channel that is warm in 100-120 ms. A clip here means the model was cold or the box was busy, and the clip record is how often that costs a turn its hits.',
+ name: 'resonance.queryBudgetMs',
+ value: QUERY_BUDGET_MS,
+ live: true,
+ graduatesWhen:
+  'Already live per Q-56, and this one is not a background bound: it is how long a person waits mid-turn for a channel that is warm in 100-120 ms. A clip here means the model was cold or the box was busy, and the clip record is how often that costs a turn its hits.',
 };
 
 // ── The cache file ──
@@ -291,36 +318,36 @@ export const QUERY_BUDGET_BOUND: Threshold = {
  * pass and nothing else, and it can never be the reason a sitting fails.
  */
 export function fileSnippetVectorStore(vaultRoot: string): EmbeddingIndexStore {
-  const path = join(vaultRoot, 'index', 'snippet-embeddings.jsonl');
-  return {
-    load(): EmbeddingRecord[] {
-      let text: string;
-      try {
-        text = readFileSync(path, 'utf-8');
-      } catch {
-        return [];
-      }
-      const out: EmbeddingRecord[] = [];
-      for (const line of text.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
-        const record = asRecord(parsed);
-        if (record) out.push(record);
-      }
-      return out;
-    },
-    save(records: EmbeddingRecord[]): void {
-      mkdirSync(dirname(path), { recursive: true });
-      const body = records.map((r) => JSON.stringify(r)).join('\n');
-      writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
-    },
-  };
+ const path = join(vaultRoot, 'index', 'snippet-embeddings.jsonl');
+ return {
+  load(): EmbeddingRecord[] {
+   let text: string;
+   try {
+    text = readFileSync(path, 'utf-8');
+   } catch {
+    return [];
+   }
+   const out: EmbeddingRecord[] = [];
+   for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: unknown;
+    try {
+     parsed = JSON.parse(trimmed);
+    } catch {
+     continue;
+    }
+    const record = asRecord(parsed);
+    if (record) out.push(record);
+   }
+   return out;
+  },
+  save(records: EmbeddingRecord[]): void {
+   mkdirSync(dirname(path), { recursive: true });
+   const body = records.map((r) => JSON.stringify(r)).join('\n');
+   writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
+  },
+ };
 }
 
 /**
@@ -333,49 +360,49 @@ export function fileSnippetVectorStore(vaultRoot: string): EmbeddingIndexStore {
  * only the reader is copied, and the two must be changed together.
  */
 function asRecord(value: unknown): EmbeddingRecord | null {
-  if (typeof value !== 'object' || value === null) return null;
-  const v = value as Record<string, unknown>;
-  if (typeof v.claimId !== 'string' || v.claimId === '') return null;
-  if (typeof v.hash !== 'string' || typeof v.model !== 'string') return null;
-  if (!Array.isArray(v.vector) || v.vector.length === 0) return null;
-  if (!v.vector.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
-  return { claimId: v.claimId, hash: v.hash, model: v.model, vector: v.vector as number[] };
+ if (typeof value !== 'object' || value === null) return null;
+ const v = value as Record<string, unknown>;
+ if (typeof v.claimId !== 'string' || v.claimId === '') return null;
+ if (typeof v.hash !== 'string' || typeof v.model !== 'string') return null;
+ if (!Array.isArray(v.vector) || v.vector.length === 0) return null;
+ if (!v.vector.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+ return { claimId: v.claimId, hash: v.hash, model: v.model, vector: v.vector as number[] };
 }
 
 // ── The channel ──
 
 export type SemanticDeps = {
-  embed: Embed;
-  /** The embedder's name, written into every record it produces. */
-  model: string;
-  store: EmbeddingIndexStore;
-  log: ThresholdLogFn;
-  /** Overrides `PRIME_CAP`. */
-  primeCap?: number;
-  /** Overrides `PRIME_BUDGET_MS`. */
-  primeBudgetMs?: number;
-  /** Overrides `QUERY_BUDGET_MS`. */
-  queryBudgetMs?: number;
-  /** Overrides `SEMANTIC_FLOOR`, so a test can exercise the live branch. */
-  floor?: Threshold;
-  /** Injectable clock, for the prime budget only. Never used to order anything. */
-  now?: () => number;
+ embed: Embed;
+ /** The embedder's name, written into every record it produces. */
+ model: string;
+ store: EmbeddingIndexStore;
+ log: ThresholdLogFn;
+ /** Overrides `PRIME_CAP`. */
+ primeCap?: number;
+ /** Overrides `PRIME_BUDGET_MS`. */
+ primeBudgetMs?: number;
+ /** Overrides `QUERY_BUDGET_MS`. */
+ queryBudgetMs?: number;
+ /** Overrides `SEMANTIC_FLOOR`, so a test can exercise the live branch. */
+ floor?: Threshold;
+ /** Injectable clock, for the prime budget only. Never used to order anything. */
+ now?: () => number;
 };
 
 export interface SemanticIndex {
-  /**
-   * Fill the vector cache. Async, batched, budgeted, resumable, and it NEVER
-   * throws or rejects — an unreachable endpoint logs once and returns.
-   */
-  prime(): Promise<void>;
-  /**
-   * The top `k` snippets by cosine to `text`, ranked. Async because the query
-   * itself must be embedded, and that is a network call. Returns `[]` rather
-   * than throwing when the endpoint is unreachable, slow, or the cache is cold.
-   */
-  resonate(text: string, k?: number): Promise<SemanticHit[]>;
-  /** How many snippets currently hold a usable vector. Observability, not state. */
-  vectored(): number;
+ /**
+  * Fill the vector cache. Async, batched, budgeted, resumable, and it NEVER
+  * throws or rejects — an unreachable endpoint logs once and returns.
+  */
+ prime(): Promise<void>;
+ /**
+  * The top `k` snippets by cosine to `text`, ranked. Async because the query
+  * itself must be embedded, and that is a network call. Returns `[]` rather
+  * than throwing when the endpoint is unreachable, slow, or the cache is cold.
+  */
+ resonate(text: string, k?: number): Promise<SemanticHit[]>;
+ /** How many snippets currently hold a usable vector. Observability, not state. */
+ vectored(): number;
 }
 
 /**
@@ -387,241 +414,241 @@ export interface SemanticIndex {
  * contract T18 has and it is stated here because the mistake is cheap to make.
  */
 export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): SemanticIndex {
-  const { embed, model, store, log } = deps;
-  const cap = deps.primeCap ?? PRIME_CAP;
-  const primeBudgetMs = deps.primeBudgetMs ?? PRIME_BUDGET_MS;
-  const queryBudgetMs = deps.queryBudgetMs ?? QUERY_BUDGET_MS;
-  const floor = deps.floor ?? SEMANTIC_FLOOR;
-  const clock = deps.now ?? (() => Date.now());
+ const { embed, model, store, log } = deps;
+ const cap = deps.primeCap ?? PRIME_CAP;
+ const primeBudgetMs = deps.primeBudgetMs ?? PRIME_BUDGET_MS;
+ const queryBudgetMs = deps.queryBudgetMs ?? QUERY_BUDGET_MS;
+ const floor = deps.floor ?? SEMANTIC_FLOOR;
+ const clock = deps.now ?? (() => Date.now());
 
-  // A boolean floor would be a misconfiguration. It must drop NOTHING rather
-  // than everything: this channel's job is recall, and a silent total blackout
-  // is the failure mode ticket 053 exists to end.
-  const floorValue = typeof floor.value === 'number' ? floor.value : Number.NEGATIVE_INFINITY;
+ // A boolean floor would be a misconfiguration. It must drop NOTHING rather
+ // than everything: this channel's job is recall, and a silent total blackout
+ // is the failure mode ticket 053 exists to end.
+ const floorValue = typeof floor.value === 'number' ? floor.value : Number.NEGATIVE_INFINITY;
 
-  /**
-   * The corpus as given, first occurrence of an id wins. Deliberately NOT
-   * sorted here: ordering the corpus by id would make `resonate`'s tie-break
-   * unobservable, and an invariant that no test can see is an invariant that
-   * quietly stops holding. `prime` sorts its own copy, where the order decides
-   * which snippets a clipped run embeds first and therefore has to be fixed.
-   */
-  const corpus: Snippet[] = [];
-  const seen = new Set<string>();
-  for (const s of snippets) {
-    if (seen.has(s.id)) continue;
-    seen.add(s.id);
-    corpus.push(s);
+ /**
+  * The corpus as given, first occurrence of an id wins. Deliberately NOT
+  * sorted here: ordering the corpus by id would make `resonate`'s tie-break
+  * unobservable, and an invariant that no test can see is an invariant that
+  * quietly stops holding. `prime` sorts its own copy, where the order decides
+  * which snippets a clipped run embeds first and therefore has to be fixed.
+  */
+ const corpus: Snippet[] = [];
+ const seen = new Set<string>();
+ for (const s of snippets) {
+  if (seen.has(s.id)) continue;
+  seen.add(s.id);
+  corpus.push(s);
+ }
+ const byId = (a: Snippet, b: Snippet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+ let cache: Map<string, EmbeddingRecord> | undefined;
+ function loaded(): Map<string, EmbeddingRecord> {
+  if (!cache) {
+   cache = new Map();
+   for (const record of store.load()) cache.set(record.claimId, record);
   }
-  const byId = (a: Snippet, b: Snippet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  return cache;
+ }
 
-  let cache: Map<string, EmbeddingRecord> | undefined;
-  function loaded(): Map<string, EmbeddingRecord> {
-    if (!cache) {
-      cache = new Map();
-      for (const record of store.load()) cache.set(record.claimId, record);
-    }
-    return cache;
+ function unavailable(detail: string): void {
+  log({ at: new Date().toISOString(), actor: 'clerk', kind: 'embedding-unavailable', detail });
+ }
+
+ /** A vector that is still valid for this snippet's prose under this model. */
+ function vectorFor(snippet: Snippet): number[] | undefined {
+  const record = loaded().get(snippet.id);
+  if (!record) return undefined;
+  if (record.model !== model) return undefined;
+  if (record.hash !== bodyHash(snippet.prose)) return undefined;
+  return record.vector;
+ }
+
+ /**
+  * The query's vector, or undefined — never a throw, never a fabrication.
+  *
+  * The budget is a race rather than an abort because `Embed` is an injected
+  * function with no cancellation in its contract. The losing request keeps
+  * running and, on a cold model, finishes the job of loading the weights; its
+  * rejection is caught here so it cannot surface as an unhandled rejection.
+  */
+ async function embedQuery(text: string): Promise<number[] | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<'expired'>((resolve) => {
+   timer = setTimeout(() => resolve('expired'), queryBudgetMs);
+  });
+  const call = embed([text]).then(
+   (vectors) => ({ vectors }),
+   (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
+  );
+
+  const outcome = await Promise.race([call, expired]);
+  if (timer !== undefined) clearTimeout(timer);
+
+  if (outcome === 'expired') {
+   shadowDecision(
+    QUERY_BUDGET_BOUND,
+    `stop waiting for the query vector after ${queryBudgetMs}ms and return no semantic hits`,
+    log,
+    true,
+   );
+   return undefined;
   }
-
-  function unavailable(detail: string): void {
-    log({ at: new Date().toISOString(), actor: 'clerk', kind: 'embedding-unavailable', detail });
+  if ('error' in outcome) {
+   unavailable(`model=${model} subject=query embedded=0 pending=1 error=${outcome.error}`);
+   return undefined;
   }
-
-  /** A vector that is still valid for this snippet's prose under this model. */
-  function vectorFor(snippet: Snippet): number[] | undefined {
-    const record = loaded().get(snippet.id);
-    if (!record) return undefined;
-    if (record.model !== model) return undefined;
-    if (record.hash !== bodyHash(snippet.prose)) return undefined;
-    return record.vector;
+  const vector = outcome.vectors[0];
+  if (
+   outcome.vectors.length !== 1 ||
+   !vector ||
+   vector.length === 0 ||
+   !vector.every((n) => Number.isFinite(n))
+  ) {
+   unavailable(
+    `model=${model} subject=query embedded=0 pending=1 error=the query came back without a usable vector`,
+   );
+   return undefined;
   }
+  return vector;
+ }
 
-  /**
-   * The query's vector, or undefined — never a throw, never a fabrication.
-   *
-   * The budget is a race rather than an abort because `Embed` is an injected
-   * function with no cancellation in its contract. The losing request keeps
-   * running and, on a cold model, finishes the job of loading the weights; its
-   * rejection is caught here so it cannot surface as an unhandled rejection.
-   */
-  async function embedQuery(text: string): Promise<number[] | undefined> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = new Promise<'expired'>((resolve) => {
-      timer = setTimeout(() => resolve('expired'), queryBudgetMs);
-    });
-    const call = embed([text]).then(
-      (vectors) => ({ vectors }),
-      (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
+ return {
+  async prime(): Promise<void> {
+   const cached = loaded();
+   const missing = [...corpus].sort(byId).filter((s) => vectorFor(s) === undefined);
+
+   let todo = missing;
+   if (todo.length > cap) {
+    shadowDecision(
+     PRIME_CAP_BOUND,
+     `embed ${missing.length} snippets in one run; ${missing.length - cap} wait for the next`,
+     log,
+     true,
     );
+    todo = todo.slice(0, cap);
+   }
 
-    const outcome = await Promise.race([call, expired]);
-    if (timer !== undefined) clearTimeout(timer);
+   const deadline = clock() + primeBudgetMs;
+   let embedded = 0;
+   let stopped: string | undefined;
 
-    if (outcome === 'expired') {
-      shadowDecision(
-        QUERY_BUDGET_BOUND,
-        `stop waiting for the query vector after ${queryBudgetMs}ms and return no semantic hits`,
-        log,
-        true,
-      );
-      return undefined;
+   for (let i = 0; i < todo.length; i += EMBED_BATCH) {
+    if (clock() >= deadline) {
+     shadowDecision(
+      PRIME_BUDGET_BOUND,
+      `stop embedding: ${embedded} done, ${todo.length - embedded} still waiting`,
+      log,
+      true,
+     );
+     break;
     }
-    if ('error' in outcome) {
-      unavailable(`model=${model} subject=query embedded=0 pending=1 error=${outcome.error}`);
-      return undefined;
+    const batch = todo.slice(i, i + EMBED_BATCH);
+    let vectors: number[][];
+    try {
+     vectors = await embed(batch.map((s) => s.prose));
+    } catch (err) {
+     stopped = err instanceof Error ? err.message : String(err);
+     break;
     }
-    const vector = outcome.vectors[0];
+    if (vectors.length !== batch.length) {
+     // Zipping a short list back onto the inputs would file one snippet's
+     // vector under another snippet's id, and nothing downstream could
+     // tell that every score after it was about the wrong text.
+     stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
+     break;
+    }
+    const fresh: EmbeddingRecord[] = [];
+    for (const [j, snippet] of batch.entries()) {
+     const vector = vectors[j];
+     if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
+      stopped = `snippet ${snippet.id} came back without a usable vector`;
+      break;
+     }
+     fresh.push({
+      claimId: snippet.id,
+      hash: bodyHash(snippet.prose),
+      model,
+      vector,
+     });
+    }
+    if (stopped) break;
+    for (const record of fresh) cached.set(record.claimId, record);
+    embedded += fresh.length;
+    // Persist per batch. This is what makes the two bounds above cost time
+    // and never work, and what makes a cold start survivable.
+    persist(seen, cached, store);
+   }
+
+   if (stopped !== undefined) {
+    unavailable(
+     `model=${model} subject=snippet embedded=${embedded} pending=${todo.length - embedded} error=${stopped}`,
+    );
+   }
+  },
+
+  async resonate(text: string, k: number = TOP_N): Promise<SemanticHit[]> {
+   if (k <= 0) return [];
+   if (text.trim() === '') return [];
+
+   const scorable: { snippet: Snippet; vector: number[] }[] = [];
+   for (const snippet of corpus) {
+    const vector = vectorFor(snippet);
+    if (vector) scorable.push({ snippet, vector });
+   }
+   if (scorable.length === 0) return [];
+
+   const query = await embedQuery(text);
+   if (!query) return [];
+
+   const scored = scorable
+    .map(({ snippet, vector }) => ({ snippet, score: cosine(query, vector) }))
+    // Rank descending, then by id — so a tie is broken by something stable
+    // rather than by whatever order the corpus happened to be read in.
+    .sort((a, b) =>
+     b.score !== a.score
+      ? b.score - a.score
+      : a.snippet.id < b.snippet.id
+       ? -1
+       : a.snippet.id > b.snippet.id
+        ? 1
+        : 0,
+    )
+    .slice(0, k);
+
+   // The floor, in shadow (Q-35). One line per query, and only when it would
+   // have changed something — an every-turn record would drown the feed the
+   // shadow evidence has to be read from.
+   const below = scored.filter((s) => s.score < floorValue);
+   let kept = scored;
+   if (below.length > 0) {
+    const worst = below.map((s) => `${s.snippet.id}@${s.score.toFixed(4)}`).join(',');
     if (
-      outcome.vectors.length !== 1 ||
-      !vector ||
-      vector.length === 0 ||
-      !vector.every((n) => Number.isFinite(n))
+     shadowDecision(
+      floor,
+      `drop ${below.length} of ${scored.length} ranked hits below ${floorValue}: ${worst}`,
+      log,
+     )
     ) {
-      unavailable(
-        `model=${model} subject=query embedded=0 pending=1 error=the query came back without a usable vector`,
-      );
-      return undefined;
+     kept = scored.filter((s) => s.score >= floorValue);
     }
-    return vector;
-  }
+   }
 
-  return {
-    async prime(): Promise<void> {
-      const cached = loaded();
-      const missing = [...corpus].sort(byId).filter((s) => vectorFor(s) === undefined);
+   return kept.map(({ snippet, score }, i) => ({
+    snippetId: snippet.id,
+    version: snippet.version,
+    score,
+    rank: i + 1,
+    snippetText: snippet.prose,
+   }));
+  },
 
-      let todo = missing;
-      if (todo.length > cap) {
-        shadowDecision(
-          PRIME_CAP_BOUND,
-          `embed ${missing.length} snippets in one run; ${missing.length - cap} wait for the next`,
-          log,
-          true,
-        );
-        todo = todo.slice(0, cap);
-      }
-
-      const deadline = clock() + primeBudgetMs;
-      let embedded = 0;
-      let stopped: string | undefined;
-
-      for (let i = 0; i < todo.length; i += EMBED_BATCH) {
-        if (clock() >= deadline) {
-          shadowDecision(
-            PRIME_BUDGET_BOUND,
-            `stop embedding: ${embedded} done, ${todo.length - embedded} still waiting`,
-            log,
-            true,
-          );
-          break;
-        }
-        const batch = todo.slice(i, i + EMBED_BATCH);
-        let vectors: number[][];
-        try {
-          vectors = await embed(batch.map((s) => s.prose));
-        } catch (err) {
-          stopped = err instanceof Error ? err.message : String(err);
-          break;
-        }
-        if (vectors.length !== batch.length) {
-          // Zipping a short list back onto the inputs would file one snippet's
-          // vector under another snippet's id, and nothing downstream could
-          // tell that every score after it was about the wrong text.
-          stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
-          break;
-        }
-        const fresh: EmbeddingRecord[] = [];
-        for (const [j, snippet] of batch.entries()) {
-          const vector = vectors[j];
-          if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
-            stopped = `snippet ${snippet.id} came back without a usable vector`;
-            break;
-          }
-          fresh.push({
-            claimId: snippet.id,
-            hash: bodyHash(snippet.prose),
-            model,
-            vector,
-          });
-        }
-        if (stopped) break;
-        for (const record of fresh) cached.set(record.claimId, record);
-        embedded += fresh.length;
-        // Persist per batch. This is what makes the two bounds above cost time
-        // and never work, and what makes a cold start survivable.
-        persist(seen, cached, store);
-      }
-
-      if (stopped !== undefined) {
-        unavailable(
-          `model=${model} subject=snippet embedded=${embedded} pending=${todo.length - embedded} error=${stopped}`,
-        );
-      }
-    },
-
-    async resonate(text: string, k: number = TOP_N): Promise<SemanticHit[]> {
-      if (k <= 0) return [];
-      if (text.trim() === '') return [];
-
-      const scorable: { snippet: Snippet; vector: number[] }[] = [];
-      for (const snippet of corpus) {
-        const vector = vectorFor(snippet);
-        if (vector) scorable.push({ snippet, vector });
-      }
-      if (scorable.length === 0) return [];
-
-      const query = await embedQuery(text);
-      if (!query) return [];
-
-      const scored = scorable
-        .map(({ snippet, vector }) => ({ snippet, score: cosine(query, vector) }))
-        // Rank descending, then by id — so a tie is broken by something stable
-        // rather than by whatever order the corpus happened to be read in.
-        .sort((a, b) =>
-          b.score !== a.score
-            ? b.score - a.score
-            : a.snippet.id < b.snippet.id
-              ? -1
-              : a.snippet.id > b.snippet.id
-                ? 1
-                : 0,
-        )
-        .slice(0, k);
-
-      // The floor, in shadow (Q-35). One line per query, and only when it would
-      // have changed something — an every-turn record would drown the feed the
-      // shadow evidence has to be read from.
-      const below = scored.filter((s) => s.score < floorValue);
-      let kept = scored;
-      if (below.length > 0) {
-        const worst = below.map((s) => `${s.snippet.id}@${s.score.toFixed(4)}`).join(',');
-        if (
-          shadowDecision(
-            floor,
-            `drop ${below.length} of ${scored.length} ranked hits below ${floorValue}: ${worst}`,
-            log,
-          )
-        ) {
-          kept = scored.filter((s) => s.score >= floorValue);
-        }
-      }
-
-      return kept.map(({ snippet, score }, i) => ({
-        snippetId: snippet.id,
-        version: snippet.version,
-        score,
-        rank: i + 1,
-        snippetText: snippet.prose,
-      }));
-    },
-
-    vectored(): number {
-      let n = 0;
-      for (const snippet of corpus) if (vectorFor(snippet) !== undefined) n++;
-      return n;
-    },
-  };
+  vectored(): number {
+   let n = 0;
+   for (const snippet of corpus) if (vectorFor(snippet) !== undefined) n++;
+   return n;
+  },
+ };
 }
 
 /**
@@ -631,12 +658,12 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
  * deleted snippet's vector buys nothing, and re-adding one costs one re-embed.
  */
 function persist(
-  ids: Set<string>,
-  cached: Map<string, EmbeddingRecord>,
-  store: EmbeddingIndexStore,
+ ids: Set<string>,
+ cached: Map<string, EmbeddingRecord>,
+ store: EmbeddingIndexStore,
 ): void {
-  for (const id of [...cached.keys()]) if (!ids.has(id)) cached.delete(id);
-  store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
+ for (const id of [...cached.keys()]) if (!ids.has(id)) cached.delete(id);
+ store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
 }
 
 // ── The hybrid entry point (Q-17's staged hybrid, both stages) ──
@@ -663,26 +690,26 @@ function persist(
  * today.
  */
 export async function resonateHybrid(
-  lexical: LexicalIndex,
-  semantic: SemanticIndex | undefined,
-  text: string,
-  k: number = TOP_N,
+ lexical: LexicalIndex,
+ semantic: SemanticIndex | undefined,
+ text: string,
+ k: number = TOP_N,
 ): Promise<HybridHit[]> {
-  const out: HybridHit[] = [];
-  const taken = new Set<string>();
+ const out: HybridHit[] = [];
+ const taken = new Set<string>();
 
-  for (const hit of resonate(lexical, text, k)) {
-    if (taken.has(hit.snippetId)) continue;
-    taken.add(hit.snippetId);
-    out.push({ channel: 'lexical', ...hit });
-  }
-  if (out.length >= k || !semantic) return out.slice(0, k);
+ for (const hit of resonate(lexical, text, k)) {
+  if (taken.has(hit.snippetId)) continue;
+  taken.add(hit.snippetId);
+  out.push({ channel: 'lexical', ...hit });
+ }
+ if (out.length >= k || !semantic) return out.slice(0, k);
 
-  for (const hit of await semantic.resonate(text, k)) {
-    if (taken.has(hit.snippetId)) continue;
-    taken.add(hit.snippetId);
-    out.push({ channel: 'semantic', ...hit });
-    if (out.length >= k) break;
-  }
-  return out;
+ for (const hit of await semantic.resonate(text, k)) {
+  if (taken.has(hit.snippetId)) continue;
+  taken.add(hit.snippetId);
+  out.push({ channel: 'semantic', ...hit });
+  if (out.length >= k) break;
+ }
+ return out;
 }

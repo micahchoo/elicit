@@ -1,9 +1,10 @@
 ---
 title: "Build: wire semantic resonance into the surfaces that use resonate()"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude (omp wave 3)
 blocked_by: []
+resolved: 2026-08-02
 ---
 
 ## Question
@@ -70,3 +71,70 @@ and third-decimal noise does not.
 - `SEMANTIC_CHANNEL_LIVE` is true and the fixture holds at ≥ 6/8.
 - The semantic path is exercised by a test that boots the real app — not by a
   test asserting the function was called.
+
+## Resolution (2026-08-02)
+
+**RULED — what a semantic juxtaposition may quote: the snippet's own words.**
+053's recommendation, adopted: every quoted word is the person's, framed
+then-versus-now. `composeJuxtaposition` still refuses a `SemanticHit` — the
+`@ts-expect-error` in `tests/semantic-resonance.test.ts` holds and the
+signature was NOT widened. The elicitor supplies the quotable text through
+the new `quotablePhrase(snippetText)` in `src/index/semantic.ts`: the first
+four whitespace-separated words of the matched snippet, edge punctuation
+trimmed, always a verbatim substring — never an invented phrase. Q-12's
+verbatim enforcement is satisfied because the quoted words are verbatim in
+the snippet; what justifies the connection is the juxtaposition, not an echo.
+The ruling is enforced by a test that composes a juxtaposition from a
+semantic hit and asserts the question quotes the snippet's own words.
+
+### What landed
+
+- `src/server.ts` — the turn endpoint awaits
+  `resonateHybrid(currentIndex, semanticIndex, body.text)`; the boot path
+  builds the semantic index beside `buildIndex` from the WHOLE corpus with
+  `fileSnippetVectorStore(vaultRoot)` and `prime()`s it in the background
+  (local mode only — under the fake responder there is no embedder);
+  `semanticIndex` flows through `ServerDeps` into the turn endpoint and into
+  `startSession`.
+- `src/elicitor/elicitor.ts` — priority-1 juxtaposition awaits
+  `resonateHybrid(s.deps.index, s.deps.semantic, text)`; lexical hits pass
+  through unchanged, semantic hits are converted to a quotable view via
+  `quotablePhrase` (the ruling above).
+- `src/types.ts` — `semantic?: SemanticIndex` on `SessionState.deps`
+  (type-only import; no runtime dependency).
+- `src/index/semantic.ts` — new export `quotablePhrase`.
+- `src/registry.ts` — `fileSnippetVectorStore`, `buildSemanticIndex`,
+  `resonateHybrid` and `quotablePhrase` declared **live** (the 077
+  cross-check ratchet); the bound entries' reasons refreshed to the wired
+  state.
+- `tests/resonance-paraphrase.test.ts` — `SEMANTIC_CHANNEL_LIVE = true`,
+  `RECALL_FLOOR = 0.75`, retrieval routed through `resonateHybrid` on the
+  recorded geometry. Measured 7/8 by rank — the floor holds with margin.
+- `tests/wire-semantic-resonance.test.ts` (new) — boots the real app: a
+  paraphrase with no shared phrase surfaces the stored snippet (today it
+  surfaced nothing); without the channel the same turn surfaces nothing; a
+  verbatim echo still surfaces through the lexical arm; the elicitor
+  composes a juxtaposition quoting the snippet's own words.
+- `tests/mechanism-registry.test.ts` — the forged "live with no caller"
+  example moved from `resonateHybrid` (now wired, so the forged entry would
+  pass) to `PROTOCOLS` (still callerless).
+
+### Verification
+
+- `npx tsc --noEmit` — clean.
+- `npm test` — **1307/1309 pass**. The two failures are
+  `not declared: src/import/body:{clean,dropCitedParagraphs,toTurns}` — the
+  concurrent import slice's untracked in-flight file whose registry
+  declarations belong to that ticket, not this one. Every failure
+  attributable to 068 is green, including the mechanism-registry cross-check
+  for the flipped entries.
+
+### Notes
+
+- The semantic index is built once at boot from the whole corpus and primed
+  in the background; a docket run replaces only the lexical index. New
+  snippets arriving mid-process are embedded on the next boot's prime — fine
+  for the standing corpus, worth its own ticket if a long-running process
+  adds snippets.
+- The claim-level semantic channel (`wiki-jobs.ts:604`, `clash.ts:220`)
+  remains ticket 083's.

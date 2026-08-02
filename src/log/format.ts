@@ -336,6 +336,19 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
    `got past ${constraints(emptiedBy)}`;
  },
 
+ // ── The elicitor's floor beyond the queue's ladder (ticket 079) ──
+
+ // The guard rejected the model's question twice and both fallback channels
+ // came back empty, so the protocol's own fixed probe was served instead of
+ // the twice-rejected text. `verdict` is the guard that bit; `queue=0 bank=0`
+ // are the empty pools — "nothing was left to draw" is their legible form.
+ 'guard-floor': (f) => {
+  const verdict = (f.verdict ?? 'guard').replace(/-/g, ' ');
+  const protocol = f.protocol ?? 'the protocol';
+  return `after the ${verdict} guard rejected twice and nothing was left to ` +
+   `draw, asked the ${protocol} protocol's own fixed question`;
+ },
+
  // ── The facet-balance filter, shadow and live (Q-35) ──
 
  'facet-balance-shadow': (f) => facetBalance(f, false),
@@ -382,6 +395,12 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
   if (f.job === 'lock') return 'did not start a wiki run: one was already in progress';
   const job = (f.job ?? '').replace(/-/g, ' ');
   return job === '' ? 'could not finish a step of the wiki run' : `could not finish the ${job} step of the wiki run`;
+ },
+ 'wiki-job-skipped': (f) => {
+  const job = (f.job ?? 'a step').replace(/-/g, ' ');
+  return f.reason === 'index-current'
+   ? `skipped the ${job}: the index is already current`
+   : `skipped the ${job}: nothing has changed since the last docket commit`;
  },
  'mint-oversized': () => 'set a reading aside: it did not fit the payload budget',
  'mint-parse-failed': () => "could not read the model's claim proposal back",

@@ -68,6 +68,18 @@ export type RandomizerDraw = {
   draw: DrawProvenance;
   /** Carried from the deck's curation. Never inferred, never guessed. */
   targetFacet?: Facet;
+  /**
+   * Display-only lineage (ticket 073): the probe that elicited the
+   * resurfaced snippet (Provenance.question). Never quoted into `question`,
+   * never enters the transcript. Resurfacing draws only.
+   */
+  snippetQuestion?: string;
+  /**
+   * Display-only lineage (ticket 073): the antecedent window
+   * (Provenance.context). Never quoted into `question`, never enters the
+   * transcript. Resurfacing draws only.
+   */
+  context?: string;
 };
 
 /**
@@ -193,6 +205,11 @@ function resurfaceDraw(
         stratum: s.stratum,
         wroteAt: s.wroteAt,
       },
+      // Display-only lineage (ticket 073): carried verbatim for a display
+      // seam, absent when the snippet's provenance holds nothing. Never
+      // spliced into the framed question above.
+      ...(s.question ? { snippetQuestion: s.question } : {}),
+      ...(s.context ? { context: s.context } : {}),
     },
     ref: s.id,
   };

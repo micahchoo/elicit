@@ -31,6 +31,11 @@ Tracker: local markdown (this dir). Tickets in `tickets/NNN-*.md`; claim =
 `assignee` field; blocking = `blocked_by` frontmatter list; frontier = open,
 unassigned, all blockers closed.
 
+The destination this map drives toward is drawn as a workflow board —
+human, machine and vault lanes with the jargon spelled out in place:
+`docs/ideal-state-board.md` (in-repo record; live copy at
+http://localhost:3002/?board=elicit-ideal-state).
+
 ## Decisions so far
 
 - [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
@@ -377,6 +382,43 @@ unassigned, all blockers closed.
   locate-by-substring), and a model-resolved referent annotation last,
   evaluated before it ships. Context is lineage, never corpus. Builds are
   tickets 073 and 074 (074 blocked on 073).
+
+- [Fix: the 044 gate's own counter has never reached a line](tickets/069-inadmissible-drops-unsurfaced.md)
+  — `cutsSeen`, `inadmissibleDrops`, `contentFreeSkips` now reach the
+  activity line, rendered by 066's rules (zeros as words).
+
+- [Fix: the sweep can strand its own re-measure](tickets/070-stranded-remeasure.md)
+  — an answered re-measure is judged BEFORE the sweep runs; Q-53's
+  predicate keeps reading current cites rather than a mint-time snapshot.
+
+- [Build: antecedent context](tickets/073-antecedent-context.md) —
+  `Provenance.context` captured at ingest (mechanical 2-sentence window),
+  backfilled onto 99/139 vault snippets by locate-by-substring, rendered
+  dimmed on the harvest-review card. Lineage, never corpus.
+
+- [Fix: "left for the next run" promises a run that nothing schedules](tickets/075-docket-has-no-next-run.md)
+  — restart-proof drain chain via claimable deferral records on disk, and
+  the still-true rotation rides a persisted cursor instead of re-slicing
+  the same two snippets.
+
+- [Build: a mechanism-exposure registry](tickets/077-mechanism-exposure-registry.md)
+  — `src/registry.ts` declares live|shadow|unwired for every exported
+  mechanism; a test sweep fails any undeclared export, so wiring drift is
+  a red suite, not a memory.
+
+- [Fix: a probe the guard rejected twice is emitted anyway](tickets/079-twice-rejected-floor.md)
+  — a fixed, zero-LLM floor probe from the protocol's own material replaces
+  the twice-rejected text when the fallback draw is empty.
+
+- [Build: wire semantic resonance into the surfaces that use resonate()](tickets/068-wire-semantic-resonance.md)
+  — `resonateHybrid` live in the turn endpoint, semantic index built at
+  boot and primed in background; a semantic juxtaposition quotes only the
+  snippet's own words (053's recommendation, adopted).
+
+- [Build: antecedent context on the wiki surface and randomizer draw](tickets/080-context-on-reading-surfaces.md)
+  — the wiki quote block and the resurfaced draw now render the dimmed
+  question and context; the draw's lineage rides the session response and
+  never outlives the opener exchange.
 
 ## Fog
 

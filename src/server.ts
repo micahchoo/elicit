@@ -11,7 +11,13 @@ import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, type HarvestDiagnostics } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
-import { buildIndex, resonate } from './index/lexical.js';
+import { buildIndex } from './index/lexical.js';
+import {
+ buildSemanticIndex,
+ fileSnippetVectorStore,
+ resonateHybrid,
+ type SemanticIndex,
+} from './index/semantic.js';
 import { readCadence, cadenceSentence } from './log/cadence.js';
 import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
@@ -19,7 +25,14 @@ import { composeOpener, composeStillTrue, composeExpedition } from './clerk/comp
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
-import { createClaimStore } from './wiki/store.js';
+import {
+ createClaimStore,
+ appendSweepDeferral,
+ readSweepDeferral,
+ writeStillTrueCursor,
+ readStillTrueCursor,
+} from './wiki/store.js';
+import { THRESHOLDS } from './wiki/thresholds.js';
 import { createRegistry } from './wiki/registry.js';
 import { lexicalChannel, referentChannel, poolCandidates, type ClashChannel } from './wiki/clash.js';
 import {
@@ -78,6 +91,13 @@ export interface ServerDeps {
  embed?: { embed: Embed; model: string };
  queue: QueueStore;
  index: LexicalIndex;
+ /**
+  * The semantic resonance channel (Q-17, ticket 068). Built beside the lexical
+  * index at boot and primed in the background; absent means the channel is off
+  * and the hybrid degrades to the trigram index — the ordinary cold state,
+  * the same shape as `embed` for the Clerk.
+  */
+ semanticIndex?: SemanticIndex;
  vaultRoot: string;
  authStore: AuthStore;
  /** Optional STT client for voice input. Lazily created as module singleton if absent. */
@@ -268,6 +288,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // process answers from what the vault already holds, and it is replaced only
  // by a completed DocketReport — the report stays the single index source.
  let currentIndex = deps.index;
+ // The semantic channel the turn endpoint searches beside the lexical one.
+ // Absent is the cold state: resonateHybrid degrades to the trigram index.
+ const semanticIndex = deps.semanticIndex;
  const snippetMap = new Map(Object.values(deps.vault.rebuildIndex().snippets).map((s) => [s.id, s]));
 
  // Everything with nobody waiting on it goes to the clerk model (Q-48). One
@@ -293,6 +316,13 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // claims must carry one and the same name or the record cannot be read.
  const wikiModel = clerkModelName ?? DEFAULT_CLERK_MODEL;
  const claimStore = createClaimStore(deps.vaultRoot);
+ // The still-true rotation cursor (ticket 075), disk-backed so rotation
+ // survives restarts. The docket keeps an in-memory default for standalone
+ // callers; production goes through the wiki dir like every other ledger.
+ const stillTrueCursor = {
+  read: () => readStillTrueCursor(deps.vaultRoot),
+  write: (offset: number) => writeStillTrueCursor(deps.vaultRoot, offset),
+ };
  const registry = createRegistry(claimStore, wikiModel, wikiLog);
 
  const embedding: EmbeddingChannel | null = deps.embed
@@ -392,6 +422,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     ...(clerkModelName ? { modelName: clerkModelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     runWikiJobs: runWikiJobsNow,
+    stillTrueCursor,
     vaultRoot: deps.vaultRoot,
    });
    currentIndex = report.index;
@@ -399,6 +430,36 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     snippetMap.set(s.id, s);
    }
    serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${report.minted.length}, expired ${report.expired}`);
+
+   // Ticket 075 — the drain bookkeeping. The clip record says "left for the
+   // next run"; this is the machinery that makes the next run happen. The
+   // deferral is a claimable record on disk (the Codex precedent), and the
+   // chain is bounded by the backlog emptying. A FAILED run (the catch below)
+   // appends no deferral line and schedules no drain — the ledger
+   // distinguishes "found nothing" from "mechanism broken". This whole block
+   // is wrapped in its own try/catch so it can never turn a successful run
+   // into a failure.
+   try {
+    const previous = readSweepDeferral(deps.vaultRoot); // read BEFORE appending
+    const { pending, fresh, clipped } = sweepWorkRemaining();
+    if (pending > 0) {
+     // The claimable deferral: this much sweep work is left after the run.
+     appendSweepDeferral(deps.vaultRoot, pending);
+     // The fresh > 0 gate stops the chain when every remaining reading is at
+     // backoff (Q-29); the previousLive gate is what lets a boot run resume a
+     // chain that a restart interrupted.
+     if (fresh > 0 && (clipped || (previous?.remaining ?? 0) > 0)) {
+      scheduleDrain();
+     }
+    } else if ((previous?.remaining ?? 0) > 0) {
+     // Terminal claim — succeeded-no-output: the drain found nothing left, so
+     // record the empty claim and stop. Distinct from a failed run, which
+     // writes no line at all.
+     appendSweepDeferral(deps.vaultRoot, 0);
+    }
+   } catch (err) {
+    console.error('docket drain bookkeeping failed:', String(err));
+   }
   } catch (err) {
    // Every write the run was meant to follow is already on disk. Only the
    // index is behind, so keep the one that was standing and say why.
@@ -433,6 +494,54 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     console.error(`docket (${trigger}) could not report its own failure:`, String(err));
    });
   });
+ }
+
+ // ── The sweep drain (ticket 075) ──
+ //
+ // `left for the next run` promised a run nothing scheduled. When a settle
+ // leaves sweep work, the deferral records it (a claimable record on disk, the
+ // Codex precedent) and this timer starts the next run itself — startDocket's
+ // single-flight and pendingTrigger already serialize it. The chain is bounded
+ // by the backlog emptying, never by a count.
+ let drainTimer: ReturnType<typeof setTimeout> | null = null;
+
+ /** The self-triggered drain's delay; tests shorten it via env. */
+ function drainDelayMs(): number {
+  const raw = Number(process.env.ELICIT_DOCKET_DRAIN_DELAY_MS ?? 2000);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 2000;
+ }
+
+ function scheduleDrain(): void {
+  if (drainTimer !== null) clearTimeout(drainTimer);
+  drainTimer = setTimeout(() => {
+   drainTimer = null;
+   startDocket('drain');
+  }, drainDelayMs());
+ }
+
+ /**
+  * The sweep backlog as a settle left it, counted exactly as jobSweep counts
+  * it (src/clerk/wiki-jobs.ts): pending readings are the ones no sweep line
+  * covered, fresh are those still below the attempts backoff, and clipped is
+  * whether one more run's quota could not take them all.
+  */
+ function sweepWorkRemaining(): { pending: number; fresh: number; clipped: boolean } {
+  const backoff = typeof THRESHOLDS['sweep.attemptsBeforeBackoff'].value === 'number'
+   ? THRESHOLDS['sweep.attemptsBeforeBackoff'].value
+   : 0;
+  const quota = typeof THRESHOLDS['mint.callsPerRun'].value === 'number'
+   ? THRESHOLDS['mint.callsPerRun'].value
+   : 0;
+  const swept = claimStore.sweptReadingIds();
+  const attempts = claimStore.attemptCounts();
+  const pending = Object.values(deps.vault.rebuildIndex().readings).filter((r) => !swept.has(r.id));
+  const fresh = pending.filter((r) => (attempts.get(r.id) ?? 0) < backoff);
+  const ordered = fresh.length + (pending.length - fresh.length);
+  return {
+   pending: pending.length,
+   fresh: fresh.length,
+   clipped: ordered > quota,
+  };
  }
 
  const app = new Hono();
@@ -581,8 +690,10 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
    vault: deps.vault,
    queue: deps.queue,
    index: currentIndex,
+   ...(semanticIndex ? { semantic: semanticIndex } : {}),
    protocolName: selectedProtocol.name,
    randomizer,
+   vaultRoot: deps.vaultRoot,
    ...(body.shuffle ? { shuffleRequested: true } : {}),
   });
   sessions.set(state.id, state);
@@ -595,7 +706,15 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
    sessionId: state.id,
    question: opener.text,
    target,
-   ...(draw && draw.question === opener.text ? { source: draw.provenance } : {}),
+   ...(draw && draw.question === opener.text
+    ? {
+     source: draw.provenance,
+     // Display-only lineage (080): never quoted into the question, never
+     // in the transcript — the frontend dims it above the resurfaced prose.
+     ...(draw.snippetQuestion ? { snippetQuestion: draw.snippetQuestion } : {}),
+     ...(draw.context ? { context: draw.context } : {}),
+    }
+    : {}),
   });
  });
 
@@ -611,7 +730,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   }
 
   // Detect resonance for juxtaposition info (before userTurn consumes the hit)
-  const hits = resonate(currentIndex, body.text);
+  const hits = await resonateHybrid(currentIndex, semanticIndex, body.text);
 
   // Ticket 036 item 2. The count is emitted on EVERY turn, zero included:
   // until now the index was searched on each turn and said nothing when it
@@ -1223,6 +1342,23 @@ if (isDirect) {
  const queue = createQueueStore(queueRoot);
  const indexData = vault.rebuildIndex();
  const index = buildIndex(Object.values(indexData.snippets));
+ // The semantic resonance channel (Q-17, ticket 068), beside the lexical
+ // index: the same corpus, at the same moment. `prime` prunes the cache to
+ // the ids it is given, so the corpus MUST be the whole vault — a subset
+ // would delete every other snippet's vector on its first pass. Background,
+ // like the boot docket: the first sitting is served by the lexical index
+ // while the vectors fill, and a clipped run resumes next boot (PRIME_CAP).
+ // Under the fake responder there is no embedder, so there is no channel:
+ // a fabricated vector would be cached, which makes it permanent.
+ const semanticIndex = embed
+  ? buildSemanticIndex(Object.values(indexData.snippets), {
+   embed: embed.embed,
+   model: embed.model,
+   store: fileSnippetVectorStore(vaultRoot),
+   log: (e) => appendEvent(vaultRoot, e as ActivityEvent),
+  })
+  : undefined;
+ if (semanticIndex) void semanticIndex.prime();
  const authStore = createFileAuth(join(vaultRoot, '.auth.json'));
 
  const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
@@ -1243,6 +1379,7 @@ if (isDirect) {
   ...(embed ? { embed } : {}),
   queue,
   index,
+  ...(semanticIndex ? { semanticIndex } : {}),
   vaultRoot,
   authStore,
   ...(modelName ? { modelName } : {}),

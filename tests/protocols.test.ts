@@ -103,6 +103,14 @@ describe('protocol registry', () => {
       expect(def.prompt.length, `${name}: empty prompt`).toBeGreaterThan(0);
       expect(validForms.has(def.questionForm), `${name}: invalid questionForm "${def.questionForm}"`).toBe(true);
       expect(def.targets.length, `${name}: no targets`).toBeGreaterThan(0);
+      // The guard floor (ticket 079) is protocol data: a fixed, one-sentence
+      // probe the elicitor serves when every fallback is empty. A def without
+      // one silently gets the registry default, which is exactly the silent
+      // decay the sweep guards against elsewhere — so every def must carry its
+      // own, distinct from the default.
+      expect(def.floorProbe.length, `${name}: empty floorProbe`).toBeGreaterThan(0);
+      expect(def.floorProbe, `${name}: floorProbe is the generic default`)
+        .not.toBe(registry.DEFAULT_FLOOR_PROBE);
     }
   });
 });

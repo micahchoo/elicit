@@ -79,6 +79,16 @@
 
 import { ulid } from 'ulid';
 import { buildIndex, resonate } from '../index/lexical.js';
+import {
+ claimDelta,
+ changedIn,
+ fingerprintOf,
+ readWatermark,
+ sameFingerprint,
+ vaultDiff,
+ writeWatermark,
+} from '../index/watermark.js';
+import type { IndexFingerprint, VaultDiff } from '../index/watermark.js';
 import { sittingsOfCites } from '../wiki/status.js';
 import { THRESHOLDS, shadowDecision, type Threshold } from '../wiki/thresholds.js';
 import type { ThresholdRegister } from '../wiki/lint.js';
@@ -161,6 +171,30 @@ const RELATED_CLAIMS_SHOWN = 3;
 
 /** How much of an unparsable model answer rides into the log line. */
 const RAW_EXCERPT_CHARS = 200;
+
+/**
+ * Ticket 076's gates. The queue-driven jobs and the sweep gate on the git
+ * diff since the last docket commit (Q-61): a job whose inputs show no diff
+ * is skipped and logs `wiki-job-skipped reason=no-diff`, a different outcome
+ * from ran-and-found-nothing (the 034 rule). The docket's own bookkeeping —
+ * `log/`, `wiki/sweep-log.jsonl`, `wiki/sweep-deferral.jsonl`,
+ * `wiki/still-true-cursor.json` — maps to no input class on purpose.
+ */
+const GIT_GATED_INPUTS: Record<string, readonly string[]> = {
+ 'presweep-confirmation': ['queue/', 'wiki/candidates/', 'wiki/claims/', 'wiki/readings/', 'snippets/'],
+ sweep: ['wiki/readings/', 'snippets/'],
+ remeasure: ['queue/', 'wiki/candidates/', 'wiki/claims/', 'snippets/'],
+ confirmation: ['queue/', 'wiki/candidates/', 'wiki/claims/', 'wiki/readings/', 'snippets/'],
+};
+
+/**
+ * The graph-derived passes gate on the index watermark instead: the pool, the
+ * embeddings and the lint findings are a pure function of the graph, so a run
+ * whose fingerprint matches the watermark knows the index is current and
+ * skips them. A missing or unreadable watermark is the repair path — the full
+ * rebuild that is today's behavior.
+ */
+const WATERMARK_GATED = new Set(['prime', 'lint', 'candidates']);
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -367,6 +401,13 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   return { ...deps.store.loadSlice(), snippets: index.snippets, readings: index.readings };
  };
 
+ // ── Ticket 076: the two gates, computed once so a skipped job costs only a log line ──
+ const diff = vaultDiff(deps.vaultRoot);
+ const watermark = readWatermark(deps.vaultRoot);
+ const gateGraph = graph();
+ const current = fingerprintOf(gateGraph, deps.store.listCandidates());
+ const indexCurrent = watermark !== null && sameFingerprint(watermark, current);
+
  const guard = async (job: string, run: () => Promise<void>): Promise<void> => {
   try {
    await run();
@@ -383,14 +424,37 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   }
  };
 
+ let indexRan = false;
+ const guardGated = async (job: string, run: () => Promise<void>): Promise<void> => {
+  const inputs = GIT_GATED_INPUTS[job];
+  const shouldRun = inputs !== undefined
+   ? !diff.available || changedIn(diff, inputs)
+   : !indexCurrent;
+  if (!shouldRun) {
+   const reason = inputs !== undefined
+    ? `reason=no-diff since=${diff.since ?? ''}`
+    : `reason=index-current at=${watermark!.at}`;
+   log({ at: nowIso(), actor: 'clerk', kind: 'wiki-job-skipped', detail: `job=${job} ${reason}` });
+   return;
+  }
+  if (inputs === undefined) indexRan = true;
+  await guard(job, run);
+ };
+
  try {
-  await guard('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
-  await guard('sweep', () => jobSweep(deps, report, graph, log, model, touched));
-  await guard('prime', () => jobPrime(deps, graph, touched));
-  await guard('lint', () => jobLint(deps, report, graph, log, thresholds));
-  await guard('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
-  await guard('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
-  await guard('confirmation', () => jobConfirmation(deps, report, graph, log, model));
+  await guardGated('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
+  await guardGated('sweep', () => jobSweep(deps, report, graph, log, model, touched));
+  await guardGated('prime', () => jobPrime(deps, graph, touched, watermark));
+  await guardGated('lint', () => jobLint(deps, report, graph, log, thresholds));
+  await guardGated('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
+  // Ticket 076: the watermark is written HERE — after the index passes and
+  // before the queue-driven jobs — so a candidate dissolved or minted by
+  // remeasure/confirmation lands after the watermark and re-opens the index
+  // passes on the next run. Q-53's one reproposal after an expiry depends on
+  // that exact ordering.
+  if (indexRan) writeWatermark(deps.vaultRoot, fingerprintOf(graph(), deps.store.listCandidates()));
+  await guardGated('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
+  await guardGated('confirmation', () => jobConfirmation(deps, report, graph, log, model));
   report.shadow = collector.records;
   log({
    at: nowIso(),
@@ -696,15 +760,33 @@ async function jobPrime(
  deps: WikiJobDeps,
  graphOf: () => ClaimGraph,
  touched: Set<string>,
+ watermark: IndexFingerprint | null,
 ): Promise<void> {
- if (touched.size === 0) return;
  // `ClashChannel` cannot express `prime`, and `primeable` is the one place
  // that shape is tested — see `src/wiki/embedding.ts`.
  const asyncChannels = deps.channels.filter(primeable);
  if (asyncChannels.length === 0) return;
 
  const graph = graphOf();
- for (const channel of asyncChannels) await channel.prime(graph, touched);
+ // Ticket 076: the watermark's delta joins the sweep's touched set as the
+ // embedding work list, so a claim hand-edited between runs is re-embedded
+ // even though the sweep did not touch it. A MISSING watermark keeps ticket
+ // 067's exact narrowing (the touched set alone): the repair path is a run
+ // identical to today's, never a broader one — the index passes all run, the
+ // watermark is rewritten, and the results match the pre-076 path. Either
+ // way the graph handed to `prime` stays whole — ticket 067's rule, because
+ // `persist` prunes to the live claims of the graph it is given.
+ let only: Set<string> | undefined;
+ if (watermark !== null) {
+  only = claimDelta(watermark, graph.claims);
+  for (const id of touched) only.add(id);
+  if (only.size === 0) return;
+ } else if (touched.size === 0) {
+  return;
+ } else {
+  only = touched;
+ }
+ for (const channel of asyncChannels) await channel.prime(graph, only);
 }
 
 // ---------------------------------------------------------------------------

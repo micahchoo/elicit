@@ -63,6 +63,8 @@ const CONTRADICTIONS = 'contradictions';
 const CANDIDATES = 'candidates';
 const REGISTRY = 'registry';
 const SWEEP_LOG = 'sweep-log.jsonl';
+const SWEEP_DEFERRAL = 'sweep-deferral.jsonl';
+const STILL_TRUE_CURSOR = 'still-true-cursor.json';
 
 // ── Reading frontmatter ──
 //
@@ -590,5 +592,71 @@ class ClaimStoreImpl implements ClaimStore {
     // surface, not a condition to swallow.
     if (!claim) throw new Error(`Cannot record a read: claim ${claimId} is missing or malformed`);
     this.writeClaim({ ...claim, readLog: [...claim.readLog, { at, surface }] });
+  }
+}
+
+// ── The sweep deferral and still-true cursor (075) ──
+//
+// Two pieces of derived state the docket needs across runs, kept outside the
+// ClaimStore interface on purpose: they are the docket's own ledger, not the
+// clerk's claims. The deferral records how many readings the sweep clipped
+// "for the next run" — durable so the drain chain survives a restart
+// (record-don't-gate, the sweep ledger's own idiom) — and the cursor rotates
+// the still-true channel so it does not propose the same two snippets every
+// run. Both are derived like the rest of `vault/wiki/`: a missing or
+// malformed file costs a re-drain or a re-rotation, never data, and nothing
+// here deletes (Q-3, Q-29).
+
+export function appendSweepDeferral(root: string, remaining: number): void {
+  const dir = join(root, 'wiki');
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(join(dir, SWEEP_DEFERRAL), `${JSON.stringify({ at: new Date().toISOString(), remaining })}\n`, 'utf-8');
+}
+
+/**
+ * The LAST valid deferral line, or null when the file is missing, empty, or
+ * every line is corrupt. A corrupt line is skipped on the Activity Log's
+ * precedent, exactly as #sweepLines does for the sweep log — a half-written
+ * final line must not hide the real backlog above it.
+ */
+export function readSweepDeferral(root: string): { at: string; remaining: number } | null {
+  const path = join(root, 'wiki', SWEEP_DEFERRAL);
+  if (!existsSync(path)) return null;
+  let last: { at: string; remaining: number } | null = null;
+  for (const line of readFileSync(path, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '') continue;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (typeof parsed !== 'object' || parsed === null) continue;
+      const rec = parsed as Record<string, unknown>;
+      const at = str(rec.at);
+      const remaining = rec.remaining;
+      if (!at || typeof remaining !== 'number') continue;
+      last = { at, remaining };
+    } catch {
+      // Malformed line — skip, exactly as the sweep log does.
+    }
+  }
+  return last;
+}
+
+export function writeStillTrueCursor(root: string, offset: number): void {
+  const dir = join(root, 'wiki');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, STILL_TRUE_CURSOR), JSON.stringify({ offset }), 'utf-8');
+}
+
+/** The persisted still-true offset; 0 when the file is missing or unparseable. */
+export function readStillTrueCursor(root: string): number {
+  const path = join(root, 'wiki', STILL_TRUE_CURSOR);
+  if (!existsSync(path)) return 0;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null) return 0;
+    const offset = (parsed as Record<string, unknown>).offset;
+    return typeof offset === 'number' ? offset : 0;
+  } catch {
+    return 0;
   }
 }

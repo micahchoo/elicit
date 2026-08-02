@@ -159,14 +159,19 @@ export function stampContext(filePath: string, context: string): boolean {
 // ── Selection ──
 
 /**
- * A harvest snippet is a backfill candidate when it carries no context yet.
- * Restatements are the reviewer's rewrite (their text is not verbatim in the
- * transcript) and unprompted material has no eliciting question — neither can
- * be located, so neither is a candidate.
+ * A snippet is a backfill candidate when its text can be located verbatim in
+ * a transcript and it carries no context yet. That is `harvest` AND
+ * `unprompted`: both passed the exact-substring check at ingest, so both
+ * locate — the whole imported corpus is `unprompted` with `channel: pasted`
+ * (measured 2026-08-02: all 139 snippets, which a harvest-only filter
+ * excluded to a 0-candidate dry run). Having no eliciting question does not
+ * make a snippet unlocatable; those are different facts. Restatements are
+ * the one true exclusion — their text is the reviewer's rewrite and appears
+ * in no transcript.
  */
 export function isBackfillCandidate(provenance: Provenance): boolean {
   return (
-    provenance.kind === 'harvest' &&
+    (provenance.kind === 'harvest' || provenance.kind === 'unprompted') &&
     (provenance.context === undefined || provenance.context === '')
   );
 }

@@ -52,7 +52,12 @@ function daysAgo(n: number): string {
 }
 
 /** Writes one snippet the way `Vault.saveSnippet` does, under a named sitting. */
-function writeSnippet(id: string, session: string, prose: string): void {
+function writeSnippet(
+  id: string,
+  session: string,
+  prose: string,
+  provenance?: Record<string, unknown>,
+): void {
   const dir = join(root, 'snippets', id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -61,7 +66,13 @@ function writeSnippet(id: string, session: string, prose: string): void {
       id,
       version: 1,
       captured: NOW.toISOString(),
-      provenance: { kind: 'unprompted', session, question: '', questionForm: 'deliberative' },
+      provenance: {
+        kind: 'unprompted',
+        session,
+        question: '',
+        questionForm: 'deliberative',
+        ...provenance,
+      },
     }),
     'utf-8',
   );
@@ -437,6 +448,69 @@ describe('randomizer draw', () => {
       stratum: 'deep',
       wroteAt: '2020-03-14T00:00:00.000Z',
     });
+  });
+
+  it("carries the resurfaced snippet's lineage verbatim (ticket 073)", () => {
+    writeSitting('post-2020', '2020-03-14T00:00:00.000Z');
+    writeSnippet(
+      's1',
+      'post-2020',
+      'Care as a general inquiry helped me build an inductive experience.',
+      {
+        question: 'What were you circling around then?',
+        context: 'The sentences that came just before this cut.',
+      },
+    );
+
+    const draw = createRandomizer(makeDeps())('user');
+
+    expect(draw).not.toBeNull();
+    expect(draw!.provenance).toBe('resurfacing');
+    expect(draw!.snippetQuestion).toBe('What were you circling around then?');
+    expect(draw!.context).toBe('The sentences that came just before this cut.');
+  });
+
+  it("omits lineage entirely when the snippet's provenance has none (ticket 073)", () => {
+    writeSitting('post-2020', '2020-03-14T00:00:00.000Z');
+    writeSnippet('s1', 'post-2020', 'Care as a general inquiry helped me build an inductive experience.');
+
+    const draw = createRandomizer(makeDeps())('user');
+
+    expect(draw).not.toBeNull();
+    expect(draw!.provenance).toBe('resurfacing');
+    expect(draw!.snippetQuestion).toBeUndefined();
+    expect(draw!.context).toBeUndefined();
+    expect('snippetQuestion' in draw!).toBe(false);
+    expect('context' in draw!).toBe(false);
+  });
+
+  it('never frames the antecedent context into the resurfacing question (ticket 073)', () => {
+    writeSitting('post-2020', '2020-03-14T00:00:00.000Z');
+    writeSnippet(
+      's1',
+      'post-2020',
+      'Care as a general inquiry helped me build an inductive experience.',
+      { question: 'What were you circling around then?', context: 'CONTEXT-MUST-NOT-LEAK' },
+    );
+
+    const draw = createRandomizer(makeDeps())('user');
+
+    expect(draw).not.toBeNull();
+    expect(draw!.provenance).toBe('resurfacing');
+    expect(draw!.context).toBe('CONTEXT-MUST-NOT-LEAK');
+    expect(draw!.question).not.toContain('CONTEXT-MUST-NOT-LEAK');
+  });
+
+  it('never carries lineage on a deck draw (ticket 073)', () => {
+    const dir = join(root, 'decks-shipped');
+    writeJsonlDeck(dir, 'shipped', [deckRow('What did you avoid?', 77)]);
+
+    const draw = createRandomizer(makeDeps({ deckDir: dir }))('user');
+
+    expect(draw).not.toBeNull();
+    expect(draw!.provenance).toBe('deck');
+    expect('snippetQuestion' in draw!).toBe(false);
+    expect('context' in draw!).toBe(false);
   });
 
   it('returns null when neither channel has anything to shuffle', () => {

@@ -4,6 +4,9 @@ targets:
   - self
 prerequisites: []
 questionForm: deliberative
+# The fixed probe served when the guard rejects twice and every fallback is
+# empty (ticket 079): one sentence, no conversation reference, no placeholders.
+floorProbe: "What would it cost you to be wrong about that?"
 ---
 You are conducting a reflective interview. Your task is to deepen the thread — not to catalogue facts, but to help the speaker see their own thinking from a new angle.
 

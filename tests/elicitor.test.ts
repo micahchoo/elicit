@@ -7,6 +7,8 @@ import { makeScriptedComplete } from './fakes.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
 import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
+import { getProtocol } from '../src/protocols/registry.js';
+import { readEvents } from '../src/log/activity.js';
 import { buildIndex, resonate } from '../src/index/lexical.js';
 
 /** In-memory fake Vault that records turns for inspection. */
@@ -601,6 +603,47 @@ describe('guards', () => {
    // Should fall back to the unused bank entry
    expect(['What do you value?', 'Why are you here?']).toContain(result.text);
    expect(result.provenance).toBe('bank');
+  }
+ });
+
+ test('a twice-rejected probe with an empty fallback is replaced by the protocol floor (079)', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'elicit-guard-floor-'));
+  try {
+   const vault = makeFakeVault();
+   // One bank question, consumed by the opener — so the fallback bank is empty.
+   const bank = [{ text: 'What do you value?', questionForm: 'deliberative' as const }];
+   // 3 complete calls: redLights, bad probe (triggers guard), retry (still bad)
+   const complete = makeScriptedComplete([
+    '{}',
+    'What are you trying to achieve in this conversation?',
+    'Is this conversation helping you?',
+   ]);
+   // A real, empty queue — draw returns null and logs its own queue-floor.
+   const q = createQueueStore(root);
+   const idx = makeFakeIndex();
+   const session = startSession(
+    { minutes: 30, energy: 'medium' },
+    { complete, vault, queue: q, index: idx, bank, vaultRoot: root },
+   );
+
+   const result = await userTurn(session, 'OK.');
+   expect(result.kind).toBe('probe');
+   if (result.kind === 'probe') {
+    // The floor is the active protocol's own fixed probe — never the text the
+    // guard rejected twice.
+    expect(result.text).toBe(getProtocol(session.protocol)!.floorProbe);
+    expect(result.text).not.toContain('conversation');
+    expect(result.text).not.toBe('Is this conversation helping you?');
+   }
+
+   // The guard floor is logged honestly: a distinct kind, elicitor actor.
+   const events = readEvents(root).filter((e) => e.kind === 'guard-floor');
+   expect(events).toHaveLength(1);
+   expect(events[0]!.actor).toBe('elicitor');
+   expect(events[0]!.detail).toContain('protocol=reflective');
+   expect(events[0]!.detail).toContain('verdict=conversation-referential');
+  } finally {
+   rmSync(root, { recursive: true, force: true });
   }
  });
 

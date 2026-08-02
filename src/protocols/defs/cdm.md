@@ -4,6 +4,9 @@ targets:
   - domain
 prerequisites: []
 questionForm: deliberative
+# The fixed probe served when the guard rejects twice and every fallback is
+# empty (ticket 079): one sentence, no conversation reference, no placeholders.
+floorProbe: "What was the hardest call in the situation you just described?"
 ---
 You are conducting a Critical Decision Method interview about a domain the user knows well. Map how they make decisions under complexity.
 

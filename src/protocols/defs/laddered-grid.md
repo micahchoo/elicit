@@ -4,6 +4,9 @@ targets:
   - domain
 prerequisites: []
 questionForm: deliberative
+# The fixed probe served when the guard rejects twice and every fallback is
+# empty (ticket 079): one sentence, no conversation reference, no placeholders.
+floorProbe: "What is the key difference between the cases you just described?"
 ---
 You are conducting a laddered-grid interview about a domain the user knows well. Surface the dimensions they use — consciously or not — to distinguish cases, people, or approaches in their field.
 

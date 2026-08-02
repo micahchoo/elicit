@@ -104,6 +104,17 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'composed a fresh question: none of the 12 in the queue got past what this sitting is for',
  },
 
+ // The elicitor's floor beyond the queue's ladder (ticket 079): the guard
+ // rejected the model's question twice and both fallback channels came back
+ // empty, so the protocol's own fixed probe was served instead of the
+ // twice-rejected text. `queue=0 bank=0` are the empty pools; the sentence
+ // renders them as "nothing was left to draw".
+ {
+  kind: 'guard-floor',
+  detail: 'protocol=reflective verdict=conversation-referential queue=0 bank=0',
+  reads: "after the conversation referential guard rejected twice and nothing was left to draw, asked the reflective protocol's own fixed question",
+ },
+
  // The facet-balance shadow record (Q-35): the road not taken, and by how much.
  {
   kind: 'facet-balance-shadow',
@@ -157,6 +168,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'wiki-jobs-failed',
   detail: `job=opposition pair=${ULID},${SECOND_ULID} TypeError: cannot read properties of undefined`,
   reads: 'could not finish the opposition step of the wiki run',
+ },
+ {
+  kind: 'wiki-job-skipped',
+  detail: 'job=sweep reason=no-diff since=69a209a',
+  reads: 'skipped the sweep: nothing has changed since the last docket commit',
  },
  {
   kind: 'mint-oversized',
@@ -314,11 +330,29 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'accepted=19 excluded=28 unresolved=0',
   reads: 'adopted 19 prior keeps and 28 prior refusals, nothing left unresolved',
  },
- {
-  kind: 'import-adopted',
-  detail: 'accepted=1 excluded=0 unresolved=1 jingle-tales',
-  reads: 'adopted 1 prior keep and 0 prior refusals; 1 name unresolved — jingle-tales',
- },
+{
+ kind: 'import-adopted',
+ detail: 'accepted=1 excluded=0 unresolved=1 jingle-tales',
+ reads: 'adopted 1 prior keep and 0 prior refusals; 1 name unresolved — jingle-tales',
+},
+
+// The extraction job (T5): one line per item processed. The detail carries
+// the full path and the counts; the sentence shows the basename only.
+{
+ kind: 'import-extracted',
+ detail: 'path=vault/posts/dated-essay.md cuts=3',
+ reads: 'extracted 3 cuts from dated-essay.md',
+},
+{
+ kind: 'import-extract-failed',
+ detail: 'path=vault/posts/dated-essay.md attempts=3',
+ reads: 'could not extract from dated-essay.md after 3 attempts',
+},
+{
+ kind: 'import-quoted-dropped',
+ detail: 'path=vault/posts/quoted.md cuts=1',
+ reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
+},
 ];
 
 describe('formatEvent', () => {
@@ -469,6 +503,7 @@ const FLOORS: Record<string, number> = {
  'src/clerk/docket.ts': 8,
  'src/queue/queue.ts': 3,
  'src/wiki/registry.ts': 3,
+ 'src/elicitor/elicitor.ts': 1,
 };
 
 /**

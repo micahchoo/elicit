@@ -2,6 +2,8 @@
 
 An agentic elicitation tool that interviews a person to build a human-shaped wiki — a model of their beliefs, contradictions, knowledge, and skills. Emergent outputs (a written Piece, a learned skill, a built capability) grow out of that model. All interaction is textual; all inference is local (ADR-0001).
 
+The ideal-state workflow — how the terms below connect once all mapped work is complete — is drawn in `docs/ideal-state-board.md` (human, machine, and vault lanes; live board at http://localhost:3002/?board=elicit-ideal-state).
+
 ## Language
 
 ### Invariants

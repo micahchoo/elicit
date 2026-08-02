@@ -1,6 +1,8 @@
 // Domain types for the Elicit project
 // Encode invariants from CONTEXT.md as visible type constraints
 
+import type { SemanticIndex } from './index/semantic.js';
+
 export type Facet =
  | 'episode'
  | 'general-event'
@@ -355,6 +357,13 @@ export type SessionState = {
   vault: Vault;
   queue: QueueStore;
   index: LexicalIndex;
+  /**
+   * The semantic resonance channel (Q-17, ticket 068). Optional: absent is
+   * the ordinary cold state, in which the hybrid degrades to the trigram
+   * index. Defined in src/index/semantic.ts — a type-only import, so this
+   * file stays free of runtime dependencies.
+   */
+  semantic?: SemanticIndex;
  };
  turns: Turn[];
  /** Question bank for opener/skip selection (session-local) */

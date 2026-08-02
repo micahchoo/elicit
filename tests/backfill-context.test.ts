@@ -138,7 +138,7 @@ describe('backfill context logic', () => {
     }
   });
 
-  it('candidate predicate: harvest snippets without context only', () => {
+  it('candidate predicate: locatable snippets (harvest and unprompted) without context', () => {
     expect(
       isBackfillCandidate({
         kind: 'harvest',
@@ -166,7 +166,10 @@ describe('backfill context logic', () => {
       }),
     ).toBe(false);
     // Restatements are the reviewer's rewrite — never verbatim in the
-    // transcript, so never locatable. Unprompted material has no question.
+    // transcript, so never locatable. Unprompted material IS locatable:
+    // it passed the same exact-substring check at ingest, and the whole
+    // imported corpus is unprompted+pasted (the 0-candidate dry run of
+    // 2026-08-02 is the measurement behind this line).
     expect(
       isBackfillCandidate({
         kind: 'restatement',
@@ -182,7 +185,7 @@ describe('backfill context logic', () => {
         question: '',
         questionForm: 'deliberative',
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('vault scanner reads a stamped snippet back with its context intact', () => {

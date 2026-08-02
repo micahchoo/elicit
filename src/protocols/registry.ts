@@ -12,7 +12,21 @@ export interface ProtocolDef {
  prerequisites: string[];
  questionForm: QuestionForm;
  prompt: string;
+ /**
+  * The fixed probe served when the elicitor's guard rejects twice and every
+  * fallback draw is empty (ticket 079). Deterministic and zero-LLM — drawn
+  * from the protocol's own material, so the failure path needs nothing that
+  * can itself fail. Carried as data, never composed.
+  */
+ floorProbe: string;
 }
+
+/**
+ * The floor probe served when a def carries none: a universal follow-up, one
+ * sentence, no conversation reference. The four built-in defs each carry their
+ * own; this is the never-fail net for a malformed def.
+ */
+export const DEFAULT_FLOOR_PROBE = 'What makes you say that?';
 
 // ── Lazy singleton ──
 
@@ -58,12 +72,17 @@ function loadFromDisk(): Map<string, ProtocolDef> {
   const data = parsed.data as Record<string, unknown>;
 
   const name = typeof data.name === 'string' ? data.name : file.replace(/\.md$/, '');
+  const floorProbe =
+   typeof data.floorProbe === 'string' && data.floorProbe.trim().length > 0
+    ? data.floorProbe.trim()
+    : DEFAULT_FLOOR_PROBE;
   const def: ProtocolDef = {
    name,
    targets: parseTargets(data.targets),
    prerequisites: parsePrerequisites(data.prerequisites),
    questionForm: parseQuestionForm(data.questionForm),
    prompt: (parsed.content ?? '').trim(),
+   floorProbe,
   };
 
   if (def.name.length > 0) {

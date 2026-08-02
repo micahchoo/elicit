@@ -54,6 +54,18 @@ export type DatedSnippet = {
   /** ISO instant of the sitting, or of capture when the sitting is missing. */
   wroteAt: string;
   stratum: Stratum;
+  /**
+   * Display-only lineage (ticket 073): the probe that elicited the snippet,
+   * Provenance.question. Carried for a later display seam — never quoted
+   * into any payload, never indexed.
+   */
+  question?: string;
+  /**
+   * Display-only lineage (ticket 073): the antecedent window,
+   * Provenance.context. Carried for a later display seam — never quoted
+   * into any payload, never indexed.
+   */
+  context?: string;
 };
 
 /**
@@ -128,6 +140,10 @@ export function datedSnippets(
       session,
       wroteAt,
       stratum: stratumFor(wroteAt, now, t),
+      // Display-only lineage (ticket 073): stamped verbatim, absent when the
+      // provenance holds nothing (unprompted writes have an empty question).
+      ...(s.provenance?.question ? { question: s.provenance.question } : {}),
+      ...(s.provenance?.context ? { context: s.provenance.context } : {}),
     });
   }
   // Sorted so a given rng sequence draws the same thing on every machine. The
