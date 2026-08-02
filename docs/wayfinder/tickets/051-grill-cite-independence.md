@@ -1,9 +1,21 @@
 ---
 title: "Grill: what makes two cites independent"
 labels: [wayfinder:grilling]
-status: open
-assignee: 
+status: closed
+assignee: micah
 blocked_by: []
+resolution: >
+  Closed 2026-08-02, locked as Q-50. Two cites are independent only when they
+  come from different SITTINGS. Cross-sitting is the floor and promotes
+  unconfirmed -> evidenced; cites additionally separated by Facet or by
+  question source are the stronger tier and are RECORDED as such, so a later
+  decision can use the distinction without re-deriving it.
+  The predicate is mechanical, computed from Provenance.session, never
+  model-judged (Q-29). Enforced in T9's mint path before the Clerk's first
+  run — `evidenced` cannot be retrofitted across a claim graph.
+  Consequence accepted knowingly: with today's corpus, which is mostly one
+  long sitting, almost nothing reaches evidenced at first. That is the
+  vocabulary working, not failing.
 ---
 
 ## Question

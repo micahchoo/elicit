@@ -2,8 +2,8 @@
 title: "Plan and build: the Clerk slice"
 labels: [wayfinder:task]
 status: open
-assignee: 
-blocked_by: [051-grill-cite-independence]
+assignee: claude (in flight)
+blocked_by: []
 ---
 
 > UNBLOCKED 2026-08-02: 006-grill-clerk closed.
@@ -23,6 +23,10 @@ blocked_by: [051-grill-cite-independence]
 > 051 stays. It is a ten-minute decision that changes what the Clerk writes on
 > its very first run, and `evidenced` is not a status you can retrofit across
 > a claim graph.
+
+> CLEARED TO EXECUTE 2026-08-02. 051 closed as Q-50 (cross-sitting cite
+> independence). No blockers remain. Dispatching wave by wave, T1 alone
+> first per the plan's own instruction.
 
 ## Question
 
