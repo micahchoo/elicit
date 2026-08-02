@@ -175,8 +175,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/harvester/harvester',
   name: 'CUTS_RESPONSE_FORMAT',
-  status: 'unwired',
-  reason: 'no production caller — propose()\'s structured-output format; tests only',
+  status: 'live',
+  reason:
+   'wired 2026-08-02 (078 remainder): server boot builds a harvest-only ' +
+   'makeComplete("clerk", { responseFormat }) — wiki mint jobs stay unconstrained',
  },
 
  // ── src/index/lexical.ts ──

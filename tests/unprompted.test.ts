@@ -249,3 +249,52 @@ describe('defer verb', () => {
   expect(res.status).toBe(404);
  });
 });
+
+// ── The constrained harvest variant (ticket 078) ──
+//
+// The seam this pins: `deps.clerk.harvestComplete` exists so the harvest
+// cuts ride the grammar-constrained completion while the wiki mint jobs
+// keep the unconstrained clerk. An optional dep no caller passes ships
+// inert — this test is the caller, proving propose() reaches the variant.
+
+describe('harvest rides the constrained clerk variant (ticket 078)', () => {
+ it('propose() uses harvestComplete when the deps carry one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'elicit-harvest-variant-'));
+  try {
+   const vault = createVault(dir);
+   const roles: string[] = [];
+   const harvestComplete = async () => {
+    roles.push('harvest');
+    return unpromptedScripted[0]!;
+   };
+   const clerkComplete = async () => {
+    roles.push('clerk');
+    return 'padding';
+   };
+   const complete = makeScriptedComplete(['padding a', 'padding b', 'padding c']);
+   const queue = createQueueStore(dir);
+   const index = buildIndex(Object.values(vault.rebuildIndex().snippets));
+   const authStore = createFileAuth(join(dir, '.auth.json'));
+   const app = await createApp({
+    vault,
+    complete,
+    clerk: { complete: clerkComplete, modelName: 'clerk-test', harvestComplete },
+    queue,
+    index,
+    vaultRoot: dir,
+    authStore,
+   });
+
+   const res = await post(app, '/api/unprompted', { text: entryText });
+   expect(res.status).toBe(200);
+   const body = (await res.json()) as { proposals: CutProposal[] };
+   // The proposal text comes from harvestComplete's scripted cuts — the
+   // constrained variant answered the harvest, not the wiki clerk.
+   expect(roles).toContain('harvest');
+   expect(body.proposals.length).toBe(1);
+   expect(body.proposals[0]!.text).toBe(entryCut);
+  } finally {
+   rmSync(dir, { recursive: true, force: true });
+  }
+ });
+});

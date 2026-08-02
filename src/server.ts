@@ -9,7 +9,7 @@ import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
-import { propose, decide, type HarvestDiagnostics } from './harvester/harvester.js';
+import { propose, decide, CUTS_RESPONSE_FORMAT, type HarvestDiagnostics } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex } from './index/lexical.js';
 import {
@@ -80,7 +80,17 @@ export interface ServerDeps {
   * work that way. The stamp is required next to the Complete so a clerk
   * artifact can never carry the elicitor's model name (Q-34).
   */
- clerk?: { complete: Complete; modelName: string };
+ clerk?: {
+  complete: Complete;
+  modelName: string;
+  /**
+   * The same clerk endpoint with the cuts JSON schema pinned at generation
+   * (ticket 078). Harvest-only: the wiki mint jobs speak the op-list shape,
+   * so the constrained variant must never serve them. Absent falls back to
+   * `complete` — the fake responder and the tests keep the unconstrained path.
+   */
+  harvestComplete?: Complete;
+ };
  /**
   * The embedder behind the third clash channel (Q-17). Injected for the same
   * reason `complete` is: it is the only other thing in this process that
@@ -298,6 +308,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // nothing here ever swaps models at runtime, because the stamp would lie.
  const clerkComplete = deps.clerk?.complete ?? deps.complete;
  const clerkModelName = deps.clerk?.modelName ?? deps.modelName;
+ // Harvest cuts ride the grammar-constrained variant when the deps carry one
+ // (ticket 078); everything else the clerk does stays unconstrained.
+ const harvestComplete = deps.clerk?.harvestComplete ?? clerkComplete;
 
  // ── The Clerk's wiki work, constructed once (Q-22) ──
  //
@@ -849,7 +862,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
-  const result = await propose(sessionId, state.turns, clerkComplete);
+  const result = await propose(sessionId, state.turns, harvestComplete);
   serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
   sessionProposals.set(sessionId, result.proposals);
   return c.json({ proposals: result.proposals, buds: result.buds });
@@ -931,7 +944,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   // Never log the content — only how much of it there was.
   serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
 
-  const result = await propose(sessionId, [turn], clerkComplete);
+  const result = await propose(sessionId, [turn], harvestComplete);
   serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
   sessionProposals.set(sessionId, result.proposals);
 
@@ -1329,7 +1342,11 @@ if (isDirect) {
   const elicitorCfg = roleConfig('elicitor');
   const clerkCfg = roleConfig('clerk');
   complete = makeComplete('elicitor');
-  clerk = { complete: makeComplete('clerk'), modelName: clerkCfg.modelId };
+  clerk = {
+   complete: makeComplete('clerk'),
+   modelName: clerkCfg.modelId,
+   harvestComplete: makeComplete('clerk', { responseFormat: CUTS_RESPONSE_FORMAT }),
+  };
   modelName = elicitorCfg.modelId;
   embed = localEmbedder();
   roleLines = [describeRole(elicitorCfg), describeRole(clerkCfg)];
