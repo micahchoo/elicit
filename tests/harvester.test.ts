@@ -140,6 +140,30 @@ const transcript: Turn[] = [
 // ===========================================================================
 
 describe('propose', () => {
+  it('sends a user-last message list — trailing agent turns are stripped', async () => {
+    // llama.cpp generates nothing when the list ends with an assistant turn;
+    // a session ended mid-open always has an unanswered trailing probe.
+    const withTrailingProbe: Turn[] = [
+      ...transcript,
+      {
+        role: 'agent',
+        text: 'And what would losing that autonomy cost you?',
+        at: '2026-08-01T00:00:40.000Z',
+        questionForm: 'deliberative',
+      },
+    ];
+    let seen: Turn[] = [];
+    const spy = async (_system: string, turns: Turn[]) => {
+      seen = turns;
+      return JSON.stringify({ cuts: [] });
+    };
+
+    await propose('sess-1', withTrailingProbe, spy);
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[seen.length - 1]!.role).toBe('user');
+  });
+
   it('drops fabricated cuts (not a substring of any user turn)', async () => {
     const json = JSON.stringify({
       cuts: [

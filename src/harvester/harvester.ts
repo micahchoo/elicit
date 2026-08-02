@@ -120,7 +120,14 @@ export async function propose(
   transcript: Turn[],
   complete: Complete
 ): Promise<{ proposals: CutProposal[]; buds: Bud[] }> {
-  const raw = await complete(SYSTEM_PROMPT, transcript, { temperature: 0.1 });
+  // llama.cpp generates nothing when the message list ends with an assistant
+  // turn (an unanswered probe reads as an already-complete exchange) — always
+  // send user-last. Trailing agent turns carry no harvestable text anyway.
+  let sendable = transcript;
+  while (sendable.length > 0 && sendable[sendable.length - 1]!.role === 'agent') {
+    sendable = sendable.slice(0, -1);
+  }
+  const raw = await complete(SYSTEM_PROMPT, sendable, { temperature: 0.1 });
 
   // Parse — try JSON first, fall back to line-oriented
   let cuts: RawCut[];
