@@ -36,14 +36,22 @@ import type {
 } from './types.js';
 export interface ServerDeps {
   vault: Vault;
+  /** Foreground model: probes, red-lights, live composition. A person waits on it (Q-48). */
   complete: Complete;
+  /**
+   * Background model: harvest extraction, docket minting, consolidation.
+   * Absent means one model does both jobs — the fake responder and the tests
+   * work that way. The stamp is required next to the Complete so a clerk
+   * artifact can never carry the elicitor's model name (Q-34).
+   */
+  clerk?: { complete: Complete; modelName: string };
   queue: QueueStore;
   index: LexicalIndex;
   vaultRoot: string;
   authStore: AuthStore;
   /** Optional STT client for voice input. Lazily created as module singleton if absent. */
   sttClient?: SttClient;
-  /** Model id stamped on agent-authored artifacts (Q-34). */
+  /** Model id stamped on elicitor-authored artifacts (Q-34). */
   modelName?: string;
   /**
    * Called after each background docket run settles, success or failure. The
@@ -209,6 +217,12 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   let currentIndex = deps.index;
   const snippetMap = new Map(Object.values(deps.vault.rebuildIndex().snippets).map((s) => [s.id, s]));
 
+  // Everything with nobody waiting on it goes to the clerk model (Q-48). One
+  // Complete serving both roles is the degenerate case, not a fallback:
+  // nothing here ever swaps models at runtime, because the stamp would lie.
+  const clerkComplete = deps.clerk?.complete ?? deps.complete;
+  const clerkModelName = deps.clerk?.modelName ?? deps.modelName;
+
   // ── The docket, off the response path (ticket 047) ──
   // Opener minting is one LLM call per uncited snippet, so a docket run grows
   // with the vault. No request waits for one: handlers write to the vault,
@@ -224,7 +238,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       const report = await runDocket({
         vault: deps.vault,
         queue: deps.queue,
-        complete: deps.complete,
+        complete: clerkComplete,
         buildIndex: (snippets) => buildIndex(snippets),
         composeOpener,
         composeStillTrue,
@@ -234,7 +248,8 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
         saveSummary,
         loadSummaries,
         readTranscript,
-        ...(deps.modelName ? { modelName: deps.modelName } : {}),
+        // Cover summaries are written by the clerk model, so they say so (Q-34).
+        ...(clerkModelName ? { modelName: clerkModelName } : {}),
         log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
         vaultRoot: deps.vaultRoot,
       });
@@ -535,7 +550,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     const state = sessions.get(sessionId);
     if (!state) return c.json({ error: 'session not found' }, 404);
 
-    const result = await propose(sessionId, state.turns, deps.complete);
+    const result = await propose(sessionId, state.turns, clerkComplete);
     serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
     sessionProposals.set(sessionId, result.proposals);
     return c.json({ proposals: result.proposals, buds: result.buds });
@@ -617,7 +632,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     // Never log the content — only how much of it there was.
     serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
 
-    const result = await propose(sessionId, [turn], deps.complete);
+    const result = await propose(sessionId, [turn], clerkComplete);
     serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
     sessionProposals.set(sessionId, result.proposals);
 
@@ -881,12 +896,24 @@ if (isDirect) {
 
   const llmMode = process.env.ELICIT_LLM ?? 'fake';
   let complete: Complete;
+  let clerk: ServerDeps['clerk'];
+  /** Elicitor stamp. Undefined under the fake responder — nothing real produced it. */
+  let modelName: string | undefined;
+  // Two lines the reader can check against the two endpoints (Q-48).
+  let roleLines: string[];
 
   if (llmMode === 'local') {
-    const { makeComplete } = await import('./llm.js');
-    complete = makeComplete();
+    const { makeComplete, roleConfig, describeRole } = await import('./llm.js');
+    const elicitorCfg = roleConfig('elicitor');
+    const clerkCfg = roleConfig('clerk');
+    complete = makeComplete('elicitor');
+    clerk = { complete: makeComplete('clerk'), modelName: clerkCfg.modelId };
+    modelName = elicitorCfg.modelId;
+    roleLines = [describeRole(elicitorCfg), describeRole(clerkCfg)];
   } else {
+    // One fake answers both roles. Nothing is stamped with a real model name.
     complete = makeFakeComplete();
+    roleLines = ['elicitor: fake', 'clerk: fake'];
   }
   const queueRoot = process.env.ELICIT_QUEUE_DIR ?? vaultRoot;
   const queue = createQueueStore(queueRoot);
@@ -895,18 +922,26 @@ if (isDirect) {
   const authStore = createFileAuth(join(vaultRoot, '.auth.json'));
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
-  const modelName = llmMode === 'local' ? (process.env.ELICIT_LLM_MODEL ?? 'qwen3.6:35b') : 'fake';
   const port = parseInt(process.env.ELICIT_PORT ?? '4517', 10);
 
   // Say where we are BEFORE the boot docket runs: on a populated vault with a
   // slow local model the docket takes minutes, and a silent terminal reads as
   // a hang. The address is knowable now, so print it now.
   console.error(`\n  elicit → http://${bindHost}:${port}`);
-  console.error(`  model: ${modelName} (ELICIT_LLM=${llmMode})`);
-  console.error(`  vault: ${vaultRoot}`);
+  for (const line of roleLines) console.error(`  ${line}`);
+  console.error(`  vault: ${vaultRoot} (ELICIT_LLM=${llmMode})`);
   console.error('  starting…\n');
 
-  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
+  const app = await createApp({
+    vault,
+    complete,
+    ...(clerk ? { clerk } : {}),
+    queue,
+    index,
+    vaultRoot,
+    authStore,
+    ...(modelName ? { modelName } : {}),
+  });
   await serveApp(app, port);
   console.error(`  ready → http://${bindHost}:${port}`);
   console.error('  the clerk is reading the vault in the background\n');

@@ -2,8 +2,11 @@
 // Protocol ratchet harness — metrics runner.
 //
 // Usage:
-//   npx tsx scripts/ratchet/run.ts --mode harvest [--prompt <path>]
-//   npx tsx scripts/ratchet/run.ts --mode probe    [--prompt <path>]
+//   npx tsx scripts/ratchet/run.ts --mode harvest [--prompt <path>] [--role clerk|elicitor]
+//   npx tsx scripts/ratchet/run.ts --mode probe    [--prompt <path>] [--role clerk|elicitor]
+//
+// --role picks which model answers (Q-48). It defaults to the role that runs
+// the mode in production: harvest is clerk work, probing is elicitor work.
 //
 // Reads the corpus at scripts/ratchet/corpus.json, runs the model over every
 // exchange, and prints the metrics JSON to stdout. Warnings and errors go to
@@ -13,7 +16,7 @@
 
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { makeComplete } from '../../src/llm.js';
+import { makeComplete, roleConfig, type LlmRole } from '../../src/llm.js';
 import { propose } from '../../src/harvester/harvester.js';
 import type { Complete, Turn } from '../../src/types.js';
 
@@ -328,9 +331,10 @@ export function mean(values: number[]): number {
 // ---------------------------------------------------------------------------
 
 async function runHarvest(
-  corpus: CorpusEntry[]
+  corpus: CorpusEntry[],
+  role: LlmRole
 ): Promise<{ perExchange: HarvestExchangeMetrics[]; aggregate: HarvestAggregate; erroredExchanges: number }> {
-  const complete = makeComplete();
+  const complete = makeComplete(role);
   const perExchange: HarvestExchangeMetrics[] = [];
   let erroredExchanges = 0;
 
@@ -407,9 +411,10 @@ async function runHarvest(
 
 async function runProbe(
   corpus: CorpusEntry[],
-  systemPrompt: string
+  systemPrompt: string,
+  role: LlmRole
 ): Promise<{ perExchange: ProbeExchangeMetrics[]; aggregate: ProbeAggregate; erroredExchanges: number }> {
-  const complete = makeComplete();
+  const complete = makeComplete(role);
   const perExchange: ProbeExchangeMetrics[] = [];
   let erroredExchanges = 0;
 
@@ -487,18 +492,26 @@ async function runProbe(
 async function main(): Promise<void> {
   const mode = argValue('mode');
   const promptPath = argValue('prompt');
+  const roleArg = argValue('role');
 
   if (mode !== 'harvest' && mode !== 'probe') {
-    console.error('Usage: npx tsx scripts/ratchet/run.ts --mode harvest|probe [--prompt <path>]');
+    console.error(
+      'Usage: npx tsx scripts/ratchet/run.ts --mode harvest|probe [--prompt <path>] [--role clerk|elicitor]'
+    );
     process.exitCode = 1;
     return;
   }
 
-  if (process.env.ELICIT_LLM_BASE_URL === undefined) {
-    console.error(
-      'WARNING: ELICIT_LLM_BASE_URL is not set — model calls will use the default base URL from src/llm.ts.'
-    );
+  if (roleArg !== undefined && roleArg !== 'clerk' && roleArg !== 'elicitor') {
+    console.error(`ERROR: --role must be clerk or elicitor, got "${roleArg}".`);
+    process.exitCode = 1;
+    return;
   }
+
+  // Each mode measures the role that runs it in production (Q-48).
+  const role: LlmRole = roleArg ?? (mode === 'harvest' ? 'clerk' : 'elicitor');
+  const cfg = roleConfig(role);
+  console.error(`Measuring the ${role} role: ${cfg.modelId} at ${cfg.baseUrl}.`);
 
   let corpus: CorpusEntry[];
   try {
@@ -521,10 +534,17 @@ async function main(): Promise<void> {
         `WARNING: --prompt ${promptPath} ignored in harvest mode — propose() has no prompt override.`
       );
     }
-    const result = await runHarvest(corpus);
+    const result = await runHarvest(corpus, role);
     console.log(
       JSON.stringify(
-        { mode: 'harvest', prompt: 'default (propose SYSTEM_PROMPT)', ...result },
+        {
+          mode: 'harvest',
+          prompt: 'default (propose SYSTEM_PROMPT)',
+          role,
+          model: cfg.modelId,
+          baseUrl: cfg.baseUrl,
+          ...result,
+        },
         null,
         2
       )
@@ -543,10 +563,17 @@ async function main(): Promise<void> {
       return;
     }
   }
-  const result = await runProbe(corpus, systemPrompt);
+  const result = await runProbe(corpus, systemPrompt, role);
   console.log(
     JSON.stringify(
-      { mode: 'probe', prompt: promptPath ?? 'default (hardcoded probe prompt)', ...result },
+      {
+        mode: 'probe',
+        prompt: promptPath ?? 'default (hardcoded probe prompt)',
+        role,
+        model: cfg.modelId,
+        baseUrl: cfg.baseUrl,
+        ...result,
+      },
       null,
       2
     )
