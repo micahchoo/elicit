@@ -1,8 +1,8 @@
 ---
 title: "Build: the protocol ratchet — keep-or-revert prompt tuning"
 labels: [wayfinder:task]
-status: done
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 

@@ -33,6 +33,27 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
+  ticket — a peer Claude session's red-team of the whole app) — found the
+  canon-string drift, harvest silent failure, validator gaps, and the
+  resonance honesty problem. Tickets 034-037 carry the fixes; the
+  canon-conformance test (tests/canon.test.ts) closes the class of bug
+  where the test and the implementation share a wrong oracle.
+
+- [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
+  ticket — a peer Claude session's red-team of the whole app) — found the
+  canon-string drift, harvest silent failure, validator gaps, and the
+  resonance honesty problem. Tickets 034-037 carry the fixes; the
+  canon-conformance test (tests/canon.test.ts) closes the class of bug
+  where the test and the implementation share a wrong oracle.
+
+- [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
+  ticket — a peer Claude session's red-team of the whole app) — found the
+  canon-string drift, harvest silent failure, validator gaps, and the
+  resonance honesty problem. Tickets 034-037 carry the fixes; the
+  canon-conformance test (tests/canon.test.ts) closes the class of bug
+  where the test and the implementation share a wrong oracle.
+
 - [Finish slice-2 execution](tickets/001-finish-slice-2.md) — landed green
   through four fix waves; the practice of live-diagnosing Micah's real
   sittings found every load-bearing bug the tests missed.
