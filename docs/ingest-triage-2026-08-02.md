@@ -29,6 +29,8 @@ Reason codes for drops:
 
 **Totals: 139 KEEP, 149 drop, 7 excluded as not your prose.**
 
+*Corrected 2026-08-02 (found by ticket 037): the `log` list was headed 49 and held 50 numbers, and cut 86 — "It was heartwarming to see that they were so excited to help even though they didn't live in Pune" — carried no reason code at all. It is a `log` drop. Totals were always right; the list was not.*
+
 The criterion throughout: *would this sentence be evidence about you if you did
 not know who wrote it?* Where I was unsure I dropped, because a wrong drop is
 recoverable — the source files are not going anywhere — and a wrong keep
@@ -89,8 +91,8 @@ The load-bearing ones, so you can check my judgment cheaply:
 68, 70, 77, 78, 79, 80, 81, 84, 89, 91, 94, 96, 98, 99, 106, 107, 124, 125, 127,
 138, 142, 143, 147, 150, 152, 155, 160, 166, 180, 186, 187, 189, 190, 194
 
-**drop — `log` (49):** 20, 21, 24, 31, 39, 41, 48, 52, 58, 64, 66, 69, 82, 83, 85,
-87, 88, 90, 92, 95, 97, 111, 112, 113, 114, 115, 116, 117, 118, 121, 123, 126,
+**drop — `log` (50):** 20, 21, 24, 31, 39, 41, 48, 52, 58, 64, 66, 69, 82, 83, 85,
+86, 87, 88, 90, 92, 95, 97, 111, 112, 113, 114, 115, 116, 117, 118, 121, 123, 126,
 128, 129, 130, 131, 132, 133, 134, 136, 137, 141, 144, 145, 146, 148, 149, 151,
 153, 156
 

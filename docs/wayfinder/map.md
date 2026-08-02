@@ -332,6 +332,14 @@ unassigned, all blockers closed.
   — one apostrophe in a comment hid a whole file — now closed with two guards
   that were proved to bite.
 
+- [Fix: harvester drops episodes and mislabels facet](tickets/037-harvest-facet-bias.md)
+  — measured against the 295 hand-marked cuts before anything changed. **The 044
+  gate rejected 0 of 295** — inert on real prose since it shipped, with all its
+  tests passing. `episode` 6% → 30%, marker-less `intention` 6 → 0, three cuts
+  carrying a stance in the facet field (reaching disk) → 0. `world`/`log` is 76%
+  of the junk and was NOT fixed: six predicates measured, best 74% precision at
+  18% recall against a 53% baseline. The numbers are in the code.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
