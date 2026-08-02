@@ -107,10 +107,78 @@ function sittingStarted(f: Fields): string {
  return f.protocol ? `${opening} using the ${f.protocol} protocol` : opening;
 }
 
-/** What the harvester read back from a sitting, or the fact that it could not. */
+/**
+ * What the harvester held as Buds instead of dropping (ticket 037). A cut
+ * lifted mid-sentence and a cut wearing a label the vocabulary does not contain
+ * are both the model's mistake made over the person's words, so the words stay.
+ */
+function heldAsBuds(f: Fields): string {
+ const mid = num(f, 'fragmentBuds');
+ const oov = num(f, 'outOfVocabularyLabels');
+ if (mid === 0 && oov === 0) {
+  return 'no cut was lifted mid-sentence and no label fell outside the vocabulary';
+ }
+ const parts: string[] = [];
+ if (mid > 0) parts.push(`${count(mid, 'cut')} lifted mid-sentence`);
+ if (oov > 0) parts.push(`${count(oov, 'label')} outside the vocabulary`);
+ return `held ${series(parts)} as ${mid + oov === 1 ? 'a bud' : 'buds'}`;
+}
+
+/**
+ * The two structural overrides on what the model called a cut. `superseded` is
+ * corrected because the marker PROVES the stance; a marker-less `intention` is
+ * only counted, because the marker proves the label wrong and says nothing
+ * about which of the seven other facets is right.
+ */
+function labelChecks(f: Fields): string {
+ const superseded = num(f, 'supersessionCorrections');
+ const unmarked = num(f, 'unmarkedIntentions');
+ const corrected = superseded === 0
+  ? 'corrected no stance to superseded'
+  : `corrected ${count(superseded, 'stance')} to superseded`;
+ const intentions = unmarked === 0
+  ? 'found no intention label without a want, plan or goal'
+  : `found ${count(unmarked, 'cut')} labelled intention with no want, plan or goal in the words`;
+ return `${corrected} and ${intentions}`;
+}
+
+/**
+ * The episode shadow record (Q-35), and the reason the line states it even when
+ * nothing fired: ticket 037's fix took `episode` from 6% of cuts to 30%, on
+ * twelve turns of one person's writing, and whether that holds on new prose is
+ * exactly what these two numbers answer. A sitting with no dated turn measured
+ * nothing, and must not read like a sitting where every dated turn was caught.
+ */
+function episodeRecord(f: Fields): string {
+ const anchored = num(f, 'episodeAnchoredTurns');
+ const blind = num(f, 'episodeBlindTurns');
+ if (anchored === 0) return 'no turn named when something happened, so none owed an episode cut';
+ const named = `${count(anchored, 'turn')} named when something happened`;
+ return blind === 0
+  ? `${named}, and every one produced an episode cut`
+  : `${named}, and ${blind} produced no episode cut`;
+}
+
+/**
+ * What the harvester read back from a sitting, or the fact that it could not.
+ *
+ * The counts come first, because they are what the reader asked. The three
+ * clauses after them are ticket 037's diagnostics, which reached nobody until
+ * ticket 066. Each clause states its number whether or not the check fired: a
+ * check that renders as silence at zero cannot be told apart from a check that
+ * is not running, and the 044 admissibility gate spent a month rejecting 0 of
+ * 295 cuts with every one of its own tests green.
+ */
 function harvestProposed(f: Fields): string {
  if (f.parsed === 'false') return 'could not read the sitting back, so proposed nothing';
- return `proposed ${count(num(f, 'proposals'), 'snippet')} and ${count(num(f, 'buds'), 'bud')}`;
+ const counts = `proposed ${count(num(f, 'proposals'), 'snippet')} and ${count(num(f, 'buds'), 'bud')}`;
+ // Every harvest logged before ticket 066 carries none of these fields, and
+ // `num` reads an absent field as 0. Absent is NOT zero here: rendering an old
+ // line as "no cut was lifted mid-sentence" would put a measurement nobody made
+ // in front of a reader, which is the failure this whole rendering exists to
+ // end. A line with no counters in it says only what it knows.
+ if (f.episodeAnchoredTurns === undefined) return counts;
+ return [counts, heldAsBuds(f), labelChecks(f), episodeRecord(f)].join('; ');
 }
 
 /**

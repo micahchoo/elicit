@@ -177,6 +177,14 @@ function serverEmit(
  * The `harvest-proposed` detail line — counts and flags only, never user text.
  * `parsed=false` distinguishes a collapsed extraction from a genuinely thin
  * sitting; before ticket 034 both logged as `proposals=0`.
+ *
+ * The five ticket-037 diagnostics are here because a counter that stops at the
+ * struct is not a record (ticket 066). Two of them — the episode pair — are a
+ * Q-35 shadow record, which is the only evidence by which 037's episode fix
+ * graduates or does not; the other three say what the structural checks did to
+ * the model's own labelling. `src/log/format.ts#harvestProposed` renders every
+ * one of them as English, and `tests/log-format.test.ts` fails if a value
+ * added here does not reach that sentence.
  */
 function harvestDetail(result: {
   proposals: unknown[];
@@ -194,6 +202,12 @@ function harvestDetail(result: {
     `rawChars=${d.rawChars}`,
     `fabricationDrops=${d.fabricationDrops}`,
     `sourceTurnCorrections=${d.sourceTurnCorrections}`,
+    `fragmentBuds=${d.fragmentBuds}`,
+    `outOfVocabularyLabels=${d.outOfVocabularyLabels}`,
+    `supersessionCorrections=${d.supersessionCorrections}`,
+    `unmarkedIntentions=${d.unmarkedIntentions}`,
+    `episodeAnchoredTurns=${d.episodeAnchoredTurns}`,
+    `episodeBlindTurns=${d.episodeBlindTurns}`,
   ].join(' ');
 }
 // ── Defer: turning a declared need into Mode needs ──

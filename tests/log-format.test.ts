@@ -1,6 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { formatEvent, hasSentence, relativeTime, type FormattableEvent } from '../src/log/format.js';
 import { blank, sweepEmitters } from './emitted-kinds.js';
+import { createApp } from '../src/server.js';
+import { createVault } from '../src/vault/vault.js';
+import { createQueueStore } from '../src/queue/queue.js';
+import { buildIndex } from '../src/index/lexical.js';
+import { createFileAuth } from '../src/auth/auth.js';
+import { readEvents } from '../src/log/activity.js';
+import type { Complete } from '../src/types.js';
 
 /** A ULID as the server writes it — the thing this surface must never show. */
 const ULID = '01KZ0DJAKS53EHA0KJZTGZJHY5';
@@ -52,10 +63,23 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
     detail: `session=${ULID} needs=energy`,
     reads: 'deferred a question until you have more energy',
   },
+  // The harvest line carries ticket 037's five diagnostics as well as its
+  // counts (ticket 066). Two of them — the episode pair — are a Q-35 shadow
+  // record, so the line states them whether or not they fired: a counter that
+  // renders as silence at zero cannot tell a working check from an inert one,
+  // which is exactly how the 044 gate stayed inert for a month with green tests.
   {
     kind: 'harvest-proposed',
-    detail: 'proposals=3 buds=1 parsed=true parseMode=json chunks=1/1 chunkErrors=0 rawChars=900 fabricationDrops=0 sourceTurnCorrections=0',
-    reads: 'proposed 3 snippets and 1 bud',
+    detail:
+      'proposals=3 buds=4 parsed=true parseMode=json chunks=2/2 chunkErrors=0 rawChars=900 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=2 outOfVocabularyLabels=1 ' +
+      'supersessionCorrections=1 unmarkedIntentions=2 episodeAnchoredTurns=3 episodeBlindTurns=1',
+    reads:
+      'proposed 3 snippets and 4 buds; ' +
+      'held 2 cuts lifted mid-sentence and 1 label outside the vocabulary as buds; ' +
+      'corrected 1 stance to superseded and found 2 cuts labelled intention ' +
+      'with no want, plan or goal in the words; ' +
+      '3 turns named when something happened, and 1 produced no episode cut',
   },
   { kind: 'session-harvested', detail: 'kept=1 budded=0', reads: 'kept 1, budded 0' },
   { kind: 'transcribed', detail: '820ms 47chars', reads: 'transcribed 47 characters of speech' },
@@ -275,6 +299,87 @@ describe('formatEvent', () => {
   });
 
   /**
+   * A quiet harvest — every 037 check ran and none fired. This is the line the
+   * eval's "after" column produces, and it has to be distinguishable from a
+   * line written before the counters existed. Each check therefore says that it
+   * ran and found nothing, rather than saying nothing.
+   */
+  it('a harvest where no check fired still says each one ran', () => {
+    const detail =
+      'proposals=3 buds=1 parsed=true parseMode=json chunks=1/1 chunkErrors=0 rawChars=900 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=0 outOfVocabularyLabels=0 ' +
+      'supersessionCorrections=0 unmarkedIntentions=0 episodeAnchoredTurns=3 episodeBlindTurns=0';
+    expect(formatEvent(ev('harvest-proposed', detail, 'harvester'))).toBe(
+      'proposed 3 snippets and 1 bud; ' +
+        'no cut was lifted mid-sentence and no label fell outside the vocabulary; ' +
+        'corrected no stance to superseded and found no intention label ' +
+        'without a want, plan or goal; ' +
+        '3 turns named when something happened, and every one produced an episode cut',
+    );
+  });
+
+  /**
+   * No dated turn at all is NOT the same as every dated turn producing an
+   * episode cut, and the shadow record is worthless if the two read alike: one
+   * says the fix held, the other says nothing tested it.
+   */
+  it('a sitting with no dated turn says the episode check had nothing to measure', () => {
+    const detail =
+      'proposals=1 buds=0 parsed=true parseMode=json chunks=1/1 chunkErrors=0 rawChars=200 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=0 outOfVocabularyLabels=0 ' +
+      'supersessionCorrections=0 unmarkedIntentions=0 episodeAnchoredTurns=0 episodeBlindTurns=0';
+    expect(formatEvent(ev('harvest-proposed', detail, 'harvester'))).toContain(
+      'no turn named when something happened, so none owed an episode cut',
+    );
+  });
+
+  /**
+   * A line the server wrote before ticket 066 carries none of the counters, and
+   * an absent field reads as 0 through `num`. Rendering that as "no cut was
+   * lifted mid-sentence" would put a measurement nobody made in front of a
+   * reader — the same species of claim this ticket exists to stop, pointed
+   * backwards. Every `harvest-proposed` line ever written is in this shape.
+   */
+  it('does not claim a check ran on a line written before the check existed', () => {
+    const detail =
+      'proposals=3 buds=1 parsed=true parseMode=json chunks=1/1 chunkErrors=0 rawChars=900 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0';
+    expect(formatEvent(ev('harvest-proposed', detail, 'harvester')))
+      .toBe('proposed 3 snippets and 1 bud');
+  });
+
+  /** One check firing alone reads as English, not as a slot with a zero in it. */
+  it('names a single held cut in the singular', () => {
+    const detail =
+      'proposals=2 buds=1 parsed=true parseMode=json chunks=1/1 chunkErrors=0 rawChars=400 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=1 outOfVocabularyLabels=0 ' +
+      'supersessionCorrections=0 unmarkedIntentions=0 episodeAnchoredTurns=1 episodeBlindTurns=1';
+    expect(formatEvent(ev('harvest-proposed', detail, 'harvester'))).toBe(
+      'proposed 2 snippets and 1 bud; held 1 cut lifted mid-sentence as a bud; ' +
+        'corrected no stance to superseded and found no intention label ' +
+        'without a want, plan or goal; ' +
+        '1 turn named when something happened, and 1 produced no episode cut',
+    );
+  });
+
+  /**
+   * The counters survive the surface. `formatEvent` strips ULIDs and the
+   * fallback strips every `key=value` pair, which is what made ticket 063
+   * necessary: a diagnostic that reaches the reader with its number removed has
+   * not been surfaced. Asserted on the numbers themselves so a future rewording
+   * of the sentences cannot quietly drop one.
+   */
+  it('keeps every counter value on the rendered line', () => {
+    const detail =
+      'proposals=3 buds=4 parsed=true parseMode=json chunks=2/2 chunkErrors=0 rawChars=900 ' +
+      'fabricationDrops=0 sourceTurnCorrections=0 fragmentBuds=2 outOfVocabularyLabels=5 ' +
+      'supersessionCorrections=7 unmarkedIntentions=9 episodeAnchoredTurns=11 episodeBlindTurns=4';
+    const line = formatEvent(ev('harvest-proposed', detail, 'harvester'));
+    for (const n of ['2', '5', '7', '9', '11', '4']) expect(line).toMatch(new RegExp(`\\b${n}\\b`));
+    expect(line).not.toMatch(/=/);
+  });
+
+  /**
    * `resonance-checked` was the one kind whose sentence was written ahead of
    * its emitter, and it was kept out of `EMITTED` for as long as that was true:
    * the sweep below rightly fails a sample for a kind nothing emits, because a
@@ -402,6 +507,131 @@ describe('every emitted kind renders', () => {
   it('is still emitted, so no sample outlives its emitter', () => {
     const stale = [...sampled].filter((k) => !kinds.includes(k));
     expect(stale).toEqual([]);
+  });
+});
+
+/**
+ * The seam, end to end: a real harvest through the real route, the line read
+ * back off the JSONL the server wrote, and rendered by the real formatter.
+ *
+ * Every test above hands `formatEvent` a detail line a person typed, which
+ * proves the renderer and proves nothing about the emitter. Ticket 037 shipped
+ * five counters that `harvestDetail` never wrote, and every one of the
+ * harvester's own tests stayed green — the gap was between two files that each
+ * passed alone. This test spans both.
+ */
+describe('the harvest diagnostics reach the surface', () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const r of roots) rmSync(r, { recursive: true, force: true });
+  });
+
+  /**
+   * One turn that gives every 037 check something to find. It names when
+   * something happened ("In March") in the first person past ("I told"), so the
+   * episode counters have material to measure.
+   */
+  const TURN =
+    'In March I told my manager the estimate was fiction. ' +
+    'I used to think that honesty cost me something. ' +
+    'The relief lasted about four hours. ' +
+    'My hands were shaking the whole time.';
+
+  /** A cut as the model returns one. */
+  type Cut = { text: string; facet: string; stance: string };
+
+  function cut(text: string, facet: string, stance: string): Cut {
+    return { text, facet, stance };
+  }
+
+  /**
+   * Post one unprompted entry through the real route and read the
+   * `harvest-proposed` line back off the JSONL the server wrote.
+   */
+  async function harvestLine(cuts: Cut[]): Promise<string> {
+    const root = mkdtempSync(join(tmpdir(), 'elicit-harvest-line-'));
+    roots.push(root);
+    const payload = JSON.stringify({
+      cuts: cuts.map((c) => ({ ...c, sourceTurn: 0, reading: 'a reading', standalone: true })),
+    });
+    // Keyed on the harvest prompt, so the boot docket's own calls cannot eat
+    // the scripted cuts and leave this asserting against an empty harvest.
+    const complete: Complete = async (system) =>
+      system.includes('harvesting agent for Elicit') ? payload : '';
+
+    const app = await createApp({
+      vault: createVault(root),
+      complete,
+      queue: createQueueStore(root),
+      index: buildIndex([]),
+      vaultRoot: root,
+      authStore: createFileAuth(join(root, '.auth.json')),
+    });
+
+    const res = await app.fetch(
+      new Request('http://127.0.0.1/api/unprompted', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: TURN }),
+      }),
+      { remoteAddr: '127.0.0.1' },
+    );
+    expect(res.status).toBe(200);
+
+    const harvest = readEvents(root).filter((e) => e.kind === 'harvest-proposed');
+    expect(harvest).toHaveLength(1);
+    return formatEvent(harvest[0]!);
+  }
+
+  /**
+   * Every counter is given a DIFFERENT value here, and that is the point: with
+   * all of them at 1, `harvestDetail` could write any counter into any field
+   * and the line would still read correctly. Two mid-sentence cuts, one bad
+   * label, one supersession, two unmarked intentions.
+   */
+  it('renders a real harvest line off the log the server wrote', async () => {
+    expect(
+      await harvestLine([
+        // SUPERSESSION forces `superseded` whatever the model said.
+        cut('I used to think that honesty cost me something.', 'construct', 'avowal'),
+        // `intention` with no want, plan or goal in the person's own words.
+        cut('The relief lasted about four hours.', 'intention', 'avowal'),
+        cut('My hands were shaking the whole time.', 'intention', 'self-observation'),
+        // Opens on a lowercase letter: lifted out of the middle of a thought.
+        cut('the estimate was fiction.', 'fact', 'report-of-fact'),
+        cut('shaking the whole time.', 'fact', 'self-observation'),
+        // A stance value in the facet field — the defect that reached disk
+        // before 037, because `propose()` cast facet unchecked.
+        cut('In March I told my manager the estimate was fiction.', 'self-observation', 'avowal'),
+      ]),
+    ).toBe(
+      'proposed 3 snippets and 3 buds; ' +
+        'held 2 cuts lifted mid-sentence and 1 label outside the vocabulary as buds; ' +
+        'corrected 1 stance to superseded and found 2 cuts labelled intention ' +
+        'with no want, plan or goal in the words; ' +
+        '1 turn named when something happened, and 1 produced no episode cut',
+    );
+  });
+
+  /**
+   * The same turn, harvested well: the dated occasion is cut as an `episode`,
+   * so the shadow record reads as the fix holding rather than as the fix
+   * failing. The two lines differ, which is the whole of ticket 066 — before
+   * it, these two harvests logged the same words.
+   */
+  it('reads a caught episode differently from a missed one', async () => {
+    expect(
+      await harvestLine([
+        cut('In March I told my manager the estimate was fiction.', 'episode', 'self-observation'),
+        cut('I used to think that honesty cost me something.', 'construct', 'superseded'),
+      ]),
+    ).toBe(
+      'proposed 2 snippets and 0 buds; ' +
+        'no cut was lifted mid-sentence and no label fell outside the vocabulary; ' +
+        'corrected no stance to superseded and found no intention label ' +
+        'without a want, plan or goal; ' +
+        '1 turn named when something happened, and every one produced an episode cut',
+    );
   });
 });
 

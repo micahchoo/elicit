@@ -25,7 +25,9 @@ import { createVault } from '../src/vault/vault.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { createFileAuth } from '../src/auth/auth.js';
-import { makeComplete } from '../src/llm.js';
+import { makeComplete, roleConfig, describeRole } from '../src/llm.js';
+import { readEvents } from '../src/log/activity.js';
+import { formatEvent } from '../src/log/format.js';
 import type { Hono } from 'hono';
 
 const root = mkdtempSync(join(tmpdir(), 'elicit-accept-'));
@@ -60,14 +62,29 @@ async function waitForDocket(n: number): Promise<void> {
 
 const vault = createVault(root);
 const queue = createQueueStore(root);
-const complete = makeComplete();
+
+/**
+ * Both roles, wired as production wires them (Q-48).
+ *
+ * This script used to hand `createApp` one `makeComplete()` — the ELICITOR —
+ * and print the CLERK's default model id next to it. So the harvest that 044
+ * accepts ran on `bonsai-27b`, which `src/llm.ts` records as collapsing on long
+ * structured payloads, while the banner said `qwen3.6:35b`. An acceptance run
+ * against the wrong model, labelled with the right one, is worse than no
+ * acceptance: it is evidence that reads as though it were about the system.
+ */
+const clerkCfg = roleConfig('clerk');
+const complete = makeComplete('elicitor');
+const clerk = { complete: makeComplete('clerk'), modelName: clerkCfg.modelId };
 
 console.log(`vault: ${root}`);
-console.log(`model: ${process.env.ELICIT_LLM_MODEL ?? 'qwen3.6:35b'}\n`);
+console.log(`${describeRole(roleConfig('elicitor'))}`);
+console.log(`${describeRole(clerkCfg)}\n`);
 
 const app = await createApp({
   vault,
   complete,
+  clerk,
   queue,
   index: buildIndex([]),
   vaultRoot: root,
@@ -131,10 +148,58 @@ const everything = `${proposedText} | ${buddedText}`;
 for (const junk of JUNK_MARKERS) {
   check(`044: "${junk}" never becomes corpus`, !everything.includes(junk));
 }
+
+/**
+ * Where each real marker landed. Ticket 037 split "survives" into two
+ * outcomes: a cut is proposed, or — when it was lifted mid-sentence or wears a
+ * label outside the vocabulary — it is held as a Bud, which keeps the person's
+ * words and delays them. Only the third outcome, absent from both, is a loss.
+ *
+ * This used to be one assertion over the proposals alone, which after 037 no
+ * longer described the system: a mid-sentence cut of real material would fail
+ * an acceptance that nothing had actually broken. Splitting it keeps the strong
+ * claim rather than relaxing to "somewhere", and when the two disagree the
+ * output says which markers were delayed instead of leaving a reader to guess.
+ */
+const landed = REAL_MARKERS.map((m) => {
+  const where = proposedText.includes(m) ? 'proposal' : buddedText.includes(m) ? 'bud' : 'absent';
+  return `${m}→${where}`;
+});
+console.log(`real material: ${landed.join(', ')}\n`);
+
 check(
-  '044: real material survives the same pass',
+  '044: real material is not destroyed by the same pass',
+  REAL_MARKERS.some((m) => everything.includes(m)),
+  landed.join(', '),
+);
+check(
+  '044+037: real material still reaches the proposal stream, not only Buds',
   REAL_MARKERS.some((m) => proposedText.includes(m)),
-  proposedText.slice(0, 120),
+  landed.join(', '),
+);
+
+// ── 066: the harvest's diagnostics reach the Activity Log as English ──
+//
+// Read back off the JSONL the server just wrote, through the same renderer the
+// interface uses. Ticket 037 shipped five counters and `harvestDetail` wrote
+// none of them, so the only way to know this is fixed is to read the line.
+
+const harvestLines = readEvents(root).filter((e) => e.kind === 'harvest-proposed');
+for (const e of harvestLines) {
+  console.log(`  raw:   ${e.detail}`);
+  console.log(`  reads: ${formatEvent(e)}\n`);
+}
+check('066: the harvest wrote an activity line', harvestLines.length > 0);
+const line = harvestLines.map((e) => formatEvent(e)).join(' ');
+check(
+  '066: the line names all five 037 diagnostics',
+  ['mid-sentence', 'vocabulary', 'superseded', 'intention', 'episode'].every((w) => line.includes(w)),
+  line.slice(0, 160),
+);
+check(
+  '066: the numbers survive to the reader',
+  !line.includes('=') && !/\b(fragmentBuds|episodeBlindTurns)\b/.test(line),
+  line.slice(0, 160),
 );
 
 // ── 047: the harvest response does not wait for the docket ──
