@@ -1,8 +1,8 @@
 ---
 title: "Fix: the embedding channel is one run behind, and it biases the shadow record"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -63,3 +63,35 @@ never an await inside `candidates()`.
   embedder calls, not by inspection.
 - A test drives two consecutive runs and shows the first run's pool now
   contains a pair it previously could not have contained.
+
+## Resolution (2026-08-02) — commit `2263c1d`
+
+Job 1.5 primes between the sweep and lint, with the post-sweep graph narrowed
+to what the sweep changed. `candidates()` untouched — still synchronous,
+cache-only, pure.
+
+**The prune edge was the sharp part.** `onlyIds` filters the WORK LIST only;
+the graph handed to `persist` stays whole, because `persist` prunes to the live
+claims of the graph it receives. Narrowing by subset-graph would have deleted
+every vector the first prime wrote — ticket 053's deletion arriving from the
+other direction. Two tests hold it.
+
+**The touched-set is a body diff, not a read of `OpResult`.** `applyOps` cannot
+report what it minted: a MINT op carries no id, because the id is created
+inside the write boundary. The diff also catches an UPDATE that rewrites a body
+in place, which a new-ids-only check would miss.
+
+Proven by embedder call counts rather than inspection — run 1 embeds
+`[MINTED]` narrowed versus `[MINTED, COLD]` whole-graph; run 2 embeds nothing.
+The acceptance drives two consecutive runs and shows run 1's pool holding a
+pair it previously could not have contained, and the Q-35 shadow record naming
+the fresh claim where it was empty before.
+
+14 mutations. Three survived and were closed with new tests. **One survived and
+was deleted instead** — an `isLive` guard no op could reach, since MERGE
+archives with bodies untouched and SUPERSEDE leaves the old body. Removed
+rather than left as a branch that looks like protection.
+
+**Left for the `server.ts` owner:** `runWikiJobsNow`'s comment says prime "MUST
+run before the pool", which is now half the story. One sentence pointing at
+`jobPrime`.

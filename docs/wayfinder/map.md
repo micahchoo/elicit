@@ -347,6 +347,11 @@ unassigned, all blockers closed.
   have deleted every snippet vector on the first docket run. Not yet wired —
   ticket 068 names every call site.
 
+- [Fix: the embedding channel is one run behind](tickets/067-embedding-one-run-lag.md)
+  — a second prime between the sweep and lint, narrowed to what the sweep
+  changed. The narrowing filters the work list, never the graph: pruning
+  against a subset would have deleted every vector the first prime wrote.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
