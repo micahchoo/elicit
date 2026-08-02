@@ -13,7 +13,7 @@ import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
-import { composeOpener, composeStillTrue } from './clerk/composed.js';
+import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
 import { createSttClient, type SttClient } from './stt/client.js';
@@ -184,6 +184,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     buildIndex: (snippets) => buildIndex(snippets),
     composeOpener,
     composeStillTrue,
+    composeExpedition,
     listSessions,
     nextConsolidation,
     saveSummary,
@@ -504,6 +505,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
         buildIndex: (snippets) => buildIndex(snippets),
         composeOpener,
         composeStillTrue,
+        composeExpedition,
         listSessions,
         nextConsolidation,
         saveSummary,

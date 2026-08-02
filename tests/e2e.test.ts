@@ -334,7 +334,7 @@ describe('HTTP API e2e', () => {
    energy: 'medium',
    target: 'self',
   });
-  expect(transcriptParsed.data.protocol).toBe('self');
+  expect(transcriptParsed.data.protocol).toBe('reflective');
 
   // ── Step 6: GET /api/snippets lists them ──
   const listRes = await fetch(`${baseUrl}/api/snippets`);
