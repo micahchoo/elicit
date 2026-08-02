@@ -41,6 +41,17 @@ export async function runDocket(deps: {
   readTranscript?: (root: string, session: string) => string;
   modelName?: string;
   vaultRoot: string;
+  /**
+   * The Clerk's wiki work (T12), as the last job of a run.
+   *
+   * Structural and optional on purpose. This file must not import
+   * `wiki-jobs.ts` — the docket is the older, smaller thing and the wiki
+   * layer depends on it, not the other way round — so the server injects a
+   * thunk that has already been given its own collaborators, including its own
+   * Activity Log sink. Absent means no wiki work this run, and every caller
+   * that predates the field behaves exactly as it did.
+   */
+  runWikiJobs?: () => Promise<DocketReport['wiki']>;
 }): Promise<DocketReport> {
   if (running) {
     return {
@@ -200,11 +211,27 @@ export async function runDocket(deps: {
       }
     }
 
+    // ── 7. The wiki jobs, last and guarded (ticket 023 item 2) ──
+    // Last because every job above is the docket's own work and must not wait
+    // on the slowest thing in the run; guarded because a wiki failure is one
+    // job's failure. The index, the minted questions, the expiry and the
+    // consolidation are already done and on disk by the time this runs, and
+    // the report still carries all four when it throws.
+    let wiki: DocketReport['wiki'];
+    if (deps.runWikiJobs) {
+      try {
+        wiki = await deps.runWikiJobs();
+      } catch (err) {
+        deps.log({ at: ts(), actor: 'clerk', kind: 'wiki-jobs-failed', detail: String(err) });
+      }
+    }
+
     return {
       reindexed: allSnippets.length,
       minted,
       expired,
       index,
+      ...(wiki ? { wiki } : {}),
     };
   } finally {
     running = false;

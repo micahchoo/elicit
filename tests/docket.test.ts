@@ -1,4 +1,17 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+import { createApp } from '../src/server.js';
+import { createVault } from '../src/vault/vault.js';
+import { createQueueStore } from '../src/queue/queue.js';
+import { buildIndex as realBuildIndex } from '../src/index/lexical.js';
+import { createFileAuth } from '../src/auth/auth.js';
+import { readEvents } from '../src/log/activity.js';
+import { makeFakeComplete } from '../src/fake-responder.js';
+import { createClaimStore } from '../src/wiki/store.js';
+import type { Claim } from '../src/wiki/contract.js';
 import type {
   Vault,
   QueueStore,
@@ -29,6 +42,7 @@ type DocketDeps = {
   readTranscript?: (root: string, session: string) => string;
   modelName?: string;
   vaultRoot: string;
+  runWikiJobs?: () => Promise<DocketReport['wiki']>;
 };
 
 function daysAgo(days: number): string {
@@ -608,5 +622,204 @@ describe('consolidation', () => {
 
     expect(report.reindexed).toBe(1);
     expect(log.mock.calls.some((c) => c[0].kind === 'consolidation-failed')).toBe(true);
+  });
+});
+
+// ===========================================================================
+// The wiki jobs, as the docket's last job (Task 13)
+// ===========================================================================
+
+describe('the wiki jobs inside a docket run', () => {
+  const IDX: LexicalIndex = { _brand: 'LexicalIndex' } as LexicalIndex;
+
+  /** The minimum `DocketReport['wiki']` — T12's report is a superset of it. */
+  const WIKI = { swept: 4, applied: 3, rejected: 1, unprocessed: 2 };
+
+  const opener = {
+    source: 'composed' as const, license: 'CC0',
+    question: 'What about sn1?', questionForm: 'deliberative' as const,
+    sharpness: 'weak' as const, horizon: 'now' as const,
+    cites: ['sn1@1'], quotedFragment: 'sn1 prose.',
+  } satisfies QueueDraft;
+
+  function base(extra: Partial<DocketDeps> = {}): DocketDeps {
+    return {
+      vault: fakeVault([makeSnippet('sn1', { provenance: { session: 's1' } })]),
+      queue: makeFakeQueue(),
+      complete: vi.fn() as unknown as Complete,
+      buildIndex: vi.fn().mockReturnValue(IDX),
+      composeOpener: vi.fn().mockResolvedValue(opener),
+      composeStillTrue: vi.fn().mockResolvedValue(null),
+      log: vi.fn(),
+      listSessions: vi.fn().mockReturnValue([
+        { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
+      ]),
+      vaultRoot: '/tmp/fake',
+      ...extra,
+    };
+  }
+
+  it('leaves report.wiki absent when no runWikiJobs is injected', async () => {
+    const report = await runDocket(base());
+    expect(report.wiki).toBeUndefined();
+  });
+
+  it("carries the wiki jobs' own report on DocketReport.wiki", async () => {
+    const runWikiJobs = vi.fn().mockResolvedValue(WIKI);
+    const report = await runDocket(base({ runWikiJobs }));
+
+    expect(runWikiJobs).toHaveBeenCalledTimes(1);
+    expect(report.wiki).toEqual(WIKI);
+  });
+
+  it('runs the wiki jobs last, after the index, the minting and the expiry', async () => {
+    const order: string[] = [];
+    const q = makeFakeQueue();
+    const expire = q.expire.bind(q);
+    q.expire = (days: number): number => {
+      order.push('expire');
+      return expire(days);
+    };
+
+    await runDocket(base({
+      queue: q,
+      composeOpener: vi.fn().mockImplementation(async () => {
+        order.push('opener');
+        return opener;
+      }),
+      runWikiJobs: vi.fn().mockImplementation(async () => {
+        order.push('wiki');
+        return WIKI;
+      }),
+    }));
+
+    expect(order).toEqual(['opener', 'expire', 'wiki']);
+  });
+
+  it('a wiki failure costs the wiki report and nothing else in the run', async () => {
+    const log = vi.fn();
+    const q = makeFakeQueue();
+    const report = await runDocket(base({
+      queue: q,
+      log,
+      runWikiJobs: vi.fn().mockRejectedValue(new Error('the wiki work fell over')),
+    }));
+
+    // Everything the docket does on its own still happened and still reports.
+    expect(report.index).toBe(IDX);
+    expect(report.reindexed).toBe(1);
+    expect(report.minted).toHaveLength(1);
+    expect(q._expireCalls).toEqual([30]);
+    expect(report.wiki).toBeUndefined();
+
+    const failed = log.mock.calls.map((c) => c[0] as { kind: string; detail: string })
+      .filter((e) => e.kind === 'wiki-jobs-failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.detail).toContain('the wiki work fell over');
+  });
+});
+
+// ===========================================================================
+// The seam: a real run puts the wiki's own events in the Activity Log
+//
+// Ticket 063's oracle found that nothing connected `src/wiki/*`'s LogFn to
+// `appendEvent` — server.ts built a real log for the docket and none for the
+// wiki layer, so `shadow-decision`, `threshold-clipped` and both clip records
+// were written into whatever a caller passed, and in production there was no
+// caller. Q-35 graduates a mechanism on its shadow record and Q-56 makes a
+// bound owe its clip record, so a record that reaches nowhere is the mechanism
+// not existing.
+//
+// These tests therefore boot the real server against a real vault directory
+// and READ THE LOG FILE BACK. A test that asserts the code calls `log` is
+// precisely the assumption that failed here.
+// ===========================================================================
+
+describe('a real docket run and the Activity Log', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'elicit-docket-seam-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Counts settled docket runs. server.ts catches its own failures. */
+  function barrier() {
+    let settled = 0;
+    return {
+      onDocketSettled(): void { settled++; },
+      async settle(): Promise<void> {
+        const deadline = Date.now() + 10_000;
+        while (settled < 1) {
+          if (Date.now() > deadline) throw new Error('no docket run settled');
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        const failed = readEvents(dir).filter((e) => e.kind === 'docket-run-failed');
+        if (failed.length > 0) throw new Error(`docket run failed: ${failed.map((e) => e.detail).join('; ')}`);
+      },
+    };
+  }
+
+  function boot(embed?: { embed: (t: string[]) => Promise<number[][]>; model: string }) {
+    const b = barrier();
+    const app = createApp({
+      vault: createVault(dir),
+      complete: makeFakeComplete(),
+      queue: createQueueStore(dir),
+      index: realBuildIndex([]),
+      vaultRoot: dir,
+      authStore: createFileAuth(join(dir, '.auth.json')),
+      onDocketSettled: b.onDocketSettled,
+      ...(embed ? { embed } : {}),
+    });
+    return { app, settled: b.settle };
+  }
+
+  function claim(id: string, body: string): Claim {
+    const at = new Date().toISOString();
+    return {
+      id, body, range: 'at work', status: 'unconfirmed', cites: ['snip-1@1'],
+      facet: 'construct', referents: [], fromReadings: [], attested: false,
+      readLog: [], model: 'test-model', modelAt: at, created: at, updated: at,
+    };
+  }
+
+  it('writes the wiki jobs own events into the vault Activity Log', async () => {
+    const { app, settled } = boot();
+    await app;
+    await settled();
+
+    const kinds = readEvents(dir).map((e) => e.kind);
+    // `clash-checked` is emitted on EVERY run including the zero one, so it is
+    // the one wiki event a run over an empty vault must produce. Its presence
+    // in the file is the whole claim: the wiki layer's LogFn is appendEvent.
+    expect(kinds).toContain('clash-checked');
+    const checked = readEvents(dir).find((e) => e.kind === 'clash-checked')!;
+    expect(checked.actor).toBe('clerk');
+  });
+
+  it('writes the embedding channel shadow record, which needs prime before the pool', async () => {
+    const store = createClaimStore(dir);
+    store.writeClaim(claim('01KA000000000000000000000A', 'I choose the work that looks impressive.'));
+    store.writeClaim(claim('01KA000000000000000000000B', 'I keep picking the impressive-looking work.'));
+
+    const embed = {
+      model: 'fake-embed',
+      // Identical vectors: every pair scores 1.0, so the only thing that can
+      // keep the record out of the log is a cache nobody filled.
+      embed: async (texts: string[]): Promise<number[][]> => texts.map(() => [1, 1]),
+    };
+
+    const { app, settled } = boot(embed);
+    await app;
+    await settled();
+
+    const shadows = readEvents(dir).filter((e) => e.kind === 'shadow-decision');
+    const embedding = shadows.filter((e) => e.detail.includes('threshold=clash.embeddingCosine'));
+    expect(embedding.length).toBeGreaterThan(0);
+    expect(embedding[0]!.detail).toContain('would=pool');
   });
 });

@@ -16,6 +16,22 @@ import { readCadence, cadenceSentence } from './log/cadence.js';
 import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
+import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
+import { proposeOps } from './clerk/mint.js';
+import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
+import { createClaimStore } from './wiki/store.js';
+import { createRegistry } from './wiki/registry.js';
+import { lexicalChannel, referentChannel, poolCandidates, type ClashChannel } from './wiki/clash.js';
+import {
+  embeddingChannel,
+  fileEmbeddingStore,
+  localEmbedder,
+  type Embed,
+  type EmbeddingChannel,
+} from './wiki/embedding.js';
+import { lint } from './wiki/lint.js';
+import { applyOps } from './wiki/ops.js';
+import type { ClaimGraph, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
 import { createSttClient, type SttClient } from './stt/client.js';
@@ -32,6 +48,7 @@ import type {
   HarvestDecision,
   QueueStore,
   LexicalIndex,
+  DocketReport,
   QueueEntry,
   Turn,
   Target,
@@ -47,6 +64,14 @@ export interface ServerDeps {
    * artifact can never carry the elicitor's model name (Q-34).
    */
   clerk?: { complete: Complete; modelName: string };
+  /**
+   * The embedder behind the third clash channel (Q-17). Injected for the same
+   * reason `complete` is: it is the only other thing in this process that
+   * reaches an endpoint, and a test must never do that. Absent means the
+   * channel is not built — two channels still run, and the Clerk works with
+   * the embedding server switched off because it does today.
+   */
+  embed?: { embed: Embed; model: string };
   queue: QueueStore;
   index: LexicalIndex;
   vaultRoot: string;
@@ -225,6 +250,74 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const clerkComplete = deps.clerk?.complete ?? deps.complete;
   const clerkModelName = deps.clerk?.modelName ?? deps.modelName;
 
+  // ── The Clerk's wiki work, constructed once (Q-22) ──
+  //
+  // The log sink below is the point of this block. Until it existed, every
+  // `shadow-decision`, `threshold-clipped`, `clash-referent-clipped` and
+  // `clash-embedding-clipped` was written into whatever a caller passed, and
+  // in production there was no caller — so Q-35, which graduates a mechanism
+  // on its shadow record, and Q-56, which makes a bound owe its clip record,
+  // were both waiting on evidence that reached nowhere. It is the SAME
+  // `appendEvent` the docket writes through, because Q-23 makes one audit
+  // trail and a second one would be a second answer to "what did it do".
+  const wikiLog: LogFn = (e) => appendEvent(deps.vaultRoot, e as ActivityEvent);
+
+  // The Q-34 stamp for everything the wiki work writes. `bonsai-27b` is the
+  // ELICITOR (Q-48); this is the careful model, and the registry and the
+  // claims must carry one and the same name or the record cannot be read.
+  const wikiModel = clerkModelName ?? DEFAULT_CLERK_MODEL;
+  const claimStore = createClaimStore(deps.vaultRoot);
+  const registry = createRegistry(claimStore, wikiModel, wikiLog);
+
+  const embedding: EmbeddingChannel | null = deps.embed
+    ? embeddingChannel({
+        embed: deps.embed.embed,
+        model: deps.embed.model,
+        store: fileEmbeddingStore(deps.vaultRoot),
+        log: wikiLog,
+      })
+    : null;
+  const channels: ClashChannel[] = [lexicalChannel, referentChannel(registry, { log: wikiLog })];
+  if (embedding) channels.push(embedding);
+
+  /** One wiki run, with its collaborators already bound. Never on a response path. */
+  async function runWikiJobsNow(): Promise<DocketReport['wiki']> {
+    // `prime` is the async half `ClashChannel` cannot express, and it MUST run
+    // before the pool: `candidates()` is cache-only, so an unprimed channel
+    // answers from whatever is on disk and returns a correct-looking zero. The
+    // failure is silent, which is why the call is here rather than left to a
+    // reader of the deps object to remember.
+    if (embedding) {
+      const contents = deps.vault.rebuildIndex();
+      const graph: ClaimGraph = {
+        ...claimStore.loadSlice(),
+        snippets: contents.snippets,
+        readings: contents.readings,
+      };
+      await embedding.prime(graph);
+    }
+
+    return runWikiJobs({
+      store: claimStore,
+      registry,
+      queue: deps.queue,
+      vault: deps.vault,
+      complete: clerkComplete,
+      channels,
+      proposeOps,
+      applyOps,
+      lint,
+      poolCandidates,
+      judgeOpposition,
+      composeRemeasure,
+      judgeConfirmation,
+      composeStillTrue,
+      log: wikiLog,
+      model: wikiModel,
+      vaultRoot: deps.vaultRoot,
+    });
+  }
+
   // ── The docket, off the response path (ticket 047) ──
   // Opener minting is one LLM call per uncited snippet, so a docket run grows
   // with the vault. No request waits for one: handlers write to the vault,
@@ -253,6 +346,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
         // Cover summaries are written by the clerk model, so they say so (Q-34).
         ...(clerkModelName ? { modelName: clerkModelName } : {}),
         log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+        runWikiJobs: runWikiJobsNow,
         vaultRoot: deps.vaultRoot,
       });
       currentIndex = report.index;
@@ -935,6 +1029,12 @@ if (isDirect) {
   const llmMode = process.env.ELICIT_LLM ?? 'fake';
   let complete: Complete;
   let clerk: ServerDeps['clerk'];
+  /**
+   * The embedder for the third clash channel. Real endpoints only: under the
+   * fake responder there is nothing to embed with, and a fabricated vector
+   * would be cached, which makes it permanent.
+   */
+  let embed: ServerDeps['embed'];
   /** Elicitor stamp. Undefined under the fake responder — nothing real produced it. */
   let modelName: string | undefined;
   // Two lines the reader can check against the two endpoints (Q-48).
@@ -947,6 +1047,7 @@ if (isDirect) {
     complete = makeComplete('elicitor');
     clerk = { complete: makeComplete('clerk'), modelName: clerkCfg.modelId };
     modelName = elicitorCfg.modelId;
+    embed = localEmbedder();
     roleLines = [describeRole(elicitorCfg), describeRole(clerkCfg)];
   } else {
     // One fake answers both roles. Nothing is stamped with a real model name.
@@ -974,6 +1075,7 @@ if (isDirect) {
     vault,
     complete,
     ...(clerk ? { clerk } : {}),
+    ...(embed ? { embed } : {}),
     queue,
     index,
     vaultRoot,
