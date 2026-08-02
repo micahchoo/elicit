@@ -235,6 +235,12 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
     detail: 'pool=12 suppressed=3 reproposed=1 channels=lexical:5,referent:4,embedding:3',
     reads: 'found 12 pairs that might contradict (lexical 5, referent 4, embedding 3), suppressed 3, reproposed 1',
   },
+  {
+    // The live turn path, as `elicitor` rather than `clerk` (ticket 036 item 2).
+    kind: 'resonance-checked',
+    detail: `session=${ULID} hits=2`,
+    reads: 'looked for echoes of what was just said and found 2',
+  },
 ];
 
 describe('formatEvent', () => {
@@ -269,15 +275,18 @@ describe('formatEvent', () => {
   });
 
   /**
-   * `resonance-checked` is the one kind whose sentence is written ahead of its
-   * emitter: the live turn path emits it, and that path is a later task. It is
-   * deliberately NOT in `EMITTED` above, because the sweep below rightly fails
-   * a sample for a kind nothing emits — a sample is a claim that a rendering
-   * has been read on a real line. This is a claim about the sentence only.
+   * `resonance-checked` was the one kind whose sentence was written ahead of
+   * its emitter, and it was kept out of `EMITTED` for as long as that was true:
+   * the sweep below rightly fails a sample for a kind nothing emits, because a
+   * sample is a claim that a rendering has been read on a real line. T14 landed
+   * the emitter on the live turn path, so it is now a sample like any other and
+   * has moved into the table above. Recorded here because the sequence — the
+   * sentence first, the emitter second, the sample when the emitter is real —
+   * is the shape of every kind this file will gain next.
    */
-  it('resonance-checked reads as a sentence before its emitter lands', () => {
-    expect(formatEvent(ev('resonance-checked', `session=${ULID} hits=2`))).toBe(
-      'looked for echoes of what was just said and found 2',
+  it('reads a resonance count of zero as a count, not as silence', () => {
+    expect(formatEvent(ev('resonance-checked', `session=${ULID} hits=0`, 'elicitor'))).toBe(
+      'looked for echoes of what was just said and found 0',
     );
   });
 

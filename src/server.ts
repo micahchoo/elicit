@@ -31,7 +31,10 @@ import {
 } from './wiki/embedding.js';
 import { lint } from './wiki/lint.js';
 import { applyOps } from './wiki/ops.js';
-import type { ClaimGraph, LogFn } from './wiki/contract.js';
+import { coreness } from './wiki/status.js';
+import { facetHeading, lintNote } from './queue/source-label.js';
+import { FACETS } from './queue/facet-balance.js';
+import type { Claim, ClaimGraph, LintFinding, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
 import { createSttClient, type SttClient } from './stt/client.js';
@@ -42,6 +45,7 @@ import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.j
 import type {
   Vault,
   Complete,
+  Facet,
   Mode,
   SessionState,
   CutProposal,
@@ -280,6 +284,23 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const channels: ClashChannel[] = [lexicalChannel, referentChannel(registry, { log: wikiLog })];
   if (embedding) channels.push(embedding);
 
+  /**
+   * The lint findings of the LAST completed wiki run, and when it ran.
+   *
+   * `GET /api/wiki` reports these rather than calling `lint` itself, and the
+   * reason is `shadowDecision`: two of lint's three rules are shadowed (Q-35),
+   * so every call writes `shadow-decision` events. Linting on a read path would
+   * therefore fill the graduation record with one entry per page view — the
+   * same corruption as building a second Registry over one vault, arriving
+   * through a different door. Freshness costs nothing here: claims change only
+   * during a wiki run, so between runs these findings and the claims on disk
+   * are exactly as consistent as they were when the run ended.
+   *
+   * `null` until the first run completes, and the route says so. "Looked and
+   * found nothing" must not render as "never looked" (eval finding #8).
+   */
+  let lastLint: { findings: LintFinding[]; at: string } | null = null;
+
   /** One wiki run, with its collaborators already bound. Never on a response path. */
   async function runWikiJobsNow(): Promise<DocketReport['wiki']> {
     // `prime` is the async half `ClashChannel` cannot express, and it MUST run
@@ -297,7 +318,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       await embedding.prime(graph);
     }
 
-    return runWikiJobs({
+    const report = await runWikiJobs({
       store: claimStore,
       registry,
       queue: deps.queue,
@@ -316,6 +337,8 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       model: wikiModel,
       vaultRoot: deps.vaultRoot,
     });
+    lastLint = { findings: report.lint, at: new Date().toISOString() };
+    return report;
   }
 
   // ── The docket, off the response path (ticket 047) ──
@@ -567,6 +590,20 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 
     // Detect resonance for juxtaposition info (before userTurn consumes the hit)
     const hits = resonate(currentIndex, body.text);
+
+    // Ticket 036 item 2. The count is emitted on EVERY turn, zero included:
+    // until now the index was searched on each turn and said nothing when it
+    // found nothing, so "looked and found no echo" and "never looked" reached
+    // the Activity Log identically, which is the one thing Q-23 cannot afford.
+    // The actor is the elicitor, not the clerk — this is a live-session act.
+    // Never the text, only how many (Q-22).
+    serverEmit(
+      deps.vaultRoot,
+      'elicitor',
+      'resonance-checked',
+      `session=${sessionId} hits=${hits.length}`,
+    );
+
     let juxtaposition: { snippetText: string; snippetDate: string } | undefined;
     if (hits.length > 0) {
       const hit = hits[0]!;
@@ -848,6 +885,112 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   app.get('/api/snippets', (c) => {
     const index = deps.vault.rebuildIndex();
     return c.json({ snippets: Object.values(index.snippets) });
+  });
+
+  // ── The wiki, as a page (Q-21, Q-23, Q-25) ──
+  //
+  // Both routes are READ routes. Nothing a client can send edits a claim; the
+  // read-log write below records a reading, not an edit.
+  //
+  // The shaping happens HERE, not in the client. Two tickets stand behind that
+  // rule: 038 closed because the activity stream leaked identifiers onto a
+  // surface a person reads, and 063 found 26 event kinds arriving as two
+  // context-free words. A route that hands over raw enums and trusts the
+  // renderer is the same mistake with a network hop in the middle. So facets
+  // arrive as headings, lint findings arrive as notes, and the claims arrive in
+  // the order they are meant to be read.
+
+  /** A claim in the default reading: not archived, not superseded (Q-29). */
+  const isLive = (cl: Claim): boolean => cl.archived !== true && cl.supersededBy === undefined;
+
+  // GET /api/wiki[?all=1] → the wiki grouped by facet and ordered for reading
+  app.get('/api/wiki', (c) => {
+    // Nothing is deleted — an archived or superseded claim is simply not the
+    // default reading. `?all=1` is how a reader asks for the whole record.
+    const all = c.req.query('all') === '1';
+    const contents = deps.vault.rebuildIndex();
+    const graph: ClaimGraph = {
+      ...claimStore.loadSlice(),
+      snippets: contents.snippets,
+      readings: contents.readings,
+    };
+
+    // Coreness over the WHOLE graph, archived claims included, and computed
+    // once per claim rather than once per comparison. Scoring the whole graph
+    // is also what keeps the order a reader sees from moving when `?all=1`
+    // widens the page: a claim's neighbourhood does not shrink because the page
+    // stopped showing part of it. The number is computed on demand and stored
+    // nowhere (Q-21) — this route is its one caller.
+    const score = new Map(graph.claims.map((cl) => [cl.id, coreness(cl.id, graph)]));
+
+    const byFacet = new Map<Facet, Claim[]>();
+    for (const cl of graph.claims) {
+      if (!all && !isLive(cl)) continue;
+      const group = byFacet.get(cl.facet);
+      if (group) group.push(cl);
+      else byFacet.set(cl.facet, [cl]);
+    }
+
+    // `FACETS` order, so two readings of one vault are the same page. An empty
+    // facet is omitted: a heading over nothing is chrome, and the document rule
+    // has no room for it. Ties break on id, because `coreness` is a
+    // neighbourhood measure and a whole component scores alike.
+    const facets = FACETS.filter((f) => byFacet.has(f)).map((f) => ({
+      facet: f,
+      heading: facetHeading(f),
+      claims: (byFacet.get(f) ?? []).sort(
+        (a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0) || (a.id < b.id ? -1 : 1),
+      ),
+    }));
+
+    // A dissolved Contradiction is not material any more, so it is not part of
+    // the default reading either. It is still on disk, and `?all=1` shows it.
+    const contradictions = graph.contradictions.filter((x) => all || x.status === 'open');
+
+    // Lint arrives as a note and nothing else. `LintFinding.detail` names claim
+    // ids and `snippetId@version` cites, and `kind` is a slug — the route drops
+    // both rather than trusting a renderer not to print them (tickets 038, 063).
+    const hidden = new Set(graph.claims.filter((cl) => !isLive(cl)).map((cl) => cl.id));
+    const lintNotes = (lastLint?.findings ?? [])
+      .filter((f) => all || !hidden.has(f.subject))
+      .map((f) => ({ kind: f.kind, subject: f.subject, note: lintNote(f.kind) }));
+
+    return c.json({
+      facets,
+      contradictions,
+      lint: lintNotes,
+      // Null means the Clerk has not read the wiki yet in this process, which
+      // is a different thing from having read it and found nothing.
+      lintedAt: lastLint?.at ?? null,
+      all,
+    });
+  });
+
+  // POST /api/wiki/claim/:id/read {surface?} → records that the claim was read
+  //
+  // Q-21's looping-effect instrument, and the ONE write on this surface. It is
+  // how the system can later tell that a snippet was volunteered AFTER the user
+  // read the claim it supports, which is evidence about the evidence and not a
+  // judgement about the person.
+  app.post('/api/wiki/claim/:id/read', async (c) => {
+    const id = c.req.param('id');
+    // Checked before the body is read: `recordRead` throws on a missing claim,
+    // and a 404 is the honest answer to a surface that asked about one.
+    if (!claimStore.readClaim(id)) return c.json({ error: 'claim not found' }, 404);
+
+    let surface = 'wiki';
+    try {
+      const body = await c.req.json<{ surface?: unknown }>();
+      if (typeof body.surface === 'string' && body.surface.trim() !== '') {
+        surface = body.surface.trim();
+      }
+    } catch {
+      // No body, or not JSON. The wiki is the only surface that reads claims
+      // today, so the default is the answer rather than an error.
+    }
+
+    claimStore.recordRead(id, new Date().toISOString(), surface);
+    return c.json({ ok: true });
   });
 
   // POST /api/transcribe — raw Float32 PCM body, returns {text}
