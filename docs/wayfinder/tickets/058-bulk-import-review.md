@@ -45,6 +45,36 @@ resonate against; a first sitting after an import has nine years.
 7. **Dry run before write, always.** The review is the decision record and the
    user's edits to it are the input to apply — not a conversation, a file.
 
+> **RULED 2026-08-02 — Q-58.** The import review IS the harvest review
+> (`web/main.ts:975`), pointed at an imported piece: same surface, same
+> controls at the point of attention, three verbs (approve / trim / discard).
+> `restate` drops — you cannot restate a 2018 essay without producing prose
+> from today wearing an eight-year-old date. One change, forced by the source:
+> the piece renders WHOLE with cuts marked IN PLACE, because misleading
+> excision is the only failure this review can catch (fabrication is already
+> caught by the substring check) and judging it needs the surrounding text.
+> No batch accept. The section below is the reasoning that produced it.
+
+> **RULED 2026-08-02 — Q-58.** The import review IS the harvest review
+> (`web/main.ts:975`), pointed at an imported piece: same surface, same
+> controls at the point of attention, three verbs (approve / trim / discard).
+> `restate` drops — you cannot restate a 2018 essay without producing prose
+> from today wearing an eight-year-old date. One change, forced by the source:
+> the piece renders WHOLE with cuts marked IN PLACE, because misleading
+> excision is the only failure this review can catch (fabrication is already
+> caught by the substring check) and judging it needs the surrounding text.
+> No batch accept. The section below is the reasoning that produced it.
+
+> **RULED 2026-08-02 — Q-58.** The import review IS the harvest review
+> (`web/main.ts:975`), pointed at an imported piece: same surface, same
+> controls at the point of attention, three verbs (approve / trim / discard).
+> `restate` drops — you cannot restate a 2018 essay without producing prose
+> from today wearing an eight-year-old date. One change, forced by the source:
+> the piece renders WHOLE with cuts marked IN PLACE, because misleading
+> excision is the only failure this review can catch (fabrication is already
+> caught by the substring check) and judging it needs the surrounding text.
+> No batch accept. The section below is the reasoning that produced it.
+
 ### The design problem worth grilling before building
 
 The document rule (`docs/interface-references.md`) says every surface is a page
@@ -72,10 +102,10 @@ to catch misleading excision.
   Frontmatter only. Never mtime, never inferred, never asked per item. A file
   with no date is REFUSED with a reason, because under Q-50 the date is what
   makes cite independence possible and a guess corrupts it silently.
-- Import is long-running — measured ~40s per chunk on the clerk model, so a
-  real archive is hours. That needs the waiting-state vocabulary and progress,
-  and it must survive a closed browser. The docket's single-flight pattern
-  (047) is the precedent.
+- ~~Import is long-running.~~ **RULED — Q-58.** Extraction runs AHEAD of
+  review, in the docket, under 047's single-flight. The cost is paid before the
+  person sits down; the browser may close. Review is per-item and resumable —
+  each piece commits as its own dated sitting and the next waits.
 - Does an imported item get a Target? The script writes none, on the grounds
   that nothing was asked and no time was spent, which leaves openers minted
   from it drawable into either kind of sitting (045). Is that right, or should

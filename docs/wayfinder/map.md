@@ -172,6 +172,30 @@ unassigned, all blockers closed.
   entered the corpus were catchable only in markdown source. Dates come from
   frontmatter or the file is refused. (Resolves two of ticket 058's opens.)
 
+- **Q-58 — the import review IS the harvest review**, pointed at an imported
+  piece: same surface, three verbs (approve / trim / discard), no `restate`.
+  One change forced by the source — the piece renders whole with cuts marked
+  in place, because misleading excision is the only failure a review can catch
+  and judging it needs the surrounding text. Per-item, resumable, no batch
+  accept. Extraction runs ahead in the docket. (Resolves ticket 058's design
+  question and its long-running open.)
+
+- **Q-58 — the import review IS the harvest review**, pointed at an imported
+  piece: same surface, three verbs (approve / trim / discard), no `restate`.
+  One change forced by the source — the piece renders whole with cuts marked
+  in place, because misleading excision is the only failure a review can catch
+  and judging it needs the surrounding text. Per-item, resumable, no batch
+  accept. Extraction runs ahead in the docket. (Resolves ticket 058's design
+  question and its long-running open.)
+
+- **Q-58 — the import review IS the harvest review**, pointed at an imported
+  piece: same surface, three verbs (approve / trim / discard), no `restate`.
+  One change forced by the source — the piece renders whole with cuts marked
+  in place, because misleading excision is the only failure a review can catch
+  and judging it needs the surrounding text. Per-item, resumable, no batch
+  accept. Extraction runs ahead in the docket. (Resolves ticket 058's design
+  question and its long-running open.)
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
