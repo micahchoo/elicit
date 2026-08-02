@@ -312,6 +312,126 @@ describe('the vector cache', () => {
   });
 });
 
+// ── Ticket 067: the second prime of a run, narrowed to what the run added ──
+
+describe('priming only what a run added', () => {
+  /**
+   * The narrowing exists because `runWikiJobs` now primes twice: once before
+   * the run over the whole graph, once after the sweep over the claims the
+   * sweep minted. The second call must not pay for the first one again, and —
+   * the sharper half — it must not PRUNE what the first one wrote.
+   */
+
+  it('embeds only the ids it was narrowed to', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0), two: ray(0.05), three: ray(0.1) });
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store: memStore(), log });
+    const g = graph([claim('c-a', 'one'), claim('c-b', 'two'), claim('c-c', 'three')]);
+
+    await ch.prime(g, ['c-c']);
+
+    expect(fake.texts()).toEqual(['three']);
+  });
+
+  it('keeps every vector the whole-graph prime already wrote', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0), two: ray(0.05), three: ray(0.1) });
+    const store = memStore();
+    const ch = embeddingChannel({
+      embed: fake.embed,
+      model: 'fake-embed',
+      store,
+      log,
+      threshold: liveAt(0.82),
+    });
+    const before = graph([claim('c-a', 'one'), claim('c-b', 'two')]);
+    await ch.prime(before);
+
+    // The sweep added `c-c`. Narrowing by handing prime a SUBSET GRAPH would
+    // make `persist` prune `c-a` and `c-b` — ticket 053's deletion, arriving
+    // through a different door.
+    const after = graph([claim('c-a', 'one'), claim('c-b', 'two'), claim('c-c', 'three')]);
+    await ch.prime(after, ['c-c']);
+
+    expect(fake.texts()).toEqual(['one', 'two', 'three']);
+    expect(store.rows.map((r) => r.claimId)).toEqual(['c-a', 'c-b', 'c-c']);
+    expect(ch.candidates(after)).toHaveLength(3);
+  });
+
+  it('drops the vector of a claim the same run superseded, and keeps the untouched one', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0), two: ray(0.05), three: ray(0.1) });
+    const store = memStore();
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store, log });
+    await ch.prime(graph([claim('c-a', 'one'), claim('c-b', 'two')]));
+
+    // Job 1 superseded `c-a` with `c-new` and left `c-b` alone. The superseded
+    // claim is never pooled again, so its vector buys nothing; `c-b`'s is still
+    // live and must survive the same call.
+    const after = graph([
+      claim('c-a', 'one', { supersededBy: 'c-new', supersedeReason: 'the person changed' }),
+      claim('c-b', 'two'),
+      claim('c-new', 'three'),
+    ]);
+    await ch.prime(after, ['c-new']);
+
+    expect(store.rows.map((r) => r.claimId)).toEqual(['c-b', 'c-new']);
+  });
+
+  it('embeds nothing, and prunes nothing, when the narrowing names no claim', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0), two: ray(0.05) });
+    const store = memStore();
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store, log });
+    const g = graph([claim('c-a', 'one'), claim('c-b', 'two')]);
+    await ch.prime(g);
+
+    const after = graph([claim('c-a', 'one'), claim('c-b', 'two'), claim('c-gone', 'three')]);
+    await ch.prime(after, []);
+
+    expect(fake.texts()).toEqual(['one', 'two']);
+    expect(store.rows.map((r) => r.claimId)).toEqual(['c-a', 'c-b']);
+  });
+
+  it('ignores an id the graph does not hold', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0) });
+    const store = memStore();
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store, log });
+
+    await ch.prime(graph([claim('c-a', 'one')]), ['c-a', 'no-such-claim']);
+
+    expect(fake.texts()).toEqual(['one']);
+    expect(store.rows.map((r) => r.claimId)).toEqual(['c-a']);
+  });
+
+  it('never reaches outside the recency window, whatever ids it is given', async () => {
+    const { log } = recorder();
+    const fake = scripted({ old: ray(0), fresh: ray(0.05) });
+    const store = memStore();
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store, log, window: 1 });
+    const g = graph([
+      claim('c-old', 'old', { updated: '2026-01-01T00:00:00.000Z' }),
+      claim('c-fresh', 'fresh', { updated: '2026-08-01T00:00:00.000Z' }),
+    ]);
+
+    // The bound is a bound (Q-56): naming a clipped claim does not buy it in.
+    await ch.prime(g, ['c-old']);
+
+    expect(fake.texts()).toEqual([]);
+  });
+
+  it('still primes the whole window when no ids are given', async () => {
+    const { log } = recorder();
+    const fake = scripted({ one: ray(0), two: ray(0.05) });
+    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store: memStore(), log });
+
+    await ch.prime(graph([claim('c-a', 'one'), claim('c-b', 'two')]));
+
+    expect(fake.texts()).toEqual(['one', 'two']);
+  });
+});
+
 describe('the cache FILE is derived, and a broken one costs one re-embed', () => {
   function tmpVault(): string {
     return mkdtempSync(join(tmpdir(), 'elicit-embed-'));

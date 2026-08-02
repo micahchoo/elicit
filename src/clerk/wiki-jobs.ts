@@ -1,5 +1,12 @@
 /**
- * The Clerk's wiki work, as one run — five jobs, in order, each isolated.
+ * The Clerk's wiki work, as one run — five jobs, in order, each isolated, with
+ * one half-job between the first two.
+ *
+ * The half-job is `jobPrime`, and it is numbered that way because it decides
+ * nothing and writes no wiki artifact: it only gives the async clash channels a
+ * vector for what the sweep just minted, so that job 3 can see this run's own
+ * claims instead of the previous run's. Ticket 067 has the reasoning; the
+ * function's own comment has the two constraints that make it safe.
  *
  * This is where the slice becomes a program. Every module below it is pure or
  * single-purpose and none of them has a caller until this file exists, so the
@@ -93,6 +100,7 @@ import type {
   WikiReport,
 } from '../wiki/contract.js';
 import type { ClashChannel, ClashPool } from '../wiki/clash.js';
+import { primeable } from '../wiki/embedding.js';
 import type { MintItem, MintResult } from './mint.js';
 import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } from './contradiction.js';
 import { readSitting, sittingCache } from './sitting.js';
@@ -367,6 +375,8 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   const thresholds = deps.thresholds ?? THRESHOLDS;
   const poles = new Map<string, { poleA: string; poleB: string }>();
   const spend = { opposition: 0 };
+  /** What job 1 minted or rewrote, and therefore what job 1.5 must embed. */
+  const touched = new Set<string>();
 
   const graph = (): ClaimGraph => {
     const index = deps.vault.rebuildIndex();
@@ -390,7 +400,8 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   };
 
   try {
-    await guard('sweep', () => jobSweep(deps, report, graph, log, model));
+    await guard('sweep', () => jobSweep(deps, report, graph, log, model, touched));
+    await guard('prime', () => jobPrime(deps, graph, touched));
     await guard('lint', () => jobLint(deps, report, graph, log, thresholds));
     await guard('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
     await guard('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
@@ -418,6 +429,7 @@ async function jobSweep(
   graphOf: () => ClaimGraph,
   log: LogFn,
   model: string,
+  touched: Set<string>,
 ): Promise<void> {
   const graph = graphOf();
   const swept = deps.store.sweptReadingIds();
@@ -451,6 +463,13 @@ async function jobSweep(
   const live = graph.claims.filter(isLive).sort(byId);
   const claimIndex = buildIndex(live.map(asIndexEntry));
   const claimsById = new Map(live.map((c) => [c.id, c]));
+
+  // The bodies as they stood BEFORE any op landed. Ticket 067's second prime
+  // needs to know what this job changed, and `applyOps` cannot say: a MINT op
+  // carries no id, because the id is minted inside the write boundary. The diff
+  // below is the only honest answer, and it is keyed on the BODY rather than on
+  // `updated` because a body is exactly what an embedding is OF.
+  const bodiesBefore = new Map(graph.claims.map((c) => [c.id, c.body]));
 
   const ops: unknown[] = [];
   const accepted: string[] = [];
@@ -547,6 +566,21 @@ async function jobSweep(
   report.unprocessed = batch.length - report.swept;
   report.mint.readingsSwept = report.swept;
 
+  // Ticket 067: which claims this job created or rewrote. Read from the store
+  // rather than from `graphOf()`, because the claims are the only half needed
+  // and rebuilding the vault index for them would be a sixth pass over the
+  // snippets to answer a question about the wiki.
+  //
+  // No liveness filter, and that is deliberate rather than forgotten. No op
+  // both rewrites a body and retires the claim — MERGE archives its sources
+  // with their bodies untouched, SUPERSEDE leaves the old body where it was and
+  // writes a NEW claim — so a changed body is a live claim by construction. And
+  // the consumer filters anyway: `prime` intersects this set with its own
+  // window of live claims. A guard here would be a branch no op can reach.
+  for (const claim of deps.store.loadSlice().claims) {
+    if (bodiesBefore.get(claim.id) !== claim.body) touched.add(claim.id);
+  }
+
   // T9 emits `claim-op-rejected` and leaves the ledger to us. The REJECTED line
   // is what the back-off rule above counts on the next run, so it has to be
   // written here or the rule has no input.
@@ -627,6 +661,54 @@ function withModelUpgradeReasons(ops: ClerkOp[], store: ClaimStore, model: strin
     if (!target || target.model === model) return op;
     return { ...op, reason: SUPERSEDE_MODEL_UPGRADE };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Job 1.5 — the second prime (ticket 067)
+// ---------------------------------------------------------------------------
+
+/**
+ * Give the async channels a vector for everything job 1 just wrote.
+ *
+ * **Why it is here and not left to the caller.** `src/server.ts` primes before
+ * the run, which is correct and not enough: job 1 is the sweep that MINTS
+ * claims, and job 3 pools them through `candidates()`, which is cache-only and
+ * synchronous by design. A claim born in this run therefore had no vector until
+ * the NEXT run, and the embedding channel skipped it — never an error, never a
+ * fabricated pair, just silence. On the first run over an imported corpus,
+ * where every claim is minted in one sweep, that silence is the whole channel,
+ * and Q-35 reads it as "the channel found nothing" when the channel was never
+ * asked. Ticket 007 already showed this channel's silence is hard to read; a
+ * second source of the same silence makes the graduation record worse.
+ *
+ * **It is a second `prime`, never an await inside `candidates()`.**
+ * `poolCandidates` depends on `candidates` being pure, synchronous and
+ * deterministic, so the async half stays outside it.
+ *
+ * **It embeds only what the sweep added.** `touched` is job 1's diff, so a run
+ * that mints one claim into a wiki of four hundred costs one embed and not four
+ * hundred — and a first prime that gave up at its budget is not silently asked
+ * to spend that budget twice. The graph handed over is the WHOLE post-sweep
+ * graph, because the channel prunes its cache to the live claims of the graph
+ * it is given: a narrowed graph here would delete every vector the first prime
+ * wrote (ticket 053 recorded that deletion arriving from the other direction).
+ *
+ * Nothing runs when the sweep changed nothing, so an ordinary quiet run makes
+ * no network call and writes no vector file at all.
+ */
+async function jobPrime(
+  deps: WikiJobDeps,
+  graphOf: () => ClaimGraph,
+  touched: Set<string>,
+): Promise<void> {
+  if (touched.size === 0) return;
+  // `ClashChannel` cannot express `prime`, and `primeable` is the one place
+  // that shape is tested — see `src/wiki/embedding.ts`.
+  const asyncChannels = deps.channels.filter(primeable);
+  if (asyncChannels.length === 0) return;
+
+  const graph = graphOf();
+  for (const channel of asyncChannels) await channel.prime(graph, touched);
 }
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,15 @@ import { createRegistry } from '../src/wiki/registry.js';
 import { lint } from '../src/wiki/lint.js';
 import { poolCandidates, type ClashChannel } from '../src/wiki/clash.js';
 import { applyOps } from '../src/wiki/ops.js';
+import {
+  bodyHash,
+  embeddingChannel,
+  type Embed,
+  type EmbeddingChannel,
+  type EmbeddingIndexStore,
+  type EmbeddingRecord,
+} from '../src/wiki/embedding.js';
+import type { Threshold } from '../src/wiki/thresholds.js';
 import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } from '../src/clerk/contradiction.js';
 import type { MintItem, MintResult } from '../src/clerk/mint.js';
 import type {
@@ -1188,6 +1197,305 @@ describe('confirmation', () => {
     const report = await h.run();
     expect(h.store.listCandidates()[0]?.status).toBe('pending-remeasure');
     expect(report.candidatesDissolved).toBe(0);
+  });
+});
+
+// ── Ticket 067: the embedding channel is no longer one run behind ──
+
+/**
+ * The sweep mints claims in job 1 and the pool reads them in job 3, so a run
+ * that primed only before it started could never pair anything it had just
+ * minted. The failure was silence, never an error — and silence is exactly what
+ * Q-35 reads as "the channel found nothing".
+ *
+ * These tests use the REAL `embeddingChannel`, injected as a plain
+ * `ClashChannel` in exactly the shape `src/server.ts` builds it, because the
+ * seam being tested is that `runWikiJobs` finds the async half of a channel it
+ * only holds by the synchronous interface.
+ */
+describe('the second prime', () => {
+  const s1 = snippet('s1', 'estimates are for coordination, not for promises');
+  const r1 = reading('r-1', ['s1@1'], 'They said estimates coordinate the week.');
+
+  /** Unit vectors in the plane: the cosine between two of them is cos(a − b). */
+  const ray = (radians: number): number[] => [Math.cos(radians), Math.sin(radians), 0];
+
+  const OLD = 'They treat estimates as coordination.';
+  const MINTED = 'They keep treating estimates as a way to coordinate.';
+  const COLD = 'They keep a paper notebook beside the bed.';
+
+  /** `OLD` and `MINTED` sit 0.2 radians apart — cosine ≈ 0.980. `COLD` is far. */
+  const VECTORS: Record<string, number[]> = { [OLD]: ray(0), [MINTED]: ray(0.2), [COLD]: ray(1.4) };
+
+  const EMBED_MODEL = 'fake-embed';
+
+  function memStore(seed: EmbeddingRecord[] = []): EmbeddingIndexStore & { rows: EmbeddingRecord[] } {
+    const holder = {
+      rows: [...seed],
+      load: () => holder.rows.map((r) => ({ ...r, vector: [...r.vector] })),
+      save: (records: EmbeddingRecord[]) => {
+        holder.rows = records.map((r) => ({ ...r, vector: [...r.vector] }));
+      },
+    };
+    return holder;
+  }
+
+  /** Every text this run asked the embedder for — the narrowing's only honest witness. */
+  function embedder(): { embed: Embed; texts: string[] } {
+    const texts: string[] = [];
+    return {
+      texts,
+      embed: async (batch) => {
+        texts.push(...batch);
+        return batch.map((t) => VECTORS[t] ?? [0, 0, 1]);
+      },
+    };
+  }
+
+  /** A vector as a previous run — or `src/server.ts`'s pre-run prime — left it. */
+  function cached(claimId: string, body: string): EmbeddingRecord {
+    return { claimId, hash: bodyHash(body), model: EMBED_MODEL, vector: VECTORS[body] ?? [0, 0, 1] };
+  }
+
+  const mintOp = { op: 'MINT', reading: 'r-1', body: MINTED, range: 'at work', cites: ['s1@1'], facet: 'construct' };
+
+  function setup(opts: { threshold?: Threshold; claims?: Claim[]; seed?: EmbeddingRecord[] } = {}) {
+    const fake = embedder();
+    const store = memStore(opts.seed ?? [cached('c-old', OLD)]);
+    const events: { kind: string; detail: string }[] = [];
+    const log: LogFn = (e) => events.push({ kind: e.kind, detail: e.detail });
+    const channel = embeddingChannel({
+      embed: fake.embed,
+      model: EMBED_MODEL,
+      store,
+      log,
+      ...(opts.threshold ? { threshold: opts.threshold } : {}),
+    });
+    const h = harness({
+      claims: opts.claims ?? [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [channel],
+      propose: async () => mintResult([mintOp]),
+    });
+    return { h, fake, store, events };
+  }
+
+  it('pairs a claim minted this run in the SAME run, with a live threshold', async () => {
+    const live: Threshold = { name: 'clash.embeddingCosine', value: 0.82, live: true, graduatesWhen: 'test seam' };
+    const { h, fake } = setup({ threshold: live });
+
+    const first = await h.run();
+
+    // The acceptance: the first run's pool holds a pair it could not hold
+    // before — one side of it did not exist when the run began.
+    const mintedClaim = h.store.loadSlice().claims.find((c) => c.body === MINTED);
+    expect(mintedClaim).toBeDefined();
+    expect(first.candidates['embedding']).toBe(1);
+    expect(first.pool.size).toBe(1);
+    expect(h.rec.oppositionCalls).toHaveLength(1);
+    expect(h.rec.oppositionCalls[0]?.slice().sort()).toEqual(['c-old', mintedClaim!.id].sort());
+    expect(fake.texts).toEqual([MINTED]);
+
+    // The second run sweeps nothing, so it embeds nothing and asks for no
+    // vector it does not already hold. The pair is still there — it was the
+    // FIRST run that used to be blind, not the channel.
+    const second = await h.run();
+    expect(second.swept).toBe(0);
+    expect(second.candidates['embedding']).toBe(1);
+    expect(fake.texts).toEqual([MINTED]);
+  });
+
+  it('puts the fresh pair into the Q-35 shadow record on the run that minted it', async () => {
+    // The SHIPPED threshold, unaltered: `clash.embeddingCosine` is in shadow, so
+    // the pool stays empty and the record is the whole output of the channel.
+    const { h, events } = setup();
+
+    await h.run();
+
+    const shadow = events.filter(
+      (e) => e.kind === 'shadow-decision' && e.detail.includes('threshold=clash.embeddingCosine'),
+    );
+    expect(shadow).toHaveLength(1);
+    const mintedClaim = h.store.loadSlice().claims.find((c) => c.body === MINTED);
+    expect(shadow[0]?.detail).toContain(mintedClaim!.id);
+    expect(shadow[0]?.detail).toContain('c-old');
+  });
+
+  it('embeds only what the sweep added, never the rest of the graph', async () => {
+    // `c-cold` is a live claim with NO cached vector — the state a first prime
+    // that hit its budget, or an endpoint that was down, leaves behind. A
+    // whole-graph second prime would embed it; this one must not.
+    const { h, fake } = setup({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] }), claim('c-cold', COLD, { cites: ['s1@1'] })],
+      seed: [cached('c-old', OLD)],
+    });
+
+    await h.run();
+
+    expect(fake.texts).toEqual([MINTED]);
+  });
+
+  /** A channel that records what it was primed with, and pools nothing. */
+  function spyChannel(
+    name: EmbeddingChannel['name'] = 'embedding',
+  ): EmbeddingChannel & { calls: (string[] | 'whole graph')[] } {
+    const calls: (string[] | 'whole graph')[] = [];
+    return {
+      calls,
+      name,
+      candidates: () => [],
+      prime: async (_graph, onlyIds) => {
+        calls.push(onlyIds === undefined ? 'whole graph' : [...onlyIds]);
+      },
+    };
+  }
+
+  it('primes once with exactly the ids the sweep changed, and not at all when it changed nothing', async () => {
+    const spy = spyChannel();
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [spy],
+      propose: async () => mintResult([mintOp]),
+    });
+
+    await h.run();
+    const minted = h.store.loadSlice().claims.find((c) => c.body === MINTED);
+    expect(spy.calls).toEqual([[minted!.id]]);
+
+    // Nothing left to sweep, so there is nothing to embed and no reason to
+    // rebuild the graph a sixth time to find that out.
+    await h.run();
+    expect(spy.calls).toEqual([[minted!.id]]);
+  });
+
+  it('primes EVERY channel that has an async half, not just the first', async () => {
+    const first = spyChannel('embedding');
+    const second = spyChannel('referent');
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [first, second],
+      propose: async () => mintResult([mintOp]),
+    });
+
+    await h.run();
+    const minted = h.store.loadSlice().claims.find((c) => c.body === MINTED);
+
+    expect(first.calls).toEqual([[minted!.id]]);
+    expect(second.calls).toEqual([[minted!.id]]);
+  });
+
+  it('re-embeds a claim whose body this run rewrote', async () => {
+    // An UPDATE changes the body in place, which invalidates the cached
+    // vector's hash. A narrowing that only counted NEW ids would leave that
+    // claim out of the pool for a run — the same lag, one door along.
+    const fake = embedder();
+    const store = memStore([cached('c-old', OLD)]);
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [embeddingChannel({ embed: fake.embed, model: EMBED_MODEL, store, log: () => {} })],
+      propose: async () =>
+        mintResult([{ op: 'UPDATE', reading: 'r-1', claim: 'c-old', body: MINTED }]),
+    });
+
+    await h.run();
+
+    expect(h.store.readClaim('c-old')?.body).toBe(MINTED);
+    expect(fake.texts).toEqual([MINTED]);
+    expect(store.rows[0]?.hash).toBe(bodyHash(MINTED));
+  });
+
+  it('makes no embedder call on a run that mints nothing', async () => {
+    const fake = embedder();
+    const store = memStore([cached('c-old', OLD)]);
+    const { log } = { log: (() => {}) as LogFn };
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      channels: [embeddingChannel({ embed: fake.embed, model: EMBED_MODEL, store, log })],
+    });
+
+    await h.run();
+
+    expect(fake.texts).toEqual([]);
+    expect(store.rows.map((r) => r.claimId)).toEqual(['c-old']);
+  });
+
+  it('keeps the vectors of the claims the sweep did not touch, and drops the one it superseded', async () => {
+    const supersede = {
+      op: 'SUPERSEDE',
+      reading: 'r-1',
+      claim: 'c-old',
+      body: MINTED,
+      range: 'at work',
+      cites: ['s1@1'],
+      reason: 'the person changed',
+    };
+    const fake = embedder();
+    const store = memStore([cached('c-old', OLD), cached('c-keep', COLD)]);
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] }), claim('c-keep', COLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [embeddingChannel({ embed: fake.embed, model: EMBED_MODEL, store, log: () => {} })],
+      propose: async () => mintResult([supersede]),
+    });
+
+    await h.run();
+
+    // The superseded claim is never pooled again, so its vector buys nothing.
+    // `c-keep` was not touched by this run and its vector must survive — the
+    // prune is over the WHOLE post-sweep graph, not over the narrowing.
+    const successor = h.store.loadSlice().claims.find((c) => c.body === MINTED);
+    expect(successor).toBeDefined();
+    expect(store.rows.map((r) => r.claimId).sort()).toEqual(['c-keep', successor!.id].sort());
+  });
+
+  it('a prime that fails costs the channel and not the run', async () => {
+    const dead: Embed = async () => {
+      throw new Error('connect ECONNREFUSED');
+    };
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [embeddingChannel({ embed: dead, model: EMBED_MODEL, store: memStore(), log: () => {} })],
+      propose: async () => mintResult([mintOp]),
+    });
+
+    const report = await h.run();
+
+    expect(report.applied).toBe(1);
+    expect(report.pool.size).toBe(0);
+    expect(kinds(h.rec)).toContain('clash-checked');
+  });
+
+  it('leaves a channel with no async half alone rather than calling into it', async () => {
+    const h = harness({
+      claims: [claim('c-old', OLD, { cites: ['s1@1'] })],
+      snippets: [s1],
+      readings: [r1],
+      channels: [staticChannel([])],
+      propose: async () => mintResult([mintOp]),
+    });
+
+    const report = await h.run();
+
+    expect(report.applied).toBe(1);
+    // Per-job isolation would swallow a call into a channel that has no
+    // `prime`, so the absence of the FAILURE is what says the shape test ran.
+    // A run that only looks fine because a try/catch caught it is the same
+    // silence this ticket exists to remove.
+    const failed = h.rec.events.filter(
+      (e) => e.kind === 'wiki-jobs-failed' && e.detail.startsWith('job=prime'),
+    );
+    expect(failed).toEqual([]);
   });
 });
 

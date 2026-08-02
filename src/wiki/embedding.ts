@@ -25,6 +25,15 @@
  * contract with the one adjustment the tree forced — the plan's `Embed` is
  * async and the interface it must satisfy is not.
  *
+ * A wiki run primes TWICE, and ticket 067 is why. The run's first job mints
+ * claims and its third pools them, so priming only before the run left every
+ * claim the run itself created unvectored until the next run — never an error,
+ * never a wrong pair, just silence, and silence read as "the channel found
+ * nothing" in the record Q-35 graduates this threshold on. `prime` therefore
+ * takes `onlyIds`, so the second call embeds what the sweep added and re-embeds
+ * nothing. `candidates` is untouched by all of this: it stays synchronous and
+ * cache-only, and the repair is a second `prime`, never an await inside it.
+ *
  * ── The cache is derived, never truth (Q-3) ──
  *
  * Vectors live in `vault/wiki/embeddings.jsonl`, keyed by claim id plus a hash
@@ -87,7 +96,26 @@ export interface EmbeddingIndexStore {
 
 /** A `ClashChannel` with the async half the interface cannot express. */
 export interface EmbeddingChannel extends ClashChannel {
-  prime(graph: ClaimGraph): Promise<void>;
+  /**
+   * Fill the cache from `graph`. `onlyIds`, when given, narrows WHICH claims
+   * are embedded and NOTHING else — the graph stays whole, because the graph is
+   * also what says which vectors may survive. See `prime` for why that
+   * distinction is the whole safety of the second call.
+   */
+  prime(graph: ClaimGraph, onlyIds?: Iterable<string>): Promise<void>;
+}
+
+/**
+ * Whether a channel carries the async half.
+ *
+ * `ClashChannel` cannot express `prime`, so a caller holding a `ClashChannel[]`
+ * — which is exactly what `runWikiJobs` is handed — has no other way to find
+ * the channel that needs priming. The check lives here rather than at the call
+ * site because this module owns the shape being checked, and a duck-test
+ * written at the call site is a second place for the shape to drift.
+ */
+export function primeable(channel: ClashChannel): channel is EmbeddingChannel {
+  return typeof (channel as Partial<EmbeddingChannel>).prime === 'function';
 }
 
 export type EmbeddingDeps = {
@@ -389,11 +417,36 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
      * `embedding-unavailable` once and returns, keeping every batch that
      * already succeeded. The Clerk works with the embedding server switched
      * off, because it works with it switched off today.
+     *
+     * ── `onlyIds`, and why it narrows one list and not the other (ticket 067) ──
+     *
+     * A wiki run mints claims in its FIRST job and pools candidates in its
+     * third, so a caller that primed only before the run left every claim the
+     * run itself created without a vector until the next run — and
+     * `candidates` is cache-only, so it skipped them in silence. The repair is
+     * a second `prime` inside the run, which means this function is now called
+     * twice per run and must not pay for the whole graph twice.
+     *
+     * `onlyIds` therefore filters `missing`: the second call embeds what the
+     * sweep added and re-embeds nothing. It does NOT filter `graph`, and that
+     * is the sharp edge. `persist` prunes every record whose id is not a live
+     * claim in the graph it is handed, so a `prime` narrowed by passing a
+     * SUBSET GRAPH would delete every vector the first call just wrote —
+     * ticket 053 recorded the same prune deleting a whole keyspace when two
+     * channels were pointed at one file. The graph stays whole; only the work
+     * list narrows.
+     *
+     * The window still applies inside the narrowing: a cold claim outside the
+     * recency window is not embedded because an id was named for it, or the
+     * bound would not be a bound.
      */
-    async prime(graph: ClaimGraph): Promise<void> {
+    async prime(graph: ClaimGraph, onlyIds?: Iterable<string>): Promise<void> {
       const { window } = windowOf(graph, cap);
       const cached = loaded();
-      const missing = window.filter((c) => vectorFor(c) === undefined);
+      const only = onlyIds === undefined ? undefined : new Set(onlyIds);
+      const missing = window.filter(
+        (c) => (only === undefined || only.has(c.id)) && vectorFor(c) === undefined,
+      );
 
       const deadline = clock() + budgetMs;
       let embedded = 0;
