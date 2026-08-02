@@ -33,6 +33,30 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
+  passive offers, distinct-principle arrangements, annotate-never-act gaps
+  and pins, user prose in a Piece becomes a Snippet, Pieces are set down
+  never finished, and the slice ships zero-LLM first.
+- [Grill: Soundings](tickets/011-grill-soundings.md) — Q-43..Q-47: consented
+  entry, an always-present gate with no inferred distress, ladders parked
+  whole and resumed compacted, structural endings, and the descent becoming
+  the rest of the sitting with the close reserved.
+- [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
+  passive offers, distinct-principle arrangements, annotate-never-act gaps
+  and pins, user prose in a Piece becomes a Snippet, Pieces are set down
+  never finished, and the slice ships zero-LLM first.
+- [Grill: Soundings](tickets/011-grill-soundings.md) — Q-43..Q-47: consented
+  entry, an always-present gate with no inferred distress, ladders parked
+  whole and resumed compacted, structural endings, and the descent becoming
+  the rest of the sitting with the close reserved.
+- [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
+  passive offers, distinct-principle arrangements, annotate-never-act gaps
+  and pins, user prose in a Piece becomes a Snippet, Pieces are set down
+  never finished, and the slice ships zero-LLM first.
+- [Grill: Soundings](tickets/011-grill-soundings.md) — Q-43..Q-47: consented
+  entry, an always-present gate with no inferred distress, ladders parked
+  whole and resumed compacted, structural endings, and the descent becoming
+  the rest of the sitting with the close reserved.
 - [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
   says what the trigram index actually does ("what matches is the phrasing,
   not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
