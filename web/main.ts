@@ -3,10 +3,13 @@ import type {
   HarvestDecision,
   Mode,
   QuestionForm,
+  Snippet,
   Target,
   QueueEntry,
 } from '../src/types.ts';
+import type { Claim, Contradiction } from '../src/wiki/contract.ts';
 import { formatEvent, relativeTime } from '../src/log/format.js';
+import { sourceLabel } from '../src/queue/source-label.js';
 
 /* ─── API types ─── */
 
@@ -46,6 +49,33 @@ interface ActivityEvent {
   detail: string;
 }
 
+/**
+ * `GET /api/wiki` — already shaped for reading (src/server.ts). Headings and
+ * lint notes arrive as words, claims arrive in the order they are meant to be
+ * read, and `lintedAt: null` means the Clerk has not read the wiki yet, which
+ * is a different thing from having read it and found nothing.
+ */
+interface WikiFacetGroup {
+  facet: string;
+  heading: string;
+  claims: Claim[];
+}
+
+interface WikiLintNote {
+  kind: string;
+  /** A claim id, a facet name, or a referent slug. NEVER printed (ticket 038). */
+  subject: string;
+  note: string;
+}
+
+interface WikiResponse {
+  facets: WikiFacetGroup[];
+  contradictions: Contradiction[];
+  lint: WikiLintNote[];
+  lintedAt: string | null;
+  all: boolean;
+}
+
 /* ─── DOM helpers ─── */
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -69,7 +99,7 @@ function $<T extends HTMLElement>(sel: string): T {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki';
 
 interface AppState {
   screen: Screen;
@@ -108,6 +138,7 @@ function navTo(screen: Screen) {
     case 'harvest': renderHarvest(); break;
     case 'done': renderDone(); break;
     case 'waiting': renderWaiting(); break;
+    case 'wiki': renderWiki(false); break;
     case 'unprompted': renderUnprompted(); break;
     case 'login': renderLogin(); break;
     case 'setup': renderSetup(); break;
@@ -129,8 +160,20 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Read routes, by prefix. `/api/wiki` is matched exactly (with its query
+ * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
+ * the same path and is the one write the wiki surface makes.
+ */
+const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets'];
+
+function isReadPath(path: string): boolean {
+  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
+  return path === '/api/wiki' || path.startsWith('/api/wiki?');
+}
+
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') || path.startsWith('/api/stt/status') || path.startsWith('/api/cadence') ? 'GET' : 'POST';
+  const method = isReadPath(path) ? 'GET' : 'POST';
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
@@ -175,6 +218,7 @@ async function apiRaw(path: string): Promise<Response> {
 /* ─── Render ─── */
 
 function clear() {
+  releaseReadWatch();
   main.innerHTML = '';
 }
 
@@ -390,7 +434,9 @@ function renderMode(showSetupHint?: boolean) {
   waitingLink.addEventListener('click', () => navTo('waiting'));
   const writeLink = el('button', { class: 'nav-link' }, 'just write');
   writeLink.addEventListener('click', () => navTo('unprompted'));
-  navRow.append(waitingLink, writeLink);
+  const wikiLink = el('button', { class: 'nav-link' }, 'what the clerk has written');
+  wikiLink.addEventListener('click', () => navTo('wiki'));
+  navRow.append(waitingLink, writeLink, wikiLink);
 
   if (showSetupHint) {
     const setupLink = el('button', { class: 'nav-link' }, 'set a password');
@@ -1256,7 +1302,10 @@ function renderWaiting() {
         for (const entry of pending) {
           const row = el('div', { class: 'queue-entry' });
           const question = el('span', { class: 'queue-question' }, entry.question);
-          const meta = el('span', { class: 'queue-meta' }, `${entry.source} \u00b7 ${entry.horizon}`);
+          // Where the question came from, in words. No queue `source` literal
+          // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
+          // re-measure is the verification Q-15 forbids.
+          const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
           row.append(question, meta);
           queueList.append(row);
         }
@@ -1315,6 +1364,349 @@ function renderWaiting() {
       }
     } catch { /* SSE connection failed silently */ }
   })();
+}
+
+/* ── The wiki: a reading surface ──
+ *
+ * A page of prose, not a list of claim cards (docs/interface-references.md).
+ * Three rules govern everything below and each one is load-bearing:
+ *
+ * 1. **No status word ever reaches the DOM.** `unconfirmed`, `evidenced`,
+ *    `user-attested` and `contested` are carried by ink alone. A claim whose
+ *    evidence is contested is a fact about evidence, not a verdict on the
+ *    person; printing the word turns the page into an accusation (Q-15). The
+ *    ink scale runs one way — from the Clerk's own sentence in light ink to
+ *    the person's quoted words in the darkest — so darkness reads as "more of
+ *    your own words stand under this", and a page entirely in light ink reads
+ *    as early evidence rather than as failure (Q-21, Q-27).
+ * 2. **No verbs, no buttons on a claim.** The only two controls are a back
+ *    link and one sentence at the foot that widens the reading.
+ * 3. **No numbers.** No counts, no confidence, no progress (Q-21, Q-24).
+ */
+
+const WIKI_OPENING =
+  'What the Clerk has made of your words so far. Every sentence here is the ' +
+  'Clerk’s; the quotations beneath are yours. Ink darkens as more of your ' +
+  'own words come to stand under a sentence — a page in light ink has only begun.';
+
+const WIKI_EMPTY =
+  'There is nothing on this page yet. The Clerk writes a sentence only where ' +
+  'your own words can stand under it.';
+
+/* ── The read-log (Q-21) ──
+ *
+ * DECISION: a read is recorded on DWELL, not on scroll-into-view and not on a
+ * focus interaction.
+ *
+ * The read-log is what later discounts a claim's evidence: a snippet
+ * volunteered after the person read the claim it supports carries less weight.
+ * So a read recorded that the person did not perform makes their real evidence
+ * count for less — over-recording is not the conservative direction, it is the
+ * destructive one. Scroll-into-view over-records by construction: a flick past
+ * a section logs every claim in it.
+ *
+ * Focus under-records to nothing. This surface has no verbs by contract, so
+ * nothing on it can take focus; a focus rule would ship an instrument that
+ * never fires.
+ *
+ * Dwell is the measurement that matches the event. The claim must hold half
+ * the reader's view, without interruption, for long enough to have been read,
+ * in a tab that is actually on screen. A fast scroll records nothing; sitting
+ * with a sentence records once. Once per claim per page load: the log answers
+ * "had they seen this before they wrote that", and a second entry adds no
+ * answer.
+ */
+const READ_DWELL_MS = 2500;
+/** Claims already logged this page load. Reset by a full reload, not by navigation. */
+const readsRecorded = new Set<string>();
+
+let readWatcher: IntersectionObserver | null = null;
+let readTimers: Map<Element, ReturnType<typeof setTimeout>> | null = null;
+let readVisibilityHandler: (() => void) | null = null;
+
+function releaseReadWatch() {
+  readWatcher?.disconnect();
+  readWatcher = null;
+  if (readTimers) {
+    for (const t of readTimers.values()) clearTimeout(t);
+    readTimers = null;
+  }
+  if (readVisibilityHandler) {
+    document.removeEventListener('visibilitychange', readVisibilityHandler);
+    readVisibilityHandler = null;
+  }
+}
+
+function recordRead(id: string) {
+  if (readsRecorded.has(id)) return;
+  readsRecorded.add(id);
+  // Fire and forget. This is a record of a reading, never an edit, and a
+  // failed record must not put anything on a page the person is reading.
+  api(`/api/wiki/claim/${encodeURIComponent(id)}/read`, { surface: 'wiki' })
+    .catch((e: unknown) => { console.error(e); });
+}
+
+/** Watch every `[data-claim]` under `root` and log a read after the dwell. */
+function watchReads(root: HTMLElement) {
+  releaseReadWatch();
+  const blocks = root.querySelectorAll<HTMLElement>('[data-claim]');
+  if (blocks.length === 0) return;
+  if (typeof IntersectionObserver === 'undefined') return;
+
+  const timers = new Map<Element, ReturnType<typeof setTimeout>>();
+  readTimers = timers;
+
+  function cancel(target: Element) {
+    const t = timers.get(target);
+    if (t !== undefined) {
+      clearTimeout(t);
+      timers.delete(target);
+    }
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const target = entry.target as HTMLElement;
+      const id = target.dataset.claim;
+      if (!id) continue;
+
+      // Half the block, or half the view for a block taller than the view —
+      // a long quotation must not become unreadable-by-definition.
+      const viewHeight = entry.rootBounds?.height ?? window.innerHeight;
+      const held =
+        entry.isIntersecting &&
+        (entry.intersectionRatio >= 0.5 ||
+          entry.intersectionRect.height >= viewHeight * 0.5);
+
+      if (!held || document.hidden) {
+        cancel(target);
+        continue;
+      }
+      if (timers.has(target)) continue;
+      timers.set(target, setTimeout(() => {
+        timers.delete(target);
+        observer.unobserve(target);
+        recordRead(id);
+      }, READ_DWELL_MS));
+    }
+  }, { threshold: [0, 0.5, 1] });
+
+  for (const block of blocks) observer.observe(block);
+  readWatcher = observer;
+
+  // A claim left on screen behind another window was not read. The observer
+  // sees no intersection change when the tab hides, so the tab has to say so.
+  readVisibilityHandler = () => {
+    if (!document.hidden) return;
+    for (const target of [...timers.keys()]) cancel(target);
+  };
+  document.addEventListener('visibilitychange', readVisibilityHandler);
+}
+
+/* ── Typesetting helpers ── */
+
+/**
+ * The claim as one sentence with its Range as an em-dash clause inside it
+ * (the document rule), rather than as a second line of metadata. A trailing
+ * full stop moves to the end so the clause reads as a clause.
+ */
+function claimSentence(body: string, range: string): string {
+  const r = range.trim();
+  if (!r) return body;
+  const stripped = body.trim().replace(/[.]+$/, '');
+  return `${stripped} — ${r}.`;
+}
+
+/** A date a person reads, from an ISO stamp. */
+function readableDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** A quotation in the person's own ink, dated. The cite IS the quote (Q-27). */
+function quoteBlock(prose: string, iso?: string): HTMLElement {
+  const q = el('blockquote', { class: 'claim-quote' }, prose);
+  const when = iso ? readableDate(iso) : '';
+  if (when) q.append(el('span', { class: 'claim-quote-date' }, when));
+  return q;
+}
+
+/** A dimmed marginal remark. Never carries an id — `subject` stays unprinted. */
+function marginNote(text: string): HTMLElement {
+  return el('p', { class: 'wiki-note' }, text);
+}
+
+/**
+ * Which ink a claim takes. The one place a `ClaimStatus` is read.
+ *
+ * The names on the right are the INK's names, not the status's. A status word
+ * does not reach the DOM even as an attribute value: `contested` sitting in
+ * the markup is one view-source away from being the verdict Q-15 forbids, and
+ * the ink is what the reader is actually being told about anyway.
+ */
+function claimInk(cl: Claim): string {
+  if (cl.archived === true || cl.supersededBy !== undefined) return 'aside';
+  switch (cl.status) {
+    case 'user-attested': return 'yours';
+    case 'evidenced': return 'standing';
+    case 'contested': return 'facing';
+    default: return 'opening';
+  }
+}
+
+/* ── Render ── */
+
+function renderWiki(all = false) {
+  clear();
+  state.screen = 'wiki';
+
+  const div = el('div', { class: 'screen active wiki-surface' });
+
+  const nav = el('div', { class: 'wiki-nav' });
+  const backBtn = el('button', { class: 'nav-link' }, '← back');
+  backBtn.addEventListener('click', () => navTo('mode'));
+  nav.append(backBtn);
+
+  const page = el('div', { class: 'wiki-page' });
+  div.append(nav, page);
+  main.append(div);
+
+  (async () => {
+    const wait = beginWait(page, 'reading…', 400);
+    try {
+      const [wiki, snippets] = await Promise.all([
+        api<WikiResponse>(all ? '/api/wiki?all=1' : '/api/wiki'),
+        // The quotes. A failure here costs the page its evidence but not its
+        // prose, so it degrades rather than throws.
+        api<{ snippets: Snippet[] }>('/api/snippets').catch(() => ({ snippets: [] as Snippet[] })),
+      ]);
+      wait.done();
+      paintWiki(page, wiki, snippets.snippets);
+      watchReads(page);
+    } catch (e) {
+      wait.failed(e, 'the page did not come through — try again');
+    }
+  })();
+}
+
+function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: Snippet[]) {
+  page.innerHTML = '';
+
+  const byId = new Map<string, Snippet>();
+  for (const s of snippets) byId.set(s.id, s);
+
+  // Lint notes, filed by what they are about. `subject` itself never renders.
+  const notesByClaim = new Map<string, string[]>();
+  const notesByFacet = new Map<string, string[]>();
+  const looseNotes: string[] = [];
+  const claimIds = new Set<string>();
+  for (const group of wiki.facets) for (const cl of group.claims) claimIds.add(cl.id);
+  for (const note of wiki.lint) {
+    if (claimIds.has(note.subject)) {
+      const list = notesByClaim.get(note.subject);
+      if (list) list.push(note.note);
+      else notesByClaim.set(note.subject, [note.note]);
+    } else if (wiki.facets.some((g) => g.facet === note.subject)) {
+      const list = notesByFacet.get(note.subject);
+      if (list) list.push(note.note);
+      else notesByFacet.set(note.subject, [note.note]);
+    } else {
+      looseNotes.push(note.note);
+    }
+  }
+
+  const hasClaims = wiki.facets.some((g) => g.claims.length > 0);
+
+  page.append(el('p', { class: 'wiki-opening' }, hasClaims ? WIKI_OPENING : WIKI_EMPTY));
+
+  // Eval finding #8: "has not been read" and "was read, nothing to remark"
+  // are different states and must not render alike.
+  page.append(el('p', { class: 'wiki-state' }, clerkStateSentence(wiki)));
+
+  for (const group of wiki.facets) {
+    if (group.claims.length === 0) continue;
+    const section = el('section', { class: 'wiki-facet' });
+    section.append(el('h2', { class: 'wiki-heading' }, group.heading));
+    for (const note of notesByFacet.get(group.facet) ?? []) section.append(marginNote(note));
+
+    // Already ordered by coreness within the facet. Not re-sorted here.
+    for (const cl of group.claims) {
+      const block = el('article', { class: 'wiki-claim' });
+      block.dataset.claim = cl.id;
+      block.dataset.ink = claimInk(cl);
+
+      block.append(el('p', { class: 'claim-sentence' }, claimSentence(cl.body, cl.range)));
+      for (const note of notesByClaim.get(cl.id) ?? []) block.append(marginNote(note));
+
+      for (const cite of cl.cites) {
+        // "snippetId@version". The index holds the newest version of each
+        // snippet, so the quote and its date are always the same words — this
+        // never dates old words with a new day. That a cite has since been
+        // written again is the Clerk's remark to make, and it makes it in the
+        // margin above when it has read the page.
+        const snippetId = cite.split('@')[0] ?? '';
+        const s = byId.get(snippetId);
+        if (s) block.append(quoteBlock(s.prose, s.captured));
+      }
+      section.append(block);
+    }
+    page.append(section);
+  }
+
+  if (wiki.contradictions.length > 0) {
+    const section = el('section', { class: 'wiki-facet' });
+    section.append(el('h2', { class: 'wiki-heading' }, 'Two things held at once'));
+    for (const x of wiki.contradictions) {
+      const exhibit = el('div', { class: 'wiki-exhibit' });
+      exhibit.dataset.ink = x.status === 'dissolved' ? 'aside' : 'facing';
+      // The body is written as the two poles and then the verified quote,
+      // separated by blank lines (src/clerk/wiki-jobs.ts#juxtaposition). Set
+      // as an exhibit: facing sentences, then the person's own words.
+      for (const chunk of x.body.split(/\n\s*\n/)) {
+        const text = chunk.trim();
+        if (!text) continue;
+        if (text.startsWith('>')) exhibit.append(quoteBlock(text.replace(/^>\s*/, '')));
+        else exhibit.append(el('p', { class: 'exhibit-pole' }, text));
+      }
+      section.append(exhibit);
+    }
+    page.append(section);
+  }
+
+  const foot = el('div', { class: 'wiki-foot' });
+  for (const note of looseNotes) foot.append(marginNote(note));
+
+  // The one control on the page, and it is a sentence: what is on screen, and
+  // the words that widen it. Set-aside claims arrive in the lightest ink, and
+  // this sentence is where that ink is named.
+  const lens = el('p', { class: 'wiki-lens' });
+  const toggle = el('button', { class: 'nav-link' },
+    wiki.all ? 'read only what stands' : 'read what has been set aside as well');
+  toggle.addEventListener('click', () => renderWiki(!wiki.all));
+  lens.append(
+    document.createTextNode(wiki.all
+      ? 'This is the whole record, what has been set aside included. Or '
+      : 'This is what stands today. Or '),
+    toggle,
+    document.createTextNode('.'),
+  );
+  foot.append(lens);
+  page.append(foot);
+}
+
+/**
+ * Where the Clerk stands with this page. Three states, and the first is NOT
+ * the second: a Clerk that has not read the wiki has found nothing because it
+ * has not looked, and saying "no remarks" for it would report silence as a
+ * clean bill (eval finding #8).
+ */
+function clerkStateSentence(wiki: WikiResponse): string {
+  if (wiki.lintedAt === null) return 'The Clerk has not read this page yet.';
+  const when = relativeTime(wiki.lintedAt);
+  const read = when ? `The Clerk read this page ${when}` : 'The Clerk has read this page';
+  if (wiki.lint.length === 0) return `${read} and left no remarks.`;
+  return `${read}. Its remarks sit beside the sentences they are about.`;
 }
 
 /* ─── Bootstrap ─── */

@@ -873,3 +873,194 @@ main {
 .cadence-line:empty {
   display: none;
 }
+
+/* ── the wiki: a page of prose (task 19) ──
+
+   The document rule, applied: one column, headings by type rather than by
+   rule, controls only at the foot. There is no chip, no badge and no count
+   anywhere below, and no rule here is keyed to a status WORD — status arrives
+   as `data-ink`, and the only thing it changes is how dark the sentence is.
+
+   The ink scale is the whole design. It runs one way:
+
+     opening   the Clerk's sentence, and nothing of yours under it yet
+     standing  more of your own words have come to stand under it
+     facing    the same ink, and an exhibit beside it (the hairline)
+     yours     your ink, because you said it yourself
+     aside     set down, kept, no longer part of the current reading
+
+   The names are the INK's, never the status's: a status word does not reach
+   the markup either (Q-15).
+
+   Two consequences are deliberate. Your quoted words are always at least as
+   dark as any sentence about you (Q-27: you stay the authority). And a page
+   that is entirely `opening` — which is what a first corpus produces — reads
+   as an essay in pencil, not as a system reporting failure (Q-21, Q-24). */
+
+.wiki-surface {
+ gap: 1.25rem;
+}
+
+.wiki-nav {
+ padding-bottom: 0.25rem;
+}
+
+.wiki-page {
+ display: flex;
+ flex-direction: column;
+}
+
+.wiki-opening {
+ font-size: 0.95rem;
+ color: var(--accent);
+ line-height: 1.55;
+ margin-bottom: 0.6rem;
+}
+
+/* Where the Clerk stands. "Has not read this yet" and "read it and had
+   nothing to say" are different sentences, never one grey blank. */
+.wiki-state {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ line-height: 1.45;
+}
+
+.wiki-facet {
+ margin-top: 2.75rem;
+}
+
+.wiki-heading {
+ font-family: var(--font-serif);
+ font-size: 1rem;
+ font-weight: 400;
+ font-style: italic;
+ color: var(--dim);
+ margin-bottom: 1.25rem;
+}
+
+.wiki-claim {
+ margin-bottom: 1.9rem;
+}
+
+.claim-sentence {
+ font-size: 1.05rem;
+ line-height: var(--line);
+ margin: 0;
+}
+
+/* ── ink, and nothing else, carries status ── */
+
+[data-ink='opening'] .claim-sentence,
+[data-ink='opening'] .exhibit-pole {
+ color: #6e6e6e;
+}
+
+[data-ink='standing'] .claim-sentence,
+[data-ink='standing'] .exhibit-pole {
+ color: #3f3f3f;
+}
+
+/* Contested is not a demotion and not a warning. The sentence keeps its ink;
+   a hairline in the margin says only that there is something beside it, and
+   the exhibit further down is where the something is. No word, no colour. */
+[data-ink='facing'] .claim-sentence,
+[data-ink='facing'] .exhibit-pole {
+ color: #3f3f3f;
+}
+
+.wiki-claim[data-ink='facing'],
+.wiki-exhibit[data-ink='facing'] {
+ border-left: 1px solid #c9c9c4;
+ padding-left: 1rem;
+ margin-left: -1rem;
+}
+
+/* Your own sentence, in your own ink. */
+[data-ink='yours'] .claim-sentence,
+[data-ink='yours'] .exhibit-pole {
+ color: var(--fg);
+}
+
+/* Set aside — kept, never deleted, and only visible under the wider reading. */
+[data-ink='aside'] .claim-sentence,
+[data-ink='aside'] .exhibit-pole {
+ color: #8f8f8f;
+ font-style: italic;
+}
+
+[data-ink='aside'] .claim-quote {
+ opacity: 0.7;
+}
+
+/* ── the quotations: your words, the darkest thing on the page ── */
+
+.claim-quote {
+ font-family: var(--font-serif);
+ font-size: 0.95rem;
+ line-height: 1.5;
+ color: var(--fg);
+ margin: 0.65rem 0 0 1.5rem;
+}
+
+.claim-quote-date {
+ display: block;
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ color: var(--dim);
+ letter-spacing: 0.04em;
+ margin-top: 0.25rem;
+}
+
+/* ── a contradiction, typeset as an exhibit ── */
+
+.wiki-exhibit {
+ margin-bottom: 2.25rem;
+}
+
+.exhibit-pole {
+ font-size: 1.05rem;
+ line-height: var(--line);
+ margin: 0 0 0.85rem;
+}
+
+/* ── marginalia: the Clerk's remarks, dimmed ── */
+
+.wiki-note {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ line-height: 1.4;
+ margin-top: 0.35rem;
+}
+
+/* ── the foot: the one control, as a sentence ── */
+
+.wiki-foot {
+ margin-top: 3.5rem;
+ padding-top: 1rem;
+ border-top: 1px solid var(--border);
+}
+
+.wiki-lens {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ margin-top: 0.5rem;
+}
+
+@media (max-width: 480px) {
+ .claim-sentence,
+ .exhibit-pole {
+  font-size: 1rem;
+ }
+
+ .claim-quote {
+  margin-left: 1rem;
+ }
+
+ .wiki-claim[data-ink='facing'],
+ .wiki-exhibit[data-ink='facing'] {
+  margin-left: 0;
+ }
+}
