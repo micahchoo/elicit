@@ -22,7 +22,8 @@ import matter from 'gray-matter';
 import { propose } from '../src/harvester/harvester.js';
 import { createVault } from '../src/vault/vault.js';
 import { makeComplete } from '../src/llm.js';
-import type { Turn } from '../src/types.js';
+import { clean, dropCitedParagraphs, toTurns } from '../src/import/body.js';
+import { isQuotedFromSource, quotedSpans } from '../src/harvester/admissibility.js';
 
 const POSTS = '/mnt/Ghar/2TA/DevStuff/staging-nw/content/posts';
 const REVIEW = 'docs/ingest-review-2026-08-02.md';
@@ -265,97 +266,6 @@ const EXCLUDED: { slug: string; why: string }[] = [
 // Body extraction
 // ---------------------------------------------------------------------------
 
-/** Strip Hugo shortcodes, images, bare links and HTML. */
-function clean(md: string, keepQuotes: boolean): string {
-  return md
-    // {{< card >}}…{{< /card >}} and self-closing shortcodes
-    .replace(/\{\{[<%][\s\S]*?[>%]\}\}/g, '')
-    .split('\n')
-    .filter((l) => {
-      const t = l.trim();
-      if (t.length === 0) return true;
-      if (!keepQuotes && t.startsWith('>')) return false;   // other people's words
-      if (/^!\[/.test(t)) return false;                      // images
-      if (/^\[.*\]\(.*\)$/.test(t)) return false;            // link-only lines
-      if (/^https?:\/\//.test(t)) return false;              // bare URLs
-      if (/^[-*]\s*$/.test(t)) return false;
-      if (/^<.*>$/.test(t)) return false;                    // raw HTML
-      return true;
-    })
-    .join('\n');
-}
-
-/**
- * Paragraphs carrying an inline academic citation are dropped whole.
- *
- * This is the capstone's specific hazard and it is why the rule is mechanical
- * rather than a judgement: at least three quotations there are set as ordinary
- * paragraphs with the citation trailing, and one — the Bellacasa line — has no
- * quote marks and no citation at all, because the citation sits on the NEXT
- * paragraph. A reader cannot tell those from his own sentences, so neither can
- * a harvester.
- */
-const ORPHAN_QUOTES = [
-  'to think of care beyond a moral disposition, or a good intention, extending its senses to a material doing',
-];
-function dropCitedParagraphs(text: string): { kept: string; dropped: number } {
-  const paras = text.split(/\n\s*\n/);
-  let dropped = 0;
-  const kept = paras.filter((p) => {
-    // This regex requires the year to sit immediately before the closing
-    // paren, so a citation carrying a page number escapes it: `[(Mol 2008, p.
-    // 83)]` does not match because `, p. 83` follows `2008`. That is a real
-    // hole — six paragraphs slipped through the 2026-08-02 dry run and four
-    // Mol sentences reached the review as Micah's prose.
-    //
-    // It is left narrow ON PURPOSE. Widening it to `\d{4}[^)]*\)` was tried
-    // and measured: it closes the hole, and it also drops seven more
-    // paragraphs of which five are Micah's own prose — including "Juxtaposition
-    // is a method I am borrowing from Jenna Grant" and "I believe technology
-    // can play a big role in this practice". Narrowing it instead to
-    // cited-AND-contains-a-quote-mark fails the same way, because he quotes a
-    // word inside his own argument.
-    //
-    // Paragraph-level citation filtering cannot separate "he is reproducing
-    // someone" from "he is citing someone while making his own point". The
-    // separation happens at CUT level in `isQuotedFromSource` below, which is
-    // exact — 7 of 295 on the dry run, zero false positives — and which makes
-    // widening this one a pure loss. Unmarked quotations, which neither rule
-    // can see, stay the manifest's job (`dropSections`, `ORPHAN_QUOTES`);
-    // Q-51 says that judgement is not automatable, and this is where that bites.
-    const cited = /\[\([A-Z][^)]*\d{4}\)\]\(#/.test(p) || /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/.test(p);
-    const orphan = ORPHAN_QUOTES.some((q) => p.includes(q));
-    if (cited || orphan) { dropped++; return false; }
-    return true;
-  }).join('\n\n');
-  return { kept, dropped };
-}
-
-/**
- * Quotations set inside an otherwise-authored paragraph (Q-51 at cut level).
- *
- * `dropCitedParagraphs` works on whole paragraphs and therefore CANNOT reach
- * these: dropping the paragraph would throw away the user's own prose wrapped
- * around the quote. Q-51 rules that quoted passages are excluded at cut level
- * rather than item level, and this is that rule.
- *
- * A span is a quotation when it opens and closes with curly quotes, nests no
- * further quote mark, and does not cross a paragraph break. Measured against
- * the 2026-08-02 dry run this predicate finds exactly the seven inadmissible
- * cuts out of 295 and nothing else — no false positives on Micah's own prose.
- */
-function quotedSpans(source: string): string[] {
-  return [...source.matchAll(/“([^“”]{20,3000})”/g)]
-    .map((m) => m[1] as string)
-    .filter((s) => !/\n\s*\n/.test(s))
-    .map((s) => s.trim());
-}
-
-function isQuotedFromSource(cutText: string, spans: string[]): boolean {
-  const bare = cutText.replace(/^[“”"]+/, '').replace(/[“”"]+$/, '').trim();
-  return bare.length > 0 && spans.some((s) => s.includes(bare));
-}
-
 /** Body between the named heading boundaries. */
 function selectBody(body: string, sel: Extract<Select, { kind: 'body' }>): string {
   const lines = body.split('\n');
@@ -377,31 +287,6 @@ function selectBody(body: string, sel: Extract<Select, { kind: 'body' }>): strin
     if (!dropping) out.push(line);
   }
   return out.join('\n');
-}
-
-/**
- * Split into turns on paragraph boundaries, never mid-sentence.
- *
- * `propose()` verifies each cut as an exact substring of ITS OWN turn, so a
- * split through a sentence destroys any cut that spanned it.
- */
-function toTurns(text: string, at: string, maxWords = 320): Turn[] {
-  const paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
-  const turns: Turn[] = [];
-  let buf: string[] = [];
-  let count = 0;
-  const flush = () => {
-    if (buf.length === 0) return;
-    turns.push({ role: 'user', text: buf.join('\n\n'), at });
-    buf = []; count = 0;
-  };
-  for (const p of paras) {
-    const w = p.split(/\s+/).length;
-    if (count > 0 && count + w > maxWords) flush();
-    buf.push(p); count += w;
-  }
-  flush();
-  return turns;
 }
 
 // ---------------------------------------------------------------------------
