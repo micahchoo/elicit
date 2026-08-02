@@ -307,6 +307,24 @@ unassigned, all blockers closed.
   `qwen3-embedding`, 3/8 at 100% precision, still shadow. Q-52 confirmed on
   real data: rephrased oppositions and genuine paraphrases are one population.
 
+- [Build: Randomizer draws](tickets/026-randomizer-build.md) — deck shuffle and
+  depth-stratified resurfacing in `src/randomizer/`, with Q-18 enforced by the
+  absence of any model handle. Stratification is band→sitting→snippet because
+  76 of 139 snippets are one sitting; snippets are dated by their sitting, not
+  by capture, or the whole import would read as "recent".
+
+- [Build: Randomizer draws](tickets/026-randomizer-build.md) — deck shuffle and
+  depth-stratified resurfacing in `src/randomizer/`, with Q-18 enforced by the
+  absence of any model handle. Stratification is band→sitting→snippet because
+  76 of 139 snippets are one sitting; snippets are dated by their sitting, not
+  by capture, or the whole import would read as "recent".
+
+- [Build: Randomizer draws](tickets/026-randomizer-build.md) — deck shuffle and
+  depth-stratified resurfacing in `src/randomizer/`, with Q-18 enforced by the
+  absence of any model handle. Stratification is band→sitting→snippet because
+  76 of 139 snippets are one sitting; snippets are dated by their sitting, not
+  by capture, or the whole import would read as "recent".
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
