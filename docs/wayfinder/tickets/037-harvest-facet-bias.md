@@ -8,6 +8,63 @@ blocked_by: []
 
 ## Question
 
+> EVIDENCE UPDATE 2026-08-02 (orchestrator, real 6-turn sitting after
+> ticket 034's chunked harvest landed — 16 proposals from 6 turns):
+> - GOOD: the dateable episode is no longer dropped. "On March 3rd I
+>   finally told my manager the estimate was fiction" was proposed —
+>   per-turn attention fixed the episode-blindness half of this ticket.
+> - STILL WRONG, same patterns: "I no longer think that." tagged facet
+>   `intention` (the fallback-label failure, verbatim); the supersession
+>   pair ("I used to think X... I no longer think that") still not tagged
+>   stance `superseded`; "the relief lasted about four hours" tagged
+>   `lifetime-period` when it is episode detail.
+> - NEW, caused by chunking: cuts are far more granular (2.67 per turn),
+>   several clearly NOT standalone — "the screen keeps only what survives
+>   the copying." (what screen?), "curl before yellowing", "You cannot
+>   schedule a tomato;". This is adversarial-eval finding #6 (the
+>   standalone gate never fires) made sharper: more fragments, same
+>   model-self-reported boolean. Ticket 035 owns the structural gate;
+>   this ticket owns the facet/stance labeling and cut granularity.
+>   Consider instructing minimum cut size / whole-thought cuts.
+
+> EVIDENCE UPDATE 2026-08-02 (orchestrator, real 6-turn sitting after
+> ticket 034's chunked harvest landed — 16 proposals from 6 turns):
+> - GOOD: the dateable episode is no longer dropped. "On March 3rd I
+>   finally told my manager the estimate was fiction" was proposed —
+>   per-turn attention fixed the episode-blindness half of this ticket.
+> - STILL WRONG, same patterns: "I no longer think that." tagged facet
+>   `intention` (the fallback-label failure, verbatim); the supersession
+>   pair ("I used to think X... I no longer think that") still not tagged
+>   stance `superseded`; "the relief lasted about four hours" tagged
+>   `lifetime-period` when it is episode detail.
+> - NEW, caused by chunking: cuts are far more granular (2.67 per turn),
+>   several clearly NOT standalone — "the screen keeps only what survives
+>   the copying." (what screen?), "curl before yellowing", "You cannot
+>   schedule a tomato;". This is adversarial-eval finding #6 (the
+>   standalone gate never fires) made sharper: more fragments, same
+>   model-self-reported boolean. Ticket 035 owns the structural gate;
+>   this ticket owns the facet/stance labeling and cut granularity.
+>   Consider instructing minimum cut size / whole-thought cuts.
+
+> EVIDENCE UPDATE 2026-08-02 (orchestrator, real 6-turn sitting after
+> ticket 034's chunked harvest landed — 16 proposals from 6 turns):
+> - GOOD: the dateable episode is no longer dropped. "On March 3rd I
+>   finally told my manager the estimate was fiction" was proposed —
+>   per-turn attention fixed the episode-blindness half of this ticket.
+> - STILL WRONG, same patterns: "I no longer think that." tagged facet
+>   `intention` (the fallback-label failure, verbatim); the supersession
+>   pair ("I used to think X... I no longer think that") still not tagged
+>   stance `superseded`; "the relief lasted about four hours" tagged
+>   `lifetime-period` when it is episode detail.
+> - NEW, caused by chunking: cuts are far more granular (2.67 per turn),
+>   several clearly NOT standalone — "the screen keeps only what survives
+>   the copying." (what screen?), "curl before yellowing", "You cannot
+>   schedule a tomato;". This is adversarial-eval finding #6 (the
+>   standalone gate never fires) made sharper: more fragments, same
+>   model-self-reported boolean. Ticket 035 owns the structural gate;
+>   this ticket owns the facet/stance labeling and cut granularity.
+>   Consider instructing minimum cut size / whole-thought cuts.
+
 From `docs/eval-2026-08-02-claude-adversarial.md` finding #7:
 
 1. **The bias runs backwards.** A turn containing an explicit dateable

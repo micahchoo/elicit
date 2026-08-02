@@ -1,9 +1,15 @@
 ---
 title: "Fix: harvest silent failure — chunked extraction + parse observability"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  23e69c9: per-user-turn chunked extraction + HarvestDiagnostics {rawChars,parsed,parseMode,chunks,chunkErrors,fabricationDrops,sourceTurnCorrections} surfaced in the harvest-proposed activity event. VERIFIED by orchestrator on a real SIX-turn sitting vs bonsai-27b (the length that yielded 0 in the adversarial eval): 16 proposals, parsed=true parseMode=json chunks=6/6 chunkErrors=0 fabricationDrops=0. 376 tests green. Follow-up recorded on ticket 037: chunking raised cut granularity, so the standalone gate and facet labeling now matter more, not less.
+resolution: >
+  23e69c9: per-user-turn chunked extraction + HarvestDiagnostics {rawChars,parsed,parseMode,chunks,chunkErrors,fabricationDrops,sourceTurnCorrections} surfaced in the harvest-proposed activity event. VERIFIED by orchestrator on a real SIX-turn sitting vs bonsai-27b (the length that yielded 0 in the adversarial eval): 16 proposals, parsed=true parseMode=json chunks=6/6 chunkErrors=0 fabricationDrops=0. 376 tests green. Follow-up recorded on ticket 037: chunking raised cut granularity, so the standalone gate and facet labeling now matter more, not less.
+resolution: >
+  23e69c9: per-user-turn chunked extraction + HarvestDiagnostics {rawChars,parsed,parseMode,chunks,chunkErrors,fabricationDrops,sourceTurnCorrections} surfaced in the harvest-proposed activity event. VERIFIED by orchestrator on a real SIX-turn sitting vs bonsai-27b (the length that yielded 0 in the adversarial eval): 16 proposals, parsed=true parseMode=json chunks=6/6 chunkErrors=0 fabricationDrops=0. 376 tests green. Follow-up recorded on ticket 037: chunking raised cut granularity, so the standalone gate and facet labeling now matter more, not less.
 ---
 
 ## Question
