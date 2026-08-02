@@ -332,7 +332,15 @@ export function mean(values: number[]): number {
 
 async function runHarvest(
   corpus: CorpusEntry[],
-  role: LlmRole
+  role: LlmRole,
+  /**
+   * The candidate harvest prompt, or undefined to use `propose()`'s own
+   * `SYSTEM_PROMPT`. Forwarded to `propose()`'s `promptOverride`, which has
+   * existed since ticket 034 — this script warned for months that it did not,
+   * and therefore ran every harvest A/B against the DEFAULT prompt while
+   * reporting a keep-or-revert verdict, which is worse than not running.
+   */
+  promptOverride?: string
 ): Promise<{ perExchange: HarvestExchangeMetrics[]; aggregate: HarvestAggregate; erroredExchanges: number }> {
   const complete = makeComplete(role);
   const perExchange: HarvestExchangeMetrics[] = [];
@@ -350,7 +358,7 @@ async function runHarvest(
       // Cut counts come from propose()'s diagnostics. Since ticket 034 the
       // harvest runs one call per user turn, so the last raw output covers
       // only the last turn — counting from it would under-report.
-      const { proposals, buds, diagnostics } = await propose(entry.session, entry.turns, timed);
+      const { proposals, buds, diagnostics } = await propose(entry.session, entry.turns, timed, promptOverride);
       const totalCuts = diagnostics.cutsSeen;
       const fabricatedCuts = diagnostics.fabricationDrops;
 
@@ -523,23 +531,27 @@ async function main(): Promise<void> {
   }
 
   if (mode === 'harvest') {
-    // propose() has no promptOverride parameter (src/harvester/harvester.ts
-    // uses a module-level SYSTEM_PROMPT). We do NOT edit src/ — run with the
-    // default prompt and document the needed change.
-    console.error(
-      'WARNING: propose() has no promptOverride parameter. Harvest prompt changes require adding `promptOverride?: string` to propose()\'s signature in src/harvester/harvester.ts and using `promptOverride ?? SYSTEM_PROMPT` in the complete() call. Running with default prompt.'
-    );
+    // `propose()` has taken a `promptOverride` since ticket 034. This branch
+    // used to warn that it did not and run the default prompt anyway, which
+    // meant every harvest A/B compared the default against itself and reported
+    // a keep-or-revert verdict on the result. Ticket 032's ratchet was silently
+    // measuring nothing. Found by ticket 037, 2026-08-02.
+    let harvestPrompt: string | undefined;
     if (promptPath !== undefined) {
-      console.error(
-        `WARNING: --prompt ${promptPath} ignored in harvest mode — propose() has no prompt override.`
-      );
+      try {
+        harvestPrompt = readFileSync(promptPath, 'utf8');
+      } catch (e) {
+        console.error(`ERROR: cannot read --prompt file ${promptPath}: ${errorMessage(e)}`);
+        process.exitCode = 1;
+        return;
+      }
     }
-    const result = await runHarvest(corpus, role);
+    const result = await runHarvest(corpus, role, harvestPrompt);
     console.log(
       JSON.stringify(
         {
           mode: 'harvest',
-          prompt: 'default (propose SYSTEM_PROMPT)',
+          prompt: promptPath ?? 'default (propose SYSTEM_PROMPT)',
           role,
           model: cfg.modelId,
           baseUrl: cfg.baseUrl,
