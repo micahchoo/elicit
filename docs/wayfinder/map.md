@@ -363,6 +363,15 @@ unassigned, all blockers closed.
   generalises to 18.4%. Three interrogatives resist a proposition-extracting
   prompt, and `episodeAnchoredTurns: 0` across all 136.
 
+- [Fix: WikiReport's measurements reach no surface](tickets/071-wikireport-reaches-no-surface.md) — surfaced WikiReport counters on a new `wiki-run` Activity Log line and added a `contradiction-opened` event kind so T16's RESULTS can be written from a real run.
+
+- [Grill: snippets that point outside themselves](tickets/072-dangling-referents.md) —
+  all three layers ruled in: render the stored eliciting question, stamp a
+  mechanical `Provenance.context` window (backfillable via 024's
+  locate-by-substring), and a model-resolved referent annotation last,
+  evaluated before it ships. Context is lineage, never corpus. Builds are
+  tickets 073 and 074 (074 blocked on 073).
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
