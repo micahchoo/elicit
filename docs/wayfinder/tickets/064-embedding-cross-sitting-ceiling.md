@@ -81,22 +81,6 @@ of 16. A pair within ~0.003 of the cut can therefore flip between docket runs
 based on how many claims happened to need embedding. A rank is invariant to
 that; an absolute cut is not.
 
-### A third argument for rank over threshold, added after T18
-
-T18 measured that the endpoint is deterministic only for a **fixed batch
-composition**: the same text scored 0.7606 in a batch of 8 and 0.7631 in a batch
-of 16. A pair within ~0.003 of the cut can therefore flip between docket runs
-based on how many claims happened to need embedding. A rank is invariant to
-that; an absolute cut is not.
-
-### A third argument for rank over threshold, added after T18
-
-T18 measured that the endpoint is deterministic only for a **fixed batch
-composition**: the same text scored 0.7606 in a batch of 8 and 0.7631 in a batch
-of 16. A pair within ~0.003 of the cut can therefore flip between docket runs
-based on how many claims happened to need embedding. A rank is invariant to
-that; an absolute cut is not.
-
 ## Acceptance
 
 - A ruling on same-sitting pairs: exclude, rank-below, or keep.
