@@ -197,6 +197,19 @@ facet-intent filtering (shadow-mode).
   words — four sentences of Annemarie Mol, one of Sara Ahmed, one of Shreyas —
   which drove Q-51's cut-level rule into code. `docs/ingest-triage-2026-08-02.md`
   holds the per-cut marks.
+- **The wiki has routes and a surface.** T14 landed `GET /api/wiki` (claims
+  grouped by facet, ordered by coreness) and `POST /api/wiki/claim/:id/read`.
+  **Lint is served from the last completed run, never computed on the route** —
+  two of lint's three rules go through `shadowDecision`, so linting on a read
+  path would put one shadow record per PAGE VIEW into Q-35's graduation
+  evidence. T19 (the client half) is in flight; T15 (end-to-end) is the last
+  task in the slice.
+- **Semantic resonance is BUILT and NOT WIRED** (053, `a6c4610`).
+  `src/index/semantic.ts` scores **7/8 by rank** on the standing paraphrase
+  fixture where the incumbent `resonate()` scores **0/8**. It ranks rather than
+  thresholds because every caller already wants the best few. **Ticket 068
+  names every call site** — until that lands, the surface a person meets each
+  sitting is still trigram matching.
 - **The reading pass is RUNNING** (062) — `scripts/read-snippets.ts --apply`,
   detached, ~50s per snippet, writing one Reading per snippet to
   `vault/wiki/readings/`. Until it finishes the corpus is evidence but not
