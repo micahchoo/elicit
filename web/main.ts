@@ -3,6 +3,8 @@ import type {
   HarvestDecision,
   Mode,
   QuestionForm,
+  Target,
+  QueueEntry,
 } from '../src/types.ts';
 
 /* ─── API types ─── */
@@ -12,13 +14,13 @@ interface SessionResponse {
   question: string;
 }
 
-type TurnResponse =
-  | { kind: 'probe'; text: string; questionForm: QuestionForm }
-  | { kind: 'saturated'; proposals: CutProposal[] };
-
-type SkipResponse =
-  | { kind: 'question'; text: string; questionForm: QuestionForm }
-  | { kind: 'exhausted' };
+interface TurnData {
+  kind: 'probe' | 'saturated';
+  text?: string;
+  questionForm?: QuestionForm;
+  phase?: string;
+  juxtaposition?: { snippetText: string; snippetDate: string };
+}
 
 interface EndResponse {
   proposals: CutProposal[];
@@ -27,6 +29,18 @@ interface EndResponse {
 interface HarvestResponse {
   snippets: unknown[];
   buds: unknown[];
+}
+
+interface QueueData {
+  pending: QueueEntry[];
+  open: QueueEntry[];
+}
+
+interface ActivityEvent {
+  at: string;
+  actor: string;
+  kind: string;
+  detail: string;
 }
 
 /* ─── DOM helpers ─── */
@@ -52,7 +66,7 @@ function $<T extends HTMLElement>(sel: string): T {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login';
 
 interface AppState {
   screen: Screen;
@@ -60,6 +74,8 @@ interface AppState {
   question: string | null;
   proposals: CutProposal[];
   decisions: HarvestDecision[];
+  turnPhase: string | null;
+  juxtaposition: { snippetText: string; snippetDate: string } | null;
 }
 
 const state: AppState = {
@@ -68,25 +84,51 @@ const state: AppState = {
   question: null,
   proposals: [],
   decisions: [],
+  turnPhase: null,
+  juxtaposition: null,
 };
 
 const main = $('main')!;
 
+/* ─── Navigation ─── */
+
+function navTo(screen: Screen) {
+  state.screen = screen;
+  switch (screen) {
+    case 'mode': renderMode(); break;
+    case 'exchange': renderExchange(); break;
+    case 'harvest': renderHarvest(); break;
+    case 'done': renderDone(); break;
+    case 'waiting': renderWaiting(); break;
+    case 'login': renderLogin(); break;
+  }
+}
+
 /* ─── API ─── */
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  // every API call the screen makes is a mutation — always POST
-  const init: RequestInit = { method: 'POST' };
+  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') ? 'GET' : 'POST';
+  const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
     init.body = JSON.stringify(body);
   }
   const res = await fetch(path, init);
   if (!res.ok) {
+    if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
   }
   return res.json() as T;
+}
+
+async function apiRaw(path: string): Promise<Response> {
+  const res = await fetch(path, { method: 'GET' });
+  if (!res.ok) {
+    if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
+    throw new Error(`${res.status}`);
+  }
+  return res;
 }
 
 /* ─── Render ─── */
@@ -100,11 +142,50 @@ function showError(msg: string) {
   main.append(err);
 }
 
+/* ── Login screen ── */
+
+function renderLogin() {
+  clear();
+  state.screen = 'login';
+
+  const div = el('div', { class: 'screen active login-form' });
+  const heading = el('h1', { class: 'login-heading' }, 'elicit');
+  const input = el('input', {
+    class: 'login-input',
+    type: 'password',
+    placeholder: 'password',
+  });
+  const submit = el('button', { class: 'submit-btn' }, 'enter');
+  const errorSlot = el('div', { class: 'error-slot' });
+
+  submit.addEventListener('click', async () => {
+    submit.disabled = true;
+    try {
+      await api('/api/login', { password: input.value });
+      navTo('mode');
+    } catch {
+      errorSlot.innerHTML = '';
+      errorSlot.append('wrong password');
+      submit.disabled = false;
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submit.click();
+  });
+
+  div.append(heading, input, submit, errorSlot);
+  main.append(div);
+  input.focus();
+}
+
 /* ── Mode screen ── */
 
 function renderMode() {
   clear();
   state.screen = 'mode';
+  state.turnPhase = null;
+  state.juxtaposition = null;
 
   const div = el('div', { class: 'screen active mode-form' });
 
@@ -124,11 +205,23 @@ function renderMode() {
   }
   energyRow.append(enLabel, enSelect);
 
+  const targetRow = el('div', { class: 'mode-row' });
+  const tgtLabel = el('label', {}, 'about?');
+  const tgtSelect = el('select', { class: 'mode-select' });
+  tgtSelect.append(el('option', { value: 'self' }, 'myself'));
+  tgtSelect.append(el('option', { value: 'domain' }, 'something I know'));
+  targetRow.append(tgtLabel, tgtSelect);
+
   const topicInput = el('input', {
     class: 'topic-input',
     type: 'text',
     placeholder: 'what would you like to talk about? (optional)',
   });
+
+  const navRow = el('div', { class: 'mode-nav' });
+  const waitingLink = el('button', { class: 'nav-link' }, 'waiting surface');
+  waitingLink.addEventListener('click', () => navTo('waiting'));
+  navRow.append(waitingLink);
 
   const submit = el('button', { class: 'submit-btn' }, 'begin');
   const errorSlot = el('div', { class: 'error-slot' });
@@ -140,6 +233,7 @@ function renderMode() {
       const mode: Mode = {
         minutes: Number(minSelect.value),
         energy: enSelect.value as Mode['energy'],
+        target: tgtSelect.value as Target,
       };
       const t = topicInput.value.trim();
       if (t) mode.topic = t;
@@ -159,7 +253,7 @@ function renderMode() {
     if (e.key === 'Enter') submit.click();
   });
 
-  div.append(minutesRow, energyRow, topicInput, submit, errorSlot);
+  div.append(minutesRow, energyRow, targetRow, topicInput, navRow, submit, errorSlot);
   main.append(div);
 }
 
@@ -178,12 +272,23 @@ function renderExchange() {
   const questionBlock = el('div', { class: 'question-block' }, state.question!);
   header.append(questionBlock);
 
+  // Juxtaposition snippet display
+  const juxDiv = el('div', { class: 'juxtaposition' });
+  if (state.juxtaposition) {
+    juxDiv.classList.add('active');
+    juxDiv.append(
+      el('span', { class: 'jux-date' }, state.juxtaposition.snippetDate),
+      el('blockquote', { class: 'jux-quote' }, state.juxtaposition.snippetText),
+    );
+  }
+  header.append(juxDiv);
+
   const transcript = el('div', { class: 'transcript' });
 
   const answerArea = el('div', { class: 'answer-area' });
   const textarea = el('textarea', {
     class: 'answer-textarea',
-    placeholder: '…',
+    placeholder: '\u2026',
     rows: '2',
   });
   const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
@@ -213,23 +318,37 @@ function renderExchange() {
     if (!text) return;
     textarea.disabled = true;
     harvestBtn.disabled = true;
+    skipBtn.disabled = true;
 
-    // append user turn to transcript
     appendTurn('user', text);
 
     try {
-      const res = await api<TurnResponse>(
+      const res = await api<TurnData>(
         `/api/session/${state.sessionId}/turn`,
         { text },
       );
 
       if (res.kind === 'probe') {
-        appendTurn('agent', res.text);
-        state.question = res.text;
-        questionBlock.textContent = res.text;
+        state.question = res.text!;
+        state.turnPhase = res.phase ?? null;
+        state.juxtaposition = res.juxtaposition ?? null;
+
+        // Update question + juxtaposition display
+        questionBlock.textContent = res.text!;
+        juxDiv.innerHTML = '';
+        if (state.juxtaposition) {
+          juxDiv.classList.add('active');
+          juxDiv.append(
+            el('span', { class: 'jux-date' }, state.juxtaposition.snippetDate),
+            el('blockquote', { class: 'jux-quote' }, state.juxtaposition.snippetText),
+          );
+        } else {
+          juxDiv.classList.remove('active');
+        }
+
+        appendTurn('agent', res.text!);
       } else {
         // saturated
-        state.proposals = res.proposals;
         renderHarvest();
         return;
       }
@@ -241,8 +360,8 @@ function renderExchange() {
     textarea.style.height = 'auto';
     textarea.disabled = false;
     harvestBtn.disabled = false;
+    skipBtn.disabled = false;
     textarea.focus();
-    // scroll to textarea
     textarea.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
@@ -268,20 +387,23 @@ function renderExchange() {
   skipBtn.addEventListener('click', async () => {
     skipBtn.disabled = true;
     try {
-      const res = await api<SkipResponse>(
+      const res = await api<{ kind: string; text?: string }>(
         `/api/session/${state.sessionId}/skip`,
       );
       if (res.kind === 'question') {
-        state.question = res.text;
-        questionBlock.textContent = res.text;
+        state.question = res.text!;
+        state.juxtaposition = null;
+        juxDiv.classList.remove('active');
+        juxDiv.innerHTML = '';
+        questionBlock.textContent = res.text!;
         textarea.value = '';
         textarea.style.height = 'auto';
         textarea.focus();
       } else {
-        // exhausted — show dimmed note
         questionBlock.textContent = '';
-        const note = el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.');
-        questionBlock.append(note);
+        questionBlock.append(
+          el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.'),
+        );
         skipBtn.disabled = true;
         harvestBtn.disabled = true;
         textarea.disabled = true;
@@ -292,7 +414,6 @@ function renderExchange() {
     }
   });
 
-  // initial focus + typewriter position
   requestAnimationFrame(() => {
     textarea.focus();
     textarea.scrollIntoView({ block: 'center' });
@@ -335,13 +456,11 @@ function renderHarvest() {
 
   main.append(div);
 
-  // render each proposal
   for (let i = 0; i < state.proposals.length; i++) {
     renderProposal(i, list);
   }
 
   submitBtn.addEventListener('click', async () => {
-    // verify all proposals have a decision
     if (state.decisions.length < state.proposals.length) {
       errorSlot.innerHTML = '';
       errorSlot.append(
@@ -389,7 +508,6 @@ function renderProposal(idx: number, container: HTMLElement) {
 
   actions.append(approveBtn, trimBtn, discardBtn, restateBtn);
 
-  // trim state: editor or restate area (mutually exclusive)
   let editorActive = false;
   let editorEl: HTMLTextAreaElement | null = null;
   let confirmEl: HTMLButtonElement | null = null;
@@ -407,12 +525,10 @@ function renderProposal(idx: number, container: HTMLElement) {
   }
 
   function setDecision(action: HarvestDecision['action'], text?: string) {
-    // remove prior decision for this proposal
     state.decisions = state.decisions.filter((d) => d.proposal !== idx);
     const d: HarvestDecision = { proposal: idx, action };
     if (text !== undefined) d.text = text;
     state.decisions.push(d);
-    // update button states
     const all = [approveBtn, trimBtn, discardBtn, restateBtn];
     for (const b of all) b.style.opacity = '0.4';
     const active =
@@ -435,7 +551,6 @@ function renderProposal(idx: number, container: HTMLElement) {
   trimBtn.addEventListener('click', () => {
     if (editorActive) {
       clearEditor();
-      // re-enable if no decision
       const has = state.decisions.some((d) => d.proposal === idx);
       if (!has) resetButtons();
       return;
@@ -450,7 +565,6 @@ function renderProposal(idx: number, container: HTMLElement) {
     );
     block.append(editorEl, confirmEl);
     editorEl.focus();
-    // auto-grow
     editorEl.style.height = 'auto';
     editorEl.style.height = editorEl.scrollHeight + 'px';
     editorEl.addEventListener('input', () => {
@@ -459,9 +573,7 @@ function renderProposal(idx: number, container: HTMLElement) {
     });
     confirmEl.addEventListener('click', () => {
       const v = editorEl!.value;
-      // client-side substring check
       if (!p.text.includes(v) && v !== p.text) {
-        // reject: restore original
         editorEl!.value = p.text;
         return;
       }
@@ -486,7 +598,7 @@ function renderProposal(idx: number, container: HTMLElement) {
     editorActive = true;
     editorEl = el('textarea', {
       class: 'restate-editor',
-      placeholder: 'say it in your own words…',
+      placeholder: 'say it in your own words\u2026',
     }) as HTMLTextAreaElement;
     confirmEl = el(
       'button',
@@ -520,16 +632,114 @@ function renderDone() {
   clear();
   state.screen = 'done';
   const div = el('div', { class: 'screen active' });
-  div.append(
-    el(
-      'p',
-      { class: 'done-message' },
-      'your answers are saved. close this tab when you are ready.',
-    ),
+  const msg = el(
+    'p',
+    { class: 'done-message' },
+    'your answers are saved.',
   );
+  const backBtn = el('button', { class: 'submit-btn', style: 'margin-top: 1rem' }, 'back');
+  backBtn.addEventListener('click', () => navTo('mode'));
+  div.append(msg, backBtn);
   main.append(div);
+}
+
+/* ── Waiting surface ── */
+
+function renderWaiting() {
+  clear();
+  state.screen = 'waiting';
+
+  const div = el('div', { class: 'screen active waiting-surface' });
+
+  // Back link
+  const backRow = el('div', { class: 'waiting-nav' });
+  const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
+  backBtn.addEventListener('click', () => navTo('mode'));
+  backRow.append(backBtn);
+  div.append(backRow);
+
+  // Queue section
+  const queueSection = el('div', { class: 'waiting-section' });
+  const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
+  const queueList = el('div', { class: 'queue-list' });
+  queueSection.append(queueHeading, queueList);
+
+  // Activity section
+  const activitySection = el('div', { class: 'waiting-section' });
+  const activityHeading = el('h2', { class: 'waiting-heading' }, 'activity');
+  const activityList = el('div', { class: 'activity-list' });
+  activitySection.append(activityHeading, activityList);
+
+  div.append(queueSection, activitySection);
+  main.append(div);
+
+  // Load queue
+  (async () => {
+    try {
+      const data = await api<QueueData>('/api/queue');
+      queueList.innerHTML = '';
+      if (data.open.length === 0) {
+        queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
+        return;
+      }
+      for (const entry of data.open) {
+        const row = el('div', { class: 'queue-entry' });
+        const question = el('span', { class: 'queue-question' }, entry.question);
+        const meta = el('span', { class: 'queue-meta' }, `${entry.source} \u00b7 ${entry.horizon}`);
+        row.append(question, meta);
+        queueList.append(row);
+      }
+    } catch {
+      queueList.append(el('p', { class: 'empty-msg' }, 'could not load queue'));
+    }
+  })();
+
+  // Connect activity SSE
+  (async () => {
+    try {
+      const resp = await apiRaw('/api/activity');
+      if (!resp.body) return;
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        let currentData = '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            currentData = line.slice(6);
+          } else if (line === '' && currentData) {
+            try {
+              const ev: ActivityEvent = JSON.parse(currentData);
+              const lineEl = el('div', { class: 'activity-line' });
+              const actor = el('span', { class: 'activity-actor' }, ev.actor);
+              const detail = el('span', { class: 'activity-detail' }, `${ev.kind}: ${ev.detail}`);
+              lineEl.append(actor, ' ', detail);
+              activityList.prepend(lineEl);
+            } catch { /* skip malformed */ }
+            currentData = '';
+          }
+        }
+      }
+    } catch { /* SSE connection failed silently */ }
+  })();
 }
 
 /* ─── Bootstrap ─── */
 
-renderMode();
+// Check if password gate is active by probing /api/queue
+(async () => {
+  try {
+    await api<QueueData>('/api/queue');
+    renderMode();
+  } catch {
+    renderLogin();
+  }
+})();

@@ -1,3 +1,6 @@
+import { runDocket } from '../src/clerk/docket.js';
+import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
+import { appendEvent, type ActivityEvent } from '../src/log/activity.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -95,9 +98,8 @@ const userText2 = "I want to work on things that matter but I'm not sure what th
 
 /**
  * Scripted session data.
- * Each userTurn now calls complete twice (redLights + probe), so probes
- * are interleaved with '{}' dummies (no red lights). End calls complete
- * once for propose (JSON cuts).
+ * Each userTurn calls complete twice (redLights + probe), so probes
+ * are interleaved with '{}' dummies. End calls complete once for JSON cuts.
  */
 const scriptedResponses = [
  '{}',
@@ -135,6 +137,13 @@ const scriptedResponses = [
  '{}',
  'What does "my answer here" mean for what you value?',
  JSON.stringify({ cuts: [] }),
+ // Padding: post-harvest docket composeOpener calls (may retry = 2 per snippet)
+ 'padding',
+ 'padding',
+ 'padding',
+ 'padding',
+ 'padding',
+ 'padding',
 ];
 
 // ── Tests ──
@@ -151,7 +160,7 @@ describe('HTTP API e2e', () => {
   const queue = createQueueStore(vaultDir);
   const indexData = vault.rebuildIndex();
   const index = buildIndex(Object.values(indexData.snippets));
-  const app = createApp({ vault, complete, queue, index });
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir });
   const result = await startServer(app);
   server = result.server;
   baseUrl = `http://127.0.0.1:${result.port}`;
@@ -391,5 +400,224 @@ describe('HTTP API e2e', () => {
   // (skipped is an in-memory marker, not on disk — so we just check presence)
   expect(raw).toContain(question); // original question still in transcript
   expect(raw).toContain(skipResult.text!); // replacement in transcript
+ });
+});
+
+// ── Full flow: docket, juxtaposition, budget close, queue ──
+
+const seedProse = "I've been thinking about my career direction.";
+const fullUserAnswer1 = "I've been thinking about my career direction lately.";
+const fullUserSequential = [
+ 'The kind of work that feels meaningful to me involves helping people directly.',
+ 'Last year I volunteered at a shelter and it changed my perspective.',
+ 'Before that I was mostly focused on career advancement and money.',
+ 'I think the contrast between those experiences is what clarified things.',
+ 'At my core I value connection and impact over status.',
+ 'My mother always said to follow what gives you energy, not what looks good.',
+ "If I could tell my younger self one thing, it would be to trust that feeling.",
+];
+
+/**
+ * Scripted responses for the full-flow test.
+ * Order: docket composeOpener, then 7 turns (each: redLights + probe/juxtaposition),
+ * then propose. Closing door + bookmark are fixed text (no complete calls).
+ */
+const fullFlowScripted = [
+ // 0: docket composeOpener — raw question text
+ 'You wrote about "my career direction." Has anything shifted since then?',
+ // Turn 1: juxtaposition (resonance on shared phrase) — succeeds, no redLights/probe after
+ 'You said "I\'ve been thinking about my career direction" before. Now you say "my career direction." Do you see it differently now?',
+ // Turn 2: redLights + probe
+ '{}', 'What specifically about helping people feels meaningful?',
+ // Turn 3: redLights + probe
+ '{}', 'Tell me about one specific moment at the shelter that stands out.',
+ // Turn 4: redLights + probe
+ '{}', 'What was the hardest part of shifting from money to meaning?',
+ // Turn 5: redLights + probe
+ '{}', 'What does "connection" mean to you — can you give me an example?',
+ // Turn 6: redLights + probe
+ '{}', 'Has your mother\'s advice ever led you somewhere unexpected?',
+ // Turn 7: redLights + probe — after this, questionCount hits 8, turn 8 close triggers (no complete)
+ '{}', 'What would you say to someone facing the same choice today?',
+ // End: propose
+ JSON.stringify({
+  cuts: [
+   { text: fullUserAnswer1, sourceTurn: 0, facet: 'intention', stance: 'avowal', reading: 'Career direction is an active concern', standalone: true },
+   { text: fullUserSequential[0], sourceTurn: 1, facet: 'value', stance: 'commitment', reading: 'Values helping people directly', standalone: true },
+  ],
+ }),
+ // Padding: post-harvest docket composeOpener calls
+ 'padding a',
+ 'padding b',
+ 'padding c',
+ 'padding d',
+];
+
+describe('full session with docket and juxtaposition', () => {
+ let server: Server;
+ let baseUrl: string;
+ let vaultDir: string;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-full-'));
+  const vault = createVault(vaultDir);
+
+  // Seed a prior snippet so docket can compose an opener and resonance can fire
+  vault.saveSnippet(seedProse, {
+   kind: 'harvest',
+   session: 'prior-session',
+   question: 'What has been on your mind lately?',
+   questionForm: 'deliberative',
+  });
+
+  const complete = makeScriptedComplete(fullFlowScripted);
+  const queue = createQueueStore(vaultDir);
+  const indexData = vault.rebuildIndex();
+  const initialIndex = buildIndex(Object.values(indexData.snippets));
+
+  // Run docket to mint composed opener from the seed snippet
+  const docketReport = await runDocket({
+   vault,
+   queue,
+   complete,
+   buildIndex: (snippets) => buildIndex(snippets),
+   composeOpener,
+   composeStillTrue,
+   listSessions: () => [{ session: 'prior-session', started: '2026-07-15T10:00:00.000Z', turnCount: 3, chars: 150 }],
+   log: (e) => appendEvent(vaultDir, e as ActivityEvent),
+   vaultRoot: vaultDir,
+  });
+
+  const app = await createApp({
+   vault,
+   complete,
+   queue,
+   index: docketReport.index,
+   vaultRoot: vaultDir,
+  });
+  const result = await startServer(app);
+  server = result.server;
+  baseUrl = `http://127.0.0.1:${result.port}`;
+ });
+
+ afterAll(() => {
+  server.close();
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('opens with composed opener, triggers juxtaposition, closes on budget, harvests, and queues bookmark', async () => {
+  // ── Step 1: Create session ──
+  const sessionRes = await fetch(`${baseUrl}/api/session`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ mode: { minutes: 10, energy: 'medium' } }),
+  });
+  expect(sessionRes.status).toBe(200);
+  const { sessionId, question } = (await sessionRes.json()) as {
+   sessionId: string;
+   question: string;
+  };
+  expect(sessionId).toBeTypeOf('string');
+  // Opener should be the composed question from the docket (not a bank starter)
+  expect(question).toContain('career direction');
+
+  // ── Step 2: Turn 1 — should trigger juxtaposition ──
+  const t1 = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ text: fullUserAnswer1 }),
+  });
+  expect(t1.status).toBe(200);
+  const turn1 = (await t1.json()) as {
+   kind: string;
+   text?: string;
+   phase?: string;
+   juxtaposition?: { snippetText: string; snippetDate: string };
+  };
+  expect(turn1.kind).toBe('probe');
+  expect(turn1.phase).toBe('open');
+  // Juxtaposition should be present — the seed snippet shares "career direction"
+  expect(turn1.juxtaposition).toBeDefined();
+  expect(turn1.juxtaposition!.snippetText).toBe(seedProse);
+  expect(turn1.juxtaposition!.snippetDate).toBeTypeOf('string');
+
+  // ── Step 3: Turns 2-7 — generic probes ──
+  for (let i = 0; i < fullUserSequential.length; i++) {
+   const res = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: fullUserSequential[i] }),
+   });
+   expect(res.status).toBe(200);
+   const data = (await res.json()) as {
+    kind: string;
+    text?: string;
+    phase?: string;
+   };
+   // Turn 7 is the last before close; turn 8 triggers close
+   if (i === 6) {
+    // After turn 7's answer, questionCount hits 8 → close door fires
+    // The response should be the closing door question (fixed text, no complete call)
+    expect(data.kind).toBe('probe');
+    expect(data.phase).toBe('closing-door');
+   } else {
+    expect(data.kind).toBe('probe');
+    expect(data.phase).toBe('open');
+   }
+  }
+
+  // ── Step 4: Answer close-door question ──
+  const cdRes = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ text: 'This opens a path toward more intentional work.' }),
+  });
+  expect(cdRes.status).toBe(200);
+  const cdData = (await cdRes.json()) as { kind: string; phase?: string };
+  expect(cdData.kind).toBe('probe');
+  expect(cdData.phase).toBe('closing-bookmark');
+
+  // ── Step 5: Answer bookmark question → saturated ──
+  const bmRes = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ text: 'I want to explore how to align my daily work with my values.' }),
+  });
+  expect(bmRes.status).toBe(200);
+  const bmData = (await bmRes.json()) as { kind: string };
+  expect(bmData.kind).toBe('saturated');
+
+  // ── Step 6: End → harvest ──
+  const endRes = await fetch(`${baseUrl}/api/session/${sessionId}/end`, {
+   method: 'POST',
+  });
+  expect(endRes.status).toBe(200);
+  const { proposals } = (await endRes.json()) as { proposals: Array<{ text: string }> };
+  expect(proposals.length).toBe(2);
+
+  const harvestRes = await fetch(`${baseUrl}/api/session/${sessionId}/harvest`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({
+    decisions: [
+     { proposal: 0, action: 'approve' as const },
+     { proposal: 1, action: 'approve' as const },
+    ],
+   }),
+  });
+  expect(harvestRes.status).toBe(200);
+  const { snippets } = (await harvestRes.json()) as { snippets: Array<{ id: string }> };
+  expect(snippets.length).toBe(2);
+
+  // ── Step 7: GET /api/queue — should have user-declared entry from bookmark ──
+  const qRes = await fetch(`${baseUrl}/api/queue`);
+  expect(qRes.status).toBe(200);
+  const queueData = (await qRes.json()) as {
+   pending: Array<{ question: string; source: string }>;
+   open: Array<{ question: string; source: string; horizon: string }>;
+  };
+  const userDeclared = queueData.pending.find((e) => e.source === 'user-declared');
+  expect(userDeclared).toBeDefined();
+  expect(userDeclared!.question).toBe('I want to explore how to align my daily work with my values.');
  });
 });
