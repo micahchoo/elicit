@@ -268,6 +268,7 @@ describe('the shapes carry the invariants', () => {
     channel: 'referent',
     status: 'dissolved',
     outcome: 'remeasure-expired',
+    attempts: 1,
     model: 'qwen3.6:35b',
     modelAt: '2026-08-02T00:00:00.000Z',
     created: '2026-08-02T00:00:00.000Z',

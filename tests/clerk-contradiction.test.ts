@@ -122,6 +122,7 @@ function candidateRecord(over: Partial<ClashCandidate> = {}): ClashCandidate {
     pair: ['claimA', 'claimB'],
     channel: 'lexical',
     status: 'pending-remeasure',
+    attempts: 1,
     remeasureAskedAt: ASKED_AT,
     model: 'test-model',
     modelAt: '2026-08-02T09:00:00.000Z',

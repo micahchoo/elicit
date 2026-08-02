@@ -73,6 +73,7 @@ function makeCandidate(overrides: Partial<ClashCandidate> = {}): ClashCandidate 
     pair: ['01KCLAIMAAAAAAAAAAAAAAAAAA', '01KCLAIMBBBBBBBBBBBBBBBBBB'],
     channel: 'lexical',
     status: 'pending-remeasure',
+    attempts: 1,
     model: 'qwen3.6:35b',
     modelAt: '2026-08-02T10:00:00.000Z',
     created: '2026-08-02T10:00:00.000Z',

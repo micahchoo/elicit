@@ -203,22 +203,38 @@ export type ClashChannelName = 'lexical' | 'referent' | 'embedding';
  * Why a candidate stopped being a suspicion. A closed union because it is the
  * anti-repetition reason of record (Q-30 stage 4).
  *
- * `remeasure-expired` retires a pair whose question was never asked; the other
- * three retire a pair whose question was.
+ * `remeasure-expired` is the ONE outcome that does not retire the pair (Q-53):
+ * expiry is a question that fell off the queue, not an answer, and retiring on
+ * it makes a real contradiction permanently invisible because the person was
+ * busy that week. Silence never stands in for a verdict. The pair earns exactly
+ * one re-proposal — see `attempts` — and retires on the second expiry. Every
+ * other outcome retires the pair at once.
+ *
+ * `range-discriminated` (Q-54) is the case the pipeline used to throw away.
+ * When a re-measure comes back "at work I do X, with my kids I do Y", that is
+ * the highest-value sentence the pipeline will ever produce, and it used to
+ * land in `dissolved-on-answer` and get archived. Context-dependence is a RANGE
+ * refinement, not a third Contradiction type: Q-21 made Range mandatory so the
+ * boundary is expressible, and the consequence is one SUPERSEDE per pole with a
+ * narrowed Range and reason `range-discriminated:<candidateId>`.
  */
 export type ClashOutcome =
   | 'not-opposed'
   | 'remeasure-expired'
   | 'unverified-confirmation'
-  | 'dissolved-on-answer';
+  | 'dissolved-on-answer'
+  | 'range-discriminated';
 
 /**
  * A suspicion, Clerk-internal and never user-facing (Q-30 stage 1).
  *
- * The dedupe key is the sorted claim-id pair, and the pair is retired at EVERY
+ * The dedupe key is the sorted claim-id pair, and the pair is retired at every
  * status — a pair with a live `pending-remeasure` record must never be
  * re-proposed, or the same two claims collect a fresh record and a fresh
  * question on every docket run.
+ *
+ * ONE EXCEPTION (Q-53): a `dissolved` candidate whose `outcome` is
+ * `remeasure-expired` and whose `attempts` is 1 MAY be re-proposed.
  */
 export type ClashCandidate = {
   id: string;
@@ -228,11 +244,21 @@ export type ClashCandidate = {
   outcome?: ClashOutcome;
   remeasureQueueId?: string;
   /**
-   * When the re-measure question was minted. The left edge of stage 3's window:
-   * confirming evidence must come from a reading later than this, or a model
-   * can "confirm" a contradiction by quoting the snippet that created it.
+   * When the re-measure question was minted. A cheap pre-filter on stage 3's
+   * window, and NOT the window itself: under Q-53 the confirming reading's
+   * `Provenance.session` must differ from the session of BOTH claims in the
+   * pair, because a re-measure answered inside the frame that produced the
+   * claim measures the interview rather than the belief. Lability lives in a
+   * continuous conversation, which a session boundary ends and elapsed time
+   * does not track.
    */
   remeasureAskedAt?: string;
+  /**
+   * How many re-measures this pair has been given. 1 at creation. Incremented
+   * only on re-proposal after a `remeasure-expired` dissolution, and capped at
+   * 2 — absence of evidence gets one more chance, then stops (Q-53).
+   */
+  attempts: number;
   model: string;
   modelAt: string;
   created: string;

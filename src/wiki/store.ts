@@ -420,6 +420,10 @@ class ClaimStoreImpl implements ClaimStore {
         ...(str(d.outcome) ? { outcome: d.outcome as ClashOutcome } : {}),
         ...(str(d.remeasureQueueId) ? { remeasureQueueId: d.remeasureQueueId as string } : {}),
         ...(str(d.remeasureAskedAt) ? { remeasureAskedAt: d.remeasureAskedAt as string } : {}),
+        // Defaulted rather than required, unlike every other scalar here: a
+        // candidate file written before Q-53 has had exactly one re-measure,
+        // so 1 is what an absent key already means. Nothing is fabricated.
+        attempts: typeof d.attempts === 'number' && d.attempts > 0 ? d.attempts : 1,
         model,
         modelAt,
         created,
