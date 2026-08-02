@@ -174,13 +174,37 @@ no way to measure how good the prompts are.
 harvest → close, with composed openers, resonance/juxtaposition (lexical
 only), durable queue, Cover memory, activity log, voice input, in-app auth,
 unprompted entry, defer, expeditions, protocol registry, waiting states,
-facet-intent filtering (shadow-mode). 554 tests, tsc clean.
+facet-intent filtering (shadow-mode). 610 tests, tsc clean.
 
 Landed 2026-08-02 from the persona eval, all four accepted against the real
 model via `scripts/accept-044-047.ts`, not only against tests: harvest
 admissibility (044), the Target filter with its minting path wired (045), the
 authorship honesty pass (046), and the docket moved off the response path
 (047 — measured 1ms response against a 127s docket run).
+
+**IN FLIGHT as of 2026-08-02 ~01:45** — the Clerk campaign is running, and
+this is the part a fresh session most needs:
+
+- **Wave 0 is committed** (`0ff5eeb`). T1 landed every type the slice consumes
+  plus `Provenance.channel`; T2 landed `src/wiki/contract.ts` with the
+  `ClaimStore`/`Registry` interfaces, `shadowCollector`, `capPrompt`,
+  `fitPayload`; T5 landed `src/wiki/thresholds.ts` — ten thresholds, six live
+  and four shadow, each with its graduation condition.
+- **Wave 1 is dispatched, six Claude subagents, uncommitted**: T3 store, T4
+  status, T6 mint, T7 contradiction, T8 lint, T17 answered-turn (= ticket 041).
+  Each was told to verify the plan against the tree and report disagreements.
+  Verify each report and commit before dispatching Wave 2 (T9, T10, T11).
+- **The ingest dry run is running** — `scripts/ingest-posts.ts --dry`, writing
+  `docs/ingest-review-2026-08-02.md`. It prints one line per post and the
+  first post is 33 turns, so long silences are normal. `--apply` is
+  deliberately unimplemented.
+
+**Two corrections tonight that a later wave must not undo.** The plan told T1
+to stamp readings with `ELICIT_LLM_MODEL ?? 'bonsai-27b'`; after Q-48 that is
+the ELICITOR, and readings are clerk artifacts — following the plan literally
+would have shipped a false record of who wrote each artifact. And
+`poolCandidates` returned bare claim pairs with no channel tag while T12 must
+persist one, so T12 would have invented a provenance (`d50a7e9`).
 
 **Designed, not built** (slice 3 — the Clerk): the Wiki — Claims with
 mandatory Range and Status, the six-op write contract (Q-29), the
@@ -216,7 +240,9 @@ settle before dispatching the Clerk plan.
 ## Where the truth lives
 
 - `CONTEXT.md` — the domain language (36 terms, every one decided).
-- `docs/decisions/elicit.md` — Q-1..Q-49, the constraint register.
+- `docs/decisions/elicit.md` — Q-1..Q-51, the constraint register.
+  Q-50: cite independence is CROSS-SITTING. Q-51: material whose authorship
+  cannot be separated is not admissible corpus — excluded whole, never sampled.
 - `docs/eval-2026-08-02-claude-adversarial.md` — a peer Claude session's
   red-team. Found the canon-string drift, silent harvest failure, validator
   gaps, resonance overclaim. Its "learnings" section is the most useful page.
@@ -228,8 +254,12 @@ settle before dispatching the Clerk plan.
 
 - **Model**: `qwen3.6:35b` on Ollama, `http://192.168.0.229:11434/v1`.
   Embeddings: `qwen3-embedding` (4096-dim) or `nomic-embed-text` (768-dim)
-  on the same host. Never a hosted API (ADR-0001). Two-model split (Q-48):
-  elicitor uses fast; clerk uses careful. Both local.
+  on the same host. Never a hosted API (ADR-0001). **The Q-48 role split is
+  BUILT** (043, `2cf2085`): elicitor = `bonsai-27b` at `:8088`
+  (`ELICIT_LLM_*`), clerk = `qwen3.6:35b` at `:11434` (`ELICIT_CLERK_*`).
+  Measured: elicitor 619ms warm, clerk ~40s per harvest chunk. Both local.
+  A dead endpoint names which ROLE failed and never falls back silently — a
+  silent swap corrupts the Q-34 stamps, which is worse than an error.
 - **Run**: `npm start` (local model, builds UI) · `npm run dev` (fake LLM,
   watch) · `npm test`. Port 4517. Host-bound: `ELICIT_HOST=0.0.0.0`.
 - **LLM seam**: `@mariozechner/pi-ai`. Every call carries a user-role
