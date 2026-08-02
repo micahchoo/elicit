@@ -51,9 +51,19 @@ patched. Approved cuts become dated, immutable snippets on disk, each with an
 agent-written reading (what kind of person-knowledge it evidences) that lives
 in the wiki layer, never inside your files.
 
-Sessions build on each other: past snippets return as openers, and when what
-you say today clashes with what you wrote in March, both quotes come back
-side by side as a question.
+Sessions build on each other: past snippets return as openers, and when
+today's words repeat a phrase from something you wrote in March, both quotes
+come back side by side as a question. What matches is the phrasing, not the
+meaning. Resonance is a trigram index: a hit needs a verbatim run of three or
+more words shared between the new text and the old snippet. So it catches
+recurrence — the sentence you keep circling back to — and it misses the
+belief you have restated in fresh words. If today's answer contradicts an old
+snippet without reusing any of its language, nothing comes back. The channel
+that would catch that is a local embedding index, staged to land with the
+Clerk slice ([Q-17](docs/decisions/elicit.md)); until it does,
+[`tests/resonance-paraphrase.test.ts`](tests/resonance-paraphrase.test.ts)
+holds the paraphrase pairs it must start catching and records how many of
+them resonance finds today, which is none.
 
 You can also dictate: press the mic, speak, and the words land as editable
 text. Elicit runs [Parakeet TDT](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8)
@@ -71,7 +81,7 @@ A sitting, in three screens:
 
 ![The exchange screen: a question, a dated quote from a past session beneath it, and a half-written answer](docs/guide/exchange.png)
 
-*One question at a time. When today's words touch something you wrote in an earlier sitting, that older quote comes back under the question, dated.*
+*One question at a time. When today's words repeat a phrase from an earlier sitting, that older quote comes back under the question, dated.*
 
 ![The harvest screen: a proposed cut with its facet, stance, and reading, above approve, trim, discard, and restate](docs/guide/harvest.png)
 
@@ -87,8 +97,10 @@ questions are scripted; everything else is the real interface.
 Early and moving. The interview loop (slice 1) works end to end against a
 local model. Slice 2 — resonance with your past snippets, a durable question
 queue, a background clerk, domain interviews, the activity log — is in
-progress. The design is unusually well documented for the size of the code;
-see [Design docs](#design-docs).
+progress. Resonance is lexical only so far, which is the deliberate first
+half of Q-17; the embedding channel and the contradiction pipeline it feeds
+(Q-30) are not built. The design is unusually well documented for the size of
+the code; see [Design docs](#design-docs).
 
 ## Run it
 
