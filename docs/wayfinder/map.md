@@ -33,6 +33,21 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
+  intent on questions, an episode deck (193) beside the construct deck, the
+  Q-13 balance filter in shadow mode, and a target default that stops
+  defaulting inward. The agent-built "you" filter that caused half the bias
+  is gone.
+- [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
+  intent on questions, an episode deck (193) beside the construct deck, the
+  Q-13 balance filter in shadow mode, and a target default that stops
+  defaulting inward. The agent-built "you" filter that caused half the bias
+  is gone.
+- [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
+  intent on questions, an episode deck (193) beside the construct deck, the
+  Q-13 balance filter in shadow mode, and a target default that stops
+  defaulting inward. The agent-built "you" filter that caused half the bias
+  is gone.
 - [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
   passive offers, distinct-principle arrangements, annotate-never-act gaps
   and pins, user prose in a Piece becomes a Snippet, Pieces are set down

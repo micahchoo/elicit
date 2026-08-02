@@ -1,9 +1,15 @@
 ---
 title: "Fix: the corpus is 90% construct — implement facet balance"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  a8450b7: targetFacet on queue drafts/entries and deck entries; scripts/curate-deck.ts re-curates by what a question ELICITS instead of by the word "you" (the agent-introduced bias) — 193 episode-intent + 178 construct-intent entries, both tagged; facet-balance blueprint filter applied BEFORE top-k random per Q-13, running SHADOW-first per Q-35 (ELICIT_FACET_BALANCE=live to graduate); target default is now corpus-aware (three consecutive self sittings flips the suggestion to domain). 460 tests green.
+resolution: >
+  a8450b7: targetFacet on queue drafts/entries and deck entries; scripts/curate-deck.ts re-curates by what a question ELICITS instead of by the word "you" (the agent-introduced bias) — 193 episode-intent + 178 construct-intent entries, both tagged; facet-balance blueprint filter applied BEFORE top-k random per Q-13, running SHADOW-first per Q-35 (ELICIT_FACET_BALANCE=live to graduate); target default is now corpus-aware (three consecutive self sittings flips the suggestion to domain). 460 tests green.
+resolution: >
+  a8450b7: targetFacet on queue drafts/entries and deck entries; scripts/curate-deck.ts re-curates by what a question ELICITS instead of by the word "you" (the agent-introduced bias) — 193 episode-intent + 178 construct-intent entries, both tagged; facet-balance blueprint filter applied BEFORE top-k random per Q-13, running SHADOW-first per Q-35 (ELICIT_FACET_BALANCE=live to graduate); target default is now corpus-aware (three consecutive self sittings flips the suggestion to domain). 460 tests green.
 ---
 
 ## Question
