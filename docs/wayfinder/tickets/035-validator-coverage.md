@@ -1,9 +1,15 @@
 ---
 title: "Fix: validators — interrogative check, guard scope, person agreement, standalone gate"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  e653112: new src/elicitor/guards.ts choke point — EVERY question userTurn returns now passes the parrot / conversation-referential / near-duplicate / person-agreement guards regardless of branch (juxtaposition and red-light follow-ups previously bypassed all of them; ~412 lines of duplicated per-branch guard code deleted). isInterrogative added to every compose path so a raw snippet echo can no longer be queued as an "opener". Verified by orchestrator against bonsai-27b, 4-turn sitting: all four questions end in ?, quotes are verbatim and correctly wrapped, no first-person leak outside quotes, no repeats, four distinct frames. 376 tests green; canon.test.ts survived the protocol.ts refactor (the guard did its job).
+resolution: >
+  e653112: new src/elicitor/guards.ts choke point — EVERY question userTurn returns now passes the parrot / conversation-referential / near-duplicate / person-agreement guards regardless of branch (juxtaposition and red-light follow-ups previously bypassed all of them; ~412 lines of duplicated per-branch guard code deleted). isInterrogative added to every compose path so a raw snippet echo can no longer be queued as an "opener". Verified by orchestrator against bonsai-27b, 4-turn sitting: all four questions end in ?, quotes are verbatim and correctly wrapped, no first-person leak outside quotes, no repeats, four distinct frames. 376 tests green; canon.test.ts survived the protocol.ts refactor (the guard did its job).
+resolution: >
+  e653112: new src/elicitor/guards.ts choke point — EVERY question userTurn returns now passes the parrot / conversation-referential / near-duplicate / person-agreement guards regardless of branch (juxtaposition and red-light follow-ups previously bypassed all of them; ~412 lines of duplicated per-branch guard code deleted). isInterrogative added to every compose path so a raw snippet echo can no longer be queued as an "opener". Verified by orchestrator against bonsai-27b, 4-turn sitting: all four questions end in ?, quotes are verbatim and correctly wrapped, no first-person leak outside quotes, no repeats, four distinct frames. 376 tests green; canon.test.ts survived the protocol.ts refactor (the guard did its job).
 ---
 
 ## Question
