@@ -1,4 +1,5 @@
 import type { Complete, Turn, CutProposal, Bud, HarvestDecision, Vault, Snippet, Provenance } from '../types.js';
+import { admissible } from './admissibility.js';
 
 // ---------------------------------------------------------------------------
 // System prompt for harvest cut proposal
@@ -160,6 +161,14 @@ export type HarvestDiagnostics = {
   cutsSeen: number;
   /** Cuts dropped because the text was not an exact substring of its turn. */
   fabricationDrops: number;
+  /**
+   * Cuts dropped by the admissibility gate — refusals, comments on the
+   * question, fragments carrying no proposition. Never silent: each one is
+   * warned with its reason (ticket 044).
+   */
+  inadmissibleDrops: number;
+  /** User turns never sent for extraction because the answer held no content. */
+  contentFreeSkips: number;
   /** Cuts whose model-claimed sourceTurn differed from the derived one. */
   sourceTurnCorrections: number;
   /** User turns sent — one complete() call each. */
@@ -199,10 +208,28 @@ export async function propose(
   let cutsSeen = 0;
   let fabricationDrops = 0;
   let sourceTurnCorrections = 0;
+  let inadmissibleDrops = 0;
+  let contentFreeSkips = 0;
+
+  // A content-free answer is never harvestable — it is the same "this holds
+  // nothing" the elicitor already acts on when it pivots. Skipping it here
+  // costs one model call less and, more to the point, removes the chance for
+  // the model to read a claim into "Yes." (ticket 044). The user-turn index
+  // still counts every user turn, so a skipped turn cannot shift the
+  // sourceTurn of the turns after it.
+  const harvestable = userTurns.filter(({ turn, userIdx: idx }) => {
+    const verdict = admissible(turn.text, { scope: 'turn' });
+    if (!verdict.ok) {
+      contentFreeSkips++;
+      console.warn(`Harvester: user turn ${idx} not harvested — ${verdict.reason}`);
+      return false;
+    }
+    return true;
+  });
 
   // Sequential: the local model is a single GPU, so parallel chunks buy
   // nothing and cost tail latency.
-  for (const { turn, userIdx: derivedTurn } of userTurns) {
+  for (const { turn, userIdx: derivedTurn } of harvestable) {
     let raw: string;
     try {
       raw = await complete(promptOverride ?? SYSTEM_PROMPT, [turn], { temperature: 0.1 });
@@ -246,6 +273,20 @@ export async function propose(
         continue;
       }
 
+      // Two Planes: a reaction to the interaction is lineage, not knowledge.
+      // This runs BEFORE the model's `standalone` boolean is consulted, because
+      // that boolean is the model grading its own homework. A refusal or a
+      // comment on the question is not a thin Snippet and not a Bud — it is not
+      // corpus at all. It stays in the transcript, where it belongs.
+      const verdict = admissible(cut.text);
+      if (!verdict.ok) {
+        inadmissibleDrops++;
+        console.warn(
+          `Harvester: dropped inadmissible cut (${verdict.reason}) from user turn ${derivedTurn}`
+        );
+        continue;
+      }
+
       // Non-standalone → Bud
       if (!cut.standalone) {
         buds.push({
@@ -285,16 +326,19 @@ export async function propose(
 
   const diagnostics: HarvestDiagnostics = {
     rawChars,
-    // With no user turns there is nothing to parse and nothing failed.
-    parsed: userTurns.length === 0 || chunksParsed > 0,
+    // With nothing sent there is nothing to parse and nothing failed.
+    parsed: harvestable.length === 0 || chunksParsed > 0,
     parseMode:
-      userTurns.length === 0 ? 'json'
+      harvestable.length === 0 ? 'json'
         : chunksParsed === 0 ? 'failed'
           : anyLineOriented ? 'line-oriented' : 'json',
     cutsSeen,
     fabricationDrops,
+    inadmissibleDrops,
+    contentFreeSkips,
     sourceTurnCorrections,
-    chunks: userTurns.length,
+    // Chunks are calls made, so a skipped turn reads as skipped, not failed.
+    chunks: harvestable.length,
     chunksParsed,
     chunkErrors,
   };

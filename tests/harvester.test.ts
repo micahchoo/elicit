@@ -359,6 +359,152 @@ describe('propose', () => {
     expect(proposals[0]!.text).toBe('autonomy above all else');
   });
 
+  // ── Admissibility (ticket 044) ──
+  // A reaction to the interaction is lineage, not knowledge about the person.
+  // Each rejection below is paired with material that must still get through.
+
+  it('never sends a content-free turn for extraction', async () => {
+    // Live from Micah's sitting: each of these became a proposal with a reading.
+    const withJunk: Turn[] = [
+      { role: 'agent', text: 'What do you value most in your work?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'I am not sure.', at: '2026-08-01T00:00:10.000Z' },
+      { role: 'agent', text: 'What did that cost you?', at: '2026-08-01T00:00:20.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'This question makes no sense.', at: '2026-08-01T00:00:30.000Z' },
+      { role: 'agent', text: 'Where did the stubbornness come from?', at: '2026-08-01T00:00:40.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'My father ran his shop the same way, and I learned the stubbornness from watching him.', at: '2026-08-01T00:00:50.000Z' },
+    ];
+
+    const seen: string[] = [];
+    const spy: Complete = async (_sys, turns) => {
+      seen.push(turns[turns.length - 1]!.text);
+      return JSON.stringify({ cuts: [] });
+    };
+
+    const { diagnostics } = await propose('sess-1', withJunk, spy);
+
+    expect(seen).toEqual([
+      'My father ran his shop the same way, and I learned the stubbornness from watching him.',
+    ]);
+    expect(diagnostics.contentFreeSkips).toBe(2);
+    expect(diagnostics.chunks).toBe(1);
+    expect(diagnostics.parsed).toBe(true);
+  });
+
+  it('a skipped turn does not shift the sourceTurn of later turns', async () => {
+    const withJunkFirst: Turn[] = [
+      { role: 'agent', text: 'Ready?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'Yes.', at: '2026-08-01T00:00:10.000Z' },
+      { role: 'agent', text: 'What do you value most in your work?', at: '2026-08-01T00:00:20.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'I value autonomy above all else. Being able to choose my own direction keeps me engaged.', at: '2026-08-01T00:00:30.000Z' },
+    ];
+
+    const json = JSON.stringify({
+      cuts: [{ text: 'I value autonomy above all else', sourceTurn: 0, facet: 'value', stance: 'avowal', reading: 'User names autonomy as their first value', standalone: true }],
+    });
+
+    const { proposals, diagnostics } = await propose('sess-1', withJunkFirst, fakeComplete(json));
+
+    expect(proposals).toHaveLength(1);
+    // Second user turn — index 1 in user-turn space, not 0.
+    expect(proposals[0]!.sourceTurn).toBe(1);
+    expect(proposals[0]!.question).toBe('What do you value most in your work?');
+    expect(diagnostics.contentFreeSkips).toBe(1);
+  });
+
+  it('drops a meta-conversational cut even when the model calls it standalone', async () => {
+    // The mixed turn is harvestable: the complaint must die as a cut while the
+    // memory beside it survives.
+    const mixed: Turn[] = [
+      { role: 'agent', text: 'What did your mother ask of you?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      {
+        role: 'user',
+        text: 'This question makes no sense to me, my father never asked me anything like it.',
+        at: '2026-08-01T00:00:10.000Z',
+      },
+    ];
+
+    const json = JSON.stringify({
+      cuts: [
+        { text: 'This question makes no sense to me', sourceTurn: 0, facet: 'fact', stance: 'pole-preference', reading: 'The user judges the question unintelligible', standalone: true },
+        { text: 'my father never asked me anything like it', sourceTurn: 0, facet: 'general-event', stance: 'report-of-fact', reading: 'The user reports what their father did not ask', standalone: true },
+      ],
+    });
+
+    const { proposals, buds, diagnostics } = await propose('sess-1', mixed, fakeComplete(json));
+
+    expect(proposals.map((p) => p.text)).toEqual(['my father never asked me anything like it']);
+    // Not a Bud either — a comment on the question is not corpus at all.
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.inadmissibleDrops).toBe(1);
+    expect(diagnostics.cutsSeen).toBe(2);
+  });
+
+  it('drops a propositionless cut and keeps the proposition beside it', async () => {
+    const turn: Turn[] = [
+      { role: 'agent', text: 'What drives you?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      {
+        role: 'user',
+        text: 'I am not sure. I am not sure whether the thing I call discipline is actually fear.',
+        at: '2026-08-01T00:00:10.000Z',
+      },
+    ];
+
+    const json = JSON.stringify({
+      cuts: [
+        { text: 'I am not sure', sourceTurn: 0, facet: 'fact', stance: 'uncertainty-marked', reading: 'The user expresses uncertainty', standalone: true },
+        { text: 'I am not sure whether the thing I call discipline is actually fear', sourceTurn: 0, facet: 'construct', stance: 'uncertainty-marked', reading: 'The user questions whether their discipline is fear', standalone: true },
+      ],
+    });
+
+    const { proposals, buds, diagnostics } = await propose('sess-1', turn, fakeComplete(json));
+
+    expect(proposals.map((p) => p.text)).toEqual([
+      'I am not sure whether the thing I call discipline is actually fear',
+    ]);
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.inadmissibleDrops).toBe(1);
+  });
+
+  it('an inadmissible cut is never rescued onto the Bud path', async () => {
+    const turn: Turn[] = [
+      { role: 'agent', text: 'What did that cost you?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      {
+        role: 'user',
+        text: 'I would rather not answer that one, it is still too close to talk about.',
+        at: '2026-08-01T00:00:10.000Z',
+      },
+    ];
+
+    const json = JSON.stringify({
+      cuts: [
+        { text: 'I would rather not answer that one', sourceTurn: 0, facet: 'commitment', stance: 'avowal', reading: 'The user declines to answer', standalone: false },
+      ],
+    });
+
+    const { proposals, buds, diagnostics } = await propose('sess-1', turn, fakeComplete(json));
+
+    expect(proposals).toHaveLength(0);
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.inadmissibleDrops).toBe(1);
+  });
+
+  it('still buds a real but under-specified fragment', async () => {
+    // The Bud path is for material genuinely about the person that cannot yet
+    // stand alone — admissibility must not close it.
+    const json = JSON.stringify({
+      cuts: [
+        { text: 'Being able to choose my own direction', sourceTurn: 0, facet: 'value', stance: 'avowal', reading: 'Partial fragment', standalone: false },
+      ],
+    });
+
+    const { proposals, buds, diagnostics } = await propose('sess-1', transcript, fakeComplete(json));
+
+    expect(proposals).toHaveLength(0);
+    expect(buds).toHaveLength(1);
+    expect(buds[0]!.fragment).toBe('Being able to choose my own direction');
+    expect(diagnostics.inadmissibleDrops).toBe(0);
+  });
+
   it('proposal carries questionSource from eliciting probe', async () => {
     const json = JSON.stringify({
       cuts: [
