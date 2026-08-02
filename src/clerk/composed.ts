@@ -8,6 +8,7 @@ import type {
  QueueDraft,
  QueueEntry,
  QuestionForm,
+ Target,
 } from '../types.js';
 import {
  isInterrogative,
@@ -198,6 +199,18 @@ function userTurn(text: string): Turn[] {
  return [{ role: 'user', text, at: '' }];
 }
 
+/**
+ * The sitting a snippet came from, as far as the caller can establish it.
+ *
+ * A composed question inherits the Target of the sitting whose words it
+ * quotes: an opener minted from a domain sitting's snippet is a domain
+ * question, whatever it happens to be about (045). The caller passes what it
+ * knows and omits what it does not — an unknown Target is left absent here,
+ * never guessed, because absent serves either sitting and a wrong guess
+ * silences the entry for half of them.
+ */
+export type SittingContext = { target?: Target; topic?: string };
+
 /** Build a QueueDraft from a verified snippet quote. */
 function buildOpenerDraft(
  snippet: Snippet,
@@ -205,6 +218,7 @@ function buildOpenerDraft(
  quotedFragment: string,
  source: QueueDraft['source'],
  horizon: QueueDraft['horizon'],
+ sitting?: SittingContext,
 ): QueueDraft {
  return {
   source,
@@ -215,6 +229,8 @@ function buildOpenerDraft(
   quotedFragment,
   sharpness: 'weak',
   horizon,
+  ...(sitting?.target ? { target: sitting.target } : {}),
+  ...(sitting?.topic ? { topic: sitting.topic } : {}),
  };
 }
 
@@ -411,6 +427,7 @@ Return only the question text. No markdown, no commentary.`;
 export async function composeOpener(
  snippet: Snippet,
  complete: Complete,
+ sitting?: SittingContext,
 ): Promise<QueueDraft | null> {
  const prompt = `You are a clerk for Elicit — a quiet, reflective interview tool. Given a snippet the user wrote in a prior session, compose ONE question that returns them to that thought. Quote the snippet verbatim — your question must set off an exact phrase from the snippet inside quotation marks.
 
@@ -428,7 +445,7 @@ Return only the question text. No markdown, no commentary.`;
 
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session');
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
  }
 
  // One retry
@@ -439,7 +456,7 @@ Return only the question text. No markdown, no commentary.`;
  check = checkQuotesSource(question, snippet.prose);
 
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session');
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
  }
 
  console.warn(
@@ -455,6 +472,7 @@ Return only the question text. No markdown, no commentary.`;
 export async function composeStillTrue(
  snippet: Snippet,
  complete: Complete,
+ sitting?: SittingContext,
 ): Promise<QueueDraft | null> {
  const prompt = `You are a clerk for Elicit. Given an old snippet the user wrote, compose ONE question asking whether it still holds true. Quote the snippet verbatim — your question must set off an exact phrase from it inside quotation marks. DO NOT repeat or echo the original question that elicited the snippet.
 
@@ -471,7 +489,7 @@ Return only the question text. No markdown, no commentary.`;
  // Attempt 1
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
- const attempt1 = tryBuildStillTrue(snippet, question1);
+ const attempt1 = tryBuildStillTrue(snippet, question1, sitting);
  if (attempt1.ok) return attempt1.draft;
 
  // One retry — enforce every constraint, corrected for what failed
@@ -479,7 +497,7 @@ Return only the question text. No markdown, no commentary.`;
  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
- const attempt2 = tryBuildStillTrue(snippet, question2);
+ const attempt2 = tryBuildStillTrue(snippet, question2, sitting);
  if (attempt2.ok) return attempt2.draft;
 
  console.warn(
@@ -496,6 +514,7 @@ type StillTrueResult =
 function tryBuildStillTrue(
  snippet: Snippet,
  question: string,
+ sitting?: SittingContext,
 ): StillTrueResult {
  if (
   question.length === 0 ||
@@ -516,6 +535,7 @@ function tryBuildStillTrue(
    check.fragment,
    'still-true',
    'session',
+   sitting,
   ),
  };
 }
@@ -590,6 +610,7 @@ export function isExpeditionCandidate(
 export async function composeExpedition(
  snippet: Snippet,
  complete: Complete,
+ sitting?: SittingContext,
 ): Promise<QueueDraft | null> {
  const prompt = `You are a clerk for Elicit. Given a snippet the user wrote, compose a question that sends them out to investigate — read, research, observe — then return to reflect.
 
@@ -615,7 +636,7 @@ Return only the question text. No markdown, no commentary.`;
 
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days');
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
  // One retry
@@ -630,7 +651,7 @@ Return only the question text. No markdown, no commentary.`;
  check = checkQuotesSource(question, snippet.prose);
 
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days');
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
  console.warn(

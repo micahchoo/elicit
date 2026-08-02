@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import type { Turn, Vault, QueueStore, LexicalIndex } from '../src/types.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { Turn, Vault, QueueStore, QueueDraft, LexicalIndex } from '../src/types.js';
 import { makeScriptedComplete } from './fakes.js';
+import { createQueueStore } from '../src/queue/queue.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
 import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
 import { buildIndex, resonate } from '../src/index/lexical.js';
@@ -47,11 +51,11 @@ function makeFakeVault() {
 }
 
 /** Fake queue: draw returns null (bank fallback), add is a recording stub. */
-function makeFakeQueue(): QueueStore & { _adds: Array<{ question: string }> } {
- const adds: Array<{ question: string }> = [];
+function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
+ const adds: QueueDraft[] = [];
  return {
   add(draft) {
-   adds.push({ question: draft.question });
+   adds.push(draft);
    return {
     ...draft,
     id: 'fake-id',
@@ -353,6 +357,26 @@ describe('elicitor', () => {
   expect(result.kind).toBe('saturated');
   expect(q._adds).toHaveLength(1);
   expect(q._adds[0]!.question).toBe('I want to remember this.');
+ });
+
+ test('the bookmark entry carries the sitting Target and topic', async () => {
+  // Same drive to the bookmark as above; the point is what the entry records.
+  const vault = makeFakeVault();
+  const complete = makeScriptedComplete(
+   turnResponses(['P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']),
+  );
+  const q = makeFakeQueue();
+  const session = startSession(
+   { minutes: 5, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+   { complete, vault, queue: q, index: makeFakeIndex() },
+  );
+
+  for (let i = 0; i < 9; i++) await userTurn(session, `A${i + 1}`);
+  const result = await userTurn(session, 'Come back to the hydration question.');
+
+  expect(result.kind).toBe('saturated');
+  expect(q._adds[0]!.target).toBe('domain');
+  expect(q._adds[0]!.topic).toBe('sourdough bread baking');
  });
 
  test('session transcript carries mode metadata', () => {
@@ -806,5 +830,97 @@ describe('startSession invariants', () => {
 
   expect(session.turns[0]!.text.length).toBeGreaterThan(0);
   expect(session.turns[0]!.text).toBeTruthy();
+ });
+});
+
+/**
+ * Persona 3, eval 2026-08-02: a sitting declared `target: domain, topic:
+ * sourdough bread baking` and opened on a composed question minted from
+ * unrelated self material, because the queue draw outranks the topic opener
+ * and nothing in the draw looked at the Target (045). These run against the
+ * real QueueStore — a fake queue would only test the fake.
+ */
+describe('startSession honours the declared Target', () => {
+ /** Run `fn` with a real, empty queue over a throwaway vault root. */
+ function withQueue(fn: (queue: QueueStore) => void): void {
+  const root = mkdtempSync(join(tmpdir(), 'elicit-elicitor-target-'));
+  try {
+   fn(createQueueStore(root));
+  } finally {
+   rmSync(root, { recursive: true, force: true });
+  }
+ }
+
+ const selfEntry: QueueDraft = {
+  source: 'composed',
+  license: 'CC0',
+  question: 'You wrote: "a resonance I long lost." What returned it to you?',
+  questionForm: 'deliberative',
+  sharpness: 'weak',
+  horizon: 'session',
+  target: 'self',
+ };
+
+ test('a domain sitting opens on its topic rather than self material', () => {
+  withQueue((queue) => {
+   queue.add(selfEntry);
+
+   const session = startSession(
+    { minutes: 30, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+    {
+     complete: makeScriptedComplete([]),
+     vault: makeFakeVault(),
+     queue,
+     index: makeFakeIndex(),
+    },
+   );
+
+   expect(session.turns[0]!.text).toContain('sourdough bread baking');
+   expect(session.turns[0]!.text).not.toBe(selfEntry.question);
+   // The self entry was passed over, not spent — a self sitting still gets it.
+   expect(queue.list({ status: 'pending' })).toHaveLength(1);
+  });
+ });
+
+ test('a domain sitting still opens on a domain queue entry', () => {
+  withQueue((queue) => {
+   queue.add(selfEntry);
+   const domain = queue.add({
+    ...selfEntry,
+    question: 'You wrote: "the starter smelled of acetone." What did you change?',
+    target: 'domain',
+   });
+
+   const session = startSession(
+    { minutes: 30, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+    {
+     complete: makeScriptedComplete([]),
+     vault: makeFakeVault(),
+     queue,
+     index: makeFakeIndex(),
+    },
+   );
+
+   expect(session.turns[0]!.text).toBe(domain.question);
+  });
+ });
+
+ test('a self sitting opens on self material and never on domain material', () => {
+  withQueue((queue) => {
+   queue.add({ ...selfEntry, question: 'Domain question?', target: 'domain' });
+   queue.add(selfEntry);
+
+   const session = startSession(
+    { minutes: 30, energy: 'medium', target: 'self' },
+    {
+     complete: makeScriptedComplete([]),
+     vault: makeFakeVault(),
+     queue,
+     index: makeFakeIndex(),
+    },
+   );
+
+   expect(session.turns[0]!.text).toBe(selfEntry.question);
+  });
  });
 });

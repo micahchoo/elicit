@@ -73,6 +73,10 @@ class QueueStoreImpl implements QueueStore {
       ...(data.quotedFragment
         ? { quotedFragment: data.quotedFragment as NonNullable<QueueEntry['quotedFragment']> }
         : {}),
+      // Absent stays absent — an entry written before `target` existed makes
+      // no target claim, and the draw treats that as eligible for either.
+      ...(data.target ? { target: data.target as NonNullable<QueueEntry['target']> } : {}),
+      ...(data.topic ? { topic: data.topic as NonNullable<QueueEntry['topic']> } : {}),
       ...(data.targetFacet
         ? { targetFacet: data.targetFacet as NonNullable<QueueEntry['targetFacet']> }
         : {}),
@@ -101,6 +105,8 @@ class QueueStoreImpl implements QueueStore {
     };
     if (entry.cites) fm.cites = entry.cites;
     if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;
+    if (entry.target) fm.target = entry.target;
+    if (entry.topic) fm.topic = entry.topic;
     if (entry.targetFacet) fm.targetFacet = entry.targetFacet;
     if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
     if (entry.direction) fm.direction = entry.direction;
@@ -175,9 +181,21 @@ class QueueStoreImpl implements QueueStore {
     // Step 4: horizon 'days' never drawn into exchange
     candidates = candidates.filter((e) => e.horizon !== 'days');
 
+    // Step 5: the sitting's declared Target — a hard filter, not a preference
+    // (045). A domain sitting drew self material because nothing here looked
+    // at the Target at all; the cost was every declared domain sitting, since
+    // one composed self entry is enough to hijack it. An entry with no target
+    // claim serves either sitting; an entry with the other target is simply
+    // not in the pool, so the caller falls through to its own opener.
+    if (mode.target) {
+      candidates = candidates.filter(
+        (e) => e.target === undefined || e.target === mode.target,
+      );
+    }
+
     if (candidates.length === 0) return null;
 
-    // Step 5: sort — user-declared first, then recency (newest first)
+    // Step 6: sort — user-declared first, then recency (newest first)
     candidates.sort((a, b) => {
       const aUd = a.source === 'user-declared' ? 0 : 1;
       const bUd = b.source === 'user-declared' ? 0 : 1;
@@ -185,15 +203,16 @@ class QueueStoreImpl implements QueueStore {
       return b.created.localeCompare(a.created);
     });
 
-    // Step 6: facet balance — a hard filter on the pool, applied BEFORE the
-    // top-k pick so chance runs inside the constraint (Q-13), and running in
-    // shadow until its log earns it the right to act (Q-35).
+    // Step 7: facet balance — a second hard filter on the pool, applied BEFORE
+    // the top-k pick so chance runs inside the constraints (Q-13), and running
+    // in shadow until its log earns it the right to act (Q-35). It narrows
+    // what the Target filter already left; the two compose, in that order.
     const dist = readVaultFacetDistribution(this.#root);
     const wanted = underRepresented(dist);
     const balanced = applyFacetBalance(candidates, wanted);
     const live = facetBalanceIsLive(process.env);
 
-    // Step 7: top-k (k=3), uniform random pick — once for the open pool, once
+    // Step 8: top-k (k=3), uniform random pick — once for the open pool, once
     // for the balanced pool, so the shadow log can name the road not taken.
     const openPick = pickTopK(candidates);
     const balancedPick = balanced.applied ? pickTopK(balanced.kept) : null;
@@ -210,7 +229,7 @@ class QueueStoreImpl implements QueueStore {
       balancedPick,
     });
 
-    // Step 8: markAsked immediately
+    // Step 9: markAsked immediately
     this.markAsked(picked.id);
 
     return picked;

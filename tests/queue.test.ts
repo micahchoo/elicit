@@ -457,6 +457,165 @@ describe('QueueStore', () => {
     expect(reloaded.targetFacet).toBe('episode');
   });
 
+  // ── target: the sitting's declared Target is a hard filter (045) ──
+
+  describe('target filter', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    it('a domain sitting is never served self material', () => {
+      store.add(makeDraft({ question: 'self Q', target: 'self' }));
+
+      expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+    });
+
+    it('a self sitting is never served domain material', () => {
+      store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
+
+      expect(store.draw(makeMode({ target: 'self' }), 'opening')).toBeNull();
+    });
+
+    it('filters the other target out of the pool without consuming it', () => {
+      const domain = store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
+      store.add(makeDraft({ question: 'self Q', target: 'self' }));
+
+      const drawn = store.draw(makeMode({ target: 'domain' }), 'opening');
+      expect(drawn!.id).toBe(domain.id);
+
+      // The self entry was never a candidate, so it is still there to be asked
+      // in a self sitting — filtered, not spent.
+      expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+      const pending = store.list({ status: 'pending' });
+      expect(pending.map((e) => e.question)).toEqual(['self Q']);
+      expect(store.draw(makeMode({ target: 'self' }), 'opening')!.question).toBe('self Q');
+    });
+
+    it('an entry with no target is eligible for either sitting', () => {
+      const e = store.add(makeDraft({ question: 'untargeted' }));
+
+      expect(store.draw(makeMode({ target: 'domain' }), 'opening')!.id).toBe(e.id);
+      store.defer(e.id);
+      expect(store.draw(makeMode({ target: 'self' }), 'opening')!.id).toBe(e.id);
+    });
+
+    it('a mode declaring no target draws either kind', () => {
+      store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
+
+      expect(store.draw(makeMode(), 'opening')!.question).toBe('domain Q');
+    });
+
+    it('target and topic roundtrip through the store', () => {
+      store.add(makeDraft({ target: 'domain', topic: 'sourdough bread baking' }));
+
+      const reloaded = createQueueStore(root).list()[0]!;
+      expect(reloaded.target).toBe('domain');
+      expect(reloaded.topic).toBe('sourdough bread baking');
+    });
+
+    it('an entry written before target existed still draws', () => {
+      // Backward compatibility, no migration: the old file has no target key,
+      // and absent must read as "eligible", not as "self".
+      const queueDir = join(root, 'queue');
+      mkdirSync(queueDir, { recursive: true });
+      const id = ulid();
+      writeFileSync(
+        join(queueDir, `${id}.md`),
+        matter.stringify('', {
+          id,
+          status: 'pending',
+          source: 'composed',
+          license: 'test',
+          question: 'Older than the field',
+          questionForm: 'deliberative',
+          sharpness: 'weak',
+          horizon: 'now',
+          created: new Date().toISOString(),
+        }),
+        'utf-8',
+      );
+
+      const store2 = createQueueStore(root);
+      expect(store2.list()[0]!.target).toBeUndefined();
+      expect(store2.draw(makeMode({ target: 'domain' }), 'opening')!.id).toBe(id);
+    });
+
+    it('the other filters still apply inside the target pool', () => {
+      store.add(makeDraft({ question: 'sharp', target: 'domain', sharpness: 'sharp' }));
+      store.add(makeDraft({ question: 'days', target: 'domain', horizon: 'days' }));
+      store.add(makeDraft({
+        question: 'too long',
+        target: 'domain',
+        modeNeeds: { minMinutes: 60 },
+      }));
+
+      const mode = makeMode({ target: 'domain', minutes: 15 });
+      expect(store.draw(mode, 'opening')).toBeNull();
+
+      store.add(makeDraft({ question: 'eligible', target: 'domain' }));
+      expect(store.draw(mode, 'opening')!.question).toBe('eligible');
+    });
+
+    it('chance still runs inside the target pool — the pick is not argmax', () => {
+      vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+      store.add(makeDraft({ question: 'D1', target: 'domain' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+      store.add(makeDraft({ question: 'D2', target: 'domain' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+      store.add(makeDraft({ question: 'D3', target: 'domain' }));
+      store.add(makeDraft({ question: 'self Q', target: 'self' }));
+      vi.useRealTimers();
+
+      const mode = makeMode({ target: 'domain' });
+
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const first = store.draw(mode, 'opening')!;
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const last = store.draw(mode, 'opening')!;
+
+      // Both come from the three-entry domain pool, and a different roll
+      // reaches a different entry — the filter constrains, chance chooses.
+      expect(first.id).not.toBe(last.id);
+      expect([first.question, last.question].sort()).toEqual(['D1', 'D3']);
+    });
+
+    it('facet balance narrows what the target filter left, never widens it', () => {
+      vi.stubEnv('ELICIT_FACET_BALANCE', 'live');
+      const dir = join(root, 'wiki', 'readings');
+      mkdirSync(dir, { recursive: true });
+      for (let i = 0; i < 25; i++) {
+        writeFileSync(
+          join(dir, `r${i}.md`),
+          '---\nfacet: construct\nstance: avowal\ncites: []\n---\nA reading.\n',
+        );
+      }
+
+      // Oldest first: the constructs own the top-3 pool by recency, so only
+      // the facet filter can reach an episode.
+      vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+      const domainEpisode = store.add(
+        makeDraft({ question: 'DE', target: 'domain', targetFacet: 'episode' }),
+      );
+      vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+      const selfEpisode = store.add(
+        makeDraft({ question: 'SE', target: 'self', targetFacet: 'episode' }),
+      );
+      vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+      store.add(makeDraft({ question: 'C1', target: 'domain', targetFacet: 'construct' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
+      store.add(makeDraft({ question: 'C2', target: 'domain', targetFacet: 'construct' }));
+      vi.useRealTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const picked = store.draw(makeMode({ target: 'domain' }), 'opening')!;
+
+      expect(picked.id).toBe(domainEpisode.id);
+      expect(picked.id).not.toBe(selfEpisode.id);
+    });
+  });
+
   // ── facet balance: shadow first (Q-35), hard filter before the pick (Q-13) ──
 
   describe('facet balance', () => {

@@ -161,9 +161,26 @@ export type QueueEntry = {
   cites?: string[];
   quotedFragment?: string;
   /**
-   * The Facet this question asks for. Optional: an entry whose intent is
-   * unknown carries no facet claim rather than a guessed one, and the
-   * balance filter treats it as unknown, never as construct.
+   * The sitting Target this question belongs to — carried from the sitting
+   * whose material minted it, not from the question's wording. A domain
+   * sitting must never be handed self material (ticket 045).
+   *
+   * Optional, and absent is not 'self': an entry whose origin is unknown
+   * makes no target claim and stays eligible for either kind of sitting.
+   * Entries written before this field existed load exactly that way.
+   */
+  target?: Target;
+  /**
+   * The sitting topic, when the minting path knows it. Recorded as evidence
+   * and for legibility — the draw filters on `target`, never on this, because
+   * free-text topics do not compare.
+   */
+  topic?: string;
+  /**
+   * The Facet this question asks for — its INTENT, unrelated to `target`
+   * above. Optional: an entry whose intent is unknown carries no facet claim
+   * rather than a guessed one, and the balance filter treats it as unknown,
+   * never as construct.
    */
   targetFacet?: Facet;
   modeNeeds?: { minMinutes?: number; energy?: 'low' | 'medium' | 'high' };

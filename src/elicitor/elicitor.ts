@@ -223,7 +223,9 @@ export async function userTurn(
  s.deps.vault.appendTurn(s.id, userTurnRecord);
  s.turns.push(userTurnRecord);
 
- // Bookmark answer — close completes; the answer becomes a user-declared queue entry
+ // Bookmark answer — close completes; the answer becomes a user-declared queue entry.
+ // It carries this sitting's Target so a later sitting of the other kind cannot
+ // draw it (045); startSession always resolves mode.target, so it is present.
  if (s.phase === 'closing-bookmark') {
   s.deps.queue.add({
    source: 'user-declared',
@@ -232,6 +234,8 @@ export async function userTurn(
    questionForm: 'deliberative',
    sharpness: 'weak',
    horizon: 'now',
+   ...(s.mode.target ? { target: s.mode.target } : {}),
+   ...(s.mode.topic ? { topic: s.mode.topic } : {}),
   });
   return { kind: 'saturated' };
  }
