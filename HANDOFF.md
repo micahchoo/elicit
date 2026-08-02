@@ -246,4 +246,8 @@ settle before dispatching the Clerk plan.
   `tests/canon.test.ts` reads the spec files instead.
 - Never trust a model self-reported boolean as a gate (standalone, opposed,
   converged). Structural checks or nothing.
+- **A parameter added but never supplied reads as done and tests as done.**
+  Ticket 045 shipped `SittingContext` through three compose functions with no
+  caller passing one; the filter was live with nothing to filter. When a fix
+  adds an optional argument, acceptance is a CALLER passing it.
 - Q-35: every mechanism runs shadow-first; graduates individually on evidence.
