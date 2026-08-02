@@ -2,7 +2,7 @@
 title: "Build: ClashChannel returns rank, not a filtered set — and same-sitting pairs rank below (Q-65)"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp wave 4)
 blocked_by: []
 ---
 

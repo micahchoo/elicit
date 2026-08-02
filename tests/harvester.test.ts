@@ -275,7 +275,10 @@ describe('propose', () => {
     expect(proposals[0]!.text).toBe('I value autonomy above all else.');
   });
 
-  it('falls back to line-oriented parsing when JSON is invalid', async () => {
+  it('no longer rescues line-oriented output (ticket 078)', async () => {
+    // Generation-time grammar constraint makes malformed JSON unemittable, so
+    // the line-oriented fallback parser was deleted. A non-JSON payload now
+    // reads as a failed chunk: no proposals, no buds, parseMode 'failed'.
     const raw = [
       'TEXT: "I value autonomy above all else."',
       'SOURCE: 0',
@@ -292,17 +295,16 @@ describe('propose', () => {
       'STANDALONE: false',
     ].join('\n');
 
-    const { proposals, buds } = await propose(
+    const { proposals, buds, diagnostics } = await propose(
       'sess-1',
       transcript,
       fakeComplete(raw)
     );
 
-    expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
-    expect(buds).toHaveLength(1);
-    expect(buds[0]!.fragment).toBe('Being able to choose');
-    expect(buds[0]!.failures).toEqual(['standalone']);
+    expect(proposals).toHaveLength(0);
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.parsed).toBe(false);
+    expect(diagnostics.parseMode).toBe('failed');
   });
 
   it('passes low temperature (~0.1) to Complete', async () => {

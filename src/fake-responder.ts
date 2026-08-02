@@ -1,4 +1,14 @@
-import type { Complete } from './types.js';
+import type { Complete, Turn } from './types.js';
+
+/** One call the fake answered, exactly as it was sent — wiremock-style log. */
+export interface FakeCall {
+ system: string;
+ turns: Turn[];
+ opts?: { temperature?: number };
+}
+
+/** A fake Complete that also logs every call for tests to assert on. */
+export type RecordingFakeComplete = Complete & { calls: FakeCall[] };
 
 /**
  * Inexhaustible fake Complete for dev/demo mode.
@@ -11,8 +21,14 @@ import type { Complete } from './types.js';
  *
  * Never exhausts. `ScriptedComplete` in tests/fakes.ts remains the
  * deterministic, exhaustible variant for tests.
+ *
+ * The returned function also carries a `calls` log (ticket 078): tests can
+ * assert on what was SENT to the model — the prompt, the turns, the opts —
+ * not only on what came back. The 044-acceptance class of bug (a harvest
+ * running on the elicitor's model while the banner said the clerk's) is a
+ * what-was-sent bug; this makes it assertable.
  */
-export function makeFakeComplete(): Complete {
+export function makeFakeComplete(): RecordingFakeComplete {
  const probes = [
   'Tell me more about that.',
   'What else comes to mind?',
@@ -21,8 +37,10 @@ export function makeFakeComplete(): Complete {
   'What happens when you sit with that?',
  ];
  let probeIdx = 0;
+ const calls: FakeCall[] = [];
 
- return async (system: string, _turns, _opts?): Promise<string> => {
+ const respond = async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
+  calls.push({ system, turns, ...(opts !== undefined ? { opts } : {}) });
   const s = system.toLowerCase();
 
   if (s.includes('red light')) {
@@ -46,4 +64,6 @@ export function makeFakeComplete(): Complete {
   // Generic probe — cycle
   return probes[probeIdx++ % probes.length]!;
  };
+
+ return Object.assign(respond, { calls });
 }

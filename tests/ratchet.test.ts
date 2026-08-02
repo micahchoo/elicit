@@ -16,7 +16,9 @@ function harvestMetrics(opts: {
   fabricationRate: number;
   meanProposalCount: number;
   facetDistribution: Record<string, number>;
+  parseRate?: number;
 }): Metrics {
+  const parseRate = opts.parseRate ?? 1;
   return {
     mode: 'harvest',
     aggregate: {
@@ -24,6 +26,9 @@ function harvestMetrics(opts: {
       fabricationRate: opts.fabricationRate,
       facetDistribution: opts.facetDistribution,
       meanProposalCount: opts.meanProposalCount,
+      parseRate,
+      returnedParseRate: parseRate,
+      parseModes: parseRate < 1 ? { failed: 1 } : { json: 1 },
     },
     perExchange: [
       {
@@ -33,6 +38,12 @@ function harvestMetrics(opts: {
         fabricationRate: opts.fabricationRate,
         proposalCount: opts.meanProposalCount,
         facetDistribution: opts.facetDistribution,
+        parseMode: parseRate < 1 ? 'failed' : 'json',
+        chunks: 1,
+        chunksParsed: parseRate < 1 ? 0 : 1,
+        chunkErrors: 0,
+        parseRate,
+        returnedParseRate: parseRate,
       },
     ],
   };
@@ -208,6 +219,24 @@ describe('verdict', () => {
 
     const result = verdict(baseline, candidate);
     expect(result.verdict).toBe('keep');
+  });
+
+  it('reverts when constrained parse rate drops below baseline', () => {
+    const baseline = harvestMetrics({
+      fabricationRate: 0.1,
+      meanProposalCount: 4,
+      facetDistribution: { episode: 8, fact: 1, construct: 1 },
+    });
+    const candidate = harvestMetrics({
+      fabricationRate: 0.1,
+      meanProposalCount: 4,
+      facetDistribution: { episode: 8, fact: 1, construct: 1 },
+      parseRate: 0.5,
+    });
+
+    const result = verdict(baseline, candidate);
+    expect(result.verdict).toBe('revert');
+    expect(result.reason).toContain('parse-rate regression');
   });
 
   it('reverts on echo regression in probe mode', () => {

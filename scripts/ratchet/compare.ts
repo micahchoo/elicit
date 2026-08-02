@@ -21,6 +21,12 @@ export interface HarvestExchangeMetrics {
   fabricationRate: number;
   proposalCount: number;
   facetDistribution: Record<string, number>;
+  parseMode: string;
+  chunks: number;
+  chunksParsed: number;
+  chunkErrors: number;
+  parseRate: number;
+  returnedParseRate: number;
 }
 
 export interface HarvestAggregate {
@@ -28,6 +34,9 @@ export interface HarvestAggregate {
   fabricationRate: number;
   facetDistribution: Record<string, number>;
   meanProposalCount: number;
+  parseRate: number;
+  returnedParseRate: number;
+  parseModes: Record<string, number>;
 }
 
 export interface ProbeExchangeMetrics {
@@ -51,19 +60,19 @@ export interface ProbeAggregate {
 // verdict logic only reads mode/aggregate/perExchange.
 export type Metrics =
   | {
-      mode: 'harvest';
-      aggregate: HarvestAggregate;
-      perExchange: HarvestExchangeMetrics[];
-      prompt?: string;
-      erroredExchanges?: number;
-    }
+    mode: 'harvest';
+    aggregate: HarvestAggregate;
+    perExchange: HarvestExchangeMetrics[];
+    prompt?: string;
+    erroredExchanges?: number;
+  }
   | {
-      mode: 'probe';
-      aggregate: ProbeAggregate;
-      perExchange: ProbeExchangeMetrics[];
-      prompt?: string;
-      erroredExchanges?: number;
-    };
+    mode: 'probe';
+    aggregate: ProbeAggregate;
+    perExchange: ProbeExchangeMetrics[];
+    prompt?: string;
+    erroredExchanges?: number;
+  };
 
 export interface CompareVerdict {
   verdict: 'keep' | 'revert';
@@ -180,6 +189,23 @@ export function verdict(baseline: Metrics, candidate: Metrics): CompareVerdict {
     changes.meanProposalCount = {
       baseline: baseline.aggregate.meanProposalCount,
       candidate: candidate.aggregate.meanProposalCount,
+    };
+    // Ticket 078: constrained generation must hold parse rate at or above
+    // baseline. The parse-layer number is `returnedParseRate` — chunks that
+    // returned output and parsed. Chunks that never returned (timeout,
+    // connection) are the API-error path of ticket 034, which grammar
+    // constraint does not remove; counting them as parse failures would
+    // punish the constraint for latency.
+    if (candidate.aggregate.returnedParseRate < baseline.aggregate.returnedParseRate) {
+      regressions.push('parse-rate regression');
+    }
+    changes.returnedParseRate = {
+      baseline: baseline.aggregate.returnedParseRate,
+      candidate: candidate.aggregate.returnedParseRate,
+    };
+    changes.parseRate = {
+      baseline: baseline.aggregate.parseRate,
+      candidate: candidate.aggregate.parseRate,
     };
   }
 

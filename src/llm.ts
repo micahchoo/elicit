@@ -15,37 +15,65 @@ export type LlmRole = 'elicitor' | 'clerk';
 
 /** Where a role sends its calls, and which model answers them. */
 export type RoleConfig = {
-  role: LlmRole;
-  baseUrl: string;
-  modelId: string;
+ role: LlmRole;
+ baseUrl: string;
+ modelId: string;
+};
+
+/**
+ * Ollama structured outputs: the `response_format` body of a chat completion.
+ *
+ * The OpenAI-compatible layer maps this onto Ollama's native `format` grammar
+ * (verified against ollama/server/openai.go, v0.30.11 — the bare `format`
+ * field is dropped at /v1, `response_format` is honored). `strict: true`
+ * requires `additionalProperties: false` at every level of `schema` and turns
+ * a JSON-schema mismatch into a generation-time impossibility.
+ */
+export type ResponseFormat = {
+ type: 'json_schema';
+ json_schema: {
+  name: string;
+  strict?: boolean;
+  schema: Record<string, unknown>;
+ };
+};
+
+/** Construction options for a role's Complete. */
+export type MakeCompleteOptions = {
+ /**
+  * When set, every call carries this response_format — the model physically
+  * cannot emit a payload that violates the schema. Off by default so the
+  * fake responder path and every existing caller are untouched (ticket 078).
+  */
+ responseFormat?: ResponseFormat;
 };
 
 const DEFAULTS: Record<LlmRole, { baseUrl: string; modelId: string }> = {
-  // bonsai-27b on llama.cpp: 3-9s turns, and it collapses on long structured
-  // payloads — which the foreground never asks it for.
-  elicitor: { baseUrl: 'http://192.168.0.229:8088/v1', modelId: 'bonsai-27b' },
-  // qwen3.6:35b on Ollama: clean JSON first try, far slower per call.
-  clerk: { baseUrl: 'http://192.168.0.229:11434/v1', modelId: 'qwen3.6:35b' },
+ // bonsai-27b on llama.cpp: 3-9s turns, and it collapses on long structured
+ // payloads — which the foreground never asks it for.
+ elicitor: { baseUrl: 'http://192.168.0.229:8088/v1', modelId: 'bonsai-27b' },
+ // qwen3.6:35b on Ollama: clean JSON first try, far slower per call.
+ clerk: { baseUrl: 'http://192.168.0.229:11434/v1', modelId: 'qwen3.6:35b' },
 };
 
 const ENV_KEYS: Record<LlmRole, { baseUrl: string; modelId: string }> = {
-  elicitor: { baseUrl: 'ELICIT_LLM_BASE_URL', modelId: 'ELICIT_LLM_MODEL' },
-  clerk: { baseUrl: 'ELICIT_CLERK_BASE_URL', modelId: 'ELICIT_CLERK_MODEL' },
+ elicitor: { baseUrl: 'ELICIT_LLM_BASE_URL', modelId: 'ELICIT_LLM_MODEL' },
+ clerk: { baseUrl: 'ELICIT_CLERK_BASE_URL', modelId: 'ELICIT_CLERK_MODEL' },
 };
 
 /** What a role will actually call right now. Read from the environment on every call. */
 export function roleConfig(role: LlmRole): RoleConfig {
-  const keys = ENV_KEYS[role];
-  return {
-    role,
-    baseUrl: process.env[keys.baseUrl] ?? DEFAULTS[role].baseUrl,
-    modelId: process.env[keys.modelId] ?? DEFAULTS[role].modelId,
-  };
+ const keys = ENV_KEYS[role];
+ return {
+  role,
+  baseUrl: process.env[keys.baseUrl] ?? DEFAULTS[role].baseUrl,
+  modelId: process.env[keys.modelId] ?? DEFAULTS[role].modelId,
+ };
 }
 
 /** One line naming a role and the endpoint behind it, for banners and errors. */
 export function describeRole(cfg: RoleConfig): string {
-  return `${cfg.role}: ${cfg.modelId} @ ${cfg.baseUrl}`;
+ return `${cfg.role}: ${cfg.modelId} @ ${cfg.baseUrl}`;
 }
 
 /**
@@ -56,9 +84,9 @@ export function describeRole(cfg: RoleConfig): string {
  * worse than a missing artifact — Q-34 only holds if the record is literal.
  */
 function roleFailure(cfg: RoleConfig, detail: string): Error {
-  const message = `${cfg.role} model call failed — ${cfg.modelId} at ${cfg.baseUrl}: ${detail}`;
-  console.error(message);
-  return new Error(message);
+ const message = `${cfg.role} model call failed — ${cfg.modelId} at ${cfg.baseUrl}: ${detail}`;
+ console.error(message);
+ return new Error(message);
 }
 
 /**
@@ -66,80 +94,93 @@ function roleFailure(cfg: RoleConfig, detail: string): Error {
  * llama.cpp and Ollama both serve /v1/chat/completions — standard openai-completions.
  */
 function buildModel(cfg: RoleConfig): Model<'openai-completions'> {
-  return {
-    id: cfg.modelId,
-    name: `${cfg.modelId} (local, ${cfg.role} role)`,
-    api: 'openai-completions',
-    provider: 'llama.cpp',
-    baseUrl: cfg.baseUrl,
-    reasoning: false,
-    input: ['text'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 16384,
-    maxTokens: 32000,
-    compat: {
-      // llama.cpp does not accept the 'developer' role or reasoning_effort
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: false,
-    },
-  };
+ return {
+  id: cfg.modelId,
+  name: `${cfg.modelId} (local, ${cfg.role} role)`,
+  api: 'openai-completions',
+  provider: 'llama.cpp',
+  baseUrl: cfg.baseUrl,
+  reasoning: false,
+  input: ['text'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 16384,
+  maxTokens: 32000,
+  compat: {
+   // llama.cpp does not accept the 'developer' role or reasoning_effort
+   supportsDeveloperRole: false,
+   supportsReasoningEffort: false,
+  },
+ };
 }
 
 /**
  * Create a Complete for one role, backed by that role's local endpoint.
  * The environment is read here, so re-calling this picks up a reconfiguration.
  */
-export function makeComplete(role: LlmRole = 'elicitor'): Complete {
-  const cfg = roleConfig(role);
-  const model = buildModel(cfg);
+export function makeComplete(role: LlmRole = 'elicitor', options?: MakeCompleteOptions): Complete {
+ const cfg = roleConfig(role);
+ const model = buildModel(cfg);
+ // Captured once at construction so the closure reads a stable value.
+ const responseFormat = options?.responseFormat;
 
-  return async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
-    // pi-ai serializes assistant content by filtering CONTENT BLOCKS — a plain string
-    // throws inside its provider and surfaces as stopReason 'error' with empty text.
-    // User content may be a string; assistant content must be [{type:'text', text}].
-    const messages = turns.map((t) => {
-      const now = Date.now();
-      if (t.role === 'agent') {
-        return {
-          role: 'assistant' as const,
-          content: [{ type: 'text' as const, text: t.text }],
-          timestamp: now,
-        };
-      }
-      return { role: 'user' as const, content: t.text, timestamp: now };
-    });
-
-    const context = {
-      systemPrompt: system,
-      messages,
-    } as Context;
-
-    const options = {
-      apiKey: 'none', // local endpoint does not require auth
-      ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+ return async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
+  // pi-ai serializes assistant content by filtering CONTENT BLOCKS — a plain string
+  // throws inside its provider and surfaces as stopReason 'error' with empty text.
+  // User content may be a string; assistant content must be [{type:'text', text}].
+  const messages = turns.map((t) => {
+   const now = Date.now();
+   if (t.role === 'agent') {
+    return {
+     role: 'assistant' as const,
+     content: [{ type: 'text' as const, text: t.text }],
+     timestamp: now,
     };
+   }
+   return { role: 'user' as const, content: t.text, timestamp: now };
+  });
 
-    let response;
-    try {
-      response = await complete(model, context, options);
-    } catch (err) {
-      // A refused connection or a timeout reaches the caller naming its role.
-      throw roleFailure(cfg, err instanceof Error ? err.message : String(err));
+  const context = {
+   systemPrompt: system,
+   messages,
+  } as Context;
+
+  const options = {
+   apiKey: 'none', // local endpoint does not require auth
+   ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+   // pi-ai's onPayload hook runs after buildParams and before the fetch;
+   // mutating the body here carries response_format to the endpoint through
+   // the same completion path the plain calls use (ticket 078).
+   ...(responseFormat !== undefined
+    ? {
+     onPayload: (payload: unknown): unknown => {
+      (payload as Record<string, unknown>).response_format = responseFormat;
+      return payload;
+     },
     }
-
-    if (response.stopReason === 'error') {
-      const detail = (response as { errorMessage?: string }).errorMessage ?? 'no detail';
-      throw roleFailure(cfg, detail);
-    }
-
-    // Collect text content blocks.
-    const parts: string[] = [];
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        parts.push(block.text);
-      }
-    }
-
-    return parts.join('');
+    : {}),
   };
+
+  let response;
+  try {
+   response = await complete(model, context, options);
+  } catch (err) {
+   // A refused connection or a timeout reaches the caller naming its role.
+   throw roleFailure(cfg, err instanceof Error ? err.message : String(err));
+  }
+
+  if (response.stopReason === 'error') {
+   const detail = (response as { errorMessage?: string }).errorMessage ?? 'no detail';
+   throw roleFailure(cfg, detail);
+  }
+
+  // Collect text content blocks.
+  const parts: string[] = [];
+  for (const block of response.content) {
+   if (block.type === 'text') {
+    parts.push(block.text);
+   }
+  }
+
+  return parts.join('');
+ };
 }
