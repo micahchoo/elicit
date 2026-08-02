@@ -2,7 +2,7 @@
 title: "Build: model-resolved referent — an agent-plane annotation, evaluated before it ships"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp labelling)
 blocked_by: [073-antecedent-context]
 ---
 
@@ -19,12 +19,15 @@ It is never a gate: it cannot drop, route, or rewrite a snippet. Input is
 the snippet plus its `Provenance.context` and `Provenance.question` from 073
 — never the whole transcript.
 
-**Prerequisite, inside this ticket:** the hand-labelled dangler set 072
-called for. Label the vault's snippets: does it dangle, and what is the true
-referent. Ticket 037's discipline — measure before anything changes, numbers
-recorded in the code. The annotation ships only if its precision on that set
-earns it; a wrong resolved referent is worse than the dimmed context window
-alone, because it asserts where the window merely shows.
+**Prerequisite, inside this ticket:** the labelled dangler set 072 called
+for. RULED by Micah 2026-08-02: an agent may do the labelling (supersedes
+the hand-label default this ticket inherited from 037's precedent). Label
+the vault's snippets: does it dangle, and what is the true referent, read
+from the stored sitting transcript / source piece. Ticket 037's discipline
+stands — measure before anything changes, numbers recorded. The annotation
+ships only if its precision on that set earns it; a wrong resolved referent
+is worse than the dimmed context window alone, because it asserts where the
+window merely shows.
 
 **Acceptance.** The labelled set checked into `docs/`; measured precision
 recorded; annotations carry model stamps; a snippet with no dangling

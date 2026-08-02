@@ -365,6 +365,12 @@ unassigned, all blockers closed.
 
 - [Fix: WikiReport's measurements reach no surface](tickets/071-wikireport-reaches-no-surface.md) — surfaced WikiReport counters on a new `wiki-run` Activity Log line and added a `contradiction-opened` event kind so T16's RESULTS can be written from a real run.
 
+- [Grill: the embedding channel's cross-sitting ceiling](tickets/064-embedding-cross-sitting-ceiling.md) —
+  Q-65: same-sitting pairs rank BELOW cross-sitting in the candidate pool,
+  pooled never excluded — drift fills the judgment quota first, incoherence
+  stays findable. Rank-not-threshold taken up as ticket 083 (ClashChannel
+  returns an ordered quota-bounded list; three measurements force it).
+
 - [Grill: snippets that point outside themselves](tickets/072-dangling-referents.md) —
   all three layers ruled in: render the stored eliciting question, stamp a
   mechanical `Provenance.context` window (backfillable via 024's

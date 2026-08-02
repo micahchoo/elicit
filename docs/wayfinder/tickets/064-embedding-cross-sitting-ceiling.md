@@ -1,8 +1,16 @@
 ---
 title: "Grill: the embedding channel has a cross-sitting ceiling — it pools essays, not years"
 labels: [wayfinder:grilling]
-status: open
-assignee: 
+status: closed
+assignee: micah + claude (grilling)
+resolution: >
+  Grilled 2026-08-02, ruled as Q-65: same-sitting pairs RANK BELOW
+  cross-sitting pairs — pooled, never excluded, so drift fills the judgment
+  quota first and within-document incoherence (the capstone case) stays
+  findable when room remains. The rank-not-threshold contract change is
+  taken up, not deferred: ticket 083 makes ClashChannel return an ordered
+  quota-bounded list and carries the Q-65 ordering plus the per-pair
+  joins-two-sittings shadow field from 007's watch-item.
 blocked_by: []
 ---
 
