@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import matter from 'gray-matter';
 import { join, extname } from 'node:path';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { propose, decide } from './harvester/harvester.js';
@@ -29,6 +30,7 @@ import type {
   QueueStore,
   LexicalIndex,
   QueueEntry,
+  Turn,
 } from './types.js';
 export interface ServerDeps {
   vault: Vault;
@@ -123,6 +125,22 @@ function serverEmit(
 ): void {
   appendEvent(root, { at: new Date().toISOString(), actor, kind, detail, ...(refs ? { refs } : {}) });
 }
+// ── Defer: turning a declared need into Mode needs ──
+
+/** The sitting lengths the Mode screen offers. A deferred question asks for the next one up. */
+const MINUTE_LADDER = [10, 25, 45];
+
+/** The next sitting length above the current one — capped at the longest the Mode screen offers. */
+function moreMinutesThan(minutes: number): number {
+  return MINUTE_LADDER.find((m) => m > minutes) ?? MINUTE_LADDER[MINUTE_LADDER.length - 1]!;
+}
+
+/** The next energy level above the current one — capped at 'high'. */
+function moreEnergyThan(energy: Mode['energy']): Mode['energy'] {
+  if (energy === 'low') return 'medium';
+  return 'high';
+}
+
 /** Scan transcript files for session metadata (used by docket). */
 function listSessions(root: string): { session: string; started: string; turnCount: number; chars: number }[] {
   const dir = join(root, 'transcripts');
@@ -184,6 +202,8 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const app = new Hono();
   const sessions = new Map<string, SessionState>();
   const sessionProposals = new Map<string, CutProposal[]>();
+  /** Sessions whose material arrived unprompted — kept snippets carry that origin. */
+  const unpromptedSessions = new Set<string>();
   const { authStore } = deps;
 
   // ── Setup-required gate for non-API routes (must precede static serving) ──
@@ -361,6 +381,55 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     return c.json(result);
   });
 
+  // POST /api/session/:id/defer {need?} → question | exhausted
+  // The question returns to the Queue with the declared Mode needs. Distinct
+  // from skip in the log; like skip, it does not consume budget.
+  app.post('/api/session/:id/defer', async (c) => {
+    const sessionId = c.req.param('id');
+    const state = sessions.get(sessionId);
+    if (!state) return c.json({ error: 'session not found' }, 404);
+
+    let need: unknown;
+    try {
+      need = (await c.req.json<{ need?: unknown }>()).need;
+    } catch {
+      // No body — deferred with no declared need
+    }
+    if (need !== undefined && need !== 'time' && need !== 'energy') {
+      return c.json({ error: `invalid need "${String(need)}" — expected "time" or "energy"` }, 400);
+    }
+
+    const deferred = [...state.turns].reverse().find((t) => t.role === 'agent');
+    if (!deferred) return c.json({ error: 'no question to defer' }, 400);
+
+    const modeNeeds: QueueEntry['modeNeeds'] | undefined =
+      need === 'time'
+        ? { minMinutes: moreMinutesThan(state.mode.minutes) }
+        : need === 'energy'
+          ? { energy: moreEnergyThan(state.mode.energy) }
+          : undefined;
+
+    deps.queue.add({
+      source: 'user-declared',
+      license: 'user',
+      question: deferred.text,
+      questionForm: deferred.questionForm ?? 'deliberative',
+      sharpness: 'weak',
+      horizon: 'session',
+      ...(modeNeeds ? { modeNeeds } : {}),
+    });
+
+    serverEmit(
+      deps.vaultRoot,
+      'elicitor',
+      'question-deferred',
+      `session=${sessionId} needs=${need ?? 'none'}`,
+    );
+
+    const result = skipQuestion(state);
+    return c.json(result);
+  });
+
   // POST /api/session/:id/end → {proposals, buds}
   app.post('/api/session/:id/end', async (c) => {
     const sessionId = c.req.param('id');
@@ -406,7 +475,13 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       }
     }
 
-    const result = decide(sessionId, proposals, body.decisions, deps.vault);
+    const result = decide(
+      sessionId,
+      proposals,
+      body.decisions,
+      deps.vault,
+      unpromptedSessions.has(sessionId) ? 'unprompted' : 'harvest',
+    );
 
     serverEmit(deps.vaultRoot, 'harvester', 'session-harvested', `kept=${result.snippets.length} budded=${result.buds.length}`, result.snippets.map((s) => s.id));
 
@@ -439,6 +514,39 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     }
 
     return c.json({ snippets: result.snippets, buds: result.buds });
+  });
+
+  // POST /api/unprompted {text} → {sessionId, proposals, buds}
+  // The user wrote or pasted material with no question asked. It becomes a
+  // transcript of one user turn, then takes the ordinary propose→decide path:
+  // review the cuts, then POST them to /api/session/:id/harvest.
+  app.post('/api/unprompted', async (c) => {
+    const body = await c.req.json<{ text: string }>();
+    if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
+      return c.json({ error: 'text is required' }, 400);
+    }
+    const text = body.text.trim();
+
+    const sessionId = ulid();
+    const at = new Date().toISOString();
+    const turn: Turn = { role: 'user', text, at };
+
+    deps.vault.startTranscript(sessionId, {
+      mode: { minutes: 0, energy: 'medium', target: 'self' },
+      protocol: 'unprompted',
+      started: at,
+    });
+    deps.vault.appendTurn(sessionId, turn);
+    unpromptedSessions.add(sessionId);
+
+    // Never log the content — only how much of it there was.
+    serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
+
+    const result = await propose(sessionId, [turn], deps.complete);
+    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', `proposals=${result.proposals.length}`);
+    sessionProposals.set(sessionId, result.proposals);
+
+    return c.json({ sessionId, proposals: result.proposals, buds: result.buds });
   });
 
   // GET /api/queue → {pending, open}

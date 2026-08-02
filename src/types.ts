@@ -76,8 +76,10 @@ export type HarvestDecision = {
 };
 
 export type Provenance = {
-  kind: 'harvest' | 'restatement';
+  /** 'unprompted' — the user wrote or pasted the material with no eliciting question */
+  kind: 'harvest' | 'restatement' | 'unprompted';
   session: string;
+  /** Empty string when kind is 'unprompted' — nothing asked for these words */
   question: string;
   questionForm: QuestionForm;
   /** Source span in the transcript (harvest only) */

@@ -328,6 +328,41 @@ main {
  cursor: default;
 }
 
+/* defer — margin words, revealed only when 'later' is touched */
+.defer-row {
+ display: none;
+ align-items: baseline;
+ gap: 0.5rem;
+ flex-wrap: wrap;
+ padding-top: 0.1rem;
+}
+
+.defer-row.active {
+ display: flex;
+}
+
+.defer-prompt {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+.defer-need {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0;
+ text-decoration: underline;
+ text-underline-offset: 2px;
+}
+
+.defer-need:hover {
+ color: var(--fg);
+}
+
 .skip-exhausted {
  color: var(--dim);
  font-style: italic;
@@ -338,6 +373,27 @@ main {
 
 .answering .turn {
  opacity: 0.3;
+}
+
+/* ── unprompted entry — a blank page, nothing asked ── */
+
+.blank-page-nav {
+ padding-bottom: 0.25rem;
+}
+
+.blank-page {
+ width: 100%;
+ min-height: 60vh;
+ font-family: var(--font-serif);
+ font-size: 1.05rem;
+ line-height: var(--line);
+ background: transparent;
+ border: none;
+ padding: 0;
+ color: var(--fg);
+ outline: none;
+ resize: none;
+ overflow: hidden;
 }
 
 /* ── harvest review ── */

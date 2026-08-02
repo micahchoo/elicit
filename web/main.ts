@@ -66,7 +66,7 @@ function $<T extends HTMLElement>(sel: string): T {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted';
 
 interface AppState {
   screen: Screen;
@@ -105,6 +105,7 @@ function navTo(screen: Screen) {
     case 'harvest': renderHarvest(); break;
     case 'done': renderDone(); break;
     case 'waiting': renderWaiting(); break;
+    case 'unprompted': renderUnprompted(); break;
     case 'login': renderLogin(); break;
     case 'setup': renderSetup(); break;
   }
@@ -292,7 +293,9 @@ function renderMode(showSetupHint?: boolean) {
   const navRow = el('div', { class: 'mode-nav' });
   const waitingLink = el('button', { class: 'nav-link' }, 'waiting surface');
   waitingLink.addEventListener('click', () => navTo('waiting'));
-  navRow.append(waitingLink);
+  const writeLink = el('button', { class: 'nav-link' }, 'just write');
+  writeLink.addEventListener('click', () => navTo('unprompted'));
+  navRow.append(waitingLink, writeLink);
 
   if (showSetupHint) {
     const setupLink = el('button', { class: 'nav-link' }, 'set a password');
@@ -332,6 +335,67 @@ function renderMode(showSetupHint?: boolean) {
 
   div.append(minutesRow, energyRow, targetRow, topicInput, navRow, submit, errorSlot);
   main.append(div);
+}
+
+/* ── Unprompted entry: a blank page, no question ── */
+
+function renderUnprompted() {
+  clear();
+  state.screen = 'unprompted';
+  state.sessionId = null;
+  state.question = null;
+  state.proposals = [];
+  state.decisions = [];
+
+  const div = el('div', { class: 'screen active' });
+
+  const backRow = el('div', { class: 'blank-page-nav' });
+  const backBtn = el('button', { class: 'nav-link' }, '← back');
+  backBtn.addEventListener('click', () => navTo('mode'));
+  backRow.append(backBtn);
+
+  const page = el('textarea', {
+    class: 'blank-page',
+    rows: '1',
+  }) as HTMLTextAreaElement;
+
+  const doneBtn = el('button', { class: 'harvest-now' }, 'done');
+  const errorSlot = el('div', { class: 'error-slot' });
+
+  function grow() {
+    page.style.height = 'auto';
+    page.style.height = page.scrollHeight + 'px';
+  }
+  page.addEventListener('input', grow);
+
+  doneBtn.addEventListener('click', async () => {
+    const text = page.value.trim();
+    if (!text) return;
+    doneBtn.disabled = true;
+    page.disabled = true;
+    errorSlot.innerHTML = '';
+    try {
+      const res = await api<{ sessionId: string; proposals: CutProposal[] }>(
+        '/api/unprompted',
+        { text },
+      );
+      state.sessionId = res.sessionId;
+      state.proposals = res.proposals;
+      renderHarvest();
+    } catch (e) {
+      errorSlot.append(String(e));
+      doneBtn.disabled = false;
+      page.disabled = false;
+    }
+  });
+
+  div.append(backRow, page, doneBtn, errorSlot);
+  main.append(div);
+
+  requestAnimationFrame(() => {
+    page.focus();
+    grow();
+  });
 }
 
 /* ── Exchange screen ── */
@@ -458,9 +522,18 @@ function renderExchange() {
   const micStatus = el('span', { class: 'mic-status' });
   const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
   const skipBtn = el('button', { class: 'harvest-now' }, 'skip');
+  const laterBtn = el('button', { class: 'harvest-now' }, 'later');
+
+  // Margin follow-up: what the question needs before it can be answered.
+  const deferRow = el('div', { class: 'defer-row' });
+  const deferPrompt = el('span', { class: 'defer-prompt' }, 'when I have more');
+  const timeWord = el('button', { class: 'defer-need' }, 'time');
+  const energyWord = el('button', { class: 'defer-need' }, 'energy');
+  const plainWord = el('button', { class: 'defer-need' }, 'just later');
+  deferRow.append(deferPrompt, timeWord, energyWord, plainWord);
 
   answerRow.append(textarea, micBtn, micStatus);
-  answerArea.append(answerRow, harvestBtn, skipBtn);
+  answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow);
 
 
   div.append(header, transcript, answerArea);
@@ -486,6 +559,8 @@ function renderExchange() {
     textarea.disabled = true;
     harvestBtn.disabled = true;
     skipBtn.disabled = true;
+    laterBtn.disabled = true;
+    deferRow.classList.remove('active');
     if (state.sttAvailable) micBtn.disabled = true;
 
     appendTurn('user', text);
@@ -534,6 +609,7 @@ function renderExchange() {
     textarea.disabled = false;
     harvestBtn.disabled = false;
     skipBtn.disabled = false;
+    laterBtn.disabled = false;
     if (state.sttAvailable) micBtn.disabled = false;
     textarea.focus();
     textarea.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -558,35 +634,68 @@ function renderExchange() {
     }
   });
 
+  /** Show the replacement question skip and defer both return, or close the exchange. */
+  function takeNextQuestion(res: { kind: string; text?: string }) {
+    if (res.kind === 'question') {
+      state.question = res.text!;
+      state.juxtaposition = null;
+      juxDiv.classList.remove('active');
+      juxDiv.innerHTML = '';
+      questionBlock.textContent = res.text!;
+      textarea.value = '';
+      textarea.style.height = 'auto';
+      textarea.focus();
+    } else {
+      questionBlock.textContent = '';
+      questionBlock.append(
+        el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.'),
+      );
+      skipBtn.disabled = true;
+      laterBtn.disabled = true;
+      harvestBtn.disabled = true;
+      textarea.disabled = true;
+    }
+  }
+
   skipBtn.addEventListener('click', async () => {
     skipBtn.disabled = true;
     try {
       const res = await api<{ kind: string; text?: string }>(
         `/api/session/${state.sessionId}/skip`,
       );
-      if (res.kind === 'question') {
-        state.question = res.text!;
-        state.juxtaposition = null;
-        juxDiv.classList.remove('active');
-        juxDiv.innerHTML = '';
-        questionBlock.textContent = res.text!;
-        textarea.value = '';
-        textarea.style.height = 'auto';
-        textarea.focus();
-      } else {
-        questionBlock.textContent = '';
-        questionBlock.append(
-          el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.'),
-        );
-        skipBtn.disabled = true;
-        harvestBtn.disabled = true;
-        textarea.disabled = true;
-      }
+      takeNextQuestion(res);
     } catch (e) {
       showError(String(e));
       skipBtn.disabled = false;
     }
   });
+
+  // ── Defer: the question goes back to the queue with what it needs ──
+
+  laterBtn.addEventListener('click', () => {
+    deferRow.classList.toggle('active');
+  });
+
+  async function defer(need?: 'time' | 'energy') {
+    laterBtn.disabled = true;
+    skipBtn.disabled = true;
+    try {
+      const res = await api<{ kind: string; text?: string }>(
+        `/api/session/${state.sessionId}/defer`,
+        need ? { need } : undefined,
+      );
+      deferRow.classList.remove('active');
+      takeNextQuestion(res);
+    } catch (e) {
+      showError(String(e));
+      laterBtn.disabled = false;
+      skipBtn.disabled = false;
+    }
+  }
+
+  timeWord.addEventListener('click', () => defer('time'));
+  energyWord.addEventListener('click', () => defer('energy'));
+  plainWord.addEventListener('click', () => defer());
 
   // ── Mic toggle ──
 

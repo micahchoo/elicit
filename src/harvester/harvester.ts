@@ -234,7 +234,9 @@ export function decide(
   session: string,
   proposals: CutProposal[],
   decisions: HarvestDecision[],
-  vault: Vault
+  vault: Vault,
+  /** Origin of the kept material. 'unprompted' when no question elicited it. */
+  origin: 'harvest' | 'unprompted' = 'harvest'
 ): { snippets: Snippet[]; buds: Bud[] } {
   const snippets: Snippet[] = [];
 
@@ -242,7 +244,7 @@ export function decide(
     const proposal = proposals[decision.proposal];
     if (!proposal) { console.warn(`Harvester decide: proposal index ${decision.proposal} out of range (have ${proposals.length})`); continue; }
     const provenance: Provenance = {
-      kind: 'harvest',
+      kind: origin,
       session,
       question: proposal.question,
       questionForm: proposal.questionForm,
