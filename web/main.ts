@@ -11,6 +11,7 @@ import type {
 import type { Claim, Contradiction } from '../src/wiki/contract.ts';
 import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
+import { renderImportEntry } from './import-entry.js';
 
 /* ─── API types ─── */
 
@@ -145,7 +146,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'import';
 
 interface AppState {
  screen: Screen;
@@ -193,6 +194,10 @@ function navTo(screen: Screen) {
   case 'done': renderDone(); break;
   case 'waiting': renderWaiting(); break;
   case 'reviews': renderReviews(); break;
+  // The seam widens navTo: the entry module takes `(screen: string)`, this
+  // app's screens are the Screen union, and the entry only ever asks for
+  // screens the union contains.
+  case 'import': renderImportEntry({ main, el, api, beginWait, navTo: (s: string) => navTo(s as Screen) }); break;
   case 'wiki': renderWiki(false); break;
   case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
@@ -491,7 +496,9 @@ function renderMode(showSetupHint?: boolean) {
  writeLink.addEventListener('click', () => navTo('unprompted'));
  const wikiLink = el('button', { class: 'nav-link' }, 'what the clerk has written');
  wikiLink.addEventListener('click', () => navTo('wiki'));
- navRow.append(waitingLink, writeLink, wikiLink);
+ const importLink = el('button', { class: 'nav-link' }, 'import');
+ importLink.addEventListener('click', () => navTo('import'));
+ navRow.append(waitingLink, writeLink, wikiLink, importLink);
 
  // A quiet count of finished harvests awaiting review — offer-only (Q-62):
  // it sits in the nav row of a surface the person opened, never outbound.
