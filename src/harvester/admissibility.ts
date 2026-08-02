@@ -16,6 +16,15 @@
  * material the person actually said and will never see again; a false admit
  * costs them one line to decline during review. When a case is ambiguous,
  * ADMIT.
+ *
+ * Two tests here were added under ticket 037 and both are measured against the
+ * 295 hand-marked cuts in `docs/ingest-triage-2026-08-02.md` rather than
+ * argued for: `isQuotedFromSource` (Q-51 at cut level, 7 of 7 with no false
+ * positives) and `startsMidSentence` (the fragment router, 7 of 9 at a cost of
+ * 4 delayed keeps). The same measurement said NO to two other candidate gates
+ * — a leading-referent check, and any structural test for "is this sentence
+ * about the person at all" — and those absences are recorded where the
+ * predicates would have gone, so nobody re-derives them from first principles.
  */
 
 import { isContentFree } from '../elicitor/answer-shape.js';
@@ -42,7 +51,15 @@ function expandContractions(s: string): string {
  * Lowercase, contractions expanded, punctuation gone, whitespace collapsed.
  * Every matcher below reads this form, so `"I'm not sure!"` and `"im not
  * sure"` cannot take different paths.
+ *
+ * Exported because the harvester's facet/stance post-checks match on the same
+ * shapes ("i used to", "i do not think that anymore") and two normalizations
+ * would drift apart — the whole reason this one exists.
  */
+export function normalize(text: string): string {
+  return bare(text);
+}
+
 function bare(text: string): string {
   return expandContractions(
     text.toLowerCase().replace(/[‘’ʼ`]/g, "'"),
@@ -190,6 +207,103 @@ export function lacksProposition(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Sentence alignment: was this span lifted from the middle of a sentence?
+// ---------------------------------------------------------------------------
+
+/**
+ * True when the cut begins inside a sentence rather than at the start of one.
+ *
+ * The test is the first character: a span that opens on a lowercase letter was
+ * either lifted mid-sentence ("the move from liability to accountability",
+ * "we decided to respond to it") or lifted from a heading that is itself not a
+ * sentence ("how affordances on these digital publics drive and manipulate
+ * behaviour"). Both are fragments, and neither is readable without the words
+ * in front of it.
+ *
+ * MEASURED, against the 295 hand-marked cuts of the 2026-08-02 published-prose
+ * harvest (`docs/ingest-triage-2026-08-02.md`): it fires on 7 of the 9 cuts
+ * Micah marked `frag`, and on 4 of his 139 keeps. Two things follow from that
+ * ratio. First, this is a routing test, not a rejection test — the caller sends
+ * what it catches to the Bud path, where the fragment survives and can be asked
+ * about, so the 4 keeps are delayed rather than destroyed. Second, it is
+ * deliberately NOT the check ticket 035 proposed (a leading bare
+ * pronoun/demonstrative). That one was measured on the same set: 0 of 9 `frag`
+ * and 25 of 139 keeps. Real prose opens sentences with expletive "It was…" and
+ * discourse "This…" constantly, so the rule reads as a fragment detector and
+ * behaves as a keep shredder.
+ *
+ * The two `frag` cuts this misses are full grammatical sentences whose
+ * referents dangle ("After getting to the point of being able to serve
+ * singular images, I came across the biggest issue." — which issue?). No
+ * structural test reaches those; they need a reader.
+ */
+export function startsMidSentence(text: string): boolean {
+  return /^[a-z]/.test(text.trim());
+}
+
+// ---------------------------------------------------------------------------
+// Q-51: a quoted passage is not the person's belief
+// ---------------------------------------------------------------------------
+
+/**
+ * Quoted spans in a source text, as `scripts/ingest-posts.ts` defines them.
+ *
+ * A span is a quotation when it opens and closes with curly quotes, nests no
+ * further quote mark, runs at least 20 characters, and does not cross a
+ * paragraph break. Straight quotes are deliberately NOT matched: a person
+ * typing `he called it "the wall"` is naming their own coinage, and the same
+ * marks do duty for scare quotes, emphasis and titles.
+ */
+export function quotedSpans(source: string): string[] {
+  return [...source.matchAll(/“([^“”]{20,3000})”/g)]
+    .map((m) => m[1] as string)
+    .filter((s) => !/\n\s*\n/.test(s))
+    .map((s) => s.trim());
+}
+
+/** True when the cut is (part of) one of those spans — someone else's words. */
+export function isQuotedFromSource(cutText: string, spans: string[]): boolean {
+  const stripped = cutText.replace(/^[“”"]+/, '').replace(/[“”"]+$/, '').trim();
+  return stripped.length > 0 && spans.some((s) => s.includes(stripped));
+}
+
+// ---------------------------------------------------------------------------
+// The gate that is not here: "is this sentence about the person at all?"
+// ---------------------------------------------------------------------------
+//
+// 114 of the 149 cuts Micah dropped on 2026-08-02 he dropped as `world` (true
+// no matter who wrote it — a pottery workshop's floor plan, Pune's case count)
+// or `log` (what he did, in order, with nothing said about why). That is 76% of
+// all the junk, and every one of them passes every test in this file. The
+// criterion he used is one sentence: WOULD THIS BE EVIDENCE ABOUT THE PERSON IF
+// YOU DID NOT KNOW WHO WROTE IT?
+//
+// It does not mechanize. Six candidate predicates were measured against the
+// same 295 cuts, and the best of them reaches 74% precision at 18% recall:
+//
+//   no first-person singular                76 of 114   53 keeps lost   48% prec
+//   no first-person AND no stance verb      32 of 114   16 keeps lost   54% prec
+//   past-tense action verb, no stance verb  37 of 114   14 keeps lost   69% prec
+//   third-person AND past-tense action      20 of 114    4 keeps lost   74% prec
+//
+// Doing nothing already scores 53%, because 53% of the cuts are junk. So the
+// whole yield of the best rule is +21 points of precision, bought by shredding
+// real material. And the reason is not that the rules are crude. "The workshop
+// space is where five brothers work from" (drop) and "Fragility is an honest
+// and important understanding because it changes the way we look at incentives"
+// (keep) are both third-person declaratives. "I made a rough spreadsheet which
+// I shared with Padmini" (drop) and "I started to play with the idea of
+// researching through doing" (keep) are both first-person past. One reports an
+// action, the other reports a stance, and no regex sees the difference —
+// because the difference is what the sentence is ABOUT.
+//
+// So this gate is a judgement, and it stays with the person, in review, where
+// judgements go. Do not replace it with a model call either: that is the
+// self-report the whole file exists to route around, and it would be a gate
+// nobody has evaluated on a labelled set. The set is right there when somebody
+// wants to try.
+
+// ---------------------------------------------------------------------------
 // The entry point
 // ---------------------------------------------------------------------------
 
@@ -201,7 +315,9 @@ export type InadmissibleReason =
   /** No subject-and-claim — unreadable without the turn that prompted it. */
   | 'no-proposition'
   /** Turn scope only: the whole answer is too thin to hold anything. */
-  | 'content-free';
+  | 'content-free'
+  /** Q-51: the span sits inside a quotation in the source it was cut from. */
+  | 'quoted';
 
 export type Admissibility = { ok: true } | { ok: false; reason: InadmissibleReason };
 
@@ -217,6 +333,12 @@ export type AdmissibilityOptions = {
    * reach the model, so the complaint dies as a cut and the memory survives.
    */
   scope?: 'cut' | 'turn';
+  /**
+   * The text the cut was taken from, for the Q-51 quotation test. Cut scope
+   * only. Absent means the test does not run — it cannot, because a quotation
+   * is only visible against the words around it.
+   */
+  source?: string;
 };
 
 /**
@@ -237,5 +359,14 @@ export function admissible(text: string, opts: AdmissibilityOptions = {}): Admis
   // sure.", which are empty before they are meta.
   if (lacksProposition(text)) return { ok: false, reason: 'no-proposition' };
   if (isMetaConversational(text)) return { ok: false, reason: 'meta-conversational' };
+
+  // Q-51 last, and only when a source was handed in. This is the one test here
+  // that is NOT about the cut alone: the same sentence is admissible when the
+  // person wrote it and inadmissible when they quoted it, and only the source
+  // says which. Measured against the 2026-08-02 published-prose harvest it
+  // finds 7 of 7 quoted cuts with zero false positives on the other 288.
+  if (opts.source !== undefined && isQuotedFromSource(text, quotedSpans(opts.source))) {
+    return { ok: false, reason: 'quoted' };
+  }
   return { ok: true };
 }

@@ -168,7 +168,7 @@ describe('propose', () => {
     const json = JSON.stringify({
       cuts: [
         {
-          text: 'autonomy above all else',
+          text: 'I value autonomy above all else.',
           sourceTurn: 0,
           facet: 'value',
           stance: 'avowal',
@@ -193,7 +193,7 @@ describe('propose', () => {
     );
 
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.text).toBe('autonomy above all else');
+    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
     expect(buds).toHaveLength(0);
   });
 
@@ -255,7 +255,7 @@ describe('propose', () => {
     const raw = '```json\n' + JSON.stringify({
       cuts: [
         {
-          text: 'autonomy above all else',
+          text: 'I value autonomy above all else.',
           sourceTurn: 0,
           facet: 'value',
           stance: 'avowal',
@@ -272,12 +272,12 @@ describe('propose', () => {
     );
 
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.text).toBe('autonomy above all else');
+    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
   });
 
   it('falls back to line-oriented parsing when JSON is invalid', async () => {
     const raw = [
-      'TEXT: "autonomy above all else"',
+      'TEXT: "I value autonomy above all else."',
       'SOURCE: 0',
       'FACET: value',
       'STANCE: avowal',
@@ -299,7 +299,7 @@ describe('propose', () => {
     );
 
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.text).toBe('autonomy above all else');
+    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
     expect(buds).toHaveLength(1);
     expect(buds[0]!.fragment).toBe('Being able to choose');
     expect(buds[0]!.failures).toEqual(['standalone']);
@@ -339,7 +339,7 @@ describe('propose', () => {
           standalone: true,
         },
         {
-          text: 'autonomy above all else',
+          text: 'I value autonomy above all else.',
           sourceTurn: 0,
           facet: 'value',
           stance: 'avowal',
@@ -356,7 +356,7 @@ describe('propose', () => {
     );
 
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.text).toBe('autonomy above all else');
+    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
   });
 
   // ── Admissibility (ticket 044) ──
@@ -432,11 +432,22 @@ describe('propose', () => {
 
     const { proposals, buds, diagnostics } = await propose('sess-1', mixed, fakeComplete(json));
 
-    expect(proposals.map((p) => p.text)).toEqual(['my father never asked me anything like it']);
-    // Not a Bud either — a comment on the question is not corpus at all.
-    expect(buds).toHaveLength(0);
+    // The complaint is gone from both planes — a comment on the question is
+    // not corpus at all, so it is not even a Bud.
+    expect(buds.map((b) => b.fragment)).toEqual(['my father never asked me anything like it']);
     expect(diagnostics.inadmissibleDrops).toBe(1);
     expect(diagnostics.cutsSeen).toBe(2);
+
+    // The memory beside it survives — as a Bud rather than a proposal, because
+    // the model cut it out of the middle of the sentence and "anything like
+    // it" points at the question, not at anything inside the cut. This is
+    // ticket 037 changing what 044 promised: 044 said the memory must survive
+    // the complaint, and it does. It reaches the Bud mailbox, where a gap-fill
+    // question can ask for the whole thought, instead of reaching review as a
+    // Snippet the person would have to read the transcript to understand.
+    expect(proposals).toHaveLength(0);
+    expect(buds[0]!.failures).toEqual(['mid-sentence']);
+    expect(diagnostics.fragmentBuds).toBe(1);
   });
 
   it('drops a propositionless cut and keeps the proposition beside it', async () => {
@@ -530,6 +541,231 @@ describe('propose', () => {
       channel: 'test-channel',
       blockId: 2,
     });
+  });
+});
+
+// ===========================================================================
+// Ticket 037 — facet and stance read off the text, not off the model's word
+// ===========================================================================
+
+/** One agent probe and one user turn, so `propose` makes exactly one call. */
+function oneTurn(text: string): Turn[] {
+  return [
+    { role: 'agent', text: 'What changed?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+    { role: 'user', text, at: '2026-08-01T00:00:10.000Z' },
+  ];
+}
+
+function cutsJson(cuts: Partial<CutProposal & { standalone: boolean }>[]): string {
+  return JSON.stringify({
+    cuts: cuts.map((c) => ({
+      sourceTurn: 0,
+      facet: 'fact',
+      stance: 'self-observation',
+      reading: 'a reading',
+      standalone: true,
+      ...c,
+    })),
+  });
+}
+
+describe('stance: the supersession markers overrule the model', () => {
+  // Eval finding #7: `superseded` was never used where it is textbook-correct.
+  // The model called this pair `self-observation` both times it was measured.
+  const turn = oneTurn(
+    'I used to think discipline was the whole of it. I no longer think that, and I was wrong about what it cost the people around me.',
+  );
+
+  it('corrects the stance and counts the correction', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => cutsJson([
+        { text: 'I no longer think that, and I was wrong about what it cost the people around me.', stance: 'self-observation' },
+      ]),
+    );
+
+    expect(proposals[0]!.stance).toBe('superseded');
+    expect(diagnostics.supersessionCorrections).toBe(1);
+  });
+
+  it('counts nothing when the model already had it right', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => cutsJson([
+        { text: 'I used to think discipline was the whole of it.', stance: 'superseded' },
+      ]),
+    );
+
+    expect(proposals[0]!.stance).toBe('superseded');
+    expect(diagnostics.supersessionCorrections).toBe(0);
+  });
+
+  it('leaves habitual past alone — "used to" needs a mental verb behind it', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      oneTurn('I used to work at the shop on Saturdays, and my father worked there too.'),
+      async () => cutsJson([
+        { text: 'I used to work at the shop on Saturdays, and my father worked there too.', stance: 'self-observation' },
+      ]),
+    );
+
+    expect(proposals[0]!.stance).toBe('self-observation');
+    expect(diagnostics.supersessionCorrections).toBe(0);
+  });
+});
+
+describe('facet: `intention` without a want, plan or goal is counted, never rewritten', () => {
+  // The other half of finding #7 — `intention` on 5 of ~14 cuts, correct on
+  // none. The marker proves the label is wrong and says nothing about which of
+  // the seven other facets is right, so the harvester reports and stands back.
+  it('counts a marker-less intention and leaves the label where it is', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      oneTurn('I no longer think that. The whole idea was borrowed from someone I admired.'),
+      async () => cutsJson([{ text: 'I no longer think that.', facet: 'intention' }]),
+    );
+
+    expect(proposals[0]!.facet).toBe('intention');
+    expect(diagnostics.unmarkedIntentions).toBe(1);
+  });
+
+  it('says nothing about an intention that states one', async () => {
+    const { diagnostics } = await propose(
+      'sess-1',
+      oneTurn('I want to spend the next year building only things I would use myself.'),
+      async () => cutsJson([
+        { text: 'I want to spend the next year building only things I would use myself.', facet: 'intention' },
+      ]),
+    );
+
+    expect(diagnostics.unmarkedIntentions).toBe(0);
+  });
+});
+
+describe('a label outside the vocabulary never reaches a Reading', () => {
+  // Measured on 105 real cuts, 2026-08-02: the clerk put a STANCE value in the
+  // `facet` field three times. `propose()` cast it and `saveReading` wrote it.
+  const turn = oneTurn('I have always wondered about the process of participatory activities.');
+  const text = 'I have always wondered about the process of participatory activities.';
+
+  it('holds a stance-in-the-facet-field cut as a Bud', async () => {
+    const { proposals, buds, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => JSON.stringify({
+        cuts: [{ text, sourceTurn: 0, facet: 'self-observation', stance: 'avowal', reading: 'r', standalone: true }],
+      }),
+    );
+
+    expect(proposals).toHaveLength(0);
+    expect(buds[0]!.fragment).toBe(text);
+    expect(buds[0]!.failures).toEqual(['label']);
+    expect(diagnostics.outOfVocabularyLabels).toBe(1);
+  });
+
+  it('holds an invented stance the same way', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => JSON.stringify({
+        cuts: [{ text, sourceTurn: 0, facet: 'construct', stance: 'reflection', reading: 'r', standalone: true }],
+      }),
+    );
+
+    expect(proposals).toHaveLength(0);
+    expect(diagnostics.outOfVocabularyLabels).toBe(1);
+  });
+
+  it('lets a well-labelled cut through untouched', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => JSON.stringify({
+        cuts: [{ text, sourceTurn: 0, facet: 'construct', stance: 'self-observation', reading: 'r', standalone: true }],
+      }),
+    );
+
+    expect(proposals).toHaveLength(1);
+    expect(diagnostics.outOfVocabularyLabels).toBe(0);
+  });
+});
+
+describe('episode blindness is counted, not argued about', () => {
+  const dated = 'On March 3rd I finally told my manager the estimate was fiction. I think I do that because I would rather be disliked than useless.';
+
+  it('flags a dated turn that yielded no episode cut', async () => {
+    const { diagnostics } = await propose(
+      'sess-1',
+      oneTurn(dated),
+      async () => cutsJson([
+        { text: 'I think I do that because I would rather be disliked than useless.', facet: 'causal-theory' },
+      ]),
+    );
+
+    expect(diagnostics.episodeAnchoredTurns).toBe(1);
+    expect(diagnostics.episodeBlindTurns).toBe(1);
+  });
+
+  it('flags nothing when the episode was cut alongside the theory', async () => {
+    const { diagnostics } = await propose(
+      'sess-1',
+      oneTurn(dated),
+      async () => cutsJson([
+        { text: 'On March 3rd I finally told my manager the estimate was fiction.', facet: 'episode' },
+        { text: 'I think I do that because I would rather be disliked than useless.', facet: 'causal-theory' },
+      ]),
+    );
+
+    expect(diagnostics.episodeAnchoredTurns).toBe(1);
+    expect(diagnostics.episodeBlindTurns).toBe(0);
+  });
+
+  it('does not accuse a turn that names no occasion', async () => {
+    const { diagnostics } = await propose(
+      'sess-1',
+      oneTurn('I would rather be disliked than useless, and that has been true for as long as I can tell.'),
+      async () => cutsJson([{ text: 'I would rather be disliked than useless', facet: 'value' }]),
+    );
+
+    expect(diagnostics.episodeAnchoredTurns).toBe(0);
+    expect(diagnostics.episodeBlindTurns).toBe(0);
+  });
+});
+
+describe('Q-51 reaches the harvester, not only the importer', () => {
+  const turn = oneTurn(
+    'Shreyas put it best when I asked him about it. “It isn’t an obstacle that stops you rather, it is a point of divergence.” I have carried that around ever since, though I am not sure I believe it.',
+  );
+
+  it('drops a cut lifted from inside a quotation in the same turn', async () => {
+    const { proposals, buds, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => cutsJson([
+        { text: 'It isn’t an obstacle that stops you rather, it is a point of divergence.' },
+        { text: 'I have carried that around ever since, though I am not sure I believe it.' },
+      ]),
+    );
+
+    expect(proposals.map((p) => p.text)).toEqual([
+      'I have carried that around ever since, though I am not sure I believe it.',
+    ]);
+    // Not a Bud: the words are not the person's to keep, at any confidence.
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.inadmissibleDrops).toBe(1);
+  });
+
+  it('never loosens the exact-substring check to do it (Q-1)', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      turn,
+      async () => cutsJson([{ text: 'a point of divergence that I never took' }]),
+    );
+
+    expect(proposals).toHaveLength(0);
+    expect(diagnostics.fabricationDrops).toBe(1);
   });
 });
 
@@ -697,7 +933,7 @@ describe('decide', () => {
     const json = JSON.stringify({
       cuts: [
         {
-          text: 'autonomy above all else',
+          text: 'I value autonomy above all else.',
           sourceTurn: 0,
           facet: 'value',
           stance: 'avowal',
