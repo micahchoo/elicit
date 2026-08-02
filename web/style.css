@@ -633,14 +633,12 @@ main {
  overflow-y: auto;
 }
 
+/* Sentences, not ids — they wrap rather than truncate, so the line stays readable. */
 .activity-line {
  font-family: var(--font-ui);
  font-size: 0.65rem;
  color: var(--dim);
  line-height: 1.35;
- white-space: nowrap;
- overflow: hidden;
- text-overflow: ellipsis;
 }
 
 .activity-actor {
@@ -650,6 +648,11 @@ main {
 
 .activity-detail {
  color: var(--dim);
+}
+
+.activity-age {
+ color: var(--dim);
+ opacity: 0.7;
 }
 
 .empty-msg {

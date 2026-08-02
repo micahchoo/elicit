@@ -6,6 +6,7 @@ import type {
   Target,
   QueueEntry,
 } from '../src/types.ts';
+import { formatEvent, relativeTime } from '../src/log/format.js';
 
 /* ─── API types ─── */
 
@@ -1137,8 +1138,10 @@ function renderWaiting() {
               const ev: ActivityEvent = JSON.parse(currentData);
               const lineEl = el('div', { class: 'activity-line' });
               const actor = el('span', { class: 'activity-actor' }, ev.actor);
-              const detail = el('span', { class: 'activity-detail' }, `${ev.kind}: ${ev.detail}`);
+              const detail = el('span', { class: 'activity-detail' }, formatEvent(ev));
               lineEl.append(actor, ' ', detail);
+              const age = relativeTime(ev.at);
+              if (age) lineEl.append(' ', el('span', { class: 'activity-age' }, age));
               activityList.prepend(lineEl);
               syncEmptyActivity();
             } catch { /* skip malformed */ }
