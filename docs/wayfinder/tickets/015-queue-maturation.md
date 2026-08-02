@@ -1,5 +1,5 @@
 ---
-title: "Queue maturation: exposure control, facet balance, randomizer draws"
+title: "Queue maturation: exposure control and uptake — waits on usage data"
 labels: [wayfinder:task]
 status: open
 assignee: 
