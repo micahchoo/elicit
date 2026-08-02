@@ -33,6 +33,13 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Finish slice-2 execution](tickets/001-finish-slice-2.md) — landed green
+  through four fix waves; the practice of live-diagnosing Micah's real
+  sittings found every load-bearing bug the tests missed.
+- [Slice-2 hypothesis check: real sessions and RESULTS](tickets/002-slice2-results.md) —
+  invariants 8/8 on real data; composed openers now dominate session
+  starts; no template fallback needed; embedding eval (007) waits for
+  ~50 snippets.
 - [Fix: probe freedom — loosen generation, tighten validation](tickets/031-probe-freedom.md) —
   repertoire prompt + code guards (no-repeat, no conversation-refs);
   real-model verified: four distinct frames, zero echoes.
