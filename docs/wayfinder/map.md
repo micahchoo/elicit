@@ -358,6 +358,11 @@ unassigned, all blockers closed.
   be told from a check that is not running. Also found that ticket 044's
   acceptance ran on the ELICITOR while printing the clerk model's name.
 
+- [Build: the reading pass](tickets/062-reading-pass-imported-corpus.md) — 136
+  of 139 read; the corpus is wiki, not just evidence. 037's episode fix
+  generalises to 18.4%. Three interrogatives resist a proposition-extracting
+  prompt, and `episodeAnchoredTurns: 0` across all 136.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

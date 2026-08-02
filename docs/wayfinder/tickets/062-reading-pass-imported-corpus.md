@@ -1,8 +1,8 @@
 ---
 title: "Build: the reading pass — turn 139 imported snippets into Readings"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: [037-harvest-facet-bias.md]
 ---
 
@@ -95,3 +95,28 @@ Five things not learnable from reading `scripts/read-snippets.ts`:
    snippets — the ones opening on a lowercase letter, which 037's
    `startsMidSentence` router sends to Buds. It skips that router and nothing
    else.
+
+## Resolution (2026-08-02) — vault commit `69a209a`
+
+**136 of 139.** One Reading per snippet, citing `snippetId@version`, stamped
+`qwen3.6:35b`.
+
+```
+facet    fact 30.9  construct 20.6  episode 18.4  general-event 11.0
+         intention 7.4  value 5.1  causal-theory 4.4  lifetime-period 2.2
+stance   avowal 68.4  report-of-fact 17.6  self-observation 8.8
+         uncertainty-marked 3.7  superseded 0.7  pole-preference 0.7
+```
+
+**037's episode fix partly generalises.** 6% before, 30% on the twelve turns it
+was tuned against, **18.4% across nine years of several registers**.
+
+**Three unread, and it is a finding.** All three are INTERROGATIVES, and the
+harvest prompt extracts propositions, which a bare question is not. Fifteen
+returned empty on the first attempt; the retry recovered twelve.
+
+**`episodeAnchoredTurns: 0` across all 136** — confirming ticket 066's
+prediction at corpus scale. Not one turn in nine years anchors an episode with
+a calendar word; they anchor by EVENT. The shadow record for 037's episode fix
+has been measuring a denominator of zero. Moves ticket 069 from a plausible
+concern to a measured fact.
