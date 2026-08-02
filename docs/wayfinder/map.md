@@ -254,6 +254,18 @@ unassigned, all blockers closed.
   closed by the Clerk plan's T17. `answeredAt` is written beside the status and
   the elicitor is its caller; status and time are one fact.
 
+- **Standing for this campaign (2026-08-02):** work the map to exhaustion.
+  Dispatch agents on disjoint files, verify each against the tree rather than
+  its own report, commit at milestones. Do not stop between waves.
+
+- **Standing for this campaign (2026-08-02):** work the map to exhaustion.
+  Dispatch agents on disjoint files, verify each against the tree rather than
+  its own report, commit at milestones. Do not stop between waves.
+
+- **Standing for this campaign (2026-08-02):** work the map to exhaustion.
+  Dispatch agents on disjoint files, verify each against the tree rather than
+  its own report, commit at milestones. Do not stop between waves.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
