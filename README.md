@@ -5,9 +5,13 @@ An interviewer that lives on your machine, asks you questions, and builds a
 craft — out of nothing but your own verbatim words. Writing essays is one thing
 that falls out of it. So is finding out what you actually think.
 
-Every word in the corpus is yours. The agent contributes questions, placement,
-and margin notes — never prose. That is not a style choice; it is the
-architecture.
+Every word in the corpus is one you submitted, unaltered. The agent contributes
+questions, placement, and margin notes — never prose, and never an edit to
+yours. That is not a style choice; it is the architecture. The guarantee is
+about wording, not origin: nothing in your vault was written or reworded by a
+model. It is not a guarantee that you are the author — paste in someone else's
+sentence and Elicit files it as yours, because nothing in the pipeline can tell
+pasted text from your own reflection.
 
 ## Why this exists
 
@@ -21,7 +25,7 @@ maintains what *you* wrote, because the act of writing is load-bearing:
 | Failure mode | Elicit's answer, by construction |
 |---|---|
 | Smoothing / false coherence | Contradictions are first-class records, typed (real tension vs. "you changed"), never silently resolved |
-| Uncited synthesis | Every wiki claim cites `snippet@version`; every snippet is a verbatim, code-verified substring of what you typed |
+| Uncited synthesis | Every wiki claim cites `snippet@version`; every proposed snippet is a code-verified verbatim substring of what you submitted — the model cannot add or change a word |
 | Persistent errors | Snippet versions are immutable; transcripts are append-only; your edits are protected from the agent |
 | No resolution authority | Only elicitation resolves — the agent may ask, never decide |
 
@@ -99,8 +103,11 @@ local model. Slice 2 — resonance with your past snippets, a durable question
 queue, a background clerk, domain interviews, the activity log — is in
 progress. Resonance is lexical only so far, which is the deliberate first
 half of Q-17; the embedding channel and the contradiction pipeline it feeds
-(Q-30) are not built. The design is unusually well documented for the size of
-the code; see [Design docs](#design-docs).
+(Q-30) are not built. A snippet's provenance records how the words were
+captured — which question, which session, or that nothing asked for them — but
+not where they came from: the "just write" door does not yet ask whether what
+you pasted is your own writing. The design is unusually well documented for the
+size of the code; see [Design docs](#design-docs).
 
 ## Run it
 

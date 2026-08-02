@@ -7,7 +7,7 @@ An agentic elicitation tool that interviews a person to build a human-shaped wik
 ### Invariants
 
 **Sole Authorship**:
-Every word in a Piece is written by the user. The agent contributes questions, placement, and Marginalia — never body text, transitions, or titles. An architectural guarantee that makes misattribution impossible by construction — not a claimed accuracy technique.
+Every word in a Piece was submitted by the user and stands unaltered. The agent contributes questions, placement, and Marginalia — never body text, transitions, or titles. Two halves live in the name and only one of them is a guarantee. The agent's non-authorship is architectural: agent prose cannot enter a Piece and no agent may reword a Snippet, which makes misattribution of *wording* impossible by construction — not a claimed accuracy technique. The user's authorship is assumed, not verified: a Snippet is the user's own words in the sense that the user submitted them, never in the sense that the user composed them. Text pasted from elsewhere is admissible material the system cannot tell from reflection. Only a Provenance the user declares can carry that distinction; detecting it is not a move the agent has.
 
 **Marginalia**:
 Agent annotations attached alongside a composed Piece or a Snippet — seam warnings, stale-pin flags, skeleton labels, drift readings. Never part of the Piece text itself.
