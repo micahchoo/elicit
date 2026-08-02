@@ -49,3 +49,40 @@ asked-history, and facet-balance's shadow session via aggregated readings.
 > accumulating today instead of the day the ticket is picked up. Stamps
 > are Activity-Log lines, not new state; the aggregation stays here,
 > data-bound as ruled.
+
+## Stamps landed (2026-08-02)
+
+The usage stamp exists and started logging today. Kind `surfaced`, one
+Activity-Log line per surfacing act: the artifact ids in `refs`, the
+surface in the detail (`surface=draw|wiki|composed-question`). Written by
+`src/log/surfaced.ts` (declared live in the mechanism registry), rendered
+in `src/log/format.ts`, verified by `tests/surfaced.test.ts` (real routes,
+real log) and the emitted-kinds sweep. No counters, no aggregation, no
+state beyond the log lines.
+
+Stamping now:
+
+- `draw` — a randomizer resurfacing draw served as the opening question
+  (POST /api/session). Refs = the snippet id. Actor `elicitor`.
+- `wiki` — GET /api/wiki, one stamp per served claim: refs = the claim id
+  plus its `snippetId@version` citations. The default reading stamps the
+  live claims; `?all=1` stamps the whole record. Actor `system`.
+- `composed-question` — a queue question actually served, at opening
+  (POST /api/session) or from the mid-sitting fallback draw (POST
+  /api/session/:id/turn). Refs = the entry's `cites`. Actor `elicitor`.
+  All four Clerk sources carry cites (composed, still-true,
+  contradiction-remeasure, lint-still-true); `user-declared` entries have
+  none and do not stamp.
+
+Not stamping yet, and why:
+
+- Deck draws — a dealt card is a curated question, not a claim or
+  snippet, and the aggregation this feeds ranks claims and snippets. The
+  draw record (`randomizer-drawn`) already carries the card ref.
+- /api/snippets — the whole pool is display support, not display; only
+  the citations a page actually renders are surfaced material.
+- A skipped or deferred question — it stamped when its draw served it; a
+  re-show is not a new surfacing.
+
+Aggregation (usage_count, last_usage, max_unused_days window) remains
+here, data-bound as ruled: the month of stamps is now accumulating.

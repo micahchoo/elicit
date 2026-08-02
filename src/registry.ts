@@ -327,7 +327,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/log/format', name: 'formatEvent', status: 'live' },
  { module: 'src/log/format', name: 'relativeTime', status: 'live' },
 
- // ── src/memory/cover.ts ──
+// ── src/log/surfaced.ts ──
+{ module: 'src/log/surfaced', name: 'surfaced', status: 'live' },
+
+// ── src/memory/cover.ts ──
  {
   module: 'src/memory/cover',
   name: 'cover',

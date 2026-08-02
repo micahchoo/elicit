@@ -377,6 +377,24 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'path=vault/posts/quoted.md cuts=1',
   reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
  },
+
+ // The usage stamp (015): a claim or snippet reached the person. The refs
+ // are the record; the detail names the surface. One sentence per surface.
+ {
+  kind: 'surfaced',
+  detail: 'surface=draw',
+  reads: 'surfaced an old snippet in a randomizer draw',
+ },
+ {
+  kind: 'surfaced',
+  detail: 'surface=wiki',
+  reads: 'surfaced a claim with its cited snippets on the wiki reading surface',
+ },
+ {
+  kind: 'surfaced',
+  detail: 'surface=composed-question',
+  reads: 'surfaced a snippet quoted in a composed question',
+ },
 ];
 
 describe('formatEvent', () => {

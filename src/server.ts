@@ -56,6 +56,7 @@ import { FACETS } from './queue/facet-balance.js';
 import type { Claim, ClaimGraph, LintFinding, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
+import { surfaced } from './log/surfaced.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
@@ -208,6 +209,18 @@ function serverEmit(
  refs?: string[],
 ): void {
  appendEvent(root, { at: new Date().toISOString(), actor, kind, detail, ...(refs ? { refs } : {}) });
+}
+
+/**
+ * The surfaced stamp for a queue question this sitting just served (015).
+ * A queue entry whose question reached the person surfaces the snippets its
+ * citations quote. user-declared entries carry no cites and no stamp.
+ */
+function stampComposedServed(root: string, queue: QueueStore, openQueueEntryId?: string): void {
+ if (!openQueueEntryId) return;
+ const entry = queue.list().find((e) => e.id === openQueueEntryId);
+ if (!entry || entry.cites === undefined || entry.cites.length === 0) return;
+ surfaced(root, entry.cites, 'composed-question');
 }
 
 /**
@@ -742,7 +755,18 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 
   serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name} shuffle=${body.shuffle === true}`);
 
+  // Usage stamps (015): what this opening actually served to the person.
+  // A resurfacing draw puts the snippet itself on the table; a queue draw
+  // puts the snippets its question quotes on the table. Deck draws surface
+  // a curated card, not a claim or snippet, so they keep the draw record
+  // and do not stamp.
+  stampComposedServed(deps.vaultRoot, deps.queue, state.openQueueEntryId);
+
   const draw = dealt.draw;
+
+  if (draw && draw.draw.kind === 'resurfacing' && draw.question === opener.text) {
+   surfaced(deps.vaultRoot, [draw.draw.snippetId], 'draw');
+  }
   return c.json({
    sessionId: state.id,
    question: opener.text,
@@ -822,6 +846,11 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   } else {
    serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=${result.provenance}`);
   }
+
+  // The just-served probe, when it was a queue draw (015). At the top of
+  // userTurn the previous entry is answered and cleared, so a set id here
+  // names the question this turn actually served.
+  stampComposedServed(deps.vaultRoot, deps.queue, state.openQueueEntryId);
 
   return c.json({
    kind: 'probe',
@@ -1002,15 +1031,15 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const state = sessions.get(sessionId);
   const channelOf = record
    ? record.origin === 'unprompted'
-     ? () => record.unpromptedChannel
-     : record.turnChannels
-       ? (p: CutProposal) => record.turnChannels?.[p.sourceTurn] ?? undefined
-       : undefined
+    ? () => record.unpromptedChannel
+    : record.turnChannels
+     ? (p: CutProposal) => record.turnChannels?.[p.sourceTurn] ?? undefined
+     : undefined
    : unpromptedSessions.has(sessionId)
-     ? () => unpromptedChannels.get(sessionId)
-     : state?.turnChannels
-       ? (p: CutProposal) => state.turnChannels?.[p.sourceTurn]
-       : undefined;
+    ? () => unpromptedChannels.get(sessionId)
+    : state?.turnChannels
+     ? (p: CutProposal) => state.turnChannels?.[p.sourceTurn]
+     : undefined;
   const result = decide(
    sessionId,
    proposals,
@@ -1260,6 +1289,16 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const lintNotes = (lastLint?.findings ?? [])
    .filter((f) => all || !hidden.has(f.subject))
    .map((f) => ({ kind: f.kind, subject: f.subject, note: lintNote(f.kind) }));
+
+  // Usage stamps (015): every claim this page serves is surfaced, with the
+  // snippets its citations render. One line per claim; ?all=1 serves the
+  // whole record and stamps it too. The /api/snippets pool is display
+  // support, not display, and never stamps.
+  for (const facet of facets) {
+   for (const cl of facet.claims) {
+    surfaced(deps.vaultRoot, [cl.id, ...cl.cites], 'wiki');
+   }
+  }
 
   return c.json({
    facets,

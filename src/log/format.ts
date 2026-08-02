@@ -565,6 +565,19 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  const file = (f.path ?? d).split('/').pop() || 'a file';
  return `set aside ${count(num(f, 'cuts'), 'cut')} from ${file}: it sits inside a quotation in the source file`;
 },
+
+// ── The surfaced usage stamp (015) ──
+
+// One line per surfacing act: a claim or snippet reached the person on a
+// surface that counts as usage. The refs are the record — the aggregation
+// ticket 015 waits on reads them — so the sentence names the surface and
+// nothing else.
+'surfaced': (f) => {
+ if (f.surface === 'draw') return 'surfaced an old snippet in a randomizer draw';
+ if (f.surface === 'wiki') return 'surfaced a claim with its cited snippets on the wiki reading surface';
+ if (f.surface === 'composed-question') return 'surfaced a snippet quoted in a composed question';
+ return 'surfaced a claim or snippet';
+},
 };
 
 /**
