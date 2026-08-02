@@ -6,6 +6,8 @@ import { join, extname } from 'node:path';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { propose, decide } from './harvester/harvester.js';
+import { createQueueStore } from './queue/queue.js';
+import { buildIndex } from './index/lexical.js';
 import type {
   Vault,
   Complete,
@@ -13,6 +15,8 @@ import type {
   SessionState,
   CutProposal,
   HarvestDecision,
+  QueueStore,
+  LexicalIndex,
 } from './types.js';
 
 // ── Types ──
@@ -20,6 +24,8 @@ import type {
 export interface ServerDeps {
   vault: Vault;
   complete: Complete;
+  queue: QueueStore;
+  index: LexicalIndex;
 }
 
 // ── MIME map for static serving ──
@@ -270,8 +276,12 @@ if (isDirect) {
       JSON.stringify({ cuts: [] }),
     ]);
   }
+  const queueRoot = process.env.ELICIT_QUEUE_DIR ?? vaultRoot;
+  const queue = createQueueStore(queueRoot);
+  const indexData = vault.rebuildIndex();
+  const index = buildIndex(Object.values(indexData.snippets));
 
-  const app = createApp({ vault, complete });
+  const app = createApp({ vault, complete, queue, index });
   const port = 4517;
   await serveApp(app, port);
   console.error(

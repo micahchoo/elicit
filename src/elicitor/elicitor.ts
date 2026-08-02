@@ -1,12 +1,26 @@
 import { ulid } from 'ulid';
-import type { Complete, Mode, QuestionForm, QuestionSource, SessionState, Turn, Vault } from '../types.js';
+import type {
+ Complete,
+ Mode,
+ QuestionForm,
+ QuestionSource,
+ SessionState,
+ Target,
+ Turn,
+ Vault,
+ QueueStore,
+ LexicalIndex,
+} from '../types.js';
 import {
  defaultQuestionForm,
- MAX_PROBES,
- REFLECTIVE_INTERVIEW_PROMPT,
+ PROTOCOLS,
+ CLOSING_DOOR_QUESTION,
+ CLOSING_BOOKMARK_QUESTION,
  type StarterQuestion,
 } from './protocol.js';
 import { loadQuestionBank } from './bank.js';
+import { resonate } from '../index/lexical.js';
+import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
 
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
@@ -29,32 +43,64 @@ function pickOpener(
 
 export function startSession(
  mode: Mode,
- deps: { complete: Complete; vault: Vault; bank?: StarterQuestion[] },
+ deps: {
+  complete: Complete;
+  vault: Vault;
+  queue: QueueStore;
+  index: LexicalIndex;
+  bank?: StarterQuestion[];
+ },
 ): SessionState {
  const id = ulid();
  const started = new Date().toISOString();
+ const target: Target = mode.target ?? 'self';
+ const normalizedMode: Mode = { ...mode, target };
  const bank = deps.bank ?? loadQuestionBank();
- const opener = pickOpener(bank, mode.topic);
 
- deps.vault.startTranscript(id, { mode, protocol: 'reflective-interview', started });
+ // Opening: draw from queue first, bank fallback
+ const queueDraw = deps.queue.draw(normalizedMode, 'opening');
+ let openerTurn: Turn;
 
- const openerTurn: Turn = {
-  role: 'agent',
-  text: opener.text,
-  at: started,
-  questionForm: opener.questionForm,
-  ...(opener.source ? { questionSource: opener.source } : {}),
- };
+ if (queueDraw) {
+  deps.queue.markAsked(queueDraw.id);
+  openerTurn = {
+   role: 'agent',
+   text: queueDraw.question,
+   at: started,
+   questionForm: queueDraw.questionForm,
+  };
+ } else {
+  const opener = pickOpener(bank, normalizedMode.topic);
+  openerTurn = {
+   role: 'agent',
+   text: opener.text,
+   at: started,
+   questionForm: opener.questionForm,
+   ...(opener.source ? { questionSource: opener.source } : {}),
+  };
+ }
 
+ deps.vault.startTranscript(id, {
+  mode: normalizedMode,
+  protocol: target,
+  started,
+ });
  deps.vault.appendTurn(id, openerTurn);
 
  return {
   id,
-  mode,
-  protocol: 'reflective-interview',
-  deps,
+  mode: normalizedMode,
+  protocol: target,
+  deps: {
+   complete: deps.complete,
+   vault: deps.vault,
+   queue: deps.queue,
+   index: deps.index,
+  },
   turns: [openerTurn],
   bank,
+  questionCount: 1,
+  phase: 'open',
  };
 }
 
@@ -67,22 +113,143 @@ export async function userTurn(
 > {
  const now = new Date().toISOString();
  const userTurnRecord: Turn = { role: 'user', text, at: now };
- const probeCount = s.turns.filter((t) => t.role === 'agent' && !t.skipped).length;
  s.deps.vault.appendTurn(s.id, userTurnRecord);
  s.turns.push(userTurnRecord);
 
- if (probeCount >= MAX_PROBES) {
+ // Bookmark answer — close completes; the answer becomes a user-declared queue entry
+ if (s.phase === 'closing-bookmark') {
+  s.deps.queue.add({
+   source: 'user-declared',
+   license: 'user',
+   question: text,
+   questionForm: 'deliberative',
+   sharpness: 'weak',
+   horizon: 'now',
+  });
   return { kind: 'saturated' };
  }
 
- const response = await s.deps.complete(
-  REFLECTIVE_INTERVIEW_PROMPT,
-  s.turns,
-  { temperature: 0.8 },
- );
+ // Closing-door → advance to the bookmark question
+ if (s.phase === 'closing-door') {
+  s.phase = 'closing-bookmark';
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: CLOSING_BOOKMARK_QUESTION,
+   at: new Date().toISOString(),
+   questionForm: 'deliberative',
+  };
+  s.deps.vault.appendTurn(s.id, agentTurn);
+  s.turns.push(agentTurn);
+  s.questionCount++;
+  return {
+   kind: 'probe',
+   text: agentTurn.text,
+   questionForm: 'deliberative',
+  };
+ }
+
+ // Budget: min(20, max(10, mode.minutes))
+ const budget = Math.min(20, Math.max(10, s.mode.minutes));
+
+ // At budget-2, trigger the close sequence
+ if (s.questionCount >= budget - 2) {
+  s.phase = 'closing-door';
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: CLOSING_DOOR_QUESTION,
+   at: new Date().toISOString(),
+   questionForm: 'deliberative',
+  };
+  s.deps.vault.appendTurn(s.id, agentTurn);
+  s.turns.push(agentTurn);
+  s.questionCount++;
+  return {
+   kind: 'probe',
+   text: agentTurn.text,
+   questionForm: 'deliberative',
+  };
+ }
+
+ // ── Probe flow: juxtaposition > red-light compose > generic LLM probe ──
+
+ // Priority 1: resonance → juxtaposition
+ const hits = resonate(s.deps.index, text);
+ for (const hit of hits) {
+  const juxtaposed = await composeJuxtaposition(
+   text,
+   hit,
+   s.deps.complete,
+  );
+  if (juxtaposed) {
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: juxtaposed,
+    at: new Date().toISOString(),
+    questionForm: 'deliberative',
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: 'deliberative',
+   };
+  }
+ }
+
+ // Priority 2: red-light detection → composed follow-up
+ const lights = await redLights(text, s.deps.complete);
+ for (const light of lights) {
+  const followUp = await composeFollowUp(text, light, s.deps.complete);
+  if (followUp) {
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: followUp,
+    at: new Date().toISOString(),
+    questionForm: 'deliberative',
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: 'deliberative',
+   };
+  }
+ }
+
+ // Priority 3: generic LLM probe (Target-aware protocol)
+ const target: Target = s.mode.target ?? 'self';
+ const protocols = PROTOCOLS[target] ?? PROTOCOLS.self;
+ // questionCount currently reflects how many agent questions have been asked
+ // (including the opener). The next probe is the (questionCount)-th
+ // agent-prompted question — use questionCount as the 0-based protocol index.
+ const probeIndex = s.questionCount;
+ const systemPrompt = protocols[probeIndex % protocols.length]!;
+
+ const response = await s.deps.complete(systemPrompt, s.turns, {
+  temperature: 0.8,
+ });
 
  if (response.includes('[SATURATED]')) {
-  return { kind: 'saturated' };
+  // Saturation triggers close even before the budget cap
+  s.phase = 'closing-door';
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: CLOSING_DOOR_QUESTION,
+   at: new Date().toISOString(),
+   questionForm: 'deliberative',
+  };
+  s.deps.vault.appendTurn(s.id, agentTurn);
+  s.turns.push(agentTurn);
+  s.questionCount++;
+  return {
+   kind: 'probe',
+   text: agentTurn.text,
+   questionForm: 'deliberative',
+  };
  }
 
  const agentTurn: Turn = {
@@ -94,8 +261,13 @@ export async function userTurn(
 
  s.deps.vault.appendTurn(s.id, agentTurn);
  s.turns.push(agentTurn);
+ s.questionCount++;
 
- return { kind: 'probe', text: agentTurn.text, questionForm: defaultQuestionForm };
+ return {
+  kind: 'probe',
+  text: agentTurn.text,
+  questionForm: defaultQuestionForm,
+ };
 }
 
 /** Returns the set of bank question texts already used (asked or skipped) in this session. */
@@ -114,7 +286,7 @@ function usedStarters(turns: Turn[], bankTexts: Set<string>): Set<string> {
  * Marks the last agent turn skipped in memory, picks an unused question from the
  * session's bank, and appends the replacement as a new agent turn.
  *
- * Skips do not count toward MAX_PROBES (Q-8: append before returning).
+ * Skips do not consume budget (Q-8: append before returning).
  */
 export function skipQuestion(
  s: SessionState,
@@ -146,7 +318,11 @@ export function skipQuestion(
  s.deps.vault.appendTurn(s.id, agentTurn);
  s.turns.push(agentTurn);
 
- return { kind: 'question', text: agentTurn.text, questionForm: pick.questionForm };
+ return {
+  kind: 'question',
+  text: agentTurn.text,
+  questionForm: pick.questionForm,
+ };
 }
 
 function findLastIndex<T>(arr: T[], pred: (el: T) => boolean): number {

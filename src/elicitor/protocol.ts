@@ -1,4 +1,4 @@
-import type { QuestionForm, QuestionSource } from '../types.js';
+import type { QuestionForm, QuestionSource, Target } from '../types.js';
 
 export interface StarterQuestion {
   text: string;
@@ -9,8 +9,6 @@ export interface StarterQuestion {
 /** Every LLM-generated probe carries this form; the protocol owns classification. */
 export const defaultQuestionForm: QuestionForm = 'deliberative';
 
-/** Maximum agent probes per exchange (including the opener). */
-export const MAX_PROBES = 6;
 
 export const REFLECTIVE_INTERVIEW_PROMPT = `You are conducting a reflective interview. Given the conversation so far, produce the single next probe — one short question that deepens the thread.
 
@@ -31,6 +29,44 @@ HARD RULES:
 - Never emit a probe that could be pasted into any other interview — if it contains none of their words, it is wrong.
 - If their answer is thin, make the probe smaller and more concrete, not broader.
 - When the thread is genuinely exhausted and probing would only restate, output exactly [SATURATED] and nothing else.`;
+
+export const CDM_PROMPT = `You are conducting a Critical Decision Method interview about a domain the user knows well. Map how they make decisions under complexity.
+
+STRUCTURE:
+1. NONROUTINE INCIDENT: Ask them to recall a specific challenging case — one where standard procedure wasn't enough.
+2. ACCOUNT: Have them walk through what happened, step by step, in their own words.
+3. TIMELINE: Pin moments to a sequence — what happened first, then what, then what. Anchor each shift with "and then what happened?"
+4. DECISION-POINT PROBES: At each fork, ask: "What were you seeing that made you decide X rather than Y?" "What else could you have done?" "What was the hardest call in this sequence?"
+
+RULES:
+- One question at a time. No preamble, no summary, no judgment.
+- Stay on the incident they are describing until the sequence is exhausted.
+- When the incident is fully mapped, ask for another.
+- If the user's answer is thin, go smaller and more concrete, not broader.
+- When no further incidents will surface and probing would only restate, output exactly [SATURATED] and nothing else.`;
+
+export const LADDERED_GRID_PROMPT = `You are conducting a laddered-grid interview about a domain the user knows well. Surface the dimensions they use — consciously or not — to distinguish cases, people, or approaches in their field.
+
+ROTATE THESE THREE MOVES:
+- EXAMPLES-OF: "Give me two examples of X that differ in an important way."
+- HOW-CAN-YOU-TELL: "When you see Y, how can you tell whether it is the kind that...?"
+- KEY-DIFFERENCE: "What is the key difference between A and B in your experience?"
+
+RULES:
+- One question at a time. No preamble, no summary, no judgment.
+- Anchor every question in what they just said — use their exact words.
+- Never ask a question that could be pasted into any other domain interview.
+- If the user's answer is thin, go smaller and more concrete, not broader.
+- When the dimensions are genuinely exhausted and probing would only restate, output exactly [SATURATED] and nothing else.`;
+
+/** Protocol prompts keyed by Target. Domain alternates CDM / laddered-grid each probe. */
+export const PROTOCOLS: Record<Target, string[]> = {
+  self: [REFLECTIVE_INTERVIEW_PROMPT],
+  domain: [CDM_PROMPT, LADDERED_GRID_PROMPT],
+};
+
+export const CLOSING_DOOR_QUESTION = 'What door is this opening?';
+export const CLOSING_BOOKMARK_QUESTION = 'What would you want to remember from this conversation?';
 
 export const starterBank: StarterQuestion[] = [
   {
