@@ -7,6 +7,7 @@ import { appendEvent } from '../log/activity.js';
 import {
   applyFacetBalance,
   facetBalanceIsLive,
+  FACETS,
   formatDistribution,
   readVaultFacetDistribution,
   sessionBlueprint,
@@ -31,6 +32,120 @@ const SESSION_BLUEPRINT_SLOTS = 6;
 function pickTopK(pool: QueueEntry[], k = 3): QueueEntry {
   const top = pool.slice(0, k);
   return top[Math.floor(Math.random() * top.length)]!;
+}
+
+/** A hard filter, named as the ladder's log lines say it. */
+type FilterName = 'status' | 'modeNeeds' | 'sharpness' | 'horizon' | 'target';
+
+type DrawFilter = {
+  name: FilterName;
+  keep: (e: QueueEntry) => boolean;
+  /**
+   * Rung 2 of the degradation ladder (Q-55) admits `user-declared` entries
+   * past exactly these, and past nothing else. `status` is incoherent to
+   * relax, `target` is the one thing the person said this sitting is FOR
+   * (Q-19/045), and `horizon` protects the sitting's budget.
+   */
+  relaxable: boolean;
+};
+
+/**
+ * The draw's hard filters as data rather than control flow, in the order they
+ * apply. The order is a values statement (Q-55), so it is written once, read
+ * by the normal path, by rung 2, and by the floor's "which filter emptied the
+ * pool" — one list, no re-implementation.
+ */
+function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[] {
+  const modeEnergy = ENERGY_LEVEL[mode.energy];
+  return [
+    {
+      name: 'status',
+      relaxable: false,
+      keep: (e) => e.status === 'pending' || e.status === 'deferred',
+    },
+    {
+      name: 'modeNeeds',
+      relaxable: true,
+      keep: (e) => {
+        if (e.modeNeeds?.minMinutes && e.modeNeeds.minMinutes > mode.minutes) return false;
+        if (e.modeNeeds?.energy) {
+          const needLevel = ENERGY_LEVEL[e.modeNeeds.energy] ?? 0;
+          if (needLevel > modeEnergy) return false;
+        }
+        return true;
+      },
+    },
+    {
+      name: 'sharpness',
+      relaxable: true,
+      keep: (e) => phase === 'late' || e.sharpness === 'weak',
+    },
+    // Never drawn into an exchange, at any rung: a days-horizon question is
+    // not a question for now.
+    { name: 'horizon', relaxable: false, keep: (e) => e.horizon !== 'days' },
+    // The sitting's declared Target — a hard filter, not a preference (045).
+    // A domain sitting drew self material because nothing here looked at the
+    // Target at all; the cost was every declared domain sitting, since one
+    // composed self entry is enough to hijack it. An entry with no target
+    // claim serves either sitting; an entry with the other target is simply
+    // not in the pool, so the caller falls through to its own opener.
+    {
+      name: 'target',
+      relaxable: false,
+      keep: (e) =>
+        mode.target === undefined || e.target === undefined || e.target === mode.target,
+    },
+  ];
+}
+
+type ChainRun = {
+  pool: QueueEntry[];
+  /**
+   * The first filter that took a non-empty pool to empty. Null when the queue
+   * was already empty — an empty vault is not a filter's doing, and saying
+   * `status` there would be a lie the floor log then repeats.
+   */
+  emptiedBy: FilterName | null;
+};
+
+/**
+ * Run the chain, recording where the pool died. `relaxUserDeclared` is rung 2:
+ * an entry whose source is `user-declared` passes the relaxable filters
+ * regardless of what they think of it. The person asked for that question by
+ * name (Q-20), and the system's judgement that it is too sharp for an opening
+ * is exactly the judgement that should yield to an explicit request.
+ */
+function runChain(
+  entries: QueueEntry[],
+  filters: DrawFilter[],
+  relaxUserDeclared: boolean,
+): ChainRun {
+  let pool = entries;
+  let emptiedBy: FilterName | null = null;
+  for (const f of filters) {
+    if (pool.length === 0) break;
+    pool = pool.filter(
+      (e) => f.keep(e) || (relaxUserDeclared && f.relaxable && e.source === 'user-declared'),
+    );
+    if (pool.length === 0) {
+      emptiedBy = f.name;
+      break;
+    }
+  }
+  return { pool, emptiedBy };
+}
+
+/**
+ * Which relaxations actually earned their keep: the filters that reject an
+ * entry still standing in the pool. Nothing else is named, so `relaxed=` says
+ * what happened rather than what was permitted.
+ */
+function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
+  const names = new Set<FilterName>();
+  for (const e of pool) {
+    for (const f of filters) if (f.relaxable && !f.keep(e)) names.add(f.name);
+  }
+  return [...names];
 }
 
 class QueueStoreImpl implements QueueStore {
@@ -160,53 +275,44 @@ class QueueStoreImpl implements QueueStore {
     return entries;
   }
 
+  /**
+   * The degradation ladder (Q-55): the system drops its own inferences before
+   * it drops the person's declarations, and when it runs out of inferences to
+   * drop it composes rather than compromises.
+   *
+   * Step 1 runs the hard filters. If they leave nothing, rung 2 re-runs them
+   * admitting `user-declared` entries past sharpness and modeNeeds. If that
+   * leaves nothing too, the floor is `return null` — and the caller composing
+   * fresh with full context (Q-36) is the RIGHT outcome, not a failure, so the
+   * floor is logged rather than repaired. Rung 1 — dropping facet balance —
+   * lives at step 4, because line-order already guarantees the facet filter
+   * can never be what emptied the pool.
+   */
   draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null {
     const all = this.#readAll();
-    const modeEnergy = ENERGY_LEVEL[mode.energy];
+    const filters = drawFilters(mode, phase);
 
-    // Step 1: filter by status=pending or deferred
-    let candidates = all.filter(
-      (e) => e.status === 'pending' || e.status === 'deferred',
-    );
+    // Step 1: the hard filters, in the order Q-55 fixes.
+    const normal = runChain(all, filters, false);
+    let candidates = normal.pool;
 
-    // Step 2: hard-filter by modeNeeds vs mode
-    candidates = candidates.filter((e) => {
-      if (e.modeNeeds?.minMinutes && e.modeNeeds.minMinutes > mode.minutes) {
-        return false;
+    // Step 2: rung 2, and only when step 1 came back empty.
+    if (candidates.length === 0) {
+      const relaxed = runChain(all, filters, true);
+      if (relaxed.pool.length === 0) {
+        this.#logFloor(all.length, normal.emptiedBy, mode, phase);
+        return null;
       }
-      if (e.modeNeeds?.energy) {
-        const needLevel = ENERGY_LEVEL[e.modeNeeds.energy] ?? 0;
-        if (needLevel > modeEnergy) return false;
-      }
-      return true;
-    });
-
-    // Step 3: filter by phase vs sharpness
-    candidates = candidates.filter((e) => {
-      if (phase === 'opening' || phase === 'mid') {
-        return e.sharpness === 'weak';
-      }
-      return true;
-    });
-
-    // Step 4: horizon 'days' never drawn into exchange
-    candidates = candidates.filter((e) => e.horizon !== 'days');
-
-    // Step 5: the sitting's declared Target — a hard filter, not a preference
-    // (045). A domain sitting drew self material because nothing here looked
-    // at the Target at all; the cost was every declared domain sitting, since
-    // one composed self entry is enough to hijack it. An entry with no target
-    // claim serves either sitting; an entry with the other target is simply
-    // not in the pool, so the caller falls through to its own opener.
-    if (mode.target) {
-      candidates = candidates.filter(
-        (e) => e.target === undefined || e.target === mode.target,
+      this.#logRung(
+        2,
+        relaxedBy(relaxed.pool, filters).join(',') || 'none',
+        relaxed.pool.length,
+        relaxed.pool.map((e) => e.id),
       );
+      candidates = relaxed.pool;
     }
 
-    if (candidates.length === 0) return null;
-
-    // Step 6: sort — user-declared first, then recency (newest first)
+    // Step 3: sort — user-declared first, then recency (newest first)
     candidates.sort((a, b) => {
       const aUd = a.source === 'user-declared' ? 0 : 1;
       const bUd = b.source === 'user-declared' ? 0 : 1;
@@ -214,7 +320,7 @@ class QueueStoreImpl implements QueueStore {
       return b.created.localeCompare(a.created);
     });
 
-    // Step 7: facet balance — a second hard filter on the pool, applied BEFORE
+    // Step 4: facet balance — a second hard filter on the pool, applied BEFORE
     // the top-k pick so chance runs inside the constraints (Q-13), and running
     // in shadow until its log earns it the right to act (Q-35). It narrows
     // what the Target filter already left; the two compose, in that order.
@@ -223,7 +329,17 @@ class QueueStoreImpl implements QueueStore {
     const balanced = applyFacetBalance(candidates, wanted);
     const live = facetBalanceIsLive(process.env);
 
-    // Step 8: top-k (k=3), uniform random pick — once for the open pool, once
+    // Rung 1 of the ladder: the facet filter wanted this pool empty and stood
+    // down instead. It is the system's inference about corpus shape, so it is
+    // the first thing dropped — and `applyFacetBalance` already drops it,
+    // which is why this rung is a log line rather than a branch. A corpus that
+    // owes every Facet owes none in particular; that stand-down is cold start,
+    // not a rung, and the filter had no claim to drop.
+    if (!balanced.applied && wanted.size < FACETS.length) {
+      this.#logRung(1, 'facet-balance', candidates.length, []);
+    }
+
+    // Step 5: top-k (k=3), uniform random pick — once for the open pool, once
     // for the balanced pool, so the shadow log can name the road not taken.
     const openPick = pickTopK(candidates);
     const balancedPick = balanced.applied ? pickTopK(balanced.kept) : null;
@@ -240,10 +356,65 @@ class QueueStoreImpl implements QueueStore {
       balancedPick,
     });
 
-    // Step 9: markAsked immediately
+    // Step 6: markAsked immediately
     this.markAsked(picked.id);
 
     return picked;
+  }
+
+  /**
+   * One line per rung actually used. `before` is the pool the constraint left
+   * — zero, at every rung, because a rung only fires when a constraint emptied
+   * the pool — and `after` is what relaxing it recovered. Without this, "the
+   * filters emptied the pool" stays a hypothesis and Q-55's claim that a long
+   * cascade is unnecessary has no evidence behind it either way.
+   */
+  #logRung(rung: 1 | 2, relaxed: string, after: number, refs: string[]): void {
+    this.#append({
+      kind: 'queue-rung',
+      detail: `rung=${rung} relaxed=${relaxed} before=0 after=${after}`,
+      refs,
+    });
+  }
+
+  /**
+   * The floor: the caller composes fresh, which Q-55 calls the right outcome.
+   * What it names is the filter that got there first — the one rung a longer
+   * ladder would have had to relax next, recorded so that the decision to have
+   * no such rung can be reviewed against what actually happens.
+   */
+  #logFloor(
+    poolSize: number,
+    emptiedBy: FilterName | null,
+    mode: Mode,
+    phase: 'opening' | 'mid' | 'late',
+  ): void {
+    this.#append({
+      kind: 'queue-floor',
+      detail: [
+        `emptiedBy=${emptiedBy ?? 'none'}`,
+        `pool=${poolSize}`,
+        `phase=${phase}`,
+        `target=${mode.target ?? 'none'}`,
+        `mode=${mode.minutes}m/${mode.energy}`,
+      ].join(' '),
+      refs: [],
+    });
+  }
+
+  /** The log is evidence, not a dependency — a draw never fails on it. */
+  #append(e: { kind: string; detail: string; refs: string[] }): void {
+    try {
+      appendEvent(this.#root, {
+        at: new Date().toISOString(),
+        actor: 'elicitor',
+        kind: e.kind,
+        detail: e.detail,
+        ...(e.refs.length > 0 ? { refs: e.refs } : {}),
+      });
+    } catch {
+      // Deliberately silent, exactly as `#logFacetBalance` is.
+    }
   }
 
   /**

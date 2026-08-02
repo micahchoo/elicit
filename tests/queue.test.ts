@@ -771,4 +771,206 @@ describe('QueueStore', () => {
       expect('claim' in createQueueStore(root).list()[0]!).toBe(false);
     });
   });
+
+  // ── the degradation ladder: two rungs and a composing floor (Q-55) ──
+
+  describe('degradation ladder', () => {
+    type Ev = { kind: string; detail: string; refs?: string[] };
+
+    /** Every event the draw wrote, in order. Empty when nothing was logged. */
+    function events(): Ev[] {
+      const dir = join(root, 'log');
+      let files: string[];
+      try {
+        files = readdirSync(dir);
+      } catch {
+        return [];
+      }
+      return files.flatMap((f) =>
+        readFileSync(join(dir, f), 'utf-8')
+          .split('\n')
+          .filter((l) => l.trim())
+          .map((l) => JSON.parse(l) as Ev),
+      );
+    }
+
+    const rungs = (): Ev[] => events().filter((e) => e.kind === 'queue-rung');
+    const floors = (): Ev[] => events().filter((e) => e.kind === 'queue-floor');
+
+    /** 25 construct readings: every Facet but construct is owed material. */
+    function writeConstructHeavyVault(): void {
+      const dir = join(root, 'wiki', 'readings');
+      mkdirSync(dir, { recursive: true });
+      for (let i = 0; i < 25; i++) {
+        writeFileSync(
+          join(dir, `r${i}.md`),
+          '---\nfacet: construct\nstance: avowal\ncites: []\n---\nA reading.\n',
+        );
+      }
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    // ── rung 2: the person's declaration outranks the system's judgement ──
+
+    it('re-admits a user-declared entry the sharpness filter excluded', () => {
+      const ud = store.add(
+        makeDraft({ source: 'user-declared', question: 'the bookmark', sharpness: 'sharp' }),
+      );
+
+      const drawn = store.draw(makeMode(), 'opening');
+
+      expect(drawn).not.toBeNull();
+      expect(drawn!.id).toBe(ud.id);
+      // Drawn is drawn: the rung does not skip the normal bookkeeping.
+      expect(store.list().find((e) => e.id === ud.id)!.status).toBe('asked');
+
+      expect(rungs()).toHaveLength(1);
+      expect(rungs()[0]!.detail).toContain('rung=2');
+      expect(rungs()[0]!.detail).toContain('relaxed=sharpness');
+      expect(rungs()[0]!.detail).toContain('before=0');
+      expect(rungs()[0]!.detail).toContain('after=1');
+      expect(floors()).toHaveLength(0);
+    });
+
+    it('re-admits a user-declared entry modeNeeds excluded', () => {
+      const ud = store.add(
+        makeDraft({
+          source: 'user-declared',
+          question: 'the long one',
+          modeNeeds: { minMinutes: 60, energy: 'high' },
+        }),
+      );
+
+      const drawn = store.draw(makeMode({ minutes: 15, energy: 'low' }), 'opening');
+
+      expect(drawn!.id).toBe(ud.id);
+      expect(rungs()).toHaveLength(1);
+      expect(rungs()[0]!.detail).toContain('relaxed=modeNeeds');
+    });
+
+    it('names both constraints when both had to yield', () => {
+      store.add(
+        makeDraft({
+          source: 'user-declared',
+          sharpness: 'sharp',
+          modeNeeds: { minMinutes: 60 },
+        }),
+      );
+
+      expect(store.draw(makeMode({ minutes: 15 }), 'opening')).not.toBeNull();
+      const detail = rungs()[0]!.detail;
+      expect(detail).toContain('modeNeeds');
+      expect(detail).toContain('sharpness');
+    });
+
+    it('chance still runs inside the rung-2 pool — the pick is not argmax', () => {
+      // Four sharp user-declared entries: the opening pool is empty, rung 2
+      // admits all four, and top-k=3 plus a roll decides which one is asked.
+      vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+      store.add(makeDraft({ source: 'user-declared', question: 'U1', sharpness: 'sharp' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+      store.add(makeDraft({ source: 'user-declared', question: 'U2', sharpness: 'sharp' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+      store.add(makeDraft({ source: 'user-declared', question: 'U3', sharpness: 'sharp' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
+      store.add(makeDraft({ source: 'user-declared', question: 'U4', sharpness: 'sharp' }));
+      vi.useRealTimers();
+
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const first = store.draw(makeMode(), 'opening')!;
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const last = store.draw(makeMode(), 'opening')!;
+
+      expect(first.id).not.toBe(last.id);
+      // Newest first: the roll of 0 takes U4, and the roll of 0.99 reaches the
+      // far end of what is left. The rung constrains, chance chooses.
+      expect([first.question, last.question].sort()).toEqual(['U1', 'U4']);
+    });
+
+    // ── never relaxed: status, Target, horizon ──
+
+    it('an agent-minted pool draws nothing and the floor names the emptying filter', () => {
+      store.add(makeDraft({ source: 'composed', sharpness: 'sharp' }));
+
+      expect(store.draw(makeMode(), 'opening')).toBeNull();
+
+      expect(rungs()).toHaveLength(0);
+      expect(floors()).toHaveLength(1);
+      expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
+    });
+
+    it('a user-declared entry excluded by Target is not re-admitted', () => {
+      store.add(makeDraft({ source: 'user-declared', question: 'self Q', target: 'self' }));
+
+      expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+      expect(rungs()).toHaveLength(0);
+      expect(floors()[0]!.detail).toContain('emptiedBy=target');
+    });
+
+    it('an answered entry is never drawn at any rung', () => {
+      const ud = store.add(
+        makeDraft({ source: 'user-declared', question: 'done', sharpness: 'sharp' }),
+      );
+      store.markAnswered(ud.id);
+
+      expect(store.draw(makeMode(), 'opening')).toBeNull();
+      expect(store.draw(makeMode(), 'late')).toBeNull();
+      expect(rungs()).toHaveLength(0);
+      expect(floors()[0]!.detail).toContain('emptiedBy=status');
+    });
+
+    it('a user-declared days-horizon entry is not re-admitted', () => {
+      store.add(makeDraft({ source: 'user-declared', horizon: 'days', sharpness: 'sharp' }));
+
+      expect(store.draw(makeMode(), 'opening')).toBeNull();
+      expect(rungs()).toHaveLength(0);
+      expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
+    });
+
+    it('an empty queue reaches the floor without blaming a filter', () => {
+      expect(store.draw(makeMode(), 'opening')).toBeNull();
+
+      expect(floors()).toHaveLength(1);
+      expect(floors()[0]!.detail).toContain('emptiedBy=none');
+      expect(floors()[0]!.detail).toContain('pool=0');
+    });
+
+    // ── rung 1: the system drops its own inference first ──
+
+    it('logs rung 1 when facet balance would have emptied the pool', () => {
+      writeConstructHeavyVault();
+      store.add(makeDraft({ question: 'untagged' }));
+
+      expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+
+      expect(rungs()).toHaveLength(1);
+      expect(rungs()[0]!.detail).toContain('rung=1');
+      expect(rungs()[0]!.detail).toContain('relaxed=facet-balance');
+      expect(rungs()[0]!.detail).toContain('before=0');
+      expect(rungs()[0]!.detail).toContain('after=1');
+    });
+
+    it('does not log rung 1 when facet balance leaves the pool alone', () => {
+      writeConstructHeavyVault();
+      store.add(makeDraft({ question: 'an episode', targetFacet: 'episode' }));
+
+      expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+      expect(rungs()).toHaveLength(0);
+    });
+
+    it('a cold-start corpus is not a rung — the filter never had a claim to drop', () => {
+      // No readings at all: every Facet is owed, so facet balance stands down
+      // because it has nothing to say, not because it would empty the pool.
+      store.add(makeDraft({ question: 'only one' }));
+
+      expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+      expect(rungs()).toHaveLength(0);
+      expect(floors()).toHaveLength(0);
+    });
+  });
 });
