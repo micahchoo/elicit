@@ -321,9 +321,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 
     // Activity: question-asked or juxtaposition-offered
     if (juxtaposition) {
-      serverEmit(deps.vaultRoot, 'elicitor', 'juxtaposition-offered', `session=${sessionId} snippet=${hits[0]!.snippetId}`);
+      serverEmit(deps.vaultRoot, 'elicitor', 'juxtaposition-offered', `session=${sessionId} snippet=${hits[0]!.snippetId} source=juxtaposition`);
     } else {
-      serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId}`);
+      serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=${result.provenance}`);
     }
 
     return c.json({
@@ -352,6 +352,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     if (!state) return c.json({ error: 'session not found' }, 404);
 
     const result = await propose(sessionId, state.turns, deps.complete);
+    serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', `proposals=${result.proposals.length}`);
     sessionProposals.set(sessionId, result.proposals);
     return c.json({ proposals: result.proposals, buds: result.buds });
   });
@@ -593,12 +594,26 @@ function nodeAdapter(app: Hono) {
       });
       nodeRes.writeHead(webRes.status, resHeaders);
 
-      if (webRes.body) {
-        const buf = Buffer.from(await webRes.arrayBuffer());
-        nodeRes.end(buf);
-      } else {
+      if (!webRes.body) {
         nodeRes.end();
+        return;
       }
+      // Stream the body chunk-by-chunk — arrayBuffer() would drain an
+      // endless body (e.g. SSE) to completion and never resolve.
+      const reader = webRes.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            nodeRes.write(Buffer.from(value));
+          }
+          nodeRes.end();
+        } catch (err) {
+          nodeRes.destroy(err as Error);
+        }
+      };
+      void pump();
     } catch (err) {
       if (!nodeRes.headersSent) {
         nodeRes.writeHead(500);
@@ -660,7 +675,7 @@ if (isDirect) {
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
   const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore });
-  const port = 4517;
+  const port = parseInt(process.env.ELICIT_PORT ?? '4517', 10);
   await serveApp(app, port);
   console.error(
     `elicit server on http://${bindHost}:${port} [ELICIT_LLM=${llmMode}]`,

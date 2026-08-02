@@ -1,141 +1,96 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { loadQuestionBank } from '../src/elicitor/bank.js';
-import { starterBank } from '../src/elicitor/protocol.js';
+import { describe, it, expect } from 'vitest';
+import { isWeakForm } from '../src/queue/bank-filter.js';
 
-let dir: string;
+describe('isWeakForm', () => {
+	describe('rejects yes/no forms', () => {
+		it.each([
+			['do', 'Do you keep a journal?'],
+			['does', 'Does it feel good to help?'],
+			['did', 'Did you ever run away from home?'],
+			['have', "have you ever lied to protect someone else's feelings?"],
+			['has', 'Has anyone ever broken your trust?'],
+			['are', 'Are we tricked by our tools?'],
+			['is', 'Is there anything you could not forgive?'],
+			['was', 'Was that the best decision you ever made?'],
+			['were', 'Were you ever afraid of the dark?'],
+			['will', 'Will you still love me tomorrow?'],
+			['would', 'Would it be easier if you had help?'],
+			['can', 'Can you remember your first dream?'],
+			['could', 'Could you live without the internet?'],
+			['should', 'Should I have stayed in that job?'],
+		])('%s-leading question is rejected', (_verb, question) => {
+			expect(isWeakForm(question)).toBe(true);
+		});
 
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'bank-test-'));
-});
+		it('matches the auxiliary case-insensitively in the middle of mixed case', () => {
+			expect(isWeakForm('ShOuLd we start over?')).toBe(true);
+		});
 
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
+		it('does not reject words that merely contain an auxiliary', () => {
+			expect(isWeakForm('Doeskin leather ages well?')).toBe(false);
+			expect(isWeakForm('Candlelight changes a room?')).toBe(false);
+		});
+	});
 
-/** Write a bank file (JSONL) into the temp dir and return its path. */
-function writeBank(lines: string[]): string {
-  const path = join(dir, 'questions.jsonl');
-  writeFileSync(path, `${lines.join('\n')}\n`, 'utf-8');
-  return path;
-}
+	describe('rejects multi-question strings', () => {
+		it.each([
+			"what's a hobby that you quit? why?",
+			'Do you like coffee? Tea?',
+			'Why here? Why now?',
+			'What changed? And what did not?',
+		])('rejects %j', (question) => {
+			expect(isWeakForm(question)).toBe(true);
+		});
+	});
 
-const QUESTION_FORMS = {
-  deliberative: 'deliberative',
-  theoretical: 'theoretical',
-  why: 'why',
-} as const;
+	describe('rejects leading junk', () => {
+		it.each([
+			['#', '# What is your favorite book?'],
+			['>', '> What keeps you up at night?'],
+			['*', '* Where did you grow up?'],
+			['numbered', '####6. What would you like to change?'],
+			['number', '6 What is your earliest memory?'],
+		])('%s prefix is rejected', (_label, question) => {
+			expect(isWeakForm(question)).toBe(true);
+		});
 
-describe('loadQuestionBank', () => {
-  it('parses valid JSONL and classifies', () => {
-    const path = writeBank([
-      JSON.stringify({ question: 'Why do you garden?', channel: 'a', blockId: 1 }),
-      JSON.stringify({ question: "What's a habit you kept?", channel: 'b', blockId: 2 }),
-      JSON.stringify({ question: 'Tell me about your morning.', channel: 'c', blockId: 3 }),
-    ]);
+		it('rejects leading punctuation', () => {
+			expect(isWeakForm('—What do you hope for?')).toBe(true);
+			expect(isWeakForm('"Why do you stay?"')).toBe(true);
+		});
+	});
 
-    const bank = loadQuestionBank(path);
+	describe('accepts valid open forms', () => {
+		it.each([
+			['what', 'What was your last pinch me moment?'],
+			['when', 'when was the last time someone disappointed you?'],
+			['why', 'Why do you do the work you do?'],
+			['how', 'How do you unwind after a hard day?'],
+			['who', 'Who taught you the most?'],
+			['where', 'Where do you feel most at home?'],
+			['which', 'Which habit changed your life?'],
+			['tell me', 'Tell me about a moment this week that stuck with you.'],
+			['describe', 'Describe a place you love.'],
+			['imperative', 'Share a memory that makes you smile.'],
+		])('%s opener is accepted', (_label, question) => {
+			expect(isWeakForm(question)).toBe(false);
+		});
+	});
 
-    expect(bank).toHaveLength(3);
-    expect(bank[0]!).toMatchObject({
-      text: 'Why do you garden?',
-      questionForm: QUESTION_FORMS.why,
-    });
-    expect(bank[1]!).toMatchObject({
-      text: "What's a habit you kept?",
-      questionForm: QUESTION_FORMS.deliberative,
-    });
-    expect(bank[2]!).toMatchObject({
-      text: 'Tell me about your morning.',
-      questionForm: QUESTION_FORMS.deliberative,
-    });
-  });
+	describe('edge cases', () => {
+		it('rejects the empty string', () => {
+			expect(isWeakForm('')).toBe(true);
+		});
 
-  it('deduplicates by lowercased trimmed text', () => {
-    const path = writeBank([
-      JSON.stringify({ question: 'Why do you write?' }),
-      JSON.stringify({ question: 'why do you write?' }),
-      JSON.stringify({ question: '  Why Do You Write?  ' }),
-      JSON.stringify({ question: 'A different question' }),
-    ]);
+		it('accepts a bare letter', () => {
+			expect(isWeakForm('a')).toBe(false);
+			expect(isWeakForm('Z')).toBe(false);
+		});
 
-    const bank = loadQuestionBank(path);
-
-    expect(bank).toHaveLength(2);
-    // First occurrence wins, preserving its exact text.
-    expect(bank[0]!.text).toBe('Why do you write?');
-    expect(bank[1]!.text).toBe('A different question');
-  });
-
-  it('skips malformed lines', () => {
-    const path = writeBank([
-      JSON.stringify({ question: 'First question?' }),
-      'this is not json {',
-      JSON.stringify({ question: 'Second question?' }),
-      '{"question": "truncated"',
-    ]);
-
-    const bank = loadQuestionBank(path);
-
-    expect(bank).toHaveLength(2);
-    expect(bank[0]!.text).toBe('First question?');
-    expect(bank[1]!.text).toBe('Second question?');
-  });
-
-  it('classifies why-questions', () => {
-    const path = writeBank([
-      JSON.stringify({ question: 'Why do you exercise?' }),
-      JSON.stringify({ question: 'why not try something new?' }),
-      JSON.stringify({ question: 'Why?' }),
-      JSON.stringify({ question: 'Tell me why that matters.' }),
-    ]);
-
-    const bank = loadQuestionBank(path);
-
-    expect(bank.map((q) => q.questionForm)).toEqual([
-      QUESTION_FORMS.why,
-      QUESTION_FORMS.why,
-      QUESTION_FORMS.why,
-      QUESTION_FORMS.deliberative,
-    ]);
-  });
-
-  it('returns starterBank fallback on missing file', () => {
-    const bank = loadQuestionBank('/nonexistent/path.jsonl');
-
-    expect(bank).toHaveLength(10);
-    expect(bank).toEqual(starterBank);
-  });
-
-  it('returns starterBank fallback on empty file', () => {
-    const path = writeBank([]);
-
-    const bank = loadQuestionBank(path);
-
-    expect(bank).toHaveLength(10);
-    expect(bank).toEqual(starterBank);
-  });
-
-  it('source fields populate', () => {
-    const path = writeBank([
-      JSON.stringify({
-        question: 'What do you work on?',
-        channel: 'interview-7',
-        channelTitle: 'The Long Game',
-        blockId: 42,
-      }),
-    ]);
-
-    const bank = loadQuestionBank(path);
-
-    expect(bank).toHaveLength(1);
-    const question = bank[0]!;
-    expect(question.source).toEqual({
-      channel: 'interview-7',
-      channelTitle: 'The Long Game',
-      blockId: 42,
-    });
-  });
+		it('rejects punctuation-only strings', () => {
+			expect(isWeakForm('?')).toBe(true);
+			expect(isWeakForm('?!')).toBe(true);
+			expect(isWeakForm('...')).toBe(true);
+		});
+	});
 });

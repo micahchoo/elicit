@@ -671,51 +671,65 @@ function renderHarvest() {
 
   const div = el('div', { class: 'screen active' });
 
+  const empty = state.proposals.length === 0;
+
   const heading = el(
     'div',
-    { class: 'question-block' },
-    'review what you said',
+    { class: empty ? 'question-block empty-msg' : 'question-block' },
+    empty
+      ? 'nothing from this sitting stood on its own \u2014 that happens'
+      : 'review what you said',
   );
   div.append(heading);
 
   const list = el('div', { class: 'harvest-list' });
   div.append(list);
 
-  const submitRow = el('div', { style: 'margin-top: 1.5rem' });
-  const submitBtn = el('button', { class: 'submit-btn' }, 'save');
-  submitRow.append(submitBtn);
-  div.append(submitRow);
-
   const errorSlot = el('div', { class: 'error-slot' });
   div.append(errorSlot);
+
+  if (empty) {
+    const closeBtn = el(
+      'button',
+      { class: 'submit-btn', style: 'margin-top: 1.5rem' },
+      'close',
+    );
+    closeBtn.addEventListener('click', () => navTo('mode'));
+    div.append(closeBtn);
+  } else {
+    const submitRow = el('div', { style: 'margin-top: 1.5rem' });
+    const submitBtn = el('button', { class: 'submit-btn' }, 'save');
+    submitRow.append(submitBtn);
+    div.append(submitRow);
+
+    submitBtn.addEventListener('click', async () => {
+      if (state.decisions.length < state.proposals.length) {
+        errorSlot.innerHTML = '';
+        errorSlot.append(
+          el('p', { class: 'error-msg' }, 'decide on each proposal first'),
+        );
+        return;
+      }
+      submitBtn.disabled = true;
+      try {
+        await api<HarvestResponse>(
+          `/api/session/${state.sessionId}/harvest`,
+          { decisions: state.decisions },
+        );
+        renderDone();
+      } catch (e) {
+        errorSlot.innerHTML = '';
+        errorSlot.append(String(e));
+        submitBtn.disabled = false;
+      }
+    });
+  }
 
   main.append(div);
 
   for (let i = 0; i < state.proposals.length; i++) {
     renderProposal(i, list);
   }
-
-  submitBtn.addEventListener('click', async () => {
-    if (state.decisions.length < state.proposals.length) {
-      errorSlot.innerHTML = '';
-      errorSlot.append(
-        el('p', { class: 'error-msg' }, 'decide on each proposal first'),
-      );
-      return;
-    }
-    submitBtn.disabled = true;
-    try {
-      await api<HarvestResponse>(
-        `/api/session/${state.sessionId}/harvest`,
-        { decisions: state.decisions },
-      );
-      renderDone();
-    } catch (e) {
-      errorSlot.innerHTML = '';
-      errorSlot.append(String(e));
-      submitBtn.disabled = false;
-    }
-  });
 }
 
 function renderProposal(idx: number, container: HTMLElement) {
@@ -905,6 +919,22 @@ function renderWaiting() {
   const activityList = el('div', { class: 'activity-list' });
   activitySection.append(activityHeading, activityList);
 
+  // No initial events yet — show a quiet empty message until the SSE
+  // snapshot arrives (removed below when real events show up).
+  let emptyMsg: HTMLParagraphElement | null = el('p', { class: 'empty-msg' }, 'nothing yet');
+  activityList.append(emptyMsg);
+
+  function syncEmptyActivity() {
+    const hasLines = activityList.querySelector('.activity-line') !== null;
+    if (hasLines && emptyMsg) {
+      emptyMsg.remove();
+      emptyMsg = null;
+    } else if (activityList.children.length === 0) {
+      emptyMsg = el('p', { class: 'empty-msg' }, 'nothing yet');
+      activityList.append(emptyMsg);
+    }
+  }
+
   div.append(queueSection, activitySection);
   main.append(div);
 
@@ -932,7 +962,11 @@ function renderWaiting() {
   // Connect activity SSE
   (async () => {
     try {
-      const resp = await apiRaw('/api/activity');
+      const resp = await fetch('/api/activity', {
+        method: 'GET',
+        headers: { Accept: 'text/event-stream' },
+      });
+      if (!resp.ok) throw new Error(`${resp.status}`);
       if (!resp.body) return;
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -950,6 +984,9 @@ function renderWaiting() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             currentData = line.slice(6);
+          } else if (line.startsWith(': heartbeat')) {
+            // Historical batch flushed — settle the empty state.
+            syncEmptyActivity();
           } else if (line === '' && currentData) {
             try {
               const ev: ActivityEvent = JSON.parse(currentData);
@@ -958,6 +995,7 @@ function renderWaiting() {
               const detail = el('span', { class: 'activity-detail' }, `${ev.kind}: ${ev.detail}`);
               lineEl.append(actor, ' ', detail);
               activityList.prepend(lineEl);
+              syncEmptyActivity();
             } catch { /* skip malformed */ }
             currentData = '';
           }

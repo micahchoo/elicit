@@ -47,6 +47,39 @@ function findQuotedFragment(
  return best;
 }
 
+/**
+ * Q-12 tightening: reject a composed question that does not strictly extend the
+ * quoted fragment. Returns true if the question is degenerate — too close to
+ * the source material to count as a genuine composition.
+ */
+function isDegenerateComposition(
+ question: string,
+ quotedFragment: string,
+ userTurnFull: string,
+): boolean {
+ const q = question.trim();
+ const f = quotedFragment.trim();
+ const u = userTurnFull.trim();
+
+ // Equals the fragment verbatim
+ if (q === f) return true;
+ // Equals the user's whole turn
+ if (q === u) return true;
+
+ // Adds fewer than 3 content words around the quote
+ // Strip the fragment from the question; count remaining content words
+ const remainder = q.replace(
+  new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+  '',
+ ).trim();
+ const contentWords = remainder
+  .split(/\s+/)
+  .filter((w) => w.length > 0 && /^[a-z]/i.test(w));
+ if (contentWords.length < 3) return true;
+
+ return false;
+}
+
 /** Wrap text as a single user turn for LLM calls that need a Turn[]. */
 function userTurn(text: string): Turn[] {
  return [{ role: 'user', text, at: '' }];
@@ -163,7 +196,13 @@ Return only the question text. No markdown, no commentary.`;
  let question = stripFences(raw).trim();
 
  // Q-12: substring verification
- if (question && question.includes(light.phrase)) return question;
+ if (question && question.includes(light.phrase)) {
+  // Q-12 tightening: degenerate-composition guard (ticket 020)
+  if (!isDegenerateComposition(question, light.phrase, turnText)) return question;
+  console.warn(
+   `Composed: follow-up degenerate (equals fragment or turn), retrying`,
+  );
+ }
 
  // One retry with corrective prompt
  console.warn(
@@ -175,7 +214,12 @@ Return only the question text. No markdown, no commentary.`;
  });
  question = stripFences(retryRaw).trim();
 
- if (question && question.includes(light.phrase)) return question;
+ if (question && question.includes(light.phrase)) {
+  if (!isDegenerateComposition(question, light.phrase, turnText)) return question;
+  console.warn(
+   `Composed: follow-up retry degenerate — returning null`,
+  );
+ }
 
  console.warn(
   `Composed: follow-up retry also missing phrase "${light.phrase}" — returning null`,
@@ -208,7 +252,12 @@ Return only the question text. No markdown, no commentary.`;
  const question = stripFences(raw).trim();
 
  // Q-12: substring verification
- if (question && question.includes(hit.sharedPhrase)) return question;
+ if (question && question.includes(hit.sharedPhrase)) {
+  if (!isDegenerateComposition(question, hit.sharedPhrase, turnText)) return question;
+  console.warn(
+   'Composed: juxtaposition degenerate (equals fragment or turn), retrying',
+  );
+ }
 
  // One retry
  console.warn(
@@ -220,9 +269,13 @@ Return only the question text. No markdown, no commentary.`;
  });
  const retryQuestion = stripFences(retryRaw).trim();
 
- if (retryQuestion && retryQuestion.includes(hit.sharedPhrase))
-  return retryQuestion;
-
+ if (retryQuestion && retryQuestion.includes(hit.sharedPhrase)) {
+  if (!isDegenerateComposition(retryQuestion, hit.sharedPhrase, turnText))
+   return retryQuestion;
+  console.warn(
+   'Composed: juxtaposition retry degenerate — returning null',
+  );
+ }
  console.warn(
   `Composed: juxtaposition retry also missing sharedPhrase "${hit.sharedPhrase}" — returning null`,
  );

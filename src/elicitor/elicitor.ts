@@ -3,6 +3,7 @@ import type {
  Complete,
  Mode,
  QuestionForm,
+ QuestionProvenance,
  QuestionSource,
  SessionState,
  Target,
@@ -20,8 +21,9 @@ import {
 } from './protocol.js';
 import { loadQuestionBank } from './bank.js';
 import { resonate } from '../index/lexical.js';
+import { isContentFree } from './answer-shape.js';
+import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
-
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
  bank: StarterQuestion[],
@@ -33,7 +35,12 @@ function pickOpener(
    questionForm: 'deliberative',
   };
  }
- const pick = bank[Math.floor(Math.random() * bank.length)]!;
+ // Apply weak-form filter to bank draws only (ticket 021).
+ // If the filter empties the pool, fall through to unfiltered bank —
+ // a weak question beats no question.
+ const filtered = bank.filter((q) => !isWeakForm(q.text));
+ const pool = filtered.length > 0 ? filtered : bank;
+ const pick = pool[Math.floor(Math.random() * pool.length)]!;
  return {
   text: pick.text,
   questionForm: pick.questionForm,
@@ -109,7 +116,7 @@ export async function userTurn(
  text: string,
  spoken?: boolean,
 ): Promise<
- | { kind: 'probe'; text: string; questionForm: QuestionForm }
+ | { kind: 'probe'; text: string; questionForm: QuestionForm; provenance: QuestionProvenance }
  | { kind: 'saturated' }
 > {
  const now = new Date().toISOString();
@@ -146,6 +153,7 @@ export async function userTurn(
    kind: 'probe',
    text: agentTurn.text,
    questionForm: 'deliberative',
+   provenance: 'close',
   };
  }
 
@@ -168,7 +176,55 @@ export async function userTurn(
    kind: 'probe',
    text: agentTurn.text,
    questionForm: 'deliberative',
+   provenance: 'close',
   };
+ }
+
+ // ── Pivot rule (ticket 020): content-free closed answers get a fresh draw ──
+ if (isContentFree(text)) {
+  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
+  if (queueDraw) {
+   s.deps.queue.markAsked(queueDraw.id);
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: queueDraw.question,
+    at: new Date().toISOString(),
+    questionForm: queueDraw.questionForm,
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: queueDraw.questionForm,
+    provenance: 'bank',
+   };
+  }
+  // Queue empty — fall through to bank
+  const unused = (s.bank ?? []).filter(
+   (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
+  );
+  if (unused.length > 0) {
+   const pick = unused[Math.floor(Math.random() * unused.length)]!;
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: pick.text,
+    at: new Date().toISOString(),
+    questionForm: pick.questionForm,
+    ...(pick.source ? { questionSource: pick.source } : {}),
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: pick.questionForm,
+    provenance: 'bank',
+   };
+  }
+  // Nothing to draw — fall through to composition
  }
 
  // ── Probe flow: juxtaposition > red-light compose > generic LLM probe ──
@@ -195,6 +251,7 @@ export async function userTurn(
     kind: 'probe',
     text: agentTurn.text,
     questionForm: 'deliberative',
+    provenance: 'juxtaposition',
    };
   }
  }
@@ -217,6 +274,7 @@ export async function userTurn(
     kind: 'probe',
     text: agentTurn.text,
     questionForm: 'deliberative',
+    provenance: 'composed',
    };
   }
  }
@@ -224,9 +282,6 @@ export async function userTurn(
  // Priority 3: generic LLM probe (Target-aware protocol)
  const target: Target = s.mode.target ?? 'self';
  const protocols = PROTOCOLS[target] ?? PROTOCOLS.self;
- // questionCount currently reflects how many agent questions have been asked
- // (including the opener). The next probe is the (questionCount)-th
- // agent-prompted question — use questionCount as the 0-based protocol index.
  const probeIndex = s.questionCount;
  const systemPrompt = protocols[probeIndex % protocols.length]!;
 
@@ -235,7 +290,6 @@ export async function userTurn(
  });
 
  if (response.includes('[SATURATED]')) {
-  // Saturation triggers close even before the budget cap
   s.phase = 'closing-door';
   const agentTurn: Turn = {
    role: 'agent',
@@ -250,12 +304,70 @@ export async function userTurn(
    kind: 'probe',
    text: agentTurn.text,
    questionForm: 'deliberative',
+   provenance: 'close',
   };
+ }
+
+ let probeText = response.trim();
+
+ // ── Parrot guard (ticket 020): reject question that parrots the prompt ──
+ if (isParrot(probeText, systemPrompt)) {
+  console.warn('Elicitor: parrot guard triggered — question echoes prompt');
+  // Retry with explicit anti-parrot instruction
+  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Do NOT reuse any phrase, sentence shape, or near-substring from the instructions above. Compose an entirely fresh question from their words.`;
+  const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
+   temperature: 0.8,
+  });
+  if (retryResponse.includes('[SATURATED]')) {
+   s.phase = 'closing-door';
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: CLOSING_DOOR_QUESTION,
+    at: new Date().toISOString(),
+    questionForm: 'deliberative',
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: 'deliberative',
+    provenance: 'close',
+   };
+  }
+  probeText = retryResponse.trim();
+  if (isParrot(probeText, systemPrompt)) {
+   console.warn('Elicitor: parrot guard retry also failed — drawing from bank');
+   // Fall back to bank draw
+   const unused = (s.bank ?? []).filter(
+    (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
+   );
+   if (unused.length > 0) {
+    const pick = unused[Math.floor(Math.random() * unused.length)]!;
+    const agentTurn: Turn = {
+     role: 'agent',
+     text: pick.text,
+     at: new Date().toISOString(),
+     questionForm: pick.questionForm,
+     ...(pick.source ? { questionSource: pick.source } : {}),
+    };
+    s.deps.vault.appendTurn(s.id, agentTurn);
+    s.turns.push(agentTurn);
+    s.questionCount++;
+    return {
+     kind: 'probe',
+     text: agentTurn.text,
+     questionForm: pick.questionForm,
+     provenance: 'bank',
+    };
+   }
+  }
  }
 
  const agentTurn: Turn = {
   role: 'agent',
-  text: response.trim(),
+  text: probeText,
   at: new Date().toISOString(),
   questionForm: defaultQuestionForm,
  };
@@ -268,7 +380,27 @@ export async function userTurn(
   kind: 'probe',
   text: agentTurn.text,
   questionForm: defaultQuestionForm,
+  provenance: 'probe',
  };
+}
+
+/**
+ * Parrot guard: rejects a generated question that appears as a near-substring
+ * of the prompt that produced it. Normalizes whitespace and case before checking.
+ */
+function isParrot(question: string, prompt: string): boolean {
+ const normQ = question.replace(/\s+/g, ' ').toLowerCase().trim();
+ const normP = prompt.replace(/\s+/g, ' ').toLowerCase();
+ // Check for verbatim substring match of at least 8 words
+ const qWords = normQ.split(' ');
+ if (qWords.length < 4) return false;
+ // Sliding window: check if any 4+ consecutive words from the question
+ // appear as a substring in the prompt
+ for (let i = 0; i <= qWords.length - 4; i++) {
+  const phrase = qWords.slice(i, i + 4).join(' ');
+  if (normP.includes(phrase)) return true;
+ }
+ return false;
 }
 
 /** Returns the set of bank question texts already used (asked or skipped) in this session. */

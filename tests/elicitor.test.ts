@@ -217,7 +217,7 @@ describe('elicitor', () => {
    { complete, vault, queue: q, index: idx },
   );
 
-  const result = await userTurn(session, 'Not much to say really.');
+  const result = await userTurn(session, 'I think I have said everything I wanted to say about this topic.');
 
   // [SATURATED] triggers close — closing-door question is returned
   expect(result.kind).toBe('probe');

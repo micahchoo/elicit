@@ -77,7 +77,7 @@ describe('Activity Log', () => {
 
     // Manually append a malformed line to the same day file
     const day = '2026-08-01';
-    const logDir = join(root, 'vault', 'log');
+    const logDir = join(root, 'log');
     const dayFile = join(logDir, `${day}.jsonl`);
     appendFileSync(dayFile, 'this is not valid json\n', 'utf-8');
 

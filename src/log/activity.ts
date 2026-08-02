@@ -9,7 +9,7 @@ export type ActivityEvent = {
  refs?: string[];
 };
 
-const LOG_DIR = join('vault', 'log');
+const LOG_DIR = 'log';
 
 const VALID_ACTORS: Record<string, true> = {
  clerk: true,

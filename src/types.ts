@@ -26,6 +26,7 @@ export type QuestionSource = {
   channelTitle?: string;
   blockId: number;
 };
+export type QuestionProvenance = 'bank' | 'composed' | 'juxtaposition' | 'probe' | 'close' | 'skip';
 
 export type Target = 'self' | 'domain';
 
