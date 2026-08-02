@@ -518,6 +518,29 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  const names = d.replace(FIELD, ' ').trim().split(/\s+/).filter(Boolean).join(', ');
  return `${base}; ${count(unresolved, 'name')} unresolved — ${names}`;
 },
+
+// Emitted by the extraction job (T5), one line per item processed. The detail
+// carries the full path and the counts — `path=…/dated-essay.md cuts=3` — and
+// this surface shows the basename only, never the path (same rule as
+// `import-refused`).
+'import-extracted': (f, d) => {
+ const file = (f.path ?? d).split('/').pop() || 'a file';
+ return `extracted ${count(num(f, 'cuts'), 'cut')} from ${file}`;
+},
+// The item failed its attempts and sorts to the back (T5). `attempts` is the
+// counter that reached the threshold — the reader should see how long it
+// stood at the door; the error message itself lives on the record.
+'import-extract-failed': (f, d) => {
+ const file = (f.path ?? d).split('/').pop() || 'a file';
+ return `could not extract from ${file} after ${count(num(f, 'attempts'), 'attempt')}`;
+},
+// The raw-source Q-51 check (T5): a cut inside a quotation that only the raw
+// file shows, `clean` having removed the opening mark from inside the
+// paragraph. `cuts` is how many were set aside for this item.
+'import-quoted-dropped': (f, d) => {
+ const file = (f.path ?? d).split('/').pop() || 'a file';
+ return `set aside ${count(num(f, 'cuts'), 'cut')} from ${file}: it sits inside a quotation in the source file`;
+},
 };
 
 /**
