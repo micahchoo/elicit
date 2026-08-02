@@ -2,7 +2,7 @@
 title: "Fix: harvest proposes refusals, meta-comments and non-content as evidence"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

@@ -6,6 +6,13 @@ assignee:
 blocked_by: []
 ---
 
+> ABSORBED 2026-08-02 into the Clerk plan as **T17 "The answered turn"**
+> (Wave 1), which owns both `src/queue/queue.ts` and
+> `src/elicitor/elicitor.ts` and whose verification asserts `markAnswered`
+> has a caller at all. Kept open as the standalone record; close it when
+> T17 lands, or execute it early if the Clerk slice slips — the bug is live
+> today regardless of that slice.
+
 ## Question
 
 Found by the Clerk plan review (blocker B1), and it is a bug in the RUNNING

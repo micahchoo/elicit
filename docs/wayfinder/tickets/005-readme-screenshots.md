@@ -3,7 +3,7 @@ title: "README screenshots of the slice-2 UI"
 labels: [wayfinder:task]
 status: closed
 assignee: claude
-blocked_by: [001-finish-slice-2]
+blocked_by: []
 resolution: >
   504a3e9: five real screenshots in docs/guide/ (mode, exchange, harvest,
   waiting, exchange-phone) embedded in README. Captured from an isolated
@@ -26,6 +26,7 @@ resolution: >
   waiting surface shows populated open-questions + activity — the two
   panels Micah reported blank.
 ---
+
 
 ## Question
 

@@ -2,7 +2,7 @@
 title: "Honesty: Sole Authorship prevents misattribution of WORDING, not AUTHORSHIP"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

@@ -2,7 +2,7 @@
 title: "Fix: queue draws ignore Target and topic — domain sittings open on self material"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

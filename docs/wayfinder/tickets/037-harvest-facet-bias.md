@@ -6,6 +6,9 @@ assignee:
 blocked_by: []
 ---
 
+> WAITING ON A FILE, not a decision: `src/harvester/harvester.ts` is held
+> by ticket 044 (in flight). Dispatch immediately after it lands.
+
 ## Question
 
 > EVIDENCE UPDATE 2026-08-02 (orchestrator, real 6-turn sitting after

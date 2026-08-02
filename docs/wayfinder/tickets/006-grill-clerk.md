@@ -3,7 +3,7 @@ title: "Grill: the Clerk slice - claim pipeline and contradiction detection"
 labels: [wayfinder:grilling]
 status: closed
 assignee: micah
-blocked_by: [002-slice2-results]
+blocked_by: []
 resolution: >
   Grilled 2026-08-01, eight questions, all locked in the register:
   Q-28 immediate minting; Q-29 op contract (MINT/UPDATE/MERGE/SUPERSEDE/
@@ -17,6 +17,7 @@ resolution: >
   numbers are marked PROVISIONAL with graduation conditions per Q-35.
   Next: write the Clerk plan (008) once slice-2 RESULTS exist.
 ---
+
 
 ## Question
 

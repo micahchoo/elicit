@@ -2,8 +2,8 @@
 title: "Build: split models by role — fast elicitor, careful clerk"
 labels: [wayfinder:task]
 status: open
-assignee: claude
-blocked_by: []
+assignee: 
+blocked_by: [047-async-docket]
 ---
 
 ## Question

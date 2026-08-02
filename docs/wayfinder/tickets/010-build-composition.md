@@ -3,8 +3,10 @@ title: "Plan and build: the composition slice"
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: [009-grill-composition]
+blocked_by: []
 ---
+
+> UNBLOCKED 2026-08-02: 009-grill-composition closed.
 
 ## Question
 

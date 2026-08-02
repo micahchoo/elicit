@@ -1,3 +1,14 @@
+---
+title: "Asset: license comparison brief"
+labels: [wayfinder:asset]
+status: closed
+assignee: claude
+blocked_by: []
+resolution: >
+  Not a ticket — the research asset produced for 003-license, kept for the
+  record. Micah chose MIT 2026-08-02.
+---
+
 # License Decision Brief — Elicit
 
 **Status:** Ready for review  

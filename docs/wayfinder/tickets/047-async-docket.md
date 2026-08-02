@@ -2,7 +2,7 @@
 title: "Fix: the docket runs synchronously inside /harvest — latency grows with the vault"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

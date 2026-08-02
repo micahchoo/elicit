@@ -3,7 +3,7 @@ title: "Grill: Soundings and stateful instruments"
 labels: [wayfinder:grilling]
 status: closed
 assignee: micah
-blocked_by: [002-slice2-results]
+blocked_by: []
 resolution: >
   Grilled 2026-08-02, five questions locked as Q-43..Q-47: agent-proposed and user-consented entry with a licensed proposal and no second ask; an ALWAYS-PRESENT consent gate plus a halfway checkpoint, with discomfort never model-inferred; parking preserves the whole ladder and resumes on a COMPACTED view (Cover mechanism, because the local model degrades on long payloads); ending is structural (rung cap or code-detected convergence), never a model self-report; and a Sounding becomes the rest of the sitting with the two close moves reserved beyond it.
 resolution: >
@@ -11,6 +11,7 @@ resolution: >
 resolution: >
   Grilled 2026-08-02, five questions locked as Q-43..Q-47: agent-proposed and user-consented entry with a licensed proposal and no second ask; an ALWAYS-PRESENT consent gate plus a halfway checkpoint, with discomfort never model-inferred; parking preserves the whole ladder and resumes on a COMPACTED view (Cover mechanism, because the local model degrades on long payloads); ending is structural (rung cap or code-detected convergence), never a model self-report; and a Sounding becomes the rest of the sitting with the two close moves reserved beyond it.
 ---
+
 
 ## Question
 

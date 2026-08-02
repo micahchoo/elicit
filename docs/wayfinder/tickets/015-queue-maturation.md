@@ -3,8 +3,15 @@ title: "Queue maturation: exposure control, facet balance, randomizer draws"
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: [002-slice2-results, 004-transformative-deck]
+blocked_by: []
 ---
+
+> UNBLOCKED 2026-08-02: 002-slice2-results, 004-transformative-deck closed.
+
+> PARTIALLY OVERTAKEN 2026-08-02: ticket 042 shipped the facet-balance
+> filter (shadow-first) and 045 adds the Target filter. What remains here is
+> exposure control (needs the asked-history), uptake-as-signal (needs
+> ticket 041's answered state), and FSRS horizons — all data-bound.
 
 ## Question
 

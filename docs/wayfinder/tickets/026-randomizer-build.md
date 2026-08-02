@@ -3,8 +3,10 @@ title: "Build: Randomizer draws — deck shuffle + forgotten-snippet resurfacing
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: [004-transformative-deck]
+blocked_by: []
 ---
+
+> UNBLOCKED 2026-08-02: 004-transformative-deck closed.
 
 ## Question
 

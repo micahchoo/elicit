@@ -3,8 +3,10 @@ title: "Plan and build: the Soundings slice"
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: [011-grill-soundings]
+blocked_by: []
 ---
+
+> UNBLOCKED 2026-08-02: 011-grill-soundings closed.
 
 ## Question
 
