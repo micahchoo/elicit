@@ -1,8 +1,8 @@
 ---
 title: "Grill: how opposition is detected at all — the polarity blind spot"
 labels: [wayfinder:grilling]
-status: open
-assignee: 
+status: closed
+assignee: micah
 blocked_by: []
 ---
 
@@ -35,3 +35,32 @@ Two routes the review names, both compatible with what is already locked:
 These are not exclusive: (a) generates candidates, (b) verifies them. Grill
 which, and whether a model-judged `opposed` boolean is permitted anywhere
 given the standing rule that a model's self-reported boolean is never a gate.
+
+## Resolution (2026-08-02) — Q-52
+
+The premise is a category error. The three channels answer *aboutness*, not
+polarity: lexical (shared phrase), referent (shared registry entity, no shared
+vocabulary needed), embedding (cosine). Polarity is judged one layer down by
+`judgeOpposition`, whose `poleA`/`poleB` must be exact substrings of the cited
+quotes — code-verified, non-conforming poles drop the candidate. Q-49 already
+ships that judgment live.
+
+And the review's own example inverts: embeddings placing "estimates are for
+coordination" next to "estimates are not for coordination" is the retrieval
+behaviour the pipeline needs. A channel that could see negation would SEPARATE
+the two poles and never pool them.
+
+What survives is precision, not recall. An aboutness-only pool spends a bounded
+judgment quota (3/run) on pairs that mostly agree, and `WikiReport` cannot
+distinguish an empty pool from a pool full of agreement from "no contradictions
+exist" — eval finding #8's observability lesson repeating. So:
+
+- **Route (a), the NLI cross-encoder: NOT taken now.** It would add a mechanism
+  to fix a failure nobody has observed, which is exactly what Q-35 forbids. It
+  gets a record to graduate on once the pool is instrumented.
+- **Route (b), opposition through display: rejected as a replacement.** It is
+  Q-30 stage 2's re-measure question arrived at from the other side, and it
+  would hand the user raw candidate pairs the Clerk has not finished thinking
+  about (Q-15).
+- **What ships instead:** pool instrumentation — see
+  [Instrument the candidate pool](059-instrument-candidate-pool.md).

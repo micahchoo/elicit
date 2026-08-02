@@ -103,6 +103,27 @@ unassigned, all blockers closed.
   runs behind the response, single-flight with one replayed trigger. Measured
   against the real model: 1ms response, 127s docket.
 
+- [Grill: the polarity blind spot](tickets/052-grill-polarity-channel.md) —
+  Q-52: the clash channels retrieve ABOUTNESS; polarity is judged one layer
+  down by `judgeOpposition` against verbatim poles. Negation-blindness is what
+  makes an opposed pair a near-neighbour, so it is the mechanism, not the bug.
+  The real gap is precision and observability: instrument the pool before
+  adding an NLI channel.
+
+- [Grill: re-measure separation](tickets/054-grill-remeasure-separation.md) —
+  Q-53: a re-measure counts only from a different SITTING, and the confirming
+  reading's session must differ from both claims' sessions. The frame, not the
+  clock — lability lives in a continuous conversation, which a session boundary
+  ends and elapsed time does not track. `remeasure-expired` is the one outcome
+  that earns the pair a second attempt.
+
+- [Grill: context-dependence](tickets/055-grill-context-dependence-instrument.md)
+  — Q-54: it is a RANGE refinement, not a third Contradiction type; Q-21 made
+  Range mandatory precisely so the boundary is expressible, and SUPERSEDE
+  already narrows it. The dissolution branch currently throws the boundary
+  away. Two doors, and the zero-LLM lint door ships first so the highest-value
+  output does not hang on the flakiest machinery.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
