@@ -1,8 +1,8 @@
 ---
 title: "Build: instrument the candidate pool — recall and precision must be readable"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: [008-build-clerk.md]
 ---
 
@@ -55,3 +55,19 @@ cheap whenever it is called for.
 - A run over a vault with no opposed pairs reports non-zero `poolSize` and zero
   `oppositionOpposed` — the two cases above are distinguishable in the output.
 - `poolQuotaClipped` is non-zero on a run with more than 3 candidates.
+
+## Resolution (2026-08-02) — SUPERSEDED by ticket 071
+
+T15 found that the instrumentation this ticket asks for **already exists and is
+already thrown away.** `poolCandidates` returns `{pairs, perChannel, suppressed,
+reproposed}`, T12 puts it on `WikiReport.pool`, T13 puts that on
+`DocketReport.wiki` — and `src/server.ts` reads three fields and drops the rest.
+
+So the work is not "compute the pool's size and per-channel contribution". It is
+"make `WikiReport` reach a surface at all", which is the strictly larger problem
+[ticket 071](071-wikireport-reaches-no-surface.md) states — along with
+`oppositionJudged`/`oppositionOpposed`, the ratio **Q-49 acts under**, which is
+being collected and discarded on the same hop.
+
+Closed as a duplicate rather than left open, so nobody builds a second
+instrument beside a working one nobody can see.
