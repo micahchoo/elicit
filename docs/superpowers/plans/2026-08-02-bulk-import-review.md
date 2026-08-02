@@ -723,7 +723,7 @@ Structural and optional, **exactly** like `runWikiJobs`: `src/clerk/docket.ts` m
 - Behavioural invariant: the server re-triggers `startDocket('import')` when `remaining > 0` **and** `extracted > 0`. The second half is the loop guard: if a run extracts nothing, re-triggering forever burns the GPU on items that will keep failing.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests** — 3 passed
 
 ```ts
 it('runs the import job last and carries its counts in the report', async () => {
@@ -748,21 +748,21 @@ it('behaves exactly as before when no import job is injected', async () => { /* 
 Run: `npx vitest run tests/import-docket.test.ts`
 Expected: FAIL — `runImportJobs` is not a known dep.
 
-- [ ] **Step 2: Implement in `docket.ts`, mirroring section 7**
+- [x] **Step 2: Implement in `docket.ts`, mirroring section 7**
 
 Add section 8 after the wiki jobs with the same guarded shape and the same style of comment: say *why last* and *why guarded*.
 
 Run: `npx vitest run tests/import-docket.test.ts tests/docket.test.ts`
 Expected: PASS both suites.
 
-- [ ] **Step 3: Wire the server and the re-trigger**
+- [x] **Step 3: Wire the server and the re-trigger** — `runImportJobsNow` rides `harvestComplete` (078); the `finally` re-triggers only on `remaining > 0 && extracted > 0`
 
 In `runDocketNow`, inject `runImportJobs: () => runImportExtraction({ store: importStore, complete: clerkComplete, ... })`. In the `finally`, after `pendingTrigger` replay, add the re-trigger under both conditions. Emit `import-run` with the counts.
 
 Run: `npx vitest run tests/e2e.test.ts`
 Expected: PASS — the existing end-to-end suite is unaffected.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit** — `27c1d0b` (adds `src/registry.ts` flips: `createImportStore`/`runImportExtraction` → live)
 
 ```bash
 git add src/clerk/docket.ts src/types.ts src/server.ts src/log/format.ts tests/import-docket.test.ts
@@ -803,10 +803,7 @@ type CommitResult =
 - Behavioural invariant: the source is re-read and re-hashed first. A changed file is `stale`: commit writes nothing, and the changed body is a **new item** the next scan admits under its own hash, dated to `lastmod` by `admit`. Never a new version of these snippets (Q-59). Q-5 versioning does not apply — a file edited on disk is a new document sharing a title, and versioning it would date 2027 prose to 2018.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
-
-```ts
-it('writes one dated sitting whose started is the frontmatter date', () => {
+- [x] **Step 1: Write the failing tests** — 8 passed
   const r = commitImport(deps, hash, [{ cut: 0, action: 'approve' }]);
   const fm = matter.read(join(root, 'transcripts', `${r.sessionId}.md`)).data;
   expect(fm.started).toBe('2018-09-01T00:00:00.000Z');
@@ -851,7 +848,7 @@ it('leaves context absent rather than empty when the cut opens the piece', () =>
 Run: `npx vitest run tests/import-commit.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 2: Implement the verification gate first, the writes second**
+- [x] **Step 2: Implement the verification gate first, the writes second**
 
 Order matters: re-read, re-hash, verify every decision (`raw.includes(text)`; `!isQuotedFromSource(text, quotedSpans(raw))`; trims a substring of their cut), and only then open the transcript. A verification that runs after the first write is not a gate.
 
@@ -862,7 +859,7 @@ Session id: `import-<hash>`, stable and derived, so a crash between transcript a
 Run: `npx vitest run tests/import-commit.test.ts`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 3: Q-59's second sitting — verify it end to end, having built it in three places**
+- [x] **Step 3: Q-59's second sitting — verified end to end (the four rows agree; one test, two sittings nine years apart)**
 
 Nothing new is implemented here. The mechanism is already spread across three files by design, and this step exists to prove the three agree, because the shape of this failure is disagreement rather than absence:
 
@@ -898,7 +895,7 @@ it('imports a changed file as a second sitting at lastmod, not as a new version'
 Run: `npx vitest run tests/import-commit.test.ts -t 'second sitting'`
 Expected: PASS, 1 test — two sittings nine years apart on one source path, the first one byte-identical to what it was before the second existed.
 
-- [ ] **Step 4: The `channel` seam — wire it, do not merely declare it**
+- [x] **Step 4: The `channel` seam — ALREADY LANDED at dispatch 2** (048's `channelOf` param exists on `decide()`; commit writes its own provenance with `channel: 'pasted'`; no second parameter was added — A2 re-checked, first branch applies)
 
 `decide()` in `src/harvester/harvester.ts` builds the `Provenance` and does not set `channel`. Ticket 048's landed half declared the field; its remaining half wires the three capture paths and is being built in a parallel wave today.
 
@@ -907,10 +904,10 @@ Expected: PASS, 1 test — two sittings nine years apart on one source path, the
 
 Either way the test in Step 1 asserts the value **on disk**. An optional parameter no caller passes tests as done and ships inert; the assertion is what makes this wiring rather than a signature.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** — `76d6b0f` (harvester.ts NOT touched — the seam landed; commit adds `src/registry.ts` entry `commitImport` unwired-at-birth, flipped live by T9)
 
 ```bash
-git add src/import/commit.ts tests/import-commit.test.ts src/log/format.ts src/harvester/harvester.ts
+git add src/import/commit.ts tests/import-commit.test.ts src/log/format.ts
 git commit -m "import: one accepted piece, one dated sitting, verified against its source"
 ```
 
@@ -1009,7 +1006,7 @@ The corpus holds 47 files. Measured 2026-08-02: `MANIFEST` covers 19, and the 12
 Run: `ELICIT_IMPORT_CORPUS=/mnt/Ghar/2TA/DevStuff/staging-nw/content/posts npx vitest run tests/import-adopt.test.ts -t 'real corpus'`
 Expected: `19 accepted, 28 excluded, 0 unresolved` and `19 + 28 === 47`. The test skips with a printed reason when the env var is unset — that path exists on one machine.
 
-- [ ] **Step 4: Prove it is called, not merely defined** — **DEFERRED to T9's dispatch** (the scan route is adoption's only caller; `src/server.ts` is outside this dispatch's scope fence). The mechanism and its fixture/corpus tests are committed; only the route-level call assertion remains.
+- [x] **Step 4: Prove it is called, not merely defined** — **CLOSED by T9 (dispatch 2)**: the scan route calls `adoptPriorIngest` before `admit` every time, asserted in `tests/import-routes.test.ts` ('adopts prior ingest before admitting, so an already-imported post never queues').
 
 The assertion that matters is in T9's suite, because that is where the wiring is. Cross-check it here so a later refactor that drops the call turns this suite red too:
 
@@ -1064,7 +1061,7 @@ git commit -m "import: adopt the one-off's nineteen keeps and twenty-eight refus
 - Behavioural invariant: **the scan route calls `adoptPriorIngest` before `admit`, in that order, every time.** T8's adoption needs the folder path, and the folder path exists nowhere before this request — not at boot, not at store construction. Adoption is idempotent, so calling it on every scan costs a directory read and buys the guarantee that it cannot be skipped.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests** (Hono app under test, as `tests/wiki-routes.test.ts` does)
+- [x] **Step 1: Write the failing tests** — 6 passed, plus the T8 Step 4 close (Hono app under test, as `tests/wiki-routes.test.ts` does)
 
 ```ts
 it('scan answers with refusals by reason and writes no corpus', async () => {
@@ -1097,7 +1094,7 @@ it('there is no batch route', () => {
 });
 ```
 
-- [ ] **Step 2: Implement the scan route in its required order**
+- [x] **Step 2: Implement the scan route in its required order** — adopt → scan → admit → `startDocket('import')`; `GET /api/import/next` registered for BOTH GET and POST (the web `api()` helper POSTs non-GET_PREFIXES paths; one shared read-only handler)
 
 ```ts
 app.post('/api/import/scan', async (c) => {
@@ -1123,7 +1120,7 @@ Note the two refusal sources merging: `scanFolder` refuses on the file alone (no
 Run: `npx vitest run tests/import-routes.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit** — `0fa66e0` (adds `import-excluded` kind + sentence; registry flips `scanFolder`/`adoptPriorIngest`/`commitImport` → live)
 
 ```bash
 git add src/server.ts tests/import-routes.test.ts
@@ -1157,7 +1154,7 @@ Injection rather than import, for two reasons: `el`, `api` and `beginWait` are m
 **Downstream (surface → routes):** `ImportDecision[]`, one per proposed cut, all present before the piece can be accepted.
 </contracts>
 
-- [ ] **Step 1: Build the render**
+- [x] **Step 1: Build the render**
 
 The document rule (`docs/interface-references.md`): every surface is a page of text, controls only at the point of attention. Concretely:
 
@@ -1177,7 +1174,7 @@ The document rule (`docs/interface-references.md`): every surface is a page of t
 
 Ticket 058 §3 requires the surface to have somewhere to record "this one is joint" and have that mean something, and Q-51 makes co-authorship an **item-level** exclusion — the whole thing stays out, rather than being sampled carefully. So the control exists; the only question Q-60 leaves open is where it sits, and the answer is: in the header, at the level of the object it acts on, never as a fourth word beside approve · trim · discard. Two reasons it belongs at the top rather than the foot. Authorship is the first judgement a reader makes about a piece and the cheapest to act on before reading 60 cuts; and a refusal control at the foot sits exactly where a tired reader looks for the way out, which is the one place a whole-item refusal must not be.
 
-- [ ] **Step 2: Prove the structural claims**
+- [x] **Step 2: Prove the structural claims** — 7 passed (`tests/import-review.test.ts` + shared DOM shim `tests/fixtures/import-surface.ts`, no browser, no jsdom)
 
 `tests/import-review.test.ts` with the DOM built by the same helpers (no browser needed for these):
 
@@ -1207,7 +1204,7 @@ it('sends the reason with the exclusion and refuses an empty one', async () => {
 Run: `npx vitest run tests/import-review.test.ts`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit** — `54e6942`
 
 ```bash
 git add web/import-review.ts web/style.css tests/import-review.test.ts
@@ -1232,24 +1229,22 @@ git commit -m "import review: the piece whole, cuts marked in place, three verbs
 - Behavioural invariant: the entry surface is sentences, not a dashboard. *"Nineteen pieces are ready to read. Two files had no date and were not imported: undated.md, notes.md."* The refusals are named with their reasons, because a refusal the reader never sees is a silent loss.
 </contracts>
 
-- [ ] **Step 1: Add the folder prompt**
+- [x] **Step 1: Add the folder prompt** — 'the folder:' + a path field, no picker (Q-57)
 
 One line of text, typed, in the same idiom as the mode sentence: *"the folder:"* and a path field. No file picker (the app never opens a socket and a picker adds nothing a path does not).
 
-- [ ] **Step 2: The manifest page, in sentences**
+- [x] **Step 2: The manifest page, in sentences** — counts as prose, refusals named with reasons, 'reading them takes a while; you can close this and come back.'
 
 After scan: counts as prose, refusals named with reasons, and one line about what happens next — *"reading them takes a while; you can close this and come back."*
 
-- [ ] **Step 3: Resume**
+- [x] **Step 3: Resume** — on entry, GET /api/import/next first; an item → `renderImportReview`, waiting → the sentence
 
 On entry, if any record is `extracted`, go straight to the next one. If all are `pending`, say how many are still being read and offer nothing to click.
 
-- [ ] **Step 4: Verify by use**
-
-Run: `npm run build && ELICIT_LLM=fake npx tsx src/server.ts` then open the app, scan `tests/fixtures/import-folder`.
+- [x] **Step 4: Verify by use** — RECORDED: the live-server+browser half is a person's step (no server may be started in dispatch 2; the elicit server on 4517 is an older loaded build and was left alone). The automated half ran: `npx vite build` clean, `npx tsc --noEmit` clean for web files, the full import surface tested via `tests/import-review.test.ts` + `tests/import-acceptance.test.ts`.
 Expected: the manifest names `undated.md — no date in its frontmatter` and `frontmatter-only.md — nothing but frontmatter`; three pieces queue; `vault/transcripts/` is still absent until a piece is saved.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** — `67cfc50`
 
 ```bash
 git add web/main.ts web/import-entry.ts
@@ -1273,7 +1268,7 @@ git commit -m "import: the way in, and the way back in"
 - Runs additionally against `process.env.ELICIT_IMPORT_CORPUS` when set, and **skips with a printed reason** when it is not. The 47-post corpus lives outside the repo on one machine; a hardcoded absolute path would be a test that fails everywhere else.
 </contracts>
 
-- [ ] **Step 1: One test per criterion**
+- [x] **Step 1: One test per criterion** — 8 passed on the fixture + 1 corpus-gated test (9 with `ELICIT_IMPORT_CORPUS`: 19+28=47, 0 to import, 0 refused, verified read-only)
 
 ```ts
 it('an archive imports as dated sittings whose started values span the real range', () => {
@@ -1337,7 +1332,7 @@ If any of the four cannot be written as stated — for instance because focus-de
 Run: `npx vitest run tests/import-acceptance.test.ts`
 Expected: PASS, 8 tests (four criteria plus the four document-rule claims).
 
-- [ ] **Step 2: The model-in-the-loop run, by hand**
+- [x] **Step 2: The model-in-the-loop run, by hand** — RECORDED: a person's step (dispatch 2 cannot run a live model loop; the automated half above covers the '0 to import, 47 already known' arithmetic on the real corpus). The two caveats in the plan stand: `0 refused` proves nothing about the refusal path (proven on `undated.md`), and a live scan→extract→review→commit run needs a never-ingested folder.
 
 Automated tests use a scripted model; extraction against a real model is ~40s per chunk and belongs to a person, once.
 
@@ -1350,7 +1345,7 @@ Two things to write down rather than infer, because both are absences that look 
 - **`0 refused` is not evidence the refusal path works.** Every file in this corpus has a frontmatter `date` (measured 2026-08-02: 47 of 47). The path is proven on `undated.md` in the fixture and nowhere else.
 - **A live end-to-end run needs a folder this corpus cannot provide.** To exercise scan → extract → review → commit against the real model, point the importer at a folder of writing that has never been ingested. If none exists yet, copy two or three posts to a scratch folder and edit their bodies — which also exercises Q-59's second sitting, since the source paths differ but the prose does not.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit** — `9d515d1`
 
 ```bash
 git add tests/import-acceptance.test.ts
@@ -1373,7 +1368,7 @@ git commit -m "import: the five acceptance criteria, as tests"
 - It also records what the script owes: each source's authorship question is answered by the human who writes that script (Q-51), which is why there is no generic exporter.
 </contracts>
 
-- [ ] **Step 1: Write the stub, then commit**
+- [x] **Step 1: Write the stub, then commit** — `22a8e81`; tsc clean
 
 Run: `npx tsc --noEmit`
 Expected: clean.
@@ -1558,6 +1553,14 @@ Not materialised as a seeds DAG (see assumption A7). Before dispatch: `sd create
 | 2026-08-02 | dispatch 1 | T3 additive export | `scan.ts` exports `bodyHash(body)` so the Q-59 body-hash rule has exactly one home; T8's adopt consumes it instead of inlining a second copy. |
 | 2026-08-02 | dispatch 1 | T5 ORPHANED_TAIL finding | Test 2 passes but through the BUD gate, not the raw-source Q-51 check: the fixture's paragraph-4 tail starts lowercase (`and the histories…`), so `propose()`'s own 044 gate buds it and no proposal is ever offered for the raw-source check to see. The raw-source check is implemented per contract and stays as defense-in-depth; test 3 pins the raw-vs-turn predicate distinction non-vacuously. A future fixture wanting to exercise the raw-source check end-to-end needs a capital-start interior span, which quoted.md cannot provide (everything after `and` is lowercase). |
 | 2026-08-02 | dispatch 1 | Wave 2 execution order | T5 and T8 ran in parallel (file-disjoint, both after T4); T3 ran alone after T2 (its tests need the fixture). T8 Step 4 (route calls adopt) is explicitly deferred to T9's wave per the plan's own cross-wave note; the dispatch's scope fence (no `src/server.ts`, `web/`, `src/harvester/`, `src/types.ts`) makes T9/T10/T11 later dispatches regardless. |
+| 2026-08-02 | dispatch 2 | A2 superseded | The plan's A2 and dispatch-1's "048 seam has not landed" note are STALE: `decide()` now takes `channelOf?: (proposal) => CaptureChannel \| undefined` (src/harvester/harvester.ts:629). T7 Step 4 took the first branch — no parameter added; commit writes its own provenance with `channel: 'pasted'` and the on-disk assertion proves the wiring. |
+| 2026-08-02 | dispatch 2 | T6 model choice | Extraction rides `harvestComplete` (the grammar-constrained clerk variant, ticket 078), not `clerkComplete` — extraction IS the harvest path, and 078 says the constrained variant must never serve the wiki mint jobs but is exactly for this. The plan's `complete: clerkComplete` ellipsis predates 078. |
+| 2026-08-02 | dispatch 2 | T9 GET-next stale reading | The plan leaves GET /api/import/next's "hash-checked" open. Chosen: a body-hash mismatch (or unreadable source) answers `{ item: null, waiting: 'a piece changed on disk since it was read — scan the folder again' }` — serving old cuts against new prose is the misleading-excision failure the surface exists to prevent, and the changed body is a NEW item (Q-59) the scan door re-admits. `waiting` is also the answer when no piece is extracted yet. |
+| 2026-08-02 | dispatch 2 | T9 method accommodation | `/api/import/next` is registered for BOTH GET and POST via one shared read-only handler: the web `api()` helper POSTs any path not in GET_PREFIXES, and the landed surface (T10) calls it. Without the second registration the review surface 405s. Read-only under both methods. |
+| 2026-08-02 | dispatch 2 | T12 assertion adaptations | Three plan test snippets adapted to reality: `paragraphsOf(sourceBody)` → split on /\n\n+/ (the fixture's `paragraphsOf` reads DOM elements); `second.pending` → `second.added` (AdmitResult has no `pending`); the dated-essay 4th scripted cut is the image-adjacent sentence, not the full image paragraph (clean removes the image line, so the full paragraph is not a substring of the prepared turn). All adaptations recorded in the test file. |
+| 2026-08-02 | dispatch 2 | T11/T12 human steps | T11 Step 4 (verify by use) and T12 Step 2 (model-in-the-loop) are person's steps under this dispatch's no-server constraint. Both marked [x] as RECORDED: the automated half ran (vite build + review/acceptance suites; the corpus arithmetic 19+28=47, 0 to import, 0 refused ran read-only against the real corpus in the acceptance suite). |
+| 2026-08-02 | dispatch 2 | registry rule | The registry (committed since wave 2, ticket 077) requires every new export declared at birth. Each task added its entries/flips in its own commit: T6 flipped `createImportStore`/`runImportExtraction` live; T7 declared `commitImport` unwired-at-birth; T9 flipped `scanFolder`/`adoptPriorIngest`/`commitImport` live. Web exports are not enumerated but web callers count. |
+| 2026-08-02 | dispatch 2 | concurrent-agent interference | A clause/contradiction agent (tickets 060/088, commit 76bcf1e + uncommitted work) was mid-flight: its committed state fails mechanism-registry (declared-but-unexported symbols in src/clerk/composed + src/clerk/clause) and log-format (stale sample 'range-discriminated'); its uncommitted tree also fails tsc and canon. None of those failures touch import files; every import suite is green. Dispatch 2 verified each wave gate against the committed HEAD in a clean git worktree (32/32, then 1432 passed with only the concurrent agent's 3 failures at the combined HEAD). |
 
 ---
 
@@ -1592,3 +1595,47 @@ T8 Step 4 (the scan route calls `adoptPriorIngest` before `admit`) is **deferred
 - `src/log/format.ts` still holds two foreign unstaged hunks (ticket-079 `guard-floor`, and a wiki-job-skipped hunk). Any future edit must stage hunk-by-hunk (`git add -p` or `git apply --cached`).
 - Seeds DAG materialised per A7: 13 issues (`elicit-0c86`..`elicit-8bcc`), labels `plan:bulk-import,wave:<N>`, 11 contract dep edges, 33 wave-block edges. `.seeds/issues.jsonl` modified; `sd close` for the six done tasks follows (outcome:success with commit hashes).
 - The tree was a moving target through this dispatch: tickets 077/079 and the wiki-jobs/semantic and watermark agents committed or edited around us. At final verification the full suite is green and tsc clean.
+
+---
+
+## Execution log (2026-08-02, dispatch 2)
+
+Second execution dispatch under the approved plan. Scope fence this time: **T6–T13** (everything dispatch 1 stopped before) — `src/server.ts`, `src/types.ts`, `src/clerk/docket.ts`, `src/harvester/` (none needed — see A2), `web/`, `scripts/export-leaflet.ts`, `src/registry.ts`, `src/log/format.ts`, `tests/`. Executed in plan order, four waves, commit-per-task with the plan's messages.
+
+### Done (committed, in order)
+
+| Task | Commit | Verification |
+|---|---|---|
+| T6 — docket wiring | `27c1d0b` | import-docket 3/3; docket 128/128; e2e 37/37 unchanged; registry flips live; tsc clean |
+| T13 — export-leaflet stub | `22a8e81` | tsc clean |
+| T7 — commit | `76d6b0f` | import-commit 9/9 (incl. Q-59 second-sitting e2e); log-format + registry green; NO harvester.ts edit (048 seam already landed) |
+| T10 — review surface | `54e6942` | import-review 7/7 (shared DOM shim `tests/fixtures/import-surface.ts`); vite build clean |
+| T9 — routes | `0fa66e0` | import-routes 6/6 + T8 Step 4 close; adopt + registry green; `import-excluded` kind added |
+| T11 — entry | `67cfc50` | vite build clean; main.ts exactly the three additive edits; T9/T11 coordinated over IRC on the next-route contract |
+| T12 — acceptance | `9d515d1` | import-acceptance 8 passed + 1 corpus-gated; with `ELICIT_IMPORT_CORPUS`: 9 passed — **19 accepted + 28 excluded = 47, 0 to import, 0 refused** (read-only) |
+
+### Wave gates
+
+- Round 1 gate (after T6/T13): full suite **1406 passed, 2 env-gated skips, 0 failed**, tsc clean.
+- Round 2 gate: committed-HEAD worktree check — mechanism-registry/canon/import-review/import-commit **32/32**.
+- Round 3 gate: full suite at combined HEAD — **1432 passed, 2 skipped; the 3 failures are all the concurrent clause agent's commit 76bcf1e** (declared-but-unexported `composeDiscriminatingQuestion`/`composeNarrowedRanges`/`isCompleteClause`/`widenToClause` in src/clerk/*; stale log-format sample `range-discriminated`). No import file is involved in any failure.
+- Round 4 gate: import-acceptance green; full suite as above.
+
+### Deliberate deviations from the plan text (all recorded in Shape Changes)
+
+1. T7 touched **no** `src/harvester/harvester.ts` — the 048 `channelOf` seam had landed (A2 stale); commit writes `channel: 'pasted'` in its own provenance, asserted on disk.
+2. T6's extraction `complete` is **`harvestComplete`** (078's grammar-constrained clerk variant), matching the harvest path.
+3. T9's `GET /api/import/next` answers **waiting on a stale source** (hash mismatch) rather than serving old cuts against new prose; registered for GET and POST (one read-only handler).
+4. T9 added the `import-excluded` log kind (Q-23: the whole-item refusal is an act worth logging; the person's reason lives on the record).
+5. T11 Step 4 and T12 Step 2 (live-server/model runs) are **person's steps** — recorded, not executed (no server may be started in this dispatch; the elicit server on 4517 is an older build and was left untouched). The automated halves ran and passed, including the real-corpus arithmetic.
+6. Every task's commit carried its `src/registry.ts` entries/flips (declare at birth, callerEvidence rule) and — where it added kinds — its `src/log/format.ts` sentences + `tests/log-format.test.ts` samples.
+
+### Seeds
+
+DAG materialised by dispatch 1 (13 issues, `elicit-0c86`..`elicit-8bcc`). This dispatch closed the remaining seven — `elicit-2092` (T6), `elicit-2566` (T7), `elicit-7c1d` (T9), `elicit-3cc4` (T10), `elicit-8a5b` (T11), `elicit-508d` (T12), `elicit-8bcc` (T13) — all `outcome:success` with commit hashes. All 13 closed.
+
+### Remainders for the person
+
+- **T12 Step 2's live run** (`ELICIT_LLM=local npm start`, scan the 47-post corpus): expected `read 47 files: 0 to import, 0 refused` (adoption already decided every file). The plan's two caveats stand: `0 refused` proves nothing about the refusal path (proven on `undated.md`), and a live scan→extract→review→commit run needs a never-ingested folder.
+- **T11 Step 4's browser pass** over `tests/fixtures/import-folder` on a fresh server build.
+- The concurrent clause/contradiction agent owns the 3 committed failures + uncommitted tsc/canon breakage at final verification; none involve import files.

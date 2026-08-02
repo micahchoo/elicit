@@ -1,7 +1,7 @@
 ---
 title: "Build: bulk import and review — bringing an existing body of writing into the vault"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude (omp executing)
 blocked_by: []
 ---
@@ -144,3 +144,76 @@ to catch misleading excision.
 > carried through adversarial reviewer rounds to approval. Execution authorized
 > by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
 > RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
+
+## Resolution (2026-08-02) — all thirteen tasks, two dispatches
+
+Files (dispatch 1, commits `ad73e72` `f0a569c` `c91ea6b` `50f36ab` `93170c8` `35d133f`):
+`src/import/{contract,body,store,scan,extract,adopt,prior-ingest}.ts`,
+`scripts/ingest-posts.ts` (re-pointed at the moved pipeline),
+`tests/import-{contract,body,store,scan,extract,adopt}.test.ts`,
+`tests/fixtures/import-folder/`, `src/log/format.ts` (import kinds),
+`src/registry.ts` (declarations at birth).
+
+Files (dispatch 2, commits `27c1d0b` `22a8e81` `76d6b0f` `54e6942` `0fa66e0` `67cfc50` `9d515d1`):
+`src/import/commit.ts`, `src/clerk/docket.ts` (section 8, guarded tail),
+`src/types.ts` (`DocketReport.imports`), `src/server.ts` (runImportJobsNow,
+the re-trigger, four routes), `src/log/format.ts` (`import-run`,
+`import-run-failed`, `import-committed`, `import-commit-refused`,
+`import-excluded`), `web/import-review.ts`, `web/import-entry.ts`,
+`web/main.ts` (three additive edits), `web/style.css`,
+`scripts/export-leaflet.ts` (Q-57 stub), `src/registry.ts` (flips),
+`tests/import-{docket,commit,review,routes,acceptance}.test.ts`,
+`tests/fixtures/import-surface.ts`.
+
+**Mechanism — the whole flow.** One door (Q-57): a folder on disk.
+`POST /api/import/scan` adopts the one-off's 19 keeps + 28 refusals first
+(idempotent, T8), then scans (body-hash identity, Q-59; frontmatter dates or
+refusal — never guessed), then admits to the staging store
+(`vault/imports/`, not corpus), then starts the docket. Extraction runs
+AHEAD of review, last in the docket and guarded (047 single-flight), the
+real harvest path (`propose()`) with Q-51 read against the raw source file
+and Q-59 dedupe before review. `GET /api/import/next` hands back the piece
+WHOLE with cuts marked in place and dropped regions marked with why;
+`web/import-review.ts` renders it — three verbs, no restate, no Target, the
+piece-level exclude in the header. `POST /api/import/:hash/decisions`
+commits one accepted piece as ONE dated sitting (`started` =
+frontmatter date), every snippet an exact substring of the SOURCE file
+(verified twice: extraction drops, commit refuses), `channel: 'pasted'`
+(048 via the landed `channelOf` seam), context by 073's rule, all-or-nothing.
+`POST /api/import/:hash/exclude` records the Q-51 item-level refusal with a
+written reason.
+
+**Deliberate behavior changes, recorded:** (1) extraction rides
+`harvestComplete` (078's grammar-constrained clerk variant), not
+`clerkComplete`; (2) `GET /api/import/next` answers `waiting` on a stale
+source (hash mismatch) rather than serving old cuts against new prose, and
+is registered for both GET and POST (one read-only handler — the web
+`api()` helper POSTs unknown paths); (3) the `import-excluded` log kind was
+added so the whole-item refusal is an auditable act; (4) T11 Step 4 and T12
+Step 2 (live-server and model-in-the-loop runs) are person's steps,
+recorded in the plan log, not executed by the dispatch (no server may run
+alongside the loaded build on 4517).
+
+**Verification.** Dispatch 1: full suite 1362 passed, 2 env-gated skips;
+the corpus arithmetic 19 + 28 = 47 re-run independently. Dispatch 2:
+per-task suites green (import-docket 3, import-commit 9, import-review 7,
+import-routes 6, import-acceptance 8 + 1 corpus-gated); wave gates run
+against the committed HEAD in clean worktrees (1406 passed after round 1;
+1432 passed after round 3, the 3 failures owned by the concurrent
+clause/contradiction agent's commit 76bcf1e — no import file involved);
+with `ELICIT_IMPORT_CORPUS` the acceptance suite passes 9/9:
+**19 accepted + 28 excluded = 47, 0 to import, 0 refused** — the one real
+corpus is fully decided, so a re-scan of it queues nothing. All 13 seeds
+closed `outcome:success` with commit hashes.
+
+### Remainders for the person
+
+1. T12 Step 2's live run (`ELICIT_LLM=local npm start`, scan the corpus) —
+   expected `read 47 files: 0 to import, 0 refused`; a live
+   scan→extract→review→commit run needs a never-ingested folder.
+2. T11 Step 4's browser pass over `tests/fixtures/import-folder` on a fresh
+   build.
+3. A live re-scan of a changed post exercises Q-59's second sitting end to
+   end (the automated proof is `import-commit.test.ts`).
+4. The concurrent clause/contradiction agent owns the 3 committed test
+   failures at final verification; none involve import files.
