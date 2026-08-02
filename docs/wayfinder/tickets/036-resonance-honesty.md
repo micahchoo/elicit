@@ -1,8 +1,8 @@
 ---
 title: "Fix: resonance honesty — semantic recall, or shrink the claim"
 labels: [wayfinder:task]
-status: resolved
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 

@@ -33,6 +33,27 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
+  says what the trigram index actually does ("what matches is the phrasing,
+  not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
+  embedding channel must start catching and records today's recall: zero.
+- [Fix: activity stream reads as sentences](tickets/038-activity-legibility.md) —
+  render-layer formatter; ULIDs stay in the JSONL audit trail, never on the
+  reading surface.
+- [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
+  says what the trigram index actually does ("what matches is the phrasing,
+  not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
+  embedding channel must start catching and records today's recall: zero.
+- [Fix: activity stream reads as sentences](tickets/038-activity-legibility.md) —
+  render-layer formatter; ULIDs stay in the JSONL audit trail, never on the
+  reading surface.
+- [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
+  says what the trigram index actually does ("what matches is the phrasing,
+  not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
+  embedding channel must start catching and records today's recall: zero.
+- [Fix: activity stream reads as sentences](tickets/038-activity-legibility.md) —
+  render-layer formatter; ULIDs stay in the JSONL audit trail, never on the
+  reading surface.
 - [Adversarial self-eval](../eval-2026-08-02-claude-adversarial.md) (not a
   ticket — a peer Claude session's red-team of the whole app) — found the
   canon-string drift, harvest silent failure, validator gaps, and the

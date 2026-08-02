@@ -1,9 +1,11 @@
 ---
 title: "Fix: activity stream leaks ULIDs into a reading surface"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  cb28ce2: src/log/format.ts — pure formatEvent() renders every emitted kind as one sentence with relative time; web panel wired; tests assert no 26-char ULID reaches user-facing text and unknown kinds degrade without throwing. JSONL keeps full ids (Q-23 audit trail intact).
 ---
 
 ## Question
