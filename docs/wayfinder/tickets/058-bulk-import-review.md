@@ -62,13 +62,16 @@ to catch misleading excision.
 
 ### Open questions
 
-- What does a person point the importer AT? A folder, a zip, a paste, an RSS
-  feed? Micah has three sources already: markdown on disk, Leaflet posts, a
-  Pixelfed feed. Fetching from the network is a new capability and touches
-  ADR-0001's spirit even though it is not a model call.
-- Where does the DATE come from when a file has none? Asking per item does not
-  scale to hundreds; guessing corrupts the thing that makes import valuable.
-  Filesystem mtime is a lie for anything ever copied.
+- ~~What does a person point the importer AT?~~ **RULED — Q-57.** One door: a
+  folder of files on disk. The app never opens a socket. Leaflet and Pixelfed
+  become export SCRIPTS that write a folder, never importers. ADR-0001 is not
+  the reason; separability is — a feed hands over rendered HTML, and the three
+  quotations that nearly entered the corpus were catchable only because the
+  markdown source preserved citation structure.
+- ~~Where does the DATE come from when a file has none?~~ **RULED — Q-57.**
+  Frontmatter only. Never mtime, never inferred, never asked per item. A file
+  with no date is REFUSED with a reason, because under Q-50 the date is what
+  makes cite independence possible and a guess corrupts it silently.
 - Import is long-running — measured ~40s per chunk on the clerk model, so a
   real archive is hours. That needs the waiting-state vocabulary and progress,
   and it must survive a closed browser. The docket's single-flight pattern

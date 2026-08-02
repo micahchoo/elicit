@@ -166,6 +166,12 @@ unassigned, all blockers closed.
   `threshold-clipped` record instead. Amends Q-35 in scope rather than carving
   a per-threshold exception. (No ticket — ruled directly, 2026-08-02.)
 
+- **Q-57 — the importer has one door: a folder of files.** The app never opens
+  a socket; Leaflet and Pixelfed become export scripts. Not ADR-0001 —
+  separability: a feed hands over rendered HTML, and the quotations that nearly
+  entered the corpus were catchable only in markdown source. Dates come from
+  frontmatter or the file is refused. (Resolves two of ticket 058's opens.)
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
