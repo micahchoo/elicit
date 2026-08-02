@@ -1,8 +1,8 @@
 ---
 title: "Build: the degradation ladder — two rungs, a composing floor, every rung logged"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -54,3 +54,29 @@ rungs as more inline `if` blocks.
 - A `user-declared` entry excluded by `Target` is NOT re-admitted.
 - An `answered` entry is never drawn at any rung.
 - Existing `draw()` tests pass unchanged — the normal path is untouched.
+
+## Resolution (2026-08-02) — commit `5ebbbc5`
+
+Q-55 in code. `drawFilters(mode, phase)` returns `{name, keep, relaxable}` in
+the order Q-55 fixes; `runChain()` gives both rung 2 and "which filter emptied
+the pool" from one call. `status`, `horizon` and `target` are
+`relaxable: false`; `modeNeeds` and `sharpness` are the system's own inferences
+and the only things rung 2 relaxes, and only for `source: 'user-declared'`.
+
+**Rung 1 is a log line, not a branch** — the honest reading of the tree, and
+not what the ticket assumed. `applyFacetBalance` ALREADY stands down when it
+would empty the pool (`facet-balance.ts:175`), so rung 1 is doubly guaranteed
+and the only implementable version of "log rung 1" is "log that stand-down".
+It is distinguished from cold start, where the filter has nothing to say rather
+than standing down, and it logs in shadow as well as live — how often it WOULD
+fire is exactly the evidence Q-55 wants before facet balance graduates.
+
+`queue-floor` is its own event kind rather than `queue-rung rung=floor`: the
+floor is not a rung, and "how often do we compose?" should be one grep.
+
+13 new tests, 10 red before the implementation. The three that passed vacuously
+were mutation-tested; 8 mutations tried, 8 caught, including relaxing each of
+the three never-relaxed filters in turn.
+
+**Surfaced, not fixed:** see
+[the activity feed's kind list is stale](063-log-format-kind-drift.md).

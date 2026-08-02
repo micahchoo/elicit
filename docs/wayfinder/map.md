@@ -281,6 +281,11 @@ unassigned, all blockers closed.
   Q-24 wording is testable. Imported sittings are excluded: 19 transcripts
   dated 2017-2026 would otherwise report a last sitting nobody sat for.
 
+- [Build: the degradation ladder](tickets/061-build-degradation-ladder.md) —
+  Q-55 in code; the filter chain is data, so rung 2 and "which filter emptied
+  the pool" are one function rather than two. Rung 1 turned out to be a log
+  line: facet balance already refuses to empty a pool.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
