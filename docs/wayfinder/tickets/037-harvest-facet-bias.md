@@ -2,7 +2,7 @@
 title: "Fix: harvester drops episodes and mislabels facet/stance"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

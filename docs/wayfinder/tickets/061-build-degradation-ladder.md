@@ -2,7 +2,7 @@
 title: "Build: the degradation ladder — two rungs, a composing floor, every rung logged"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (in flight)
 blocked_by: []
 ---
 

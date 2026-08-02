@@ -266,6 +266,21 @@ unassigned, all blockers closed.
   Dispatch agents on disjoint files, verify each against the tree rather than
   its own report, commit at milestones. Do not stop between waves.
 
+- [Build: render sitting cadence](tickets/056-cadence-on-the-waiting-surface.md)
+  — one dimmed sentence on the waiting surface, composed server-side so the
+  Q-24 wording is testable. Imported sittings are excluded: 19 transcripts
+  dated 2017-2026 would otherwise report a last sitting nobody sat for.
+
+- [Build: render sitting cadence](tickets/056-cadence-on-the-waiting-surface.md)
+  — one dimmed sentence on the waiting surface, composed server-side so the
+  Q-24 wording is testable. Imported sittings are excluded: 19 transcripts
+  dated 2017-2026 would otherwise report a last sitting nobody sat for.
+
+- [Build: render sitting cadence](tickets/056-cadence-on-the-waiting-surface.md)
+  — one dimmed sentence on the waiting surface, composed server-side so the
+  Q-24 wording is testable. Imported sittings are excluded: 19 transcripts
+  dated 2017-2026 would otherwise report a last sitting nobody sat for.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
