@@ -82,8 +82,12 @@ export function startSession(
  // Opening: draw from queue first, bank fallback
  const queueDraw = deps.queue.draw(normalizedMode, 'opening');
  let openerTurn: Turn;
+ // The entry whose question is on the table. Held from here so the answering
+ // turn can close it; a bank opener leaves it absent, and nothing is marked.
+ let openQueueEntryId: string | undefined;
 
  if (queueDraw) {
+  openQueueEntryId = queueDraw.id;
   deps.queue.markAsked(queueDraw.id);
   openerTurn = {
    role: 'agent',
@@ -123,6 +127,7 @@ export function startSession(
   bank,
   questionCount: 1,
   phase: 'open',
+  ...(openQueueEntryId ? { openQueueEntryId } : {}),
  };
 }
 
@@ -222,6 +227,19 @@ export async function userTurn(
  const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
  s.turns.push(userTurnRecord);
+
+ // The answer landed, so the entry that asked for it is answered (ticket 041).
+ // This runs before every branch below and is the ONLY route to `answered`:
+ // the test is behavioural — a question was put and something came back — so
+ // "dunno" counts exactly as a paragraph does. Whether the answer was worth
+ // anything is a different measurement, and it needs its own field rather
+ // than a reinterpretation of this one. Recorded after the turn is in the
+ // transcript, so no entry is ever marked for a turn that was not written.
+ // `delete`, never `= undefined`: exactOptionalPropertyTypes is on.
+ if (s.openQueueEntryId) {
+  s.deps.queue.markAnswered(s.openQueueEntryId);
+  delete s.openQueueEntryId;
+ }
 
  // Bookmark answer — close completes; the answer becomes a user-declared queue entry.
  // It carries this sitting's Target so a later sitting of the other kind cannot
@@ -351,6 +369,7 @@ function drawFallback(s: SessionState): Probe | null {
  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
  if (queueDraw) {
   s.deps.queue.markAsked(queueDraw.id);
+  s.openQueueEntryId = queueDraw.id;
   return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank', {
    ...(queueDraw.targetFacet ? { targetFacet: queueDraw.targetFacet } : {}),
   });
@@ -397,6 +416,10 @@ export function skipQuestion(
  if (lastAgentIdx === -1) return { kind: 'exhausted' };
 
  s.turns[lastAgentIdx]!.skipped = true;
+
+ // A skipped question was not answered. The entry stays `asked` — dropping the
+ // pairing here is what stops the NEXT turn from marking it (ticket 041).
+ delete s.openQueueEntryId;
 
  const bank = s.bank ?? [];
  const bankTexts = new Set(bank.map((q) => q.text));

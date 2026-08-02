@@ -70,6 +70,12 @@ class QueueStoreImpl implements QueueStore {
       horizon: data.horizon as QueueEntry['horizon'],
       created: data.created as string,
       ...(data.cites ? { cites: data.cites as NonNullable<QueueEntry['cites']> } : {}),
+      // Absent until `markAnswered` writes it. Its absence is the uptake
+      // signal's "not yet", never a zero (ticket 041).
+      ...(data.answeredAt ? { answeredAt: data.answeredAt as string } : {}),
+      // The Claim a lint-minted still-true question is about. Read back
+      // because the still-true dedupe keys on it across restarts (Q-31).
+      ...(data.claim ? { claim: data.claim as string } : {}),
       ...(data.quotedFragment
         ? { quotedFragment: data.quotedFragment as NonNullable<QueueEntry['quotedFragment']> }
         : {}),
@@ -103,6 +109,11 @@ class QueueStoreImpl implements QueueStore {
       horizon,
       created,
     };
+    // Every optional field is written under a guard, never as a present key
+    // holding `undefined` — `matter.stringify` throws on that and the whole
+    // write is lost.
+    if (entry.answeredAt) fm.answeredAt = entry.answeredAt;
+    if (entry.claim) fm.claim = entry.claim;
     if (entry.cites) fm.cites = entry.cites;
     if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;
     if (entry.target) fm.target = entry.target;
@@ -286,10 +297,16 @@ class QueueStoreImpl implements QueueStore {
     this.#write(entry);
   }
 
+  /**
+   * The status and the time it happened are one fact, so they are written
+   * together: a downstream horizon that reads `answered` without a date has
+   * nothing to measure from (ticket 041).
+   */
   markAnswered(id: string): void {
     const entry = this.#readOne(id);
     if (!entry) return;
     entry.status = 'answered';
+    entry.answeredAt = new Date().toISOString();
     this.#write(entry);
   }
 

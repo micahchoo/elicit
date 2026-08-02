@@ -720,4 +720,55 @@ describe('QueueStore', () => {
       expect(shadow!.detail).toContain('applied=false');
     });
   });
+
+  // ── answeredAt and claim: declared in types, worthless until written (041) ──
+
+  describe('optional fields the frontmatter has to carry', () => {
+    /** The frontmatter of the single entry on disk, unmediated by the store. */
+    function rawFrontmatter(): Record<string, unknown> {
+      const dir = join(root, 'queue');
+      const file = readdirSync(dir).find((f) => f.endsWith('.md'))!;
+      return matter(readFileSync(join(dir, file), 'utf-8')).data as Record<string, unknown>;
+    }
+
+    it('markAnswered records answeredAt and both survive a fresh store', () => {
+      const e = store.add(makeDraft());
+      const before = Date.now();
+      store.markAnswered(e.id);
+
+      const reloaded = createQueueStore(root).list()[0]!;
+      expect(reloaded.status).toBe('answered');
+      expect(reloaded.answeredAt).toBeTypeOf('string');
+      const at = new Date(reloaded.answeredAt!).getTime();
+      expect(Number.isNaN(at)).toBe(false);
+      expect(at).toBeGreaterThanOrEqual(before - 1000);
+    });
+
+    it('an unanswered entry writes no answeredAt key at all', () => {
+      store.add(makeDraft());
+      store.markAsked(store.list()[0]!.id);
+
+      // A present key holding undefined would lose the whole write, so the
+      // absence is asserted in the file, not only in the parsed entry.
+      expect('answeredAt' in rawFrontmatter()).toBe(false);
+      expect('answeredAt' in createQueueStore(root).list()[0]!).toBe(false);
+    });
+
+    it('claim roundtrips, and answering an entry keeps it', () => {
+      const claim = '01K0000000000000000000000A';
+      const e = store.add(makeDraft({ source: 'lint-still-true', claim }));
+      expect(createQueueStore(root).list()[0]!.claim).toBe(claim);
+
+      store.markAnswered(e.id);
+      const reloaded = createQueueStore(root).list()[0]!;
+      expect(reloaded.claim).toBe(claim);
+      expect(reloaded.status).toBe('answered');
+    });
+
+    it('an entry added without a claim reads back with the key absent', () => {
+      store.add(makeDraft());
+      expect('claim' in rawFrontmatter()).toBe(false);
+      expect('claim' in createQueueStore(root).list()[0]!).toBe(false);
+    });
+  });
 });

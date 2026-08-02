@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { Turn, Vault, QueueStore, QueueDraft, LexicalIndex } from '../src/types.js';
+import type { Turn, Vault, QueueStore, QueueDraft, QueueEntry, LexicalIndex } from '../src/types.js';
 import { makeScriptedComplete } from './fakes.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
@@ -922,5 +922,100 @@ describe('startSession honours the declared Target', () => {
 
    expect(session.turns[0]!.text).toBe(selfEntry.question);
   });
+ });
+});
+
+describe('the open queue entry — which question the next turn answers (041)', () => {
+ /** A queue that hands out a fixed pool and records what it was told. */
+ function makeRecordingQueue(pool: QueueEntry[]): QueueStore & { answered: string[] } {
+  const remaining = [...pool];
+  const answered: string[] = [];
+  return {
+   add: (draft) => ({ ...draft, id: 'added', created: '', status: 'pending' as const }),
+   list: () => [],
+   draw: () => remaining.shift() ?? null,
+   markAsked: () => { },
+   markAnswered: (id) => { answered.push(id); },
+   defer: () => { },
+   expire: () => 0,
+   answered,
+  };
+ }
+
+ function entry(id: string, question: string): QueueEntry {
+  return {
+   id,
+   status: 'pending',
+   source: 'composed',
+   license: 'machine',
+   question,
+   questionForm: 'deliberative',
+   sharpness: 'weak',
+   horizon: 'now',
+   created: '2026-08-01T00:00:00.000Z',
+  };
+ }
+
+ const BANK = [{ text: 'What are you avoiding?', questionForm: 'deliberative' as const }];
+ const RICH = 'I remember deciding it, because the alternative asked more of me.';
+
+ function open(queue: QueueStore, responses: string[]) {
+  return startSession(
+   { minutes: 30, energy: 'medium' },
+   {
+    complete: makeScriptedComplete(responses),
+    vault: makeFakeVault(),
+    queue,
+    index: makeFakeIndex(),
+    bank: BANK,
+   },
+  );
+ }
+
+ test('a queue opener is held open; a bank opener holds nothing', () => {
+  const q = makeRecordingQueue([entry('q1', 'What did you leave behind?')]);
+  expect(open(q, []).openQueueEntryId).toBe('q1');
+
+  const bankSession = open(makeFakeQueue(), []);
+  expect('openQueueEntryId' in bankSession).toBe(false);
+ });
+
+ test('one drawn question is answered once, however many turns follow', async () => {
+  const q = makeRecordingQueue([entry('q1', 'What did you leave behind?')]);
+  const session = open(q, turnResponses(['And what took its place?', 'Who else saw it?']));
+
+  await userTurn(session, RICH);
+  expect(q.answered).toEqual(['q1']);
+  expect('openQueueEntryId' in session).toBe(false);
+
+  await userTurn(session, 'It took the shape of a habit I could not name, and I let it.');
+  expect(q.answered).toEqual(['q1']);
+ });
+
+ test('a skip drops the pairing, so the next turn marks nothing', async () => {
+  const q = makeRecordingQueue([entry('q1', 'What did you leave behind?')]);
+  const session = open(q, turnResponses(['And what took its place?']));
+
+  expect(skipQuestion(session).kind).toBe('question');
+  expect('openQueueEntryId' in session).toBe(false);
+
+  await userTurn(session, RICH);
+  expect(q.answered).toEqual([]);
+ });
+
+ test('a mid-session fallback draw becomes the entry the next turn answers', async () => {
+  const q = makeRecordingQueue([
+   entry('q1', 'What did you leave behind?'),
+   entry('q2', 'What did you carry instead?'),
+  ]);
+  const session = open(q, turnResponses(['Who else saw it?']));
+
+  // 'dunno' pivots to a fresh draw: q1 is answered, q2 takes its place.
+  await userTurn(session, 'dunno');
+  expect(q.answered).toEqual(['q1']);
+  expect(session.openQueueEntryId).toBe('q2');
+
+  await userTurn(session, RICH);
+  expect(q.answered).toEqual(['q1', 'q2']);
  });
 });

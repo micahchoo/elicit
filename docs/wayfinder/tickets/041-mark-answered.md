@@ -18,9 +18,9 @@ blocked_by: []
 Found by the Clerk plan review (blocker B1), and it is a bug in the RUNNING
 app, not only in the plan: `QueueStore.markAnswered` is defined
 (`src/types.ts`, `src/queue/queue.ts`) and called by NOTHING. `queue.draw()`
-sets an entry to `asked`; it then stays `asked` until `expire()` deletes it
-at 30 days. Nothing records that the user actually answered the question the
-entry opened.
+sets an entry to `asked`; it then stays `asked` for good, because `expire()`
+skips every entry whose status is not `pending`. Nothing records that the user
+actually answered the question the entry opened.
 
 Consequences today: no uptake signal (Q-13's exposure control and Q-35's
 shadow metrics have no input), still-true and opener entries look identical
