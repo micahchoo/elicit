@@ -63,3 +63,35 @@ failing.** Do not loosen the rule to make the numbers look better.
 - A docket run after the pass mints Claims, and the report says how many.
 - The facet distribution across the 139 is reported — it is the first
   independent check on whether 037's fix held on real prose.
+
+## Operating notes, from the agent that built it (2026-08-02)
+
+Five things not learnable from reading `scripts/read-snippets.ts`:
+
+1. **The first live run used OLDER logic than the file now holds.** The
+   empty-result retry (`totals.emptyResults`, retry-before-fallback) was added
+   *after* the run started. The snippets it left unread are **interrogatives** —
+   "Is there some sort of way that the project itself fails…" — where the model
+   returns `cuts: []` for a bare question. **A second `--apply` retries exactly
+   those**; idempotency means it touches nothing else. If they come back empty
+   again that is the honest finding rather than a bug: the harvest prompt
+   extracts propositions, and a few of Micah's keeps are questions.
+2. **`--verify` scopes by session prefix `post-`, not by the number 139.** A
+   reading from a live sitting can never confuse it — but a future post import
+   silently enlarges the denominator and makes verify FAIL until that import is
+   read too.
+3. **`--verify` asserts the cite is `id@<current version>`.** If anyone ever
+   calls `saveVersion` on an imported snippet, verify starts failing on readings
+   that were correct the day they were written. Deliberate; will look like a
+   regression.
+4. **`propose()` swallows a dead endpoint into `diagnostics.chunkErrors` and
+   returns an empty proposal list** — so from the outside, a refused connection
+   and a snippet the model declined to cut are indistinguishable. This is why
+   the retry-vs-fallback branch keys on `chunkErrors` rather than on emptiness.
+   **Keep that distinction if you touch it.** It is the same shape as eval
+   finding #8 and as ticket 007's inert threshold: silence that means two
+   different things.
+5. **`[direct]` in the log marks the fallback path**, expected on about four
+   snippets — the ones opening on a lowercase letter, which 037's
+   `startsMidSentence` router sends to Buds. It skips that router and nothing
+   else.
