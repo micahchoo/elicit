@@ -46,6 +46,20 @@ export type MakeCompleteOptions = {
   * fake responder path and every existing caller are untouched (ticket 078).
   */
  responseFormat?: ResponseFormat;
+ /**
+  * Per-request wall-clock budget in milliseconds. Defaults to
+  * DEFAULT_TIMEOUT_MS; a call still running when the budget elapses is
+  * aborted, and the caller sees a `timed out after Ns` detail that names
+  * the budget (ticket 086).
+  */
+ timeoutMs?: number;
+ /**
+  * Output-token bound, sent as `max_tokens` on every call. Defaults to
+  * DEFAULT_MAX_TOKENS — the server-side cap on a degenerate loop, so a
+  * runaway generation is bounded even when a client abort cannot reach
+  * the server (ticket 086).
+  */
+ maxTokens?: number;
 };
 
 const DEFAULTS: Record<LlmRole, { baseUrl: string; modelId: string }> = {
@@ -109,8 +123,56 @@ function buildModel(cfg: RoleConfig): Model<'openai-completions'> {
    // llama.cpp does not accept the 'developer' role or reasoning_effort
    supportsDeveloperRole: false,
    supportsReasoningEffort: false,
+   // Emit `max_tokens`, the field both local backends read. pi-ai would
+   // otherwise auto-detect `max_completion_tokens` for any non-OpenAI
+   // baseUrl, and Ollama's OpenAI layer has NO such field — verified
+   // against ollama/openai/openai.go at v0.30.11: ChatCompletionRequest
+   // carries only `max_tokens`, mapped to num_predict. Without this
+   // override the token bound below would be silently ignored (ticket 086).
+   maxTokensField: 'max_tokens',
   },
  };
+}
+
+/**
+ * Per-request wall-clock budget for every completion, in milliseconds.
+ *
+ * Justified against the measurements the ticket cites. T15/T16's drain
+ * measured ~29s typical clerk calls; 078's constrained-harvest measurement
+ * found honest grammar-constrained calls exceeding 120s (its first ratchet
+ * run capped at 120s and read three `timed out after 120s` chunkErrors on
+ * eval-003's longest turns); the embeddings path chose 120s per request.
+ * 180s is ~6x the typical clerk call and 1.5x the embeddings budget, so it
+ * covers honest slow calls with margin; an elicitor turn (3-9s on
+ * bonsai-27b) is never close, and a foreground call that hangs three
+ * minutes is already broken UX worth failing. The known exception is 007's
+ * measured 370s cold-model first call, which now fails at the budget and
+ * is retried warm — a paid warm-up, recoverable through the attempts-aware
+ * backoff, not a stall. Tonight's 84-minute runaway is what this budget
+ * exists to convert into a named `timed out after 180s` failure (ticket
+ * 086).
+ */
+const DEFAULT_TIMEOUT_MS = 180_000;
+
+/**
+ * Output-token bound sent as `max_tokens` on every completion.
+ *
+ * Ollama maps it to num_predict (verified against ollama/openai/openai.go
+ * at v0.30.11, lines 589-591); llama.cpp reads `max_tokens` natively. At
+ * the measured ~28 tok/s decode rate, 16384 tokens is roughly ten minutes
+ * of generation — well beyond the 180s client budget, so the bound never
+ * truncates a call the client would let finish. It exists to cap SERVER
+ * work when a client abort cannot reach the server: the ticket's runaway
+ * ran 84 minutes against an established socket, and an unbounded runner
+ * keeps generating into the void after the client gives up (ticket 086).
+ */
+const DEFAULT_MAX_TOKENS = 16384;
+
+/** The failure detail for an elapsed budget — the 078 spelling, so a log
+ * reader can tell `timed out after Ns` from a refused connection (034 —
+ * two different diagnoses, two different correctives). */
+function timeoutDetail(timeoutMs: number): string {
+ return `timed out after ${timeoutMs / 1000}s`;
 }
 
 /**
@@ -120,8 +182,10 @@ function buildModel(cfg: RoleConfig): Model<'openai-completions'> {
 export function makeComplete(role: LlmRole = 'elicitor', options?: MakeCompleteOptions): Complete {
  const cfg = roleConfig(role);
  const model = buildModel(cfg);
- // Captured once at construction so the closure reads a stable value.
+ // Captured once at construction so the closure reads stable values.
  const responseFormat = options?.responseFormat;
+ const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+ const maxTokens = options?.maxTokens ?? DEFAULT_MAX_TOKENS;
 
  return async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
   // pi-ai serializes assistant content by filtering CONTENT BLOCKS — a plain string
@@ -144,9 +208,17 @@ export function makeComplete(role: LlmRole = 'elicitor', options?: MakeCompleteO
    messages,
   } as Context;
 
+  // One controller per call, and only the timer ever aborts it — so an
+  // 'aborted' stopReason is always OUR elapsed budget, never a caller's
+  // signal, and the diagnosis can name the budget with certainty.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   const options = {
    apiKey: 'none', // local endpoint does not require auth
    ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
+   signal: controller.signal,
+   maxTokens,
    // pi-ai's onPayload hook runs after buildParams and before the fetch;
    // mutating the body here carries response_format to the endpoint through
    // the same completion path the plain calls use (ticket 078).
@@ -164,11 +236,23 @@ export function makeComplete(role: LlmRole = 'elicitor', options?: MakeCompleteO
   try {
    response = await complete(model, context, options);
   } catch (err) {
-   // A refused connection or a timeout reaches the caller naming its role.
+   // The abort surfaced as a rejection, not as an 'aborted' stopReason.
+   if (controller.signal.aborted) {
+    throw roleFailure(cfg, timeoutDetail(timeoutMs));
+   }
+   // A refused connection reaches the caller naming its role.
    throw roleFailure(cfg, err instanceof Error ? err.message : String(err));
+  } finally {
+   clearTimeout(timer);
   }
 
-  if (response.stopReason === 'error') {
+  if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+   // The budget elapsed: the abort is ours, and the detail names it so a
+   // log reader can tell `timed out after 180s` from a refused connection
+   // (034 — two different diagnoses, two different correctives).
+   if (controller.signal.aborted) {
+    throw roleFailure(cfg, timeoutDetail(timeoutMs));
+   }
    const detail = (response as { errorMessage?: string }).errorMessage ?? 'no detail';
    throw roleFailure(cfg, detail);
   }
