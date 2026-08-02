@@ -378,6 +378,25 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
  },
 
+ // The docket's import job (T6): one line per run, the three counts. The
+ // sentence shows what moved and what is still to be read; a non-zero
+ // `failed` adds the failing clause.
+ {
+  kind: 'import-run',
+  detail: 'extracted=2 remaining=1 failed=0',
+  reads: 'read 2 pieces ahead of review; 1 piece still being read',
+ },
+ {
+  kind: 'import-run',
+  detail: 'extracted=0 remaining=3 failed=2',
+  reads: 'read 0 pieces ahead of review; 3 pieces still being read, 2 pieces failing',
+ },
+ {
+  kind: 'import-run-failed',
+  detail: 'boom',
+  reads: 'the import extraction could not finish this run — the rest of the docket work is already on disk',
+ },
+
  // The usage stamp (015): a claim or snippet reached the person. The refs
  // are the record; the detail names the surface. One sentence per surface.
  {

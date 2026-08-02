@@ -62,6 +62,18 @@ export async function runDocket(deps: {
   * that predates the field behaves exactly as it did.
   */
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
+/**
+ * The import extraction (T6), as the LAST job of a run — after even the
+ * wiki work, because it is the slowest thing in the run.
+ *
+ * Structural and optional on purpose. This file must not import
+ * `import/extract.ts` — the docket is the older, smaller thing and the
+ * import layer depends on it, not the other way round — so the server
+ * injects a thunk that has already been given its own collaborators,
+ * including its own Activity Log sink. Absent means no import work this
+ * run, and every caller that predates the field behaves exactly as it did.
+ */
+ runImportJobs?: () => Promise<{ extracted: number; remaining: number; failed: number }>;
  /**
   * The still-true rotation cursor (ticket 075) — the count of old snippets
   * already offered, so consecutive runs propose different snippets even
@@ -260,12 +272,29 @@ export async function runDocket(deps: {
    }
   }
 
+  // ── 8. The import extraction, last and guarded (T6) ──
+  // Last because it is the slowest thing in the run and no other job may
+  // wait on it — the cost is paid before the person sits down (Q-58), and
+  // nothing the docket owns must be pushed later than it already is.
+  // Guarded because a throw is one job's failure: the index, the minted
+  // questions and the expiry are already on disk by the time this runs,
+  // and the report still carries all four when it throws.
+  let imports: DocketReport['imports'];
+  if (deps.runImportJobs) {
+   try {
+    imports = await deps.runImportJobs();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'import-run-failed', detail: String(err) });
+   }
+  }
+
   return {
    reindexed: allSnippets.length,
    minted,
    expired,
    index,
    ...(wiki ? { wiki } : {}),
+   ...(imports ? { imports } : {}),
   };
  } finally {
   running = false;

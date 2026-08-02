@@ -566,6 +566,18 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  return `set aside ${count(num(f, 'cuts'), 'cut')} from ${file}: it sits inside a quotation in the source file`;
 },
 
+// The docket's import job (T6): one line per run, the three counts. The
+// extraction is the harvest path run ahead of review, so the sentence says
+// what moved and what is still to be read rather than naming files.
+'import-run': (f) => {
+ const base = `read ${count(num(f, 'extracted'), 'piece')} ahead of review; ${count(num(f, 'remaining'), 'piece')} still being read`;
+ const failed = num(f, 'failed');
+ return failed === 0 ? base : `${base}, ${count(failed, 'piece')} failing`;
+},
+// The import job itself threw (T6): guarded like every other job, so the
+// rest of the run is already on disk and only the extraction is missing.
+'import-run-failed': () => 'the import extraction could not finish this run — the rest of the docket work is already on disk',
+
 // ── The surfaced usage stamp (015) ──
 
 // One line per surfacing act: a claim or snippet reached the person on a

@@ -357,6 +357,14 @@ export type DocketReport = {
   unprocessed: number;
   [k: string]: unknown;
  };
+ /**
+  * What the import extraction did on this run, absent when a run did none.
+  *
+  * Structural rather than imported: this file must not depend on
+  * `src/import/`, so the field names the minimum the docket report renders
+  * and lets the import layer's own `ExtractionResult` satisfy it.
+  */
+ imports?: { extracted: number; remaining: number; failed: number };
 };
 
 export type SessionState = {

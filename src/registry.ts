@@ -292,16 +292,16 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/import/store',
   name: 'createImportStore',
-  status: 'unwired',
-  reason: 'no production caller yet — extract.ts (T5) imports it in a later wave; scripts and tests do not count',
+  status: 'live',
+  reason: 'called from createApp (server.ts) — the docket import job reads through it',
  },
 
  // ── src/import/extract.ts ──
  {
   module: 'src/import/extract',
   name: 'runImportExtraction',
-  status: 'unwired',
-  reason: 'no production caller yet — the docket wiring (T6) calls it in a later wave; tests do not count',
+  status: 'live',
+  reason: 'called from runImportJobsNow (server.ts) as the docket last job',
  },
 
  // ── src/llm.ts ──

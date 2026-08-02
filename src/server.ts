@@ -29,6 +29,8 @@ import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
+import { createImportStore } from './import/store.js';
+import { runImportExtraction } from './import/extract.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
 import {
@@ -348,6 +350,10 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // (ticket 078); everything else the clerk does stays unconstrained.
  const harvestComplete = deps.clerk?.harvestComplete ?? clerkComplete;
 
+// The staging store the docket's extraction job reads: unreviewed files
+// live here until the run before the person sits down (T6).
+const importStore = createImportStore(deps.vaultRoot);
+
  // ── The Clerk's wiki work, constructed once (Q-22) ──
  //
  // The log sink below is the point of this block. Until it existed, every
@@ -442,7 +448,19 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   return report;
  }
 
- // ── The docket, off the response path (ticket 047) ──
+/** One import extraction run — the real harvest path, ahead of review (Q-58). */
+async function runImportJobsNow(): Promise<{ extracted: number; remaining: number; failed: number }> {
+ return runImportExtraction({
+  store: importStore,
+  // Extraction IS the harvest path, so it rides the grammar-constrained
+  // clerk variant the harvest does (ticket 078).
+  complete: harvestComplete,
+  readSource: (p) => readFileSync(p, 'utf-8'),
+  log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+ });
+}
+
+// ── The docket, off the response path (ticket 047) ──
  // Opener minting is one LLM call per uncited snippet, so a docket run grows
  // with the vault. No request waits for one: handlers write to the vault,
  // answer, and the index catches up when the run finishes.
@@ -453,6 +471,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  let pendingTrigger: string | null = null;
 
  async function runDocketNow(trigger: string): Promise<void> {
+  // The import job's counts, seen in the finally for the re-trigger. Hoisted
+  // because the finally runs whether the run succeeded or failed.
+  let importReport: { extracted: number; remaining: number; failed: number } | undefined;
   try {
    const report = await runDocket({
     vault: deps.vault,
@@ -471,12 +492,17 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     ...(clerkModelName ? { modelName: clerkModelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     runWikiJobs: runWikiJobsNow,
+    runImportJobs: runImportJobsNow,
     stillTrueCursor,
     vaultRoot: deps.vaultRoot,
    });
    currentIndex = report.index;
    for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
     snippetMap.set(s.id, s);
+   }
+   if (report.imports) {
+    importReport = report.imports;
+    serverEmit(deps.vaultRoot, 'clerk', 'import-run', 'extracted=' + report.imports.extracted + ' remaining=' + report.imports.remaining + ' failed=' + report.imports.failed);
    }
    serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${report.minted.length}, expired ${report.expired}`);
 
@@ -519,6 +545,15 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
    const next = pendingTrigger;
    pendingTrigger = null;
    if (next) startDocket(next);
+   // Q-56 loop guard: a run that extracted nothing must not re-trigger
+   // forever — if the items keep failing, re-running burns the GPU on work
+   // that will keep failing, so both conditions must hold. If the
+   // pendingTrigger replay above already re-armed docketRunning, this call
+   // defers via pendingTrigger — the later trigger wins, which is the
+   // correct shape for a queue that keeps growing.
+   if (importReport && importReport.remaining > 0 && importReport.extracted > 0) {
+    startDocket('import');
+   }
    deps.onDocketSettled?.();
   }
  }
