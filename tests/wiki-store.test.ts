@@ -499,3 +499,38 @@ describe('ClaimStore — the read-log (Q-21)', () => {
     expect(() => store.recordRead('01KNOPE', '2026-08-02T12:00:00.000Z', 'wiki')).toThrow(/01KNOPE/);
   });
 });
+
+describe('ClashCandidate.attempts survives the round trip (Q-53)', () => {
+  it('a candidate written with attempts 2 reads back as 2, not 1', () => {
+    // The bug this pins: `attempts` was absent from writeCandidate's
+    // frontmatter while listCandidates defaulted an absent key to 1. Q-53's
+    // cap of 2 therefore never bit across a round trip, and a pair dissolved
+    // as `remeasure-expired` would earn a fresh re-measure on every docket
+    // run, forever. The type was required, the read was correct, and the
+    // write silently dropped it.
+    const store = createClaimStore(root);
+    store.writeCandidate(makeCandidate({ id: '01KCAPPED', attempts: 2 }));
+
+    const raw = readFileSync(join(root, 'wiki', 'candidates', '01KCAPPED.md'), 'utf-8');
+    expect(matter(raw).data['attempts']).toBe(2);
+
+    const readBack = createClaimStore(root).listCandidates().find((c) => c.id === '01KCAPPED');
+    expect(readBack?.attempts).toBe(2);
+  });
+
+  it('a candidate file written before Q-53 still reads as one attempt', () => {
+    // Absent means "has had exactly one re-measure", which is what every
+    // pre-Q-53 file on disk means. Defaulting is not fabrication here.
+    const dir = join(root, 'wiki', 'candidates');
+    mkdirSync(dir, { recursive: true });
+    const legacy = matter.stringify('', {
+      id: '01KLEGACY', pair: ['01KCLAIMA', '01KCLAIMB'], channel: 'lexical',
+      status: 'pending-remeasure', model: 'qwen3.6:35b',
+      modelAt: '2026-08-01T00:00:00.000Z', created: '2026-08-01T00:00:00.000Z',
+    });
+    writeFileSync(join(dir, '01KLEGACY.md'), legacy, 'utf-8');
+
+    const readBack = createClaimStore(root).listCandidates().find((c) => c.id === '01KLEGACY');
+    expect(readBack?.attempts).toBe(1);
+  });
+});

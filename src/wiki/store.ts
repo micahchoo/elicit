@@ -381,6 +381,12 @@ class ClaimStoreImpl implements ClaimStore {
       ...(c.outcome !== undefined ? { outcome: c.outcome } : {}),
       ...(c.remeasureQueueId !== undefined ? { remeasureQueueId: c.remeasureQueueId } : {}),
       ...(c.remeasureAskedAt !== undefined ? { remeasureAskedAt: c.remeasureAskedAt } : {}),
+      // UNCONDITIONAL, unlike the three above. `attempts` is required on the
+      // type, and omitting it here is not a smaller file — it is Q-53's cap
+      // silently not existing: `listCandidates` defaults an absent key to 1,
+      // so a candidate written with `attempts: 2` reads back as 1 and an
+      // expired pair re-proposes forever. Found by T11, 2026-08-02.
+      attempts: c.attempts,
       model: c.model,
       modelAt: c.modelAt,
       created: c.created,
