@@ -1,9 +1,15 @@
 ---
 title: "Fix: harvest provenance derivation + decisions validation + dedupe"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Fix wave 2, commit 9ccac72 (+156d686 user-last fix found in verification): sourceTurn derived by transcript substring search, proposal dedupe, 400 on malformed decisions. Invariants later verified 8/8 on the real vault (RESULTS.md).
+resolution: >
+  Fix wave 2, commit 9ccac72 (+156d686 user-last fix found in verification): sourceTurn derived by transcript substring search, proposal dedupe, 400 on malformed decisions. Invariants later verified 8/8 on the real vault (RESULTS.md).
+resolution: >
+  Fix wave 2, commit 9ccac72 (+156d686 user-last fix found in verification): sourceTurn derived by transcript substring search, proposal dedupe, 400 on malformed decisions. Invariants later verified 8/8 on the real vault (RESULTS.md).
 ---
 
 ## Question

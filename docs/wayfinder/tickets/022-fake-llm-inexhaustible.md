@@ -1,9 +1,15 @@
 ---
 title: "Fix: ELICIT_LLM=fake is a 3-shot script — dev mode 500s in real use"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
+resolution: >
+  Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
+resolution: >
+  Fix wave 2, commit 9ccac72: src/fake-responder.ts, full session with zero 500s in fake mode; ScriptedComplete stays exhaustible for tests.
 ---
 
 ## Question

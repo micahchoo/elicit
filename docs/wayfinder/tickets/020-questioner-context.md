@@ -1,9 +1,15 @@
 ---
 title: "Fix: the questioner's context — move library, pivot rule, parrot guards"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude
 blocked_by: []
+resolution: >
+  Fix wave 1, commit 6f44553: move library, code pivot rule (live-walk proven), parrot + degenerate guards. Superseded in spirit by ticket 031 / Q-36 (repertoire over prescription).
+resolution: >
+  Fix wave 1, commit 6f44553: move library, code pivot rule (live-walk proven), parrot + degenerate guards. Superseded in spirit by ticket 031 / Q-36 (repertoire over prescription).
+resolution: >
+  Fix wave 1, commit 6f44553: move library, code pivot rule (live-walk proven), parrot + degenerate guards. Superseded in spirit by ticket 031 / Q-36 (repertoire over prescription).
 ---
 
 ## Question

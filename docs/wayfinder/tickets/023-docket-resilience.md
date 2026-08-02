@@ -1,9 +1,15 @@
 ---
 title: "Fix: docket resilience + model-server compat + canonical closes"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Fix wave 2, commit 9ccac72: user-role message audit, per-job try/catch in runDocket, harvest response isolation, canonical close strings. Juxtaposition verified firing post-fix.
+resolution: >
+  Fix wave 2, commit 9ccac72: user-role message audit, per-job try/catch in runDocket, harvest response isolation, canonical close strings. Juxtaposition verified firing post-fix.
+resolution: >
+  Fix wave 2, commit 9ccac72: user-role message audit, per-job try/catch in runDocket, harvest response isolation, canonical close strings. Juxtaposition verified firing post-fix.
 ---
 
 ## Question

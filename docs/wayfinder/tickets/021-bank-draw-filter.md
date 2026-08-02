@@ -1,9 +1,15 @@
 ---
 title: "Fix: form-filter on bank fallback draws"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude
 blocked_by: []
+resolution: >
+  Fix wave 1, commit 6f44553: isWeakForm predicate (39 tests), applied to bank fallback draws only, falls through when filter empties the pool.
+resolution: >
+  Fix wave 1, commit 6f44553: isWeakForm predicate (39 tests), applied to bank fallback draws only, falls through when filter empties the pool.
+resolution: >
+  Fix wave 1, commit 6f44553: isWeakForm predicate (39 tests), applied to bank fallback draws only, falls through when filter empties the pool.
 ---
 
 ## Question
