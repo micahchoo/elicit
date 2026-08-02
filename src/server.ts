@@ -13,6 +13,8 @@ import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
 import { composeOpener, composeStillTrue } from './clerk/composed.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
+import { createSttClient, type SttClient } from './stt/client.js';
+import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import type {
   Vault,
@@ -26,7 +28,6 @@ import type {
   LexicalIndex,
   QueueEntry,
 } from './types.js';
-
 export interface ServerDeps {
   vault: Vault;
   complete: Complete;
@@ -34,6 +35,8 @@ export interface ServerDeps {
   index: LexicalIndex;
   vaultRoot: string;
   authStore: AuthStore;
+  /** Optional STT client for voice input. Lazily created as module singleton if absent. */
+  sttClient?: SttClient;
 }
 
 // ── MIME map for static serving ──
@@ -47,6 +50,28 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
 };
+
+// ── STT client (lazy module singleton) ──
+
+let _sttClient: SttClient | null = null;
+let _sttUnavailable = false;
+
+function getSttClient(deps: ServerDeps): SttClient | null {
+  if (_sttClient) return _sttClient;
+  if (_sttUnavailable) return null;
+  if (deps.sttClient) {
+    _sttClient = deps.sttClient;
+    return _sttClient;
+  }
+  try {
+    resolveModelDir(); // throws if unavailable
+  } catch {
+    _sttUnavailable = true;
+    return null;
+  }
+  _sttClient = createSttClient();
+  return _sttClient;
+}
 
 // ── Password gate ──
 
@@ -166,6 +191,16 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     return c.json({ needsSetup: !authStore.exists() });
   });
 
+  // GET /api/stt/status → {available}
+  app.get('/api/stt/status', (_c) => {
+    try {
+      resolveModelDir();
+      return _c.json({ available: true });
+    } catch {
+      return _c.json({ available: false });
+    }
+  });
+
   // POST /api/setup {password} — loopback-only, creates auth file + issues session
   app.post('/api/setup', async (c) => {
     const remoteAddr = getRemoteAddr(c.env);
@@ -254,7 +289,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     const state = sessions.get(sessionId);
     if (!state) return c.json({ error: 'session not found' }, 404);
 
-    const body = await c.req.json<{ text: string }>();
+    const body = await c.req.json<{ text: string; spoken?: boolean }>();
     if (!body.text || typeof body.text !== 'string') {
       return c.json({ error: 'text is required' }, 400);
     }
@@ -273,7 +308,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       }
     }
 
-    const result = await userTurn(state, body.text);
+    const result = await userTurn(state, body.text, body.spoken);
 
     // Activity event for close phase entry
     if (state.phase === 'closing-door') {
@@ -440,6 +475,35 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   app.get('/api/snippets', (c) => {
     const index = deps.vault.rebuildIndex();
     return c.json({ snippets: Object.values(index.snippets) });
+  });
+
+  // POST /api/transcribe — raw Float32 PCM body, returns {text}
+  app.post('/api/transcribe', async (c) => {
+    const client = getSttClient(deps);
+    if (!client) {
+      return c.json({ error: 'STT model not available' }, 503);
+    }
+
+    const rateStr = c.req.query('rate') ?? '16000';
+    const sampleRate = parseInt(rateStr, 10);
+    if (isNaN(sampleRate) || sampleRate < 8000 || sampleRate > 48000) {
+      return c.json({ error: 'invalid rate' }, 400);
+    }
+
+    const raw = await c.req.arrayBuffer();
+    if (raw.byteLength < 4) {
+      return c.json({ error: 'empty or too-short audio' }, 400);
+    }
+
+    const samples = new Float32Array(raw);
+    const start = performance.now();
+    const text = await client.transcribe(samples, sampleRate);
+    const duration = Math.round(performance.now() - start);
+    const chars = text.length;
+
+    serverEmit(deps.vaultRoot, 'system', 'transcribed', `${duration}ms ${chars}chars`);
+
+    return c.json({ text });
   });
 
   // Static fallback: serve web/dist when it exists

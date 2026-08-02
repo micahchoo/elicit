@@ -107,12 +107,13 @@ export function startSession(
 export async function userTurn(
  s: SessionState,
  text: string,
+ spoken?: boolean,
 ): Promise<
  | { kind: 'probe'; text: string; questionForm: QuestionForm }
  | { kind: 'saturated' }
 > {
  const now = new Date().toISOString();
- const userTurnRecord: Turn = { role: 'user', text, at: now };
+ const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
  s.turns.push(userTurnRecord);
 

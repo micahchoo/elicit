@@ -46,6 +46,8 @@ export type Turn = {
   questionSource?: QuestionSource;
   /** Set in memory when the user skips this agent turn — never persisted to disk */
   skipped?: true;
+  /** True when this user turn included dictated (STT) text — evidence tag only */
+  spoken?: true;
 };
 
 export type CutProposal = {

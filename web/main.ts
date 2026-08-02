@@ -76,8 +76,10 @@ interface AppState {
   decisions: HarvestDecision[];
   turnPhase: string | null;
   juxtaposition: { snippetText: string; snippetDate: string } | null;
+  sttAvailable: boolean;
+  dictating: boolean;
+  turnHadSpeech: boolean;
 }
-
 const state: AppState = {
   screen: 'mode',
   sessionId: null,
@@ -86,6 +88,9 @@ const state: AppState = {
   decisions: [],
   turnPhase: null,
   juxtaposition: null,
+  sttAvailable: false,
+  dictating: false,
+  turnHadSpeech: false,
 };
 
 const main = $('main')!;
@@ -105,10 +110,9 @@ function navTo(screen: Screen) {
   }
 }
 
-/* ─── API ─── */
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') ? 'GET' : 'POST';
+  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') || path.startsWith('/api/stt/status') ? 'GET' : 'POST';
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
@@ -333,10 +337,95 @@ function renderMode(showSetupHint?: boolean) {
 
 let exchangeTurnCount = 0;
 
+// ── STT recording ──
+
+let _micStream: MediaStream | null = null;
+let _audioCtx: AudioContext | null = null;
+let _workletNode: AudioWorkletNode | null = null;
+let _samples: Float32Array[] = [];
+
+async function startRecording(): Promise<void> {
+  _samples = [];
+  _audioCtx = new AudioContext({ sampleRate: 16000 });
+  _micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+  });
+
+  // Inline AudioWorklet processor — downsamples to mono Float32
+  const workletCode = `
+    class RecorderProcessor extends AudioWorkletProcessor {
+      process(inputs) {
+        const input = inputs[0];
+        if (input && input.length > 0) {
+          const ch = input[0];
+          if (ch) {
+            const copy = new Float32Array(ch.length);
+            copy.set(ch);
+            this.port.postMessage(copy, [copy.buffer]);
+          }
+        }
+        return true;
+      }
+    }
+    registerProcessor('recorder-processor', RecorderProcessor);
+  `;
+  const blob = new Blob([workletCode], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  await _audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  _workletNode = new AudioWorkletNode(_audioCtx, 'recorder-processor');
+  _workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+    _samples.push(e.data);
+  };
+
+  const source = _audioCtx.createMediaStreamSource(_micStream);
+  source.connect(_workletNode);
+}
+
+async function stopAndTranscribe(): Promise<string> {
+  // Stop media
+  _workletNode?.port.close();
+  _workletNode?.disconnect();
+  _workletNode = null;
+  _micStream?.getTracks().forEach((t) => t.stop());
+  _micStream = null;
+  await _audioCtx?.close();
+  _audioCtx = null;
+
+  if (_samples.length === 0) return '';
+
+  // Concatenate all chunks
+  let totalLen = 0;
+  for (const chunk of _samples) totalLen += chunk.length;
+  const combined = new Float32Array(totalLen);
+  let offset = 0;
+  for (const chunk of _samples) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  _samples = [];
+
+  // POST raw Float32 to server
+  const res = await fetch('/api/transcribe?rate=16000', {
+    method: 'POST',
+    body: combined.buffer,
+  });
+  if (!res.ok) {
+    if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
+    const errText = await res.text();
+    throw new Error(`transcribe failed: ${res.status} ${errText}`);
+  }
+  const data = await res.json() as { text: string };
+  return data.text;
+}
+
 function renderExchange() {
   clear();
   state.screen = 'exchange';
   exchangeTurnCount = 0;
+  state.turnHadSpeech = false;
+  state.dictating = false;
 
   const div = el('div', { class: 'screen active' });
 
@@ -358,15 +447,20 @@ function renderExchange() {
   const transcript = el('div', { class: 'transcript' });
 
   const answerArea = el('div', { class: 'answer-area' });
+  const answerRow = el('div', { class: 'answer-row' });
   const textarea = el('textarea', {
     class: 'answer-textarea',
     placeholder: '\u2026',
     rows: '2',
   });
+  const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
+  const micStatus = el('span', { class: 'mic-status' });
   const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
   const skipBtn = el('button', { class: 'harvest-now' }, 'skip');
 
-  answerArea.append(textarea, harvestBtn, skipBtn);
+  answerRow.append(textarea, micBtn, micStatus);
+  answerArea.append(answerRow, harvestBtn, skipBtn);
+
 
   div.append(header, transcript, answerArea);
   main.append(div);
@@ -391,14 +485,20 @@ function renderExchange() {
     textarea.disabled = true;
     harvestBtn.disabled = true;
     skipBtn.disabled = true;
+    if (state.sttAvailable) micBtn.disabled = true;
 
     appendTurn('user', text);
+
+    const body: Record<string, unknown> = { text };
+    if (state.turnHadSpeech) body.spoken = true;
 
     try {
       const res = await api<TurnData>(
         `/api/session/${state.sessionId}/turn`,
-        { text },
+        body,
       );
+
+      state.turnHadSpeech = false;
 
       if (res.kind === 'probe') {
         state.question = res.text!;
@@ -433,6 +533,7 @@ function renderExchange() {
     textarea.disabled = false;
     harvestBtn.disabled = false;
     skipBtn.disabled = false;
+    if (state.sttAvailable) micBtn.disabled = false;
     textarea.focus();
     textarea.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
@@ -485,6 +586,68 @@ function renderExchange() {
       skipBtn.disabled = false;
     }
   });
+
+  // ── Mic toggle ──
+
+  let micActive = false;
+  let micBusy = false;
+
+  micBtn.addEventListener('click', async () => {
+    if (micBusy) return;
+    if (!micActive) {
+      // Start recording
+      try {
+        await startRecording();
+        micActive = true;
+        micBtn.classList.add('active');
+        micStatus.textContent = 'listening\u2026';
+        state.dictating = true;
+      } catch (e) {
+        showError('microphone unavailable');
+      }
+    } else {
+      // Stop and transcribe
+      micActive = false;
+      micBusy = true;
+      micBtn.classList.remove('active');
+      micBtn.disabled = true;
+      micStatus.textContent = 'transcribing\u2026';
+      try {
+        const text = await stopAndTranscribe();
+        if (text) {
+          state.turnHadSpeech = true;
+          // Append at cursor or end
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const before = textarea.value.slice(0, start ?? textarea.value.length);
+          const after = textarea.value.slice(end ?? textarea.value.length);
+          textarea.value = before + text + after;
+          textarea.dispatchEvent(new Event('input'));
+          textarea.focus();
+        }
+      } catch (e) {
+        showError(String(e));
+      }
+      micBusy = false;
+      micBtn.disabled = false;
+      micStatus.textContent = '';
+      state.dictating = false;
+    }
+  });
+
+  // Check STT availability and hide toggle if unavailable
+  (async () => {
+    try {
+      const status = await api<{ available: boolean }>('/api/stt/status');
+      state.sttAvailable = status.available;
+    } catch {
+      state.sttAvailable = false;
+    }
+    if (!state.sttAvailable) {
+      micBtn.style.display = 'none';
+      micStatus.style.display = 'none';
+    }
+  })();
 
   requestAnimationFrame(() => {
     textarea.focus();

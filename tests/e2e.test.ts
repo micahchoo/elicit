@@ -1,8 +1,8 @@
 import { runDocket } from '../src/clerk/docket.js';
 import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
-import { appendEvent, type ActivityEvent } from '../src/log/activity.js';
+import { appendEvent, readEvents, type ActivityEvent } from '../src/log/activity.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -788,5 +788,177 @@ describe('auth gate', () => {
   expect(res.status).toBe(200);
   const body = await res.json() as { needsSetup: boolean };
   expect(body.needsSetup).toBe(false);
+ });
+});
+
+// ── STT endpoints ──
+
+describe('stt status', () => {
+ let vaultDir: string;
+ let origEnv: string | undefined;
+
+ beforeEach(() => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-stt-e2e-'));
+  origEnv = process.env['ELICIT_STT_MODEL_DIR'];
+ });
+
+ afterEach(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+  if (origEnv === undefined) {
+   delete process.env['ELICIT_STT_MODEL_DIR'];
+  } else {
+   process.env['ELICIT_STT_MODEL_DIR'] = origEnv;
+  }
+ });
+
+ async function makeApp(): Promise<Hono> {
+  const vault = createVault(vaultDir);
+  const complete = makeScriptedComplete(scriptedResponses);
+  const queue = createQueueStore(vaultDir);
+  const indexData = vault.rebuildIndex();
+  const index = buildIndex(Object.values(indexData.snippets));
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  return createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore });
+ }
+
+ it('GET /api/stt/status → {available: true} when model dir resolves', async () => {
+  const modelDir = mkdtempSync(join(tmpdir(), 'elicit-model-'));
+  const files = ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt'];
+  for (const f of files) writeFileSync(join(modelDir, f), 'fake');
+  process.env['ELICIT_STT_MODEL_DIR'] = modelDir;
+
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/stt/status');
+  const res = await app.fetch(req);
+  expect(res.status).toBe(200);
+  const body = await res.json() as { available: boolean };
+  expect(body.available).toBe(true);
+
+  rmSync(modelDir, { recursive: true, force: true });
+ });
+
+ it('GET /api/stt/status → {available: false} when no model', async () => {
+  delete process.env['ELICIT_STT_MODEL_DIR'];
+  // Ensure no default cache — override HOME to a temp dir
+  const fakeHome = mkdtempSync(join(tmpdir(), 'elicit-nohome-'));
+  const origHome = process.env['HOME'];
+  process.env['HOME'] = fakeHome;
+
+  try {
+   const app = await makeApp();
+   const req = new Request('http://localhost/api/stt/status');
+   const res = await app.fetch(req);
+   expect(res.status).toBe(200);
+   const body = await res.json() as { available: boolean };
+   expect(body.available).toBe(false);
+  } finally {
+   process.env['HOME'] = origHome;
+   rmSync(fakeHome, { recursive: true, force: true });
+  }
+ });
+});
+
+describe('stt transcribe', () => {
+ let vaultDir: string;
+
+ beforeEach(() => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-stt-transcribe-'));
+ });
+
+ afterEach(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ function fakeClient(text: string) {
+  return {
+   transcribe: async () => text,
+   dispose: () => { },
+  };
+ }
+
+ it('POST /api/transcribe → {text} from injected client', async () => {
+  const vault = createVault(vaultDir);
+  const complete = makeScriptedComplete(scriptedResponses);
+  const queue = createQueueStore(vaultDir);
+  const index = buildIndex([]);
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  // Login to get a session cookie
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore, sttClient: fakeClient('hello world') });
+  const loginReq = new Request('http://localhost/api/login', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'secret' }),
+  });
+  const loginRes = await app.fetch(loginReq, { remoteAddr: '127.0.0.1' });
+  const setCookie = loginRes.headers.get('Set-Cookie')!;
+  const match = /elicit_session=([^;]+)/.exec(setCookie);
+  const cookieVal = match![1]!;
+
+  // Build 1s of 16kHz silence (16000 samples)
+  const silence = new Float32Array(16000);
+  const req = new Request('http://localhost/api/transcribe?rate=16000', {
+   method: 'POST',
+   headers: { Cookie: `elicit_session=${cookieVal}` },
+   body: silence.buffer,
+  });
+  const res = await app.fetch(req, { remoteAddr: '127.0.0.1' });
+  expect(res.status).toBe(200);
+  const body = await res.json() as { text: string };
+  expect(body.text).toBe('hello world');
+ });
+
+ it('POST /api/transcribe emits activity event', async () => {
+  const vault = createVault(vaultDir);
+  const complete = makeScriptedComplete(scriptedResponses);
+  const queue = createQueueStore(vaultDir);
+  const index = buildIndex([]);
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore, sttClient: fakeClient('test') });
+  const loginReq = new Request('http://localhost/api/login', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'secret' }),
+  });
+  const loginRes = await app.fetch(loginReq, { remoteAddr: '127.0.0.1' });
+  const setCookie = loginRes.headers.get('Set-Cookie')!;
+  const match = /elicit_session=([^;]+)/.exec(setCookie);
+  const cookieVal = match![1]!;
+
+  const silence = new Float32Array(8000);
+  const req = new Request('http://localhost/api/transcribe?rate=16000', {
+   method: 'POST',
+   headers: { Cookie: `elicit_session=${cookieVal}` },
+   body: silence.buffer,
+  });
+  await app.fetch(req, { remoteAddr: '127.0.0.1' });
+
+  // Read activity log
+  const events = readEvents(vaultDir);
+  const transcribed = events.filter((e) => e.kind === 'transcribed');
+  expect(transcribed.length).toBe(1);
+  expect(transcribed[0]!.actor).toBe('system');
+  expect(transcribed[0]!.detail).toMatch(/\d+ms \d+chars/);
+ });
+
+ it('POST /api/transcribe → 401 without cookie when auth gate active', async () => {
+  const vault = createVault(vaultDir);
+  const complete = makeScriptedComplete(scriptedResponses);
+  const queue = createQueueStore(vaultDir);
+  const index = buildIndex([]);
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore, sttClient: fakeClient('x') });
+
+  const req = new Request('http://localhost/api/transcribe', {
+   method: 'POST',
+   body: new Float32Array(100).buffer,
+  });
+  const res = await app.fetch(req, { remoteAddr: '127.0.0.1' });
+  expect(res.status).toBe(401);
  });
 });

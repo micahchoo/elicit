@@ -242,7 +242,15 @@ main {
  align-items: flex-start;
 }
 
+.answer-row {
+ display: flex;
+ align-items: flex-end;
+ gap: 0.4rem;
+ width: 100%;
+}
+
 .answer-textarea {
+ flex: 1;
  width: 100%;
  min-height: 3rem;
  font-family: var(--font-serif);
@@ -260,6 +268,43 @@ main {
 
 .answer-textarea::placeholder {
  color: var(--dim);
+}
+
+.mic-toggle {
+ font-family: var(--font-ui);
+ font-size: 1rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0.15rem 0.3rem;
+ flex-shrink: 0;
+ opacity: 0.6;
+ transition: opacity 0.15s;
+ line-height: 1;
+}
+
+.mic-toggle:hover {
+ opacity: 1;
+ color: var(--fg);
+}
+
+.mic-toggle.active {
+ opacity: 1;
+ color: var(--accent);
+}
+
+.mic-toggle:disabled {
+ opacity: 0.3;
+ cursor: default;
+}
+
+.mic-status {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ flex-shrink: 0;
+ white-space: nowrap;
 }
 
 .harvest-now {
@@ -613,6 +658,20 @@ main {
   min-height: var(--touch-min);
   display: inline-flex;
   align-items: center;
+ }
+
+ .mic-toggle {
+  font-size: 1.1rem;
+  padding: 0.4rem;
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+ }
+
+ .mic-status {
+  font-size: 0.8rem;
  }
 
  .proposal-action {
