@@ -1,9 +1,11 @@
 ---
 title: "Build: Expedition lifecycle"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: [002-slice2-results]
+resolution: >
+  cfaf333 + server wiring: isExpeditionCandidate (pure, 9 tests — fact/construct with >=2 asked citations and no episode sibling), composeExpedition (Q-12 quote, days horizon, send-out + reflection ask), docket mints at most one per run (isolated), days-horizon never drawn as opener, waiting surface renders "out in the world" group. 17 tests.
 ---
 
 ## Question

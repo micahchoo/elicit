@@ -2,7 +2,7 @@
 title: "Grill: the composition slice - reviewer, arrangements, gaps"
 labels: [wayfinder:grilling]
 status: open
-assignee: 
+assignee: micah
 blocked_by: [002-slice2-results]
 ---
 

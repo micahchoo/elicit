@@ -1,9 +1,11 @@
 ---
 title: "Build: Domain instruments — CDM, laddered grid, concept sorting as Protocols"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: [002-slice2-results]
+resolution: >
+  4606bba: protocols as DATA (src/protocols/defs/*.md — reflective, cdm, laddered-grid, concept-sorting written new), Target-based selection with domain rotation, shadow yield function (Q-35; docket wiring deferred). 17 tests. e2e protocol name updated by orchestrator.
 ---
 
 ## Question
