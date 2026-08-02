@@ -23,6 +23,7 @@
     "@mariozechner/pi-ai": "^0.73.1",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.33",
+    "sherpa-onnx-node": "^1.13.2",
     "ulid": "^3.0.2"
   },
   "devDependencies": {
