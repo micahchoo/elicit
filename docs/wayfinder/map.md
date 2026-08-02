@@ -145,6 +145,27 @@ unassigned, all blockers closed.
   banked one, so a long cascade makes the system worse at every rung. The
   system drops its own inferences before the person's declarations.
 
+- **Q-56 — Q-35 governs selection, bounds ship live.** A shadowed cap is not a
+  cap: it writes "I would have stopped at 2" while the system mints without
+  limit, which is worse than no mechanism, because the mechanism generated the
+  work. Caps, quotas and rate limits are live at birth and owe a
+  `threshold-clipped` record instead. Amends Q-35 in scope rather than carving
+  a per-threshold exception. (No ticket — ruled directly, 2026-08-02.)
+
+- **Q-56 — Q-35 governs selection, bounds ship live.** A shadowed cap is not a
+  cap: it writes "I would have stopped at 2" while the system mints without
+  limit, which is worse than no mechanism, because the mechanism generated the
+  work. Caps, quotas and rate limits are live at birth and owe a
+  `threshold-clipped` record instead. Amends Q-35 in scope rather than carving
+  a per-threshold exception. (No ticket — ruled directly, 2026-08-02.)
+
+- **Q-56 — Q-35 governs selection, bounds ship live.** A shadowed cap is not a
+  cap: it writes "I would have stopped at 2" while the system mints without
+  limit, which is worse than no mechanism, because the mechanism generated the
+  work. Caps, quotas and rate limits are live at birth and owe a
+  `threshold-clipped` record instead. Amends Q-35 in scope rather than carving
+  a per-threshold exception. (No ticket — ruled directly, 2026-08-02.)
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
