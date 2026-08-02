@@ -1,9 +1,20 @@
 ---
 title: "Fix: the docket runs synchronously inside /harvest — latency grows with the vault"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Closed 2026-08-02. `startDocket(trigger)` runs the docket off the response
+  path on `setImmediate`; /harvest writes its snippets, answers, and lets the
+  run follow. Boot does the same, serving from the index it was handed until
+  the first run finishes. Two runs never overlap and a trigger arriving
+  mid-run is replayed once — without the replay, runDocket's own lock makes
+  the second call a no-op returning an EMPTY index, and snippets harvested
+  mid-run would never be indexed. A failed run keeps the standing index and
+  logs why; every write it was meant to follow is already on disk.
+  `onDocketSettled` is the seam tests wait on.
+  Real-model acceptance: /harvest answered in 1ms while its docket ran 127s.
 ---
 
 ## Question

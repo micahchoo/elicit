@@ -1,9 +1,22 @@
 ---
 title: "Fix: queue draws ignore Target and topic — domain sittings open on self material"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Closed 2026-08-02, in two parts. `QueueEntry` gained `target` and `topic`;
+  `draw()` filters on the declared sitting's Target as a hard filter before
+  the top-k pick (Q-13), composing with the facet-balance filter. Absent is
+  never 'self' — an entry with no Target claim serves either sitting, so old
+  entries load unchanged.
+  The first part left the fix inert: only the bookmark path set a Target, so
+  the composed path the eval names still minted claimless entries. The
+  docket now reads each snippet's sitting from its session transcript's
+  `mode` frontmatter (`src/clerk/sitting.ts`, cached per run) and hands it to
+  composeOpener / composeStillTrue / composeExpedition.
+  Real-model acceptance: a domain sitting's three minted openers all carried
+  target=domain, and a self sitting drew none of them.
 ---
 
 ## Question

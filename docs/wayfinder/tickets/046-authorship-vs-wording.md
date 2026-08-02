@@ -1,9 +1,20 @@
 ---
 title: "Honesty: Sole Authorship prevents misattribution of WORDING, not AUTHORSHIP"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Closed 2026-08-02. CONTEXT.md's Sole Authorship invariant and the README
+  now say which half is a guarantee: the agent's non-authorship is
+  architectural — no agent prose enters a Piece and no agent rewords a
+  Snippet — so misattribution of WORDING is impossible by construction. The
+  user's authorship is assumed, not verified: pasted text is admissible
+  material the pipeline cannot tell from reflection, and only a Provenance
+  the user declares could carry that distinction.
+  Follow-on identified by the 2026-08-02 HANDOFF review: the capture channel
+  (typed / spoken / pasted) IS knowable at capture time and nowhere after —
+  see ticket 048.
 ---
 
 ## Question

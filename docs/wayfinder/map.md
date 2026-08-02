@@ -38,16 +38,6 @@ unassigned, all blockers closed.
   Q-13 balance filter in shadow mode, and a target default that stops
   defaulting inward. The agent-built "you" filter that caused half the bias
   is gone.
-- [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
-  intent on questions, an episode deck (193) beside the construct deck, the
-  Q-13 balance filter in shadow mode, and a target default that stops
-  defaulting inward. The agent-built "you" filter that caused half the bias
-  is gone.
-- [Fix: the corpus is 90% construct](tickets/042-facet-balance.md) — facet
-  intent on questions, an episode deck (193) beside the construct deck, the
-  Q-13 balance filter in shadow mode, and a target default that stops
-  defaulting inward. The agent-built "you" filter that caused half the bias
-  is gone.
 - [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
   passive offers, distinct-principle arrangements, annotate-never-act gaps
   and pins, user prose in a Piece becomes a Snippet, Pieces are set down
@@ -56,36 +46,6 @@ unassigned, all blockers closed.
   entry, an always-present gate with no inferred distress, ladders parked
   whole and resumed compacted, structural endings, and the descent becoming
   the rest of the sitting with the close reserved.
-- [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
-  passive offers, distinct-principle arrangements, annotate-never-act gaps
-  and pins, user prose in a Piece becomes a Snippet, Pieces are set down
-  never finished, and the slice ships zero-LLM first.
-- [Grill: Soundings](tickets/011-grill-soundings.md) — Q-43..Q-47: consented
-  entry, an always-present gate with no inferred distress, ladders parked
-  whole and resumed compacted, structural endings, and the descent becoming
-  the rest of the sitting with the close reserved.
-- [Grill: composition](tickets/009-grill-composition.md) — Q-37..Q-42:
-  passive offers, distinct-principle arrangements, annotate-never-act gaps
-  and pins, user prose in a Piece becomes a Snippet, Pieces are set down
-  never finished, and the slice ships zero-LLM first.
-- [Grill: Soundings](tickets/011-grill-soundings.md) — Q-43..Q-47: consented
-  entry, an always-present gate with no inferred distress, ladders parked
-  whole and resumed compacted, structural endings, and the descent becoming
-  the rest of the sitting with the close reserved.
-- [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
-  says what the trigram index actually does ("what matches is the phrasing,
-  not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
-  embedding channel must start catching and records today's recall: zero.
-- [Fix: activity stream reads as sentences](tickets/038-activity-legibility.md) —
-  render-layer formatter; ULIDs stay in the JSONL audit trail, never on the
-  reading surface.
-- [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
-  says what the trigram index actually does ("what matches is the phrasing,
-  not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
-  embedding channel must start catching and records today's recall: zero.
-- [Fix: activity stream reads as sentences](tickets/038-activity-legibility.md) —
-  render-layer formatter; ULIDs stay in the JSONL audit trail, never on the
-  reading surface.
 - [Fix: resonance honesty](tickets/036-resonance-honesty.md) — README now
   says what the trigram index actually does ("what matches is the phrasing,
   not the meaning"); tests/resonance-paraphrase.test.ts holds the pairs the
@@ -122,6 +82,26 @@ unassigned, all blockers closed.
   shipped: sherpa-onnx child process (omp's stack, omp's model cache) +
   mic → auth-gated /api/transcribe → editable textarea; ratify-by-editing
   preserves Sole Authorship; spoken flag lives on the transcript Turn.
+- [Persona eval](../eval-2026-08-02-personas.md) (not a ticket) — a peer
+  session ran five personas through the whole app and found what the
+  adversarial pass missed: refusals harvested as evidence, domain sittings
+  opened on self material, pasted Dickens filed as a personal philosophy, and
+  a docket whose latency grows with the vault. Tickets 044–047 are its issue.
+- [Fix: harvest proposes refusals as evidence](tickets/044-harvest-semantic-filter.md)
+  — a structural admissibility gate upstream of the model's own `standalone`
+  boolean. Deflections, refusals and comments on the question stay lineage;
+  content-free turns are never sent for extraction at all.
+- [Fix: queue draws ignore Target](tickets/045-queue-target-filter.md) — Target
+  travels from the sitting that minted a question, read back from the session
+  transcript, and `draw()` filters on it hard before the top-k pick. Absent
+  stays absent and serves either sitting.
+- [Honesty: authorship vs wording](tickets/046-authorship-vs-wording.md) — Sole
+  Authorship guarantees that no agent wrote or reworded your words. It does
+  not guarantee you are the author: pasted text is indistinguishable from
+  reflection, and CONTEXT.md and the README now say so.
+- [Fix: the docket ran inside /harvest](tickets/047-async-docket.md) — it now
+  runs behind the response, single-flight with one replayed trigger. Measured
+  against the real model: 1ms response, 127s docket.
 
 ## Fog
 

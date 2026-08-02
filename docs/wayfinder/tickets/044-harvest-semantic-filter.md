@@ -1,9 +1,23 @@
 ---
 title: "Fix: harvest proposes refusals, meta-comments and non-content as evidence"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  Closed 2026-08-02. `src/harvester/admissibility.ts` is a structural gate
+  that runs BEFORE the model's `standalone` boolean, which was the model
+  grading its own homework. Three tests, all conservative — when a case is
+  ambiguous it ADMITS, because a false reject destroys words the person will
+  never see again: whole-utterance deflections, refusals, and referent+
+  predicate meta-comments ("this question" + "makes no sense"). A whole user
+  turn that `isContentFree` already rejects is never sent for extraction at
+  all, so the model cannot read a claim into "Yes." Diagnostics count
+  `inadmissibleDrops` and `contentFreeSkips`; nothing drops silently.
+  Known accepted cost: a bare content noun ("Fear.") dies here rather than
+  becoming a Bud — recorded in the code.
+  Real-model acceptance (`scripts/accept-044-047.ts`, qwen3.6:35b): both
+  refusal turns skipped as content-free, all three real fragments harvested.
 ---
 
 ## Question
