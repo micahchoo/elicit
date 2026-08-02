@@ -277,6 +277,20 @@ function channels(raw: string | undefined): string {
  return parts.length === 0 ? '' : ` (${parts.join(', ')})`;
 }
 
+/**
+ * One sentence per refusal reason (Q-57). `import-refused` renders them, so a
+ * reader is told WHY a file did not come in, not just that it did not — a
+ * wrong reason is worse than a bare count, because it sends the reader looking
+ * for a field that is already there (standing rule 3).
+ */
+const IMPORT_REFUSED: Record<string, string> = {
+ 'no-frontmatter': 'has no frontmatter — not imported',
+ 'no-date': 'has no date in its frontmatter — not imported',
+ 'unparsable-date': 'has a date that could not be read — not imported',
+ 'empty-body': 'is frontmatter and nothing else — not imported',
+ 'no-lastmod': 'changed since it was imported, and has no lastmod to date the new version — not imported',
+};
+
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
 const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'run-started': () => 'started a docket run',
@@ -467,6 +481,30 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'resonance-checked': (f, d) =>
   `looked for echoes of what was just said and found ` +
   `${f.hits === undefined ? nth(d, 0) : num(f, 'hits')}`,
+
+// ── The import pipeline: a folder scan, and the refusals that answer it (Q-57) ──
+
+// Emitted by the import routes (T9). `import-scanned` carries three counts —
+// `files=47 toImport=45 refused=2`, or the same numbers bare, in order.
+'import-scanned': (f, d) => {
+ const files = f.files === undefined ? nth(d, 0) : num(f, 'files');
+ const toImport = f.toImport === undefined ? nth(d, 1) : num(f, 'toImport');
+ const refused = f.refused === undefined ? nth(d, 2) : num(f, 'refused');
+ return `read ${count(files, 'file')}: ${toImport} to import, ${refused} refused`;
+},
+
+// The detail carries the full path and the reason — `…/undated.md reason=no-date` —
+// and this surface shows the basename only, never the path. One sentence per
+// reason (the reason is the point), rendered by the one kind.
+'import-refused': (f, d) => {
+ const reason = f.reason ?? d.split(/\s+/).pop() ?? 'no-date';
+ const path = f.file ?? (f.reason === undefined
+  ? d.split(/\s+/).slice(0, -1).join(' ')
+  : d.slice(0, d.indexOf('reason=')));
+ const file = path.trim().split('/').pop() || 'a file';
+ const why = IMPORT_REFUSED[reason] ?? 'was not imported';
+ return `${file} ${why}`;
+},
 };
 
 /**
