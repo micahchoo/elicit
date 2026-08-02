@@ -1,9 +1,15 @@
 ---
 title: "Choose a license"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: 
 blocked_by: []
+resolution: >
+  MIT, chosen by Micah 2026-08-02 (brief: 003-license-brief.md — all deps permissive, no constraint). LICENSE file created, package.json license=MIT.
+resolution: >
+  MIT, chosen by Micah 2026-08-02 (brief: 003-license-brief.md — all deps permissive, no constraint). LICENSE file created, package.json license=MIT.
+resolution: >
+  MIT, chosen by Micah 2026-08-02 (brief: 003-license-brief.md — all deps permissive, no constraint). LICENSE file created, package.json license=MIT.
 ---
 
 ## Question
