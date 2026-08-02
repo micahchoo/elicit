@@ -29,6 +29,8 @@ export async function runDocket(deps: {
   saveSummary?: (root: string, s: RangeSummary) => void;
   loadSummaries?: (root: string) => RangeSummary[];
   listSessions?: (root: string) => SessionRef[];
+  readTranscript?: (root: string, session: string) => string;
+  modelName?: string;
   vaultRoot: string;
 }): Promise<DocketReport> {
   if (running) {
@@ -128,16 +130,30 @@ export async function runDocket(deps: {
 
     // ── 5. At most one consolidation ──
     if (deps.nextConsolidation && deps.saveSummary && deps.loadSummaries && sessions) {
-      const summaries = deps.loadSummaries(deps.vaultRoot);
-      const range = deps.nextConsolidation(sessions, summaries);
-      if (range && range.length > 0) {
-        const line = await deps.complete('', [{ role: 'user', text: 'Summarize the following sessions in one line.', at: '' }]);
-        deps.saveSummary(deps.vaultRoot, {
-          sessions: range,
-          line: line || 'consolidated',
-          model: 'docket',
-          at: ts(),
-        });
+      try {
+        const summaries = deps.loadSummaries(deps.vaultRoot);
+        const range = deps.nextConsolidation(sessions, summaries);
+        if (range && range.length > 0) {
+          // The summary must see actual content — cap per-transcript and total
+          // so one consolidation always fits the local model's context.
+          const texts = range.map((session) => {
+            const body = deps.readTranscript ? deps.readTranscript(deps.vaultRoot, session) : '';
+            return `[session ${session}]\n${body.slice(0, 4000)}`;
+          });
+          const line = (await deps.complete(
+            'You summarize interview transcripts. Reply with ONE plain line stating what the person talked about. No interpretation beyond what is present, no praise, no advice.',
+            [{ role: 'user', text: texts.join('\n\n').slice(0, 12000), at: ts() }],
+          )) ?? '';
+          deps.saveSummary(deps.vaultRoot, {
+            sessions: range,
+            line: line.trim() || 'consolidated (model returned nothing)',
+            model: deps.modelName ?? 'unknown',
+            at: ts(),
+          });
+          deps.log({ at: ts(), actor: 'clerk', kind: 'consolidated', detail: `summarized ${range.length} sessions` });
+        }
+      } catch (err) {
+        deps.log({ at: ts(), actor: 'clerk', kind: 'consolidation-failed', detail: String(err) });
       }
     }
 

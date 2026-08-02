@@ -11,6 +11,7 @@ import { propose, decide } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
+import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue } from './clerk/composed.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
@@ -38,6 +39,8 @@ export interface ServerDeps {
   authStore: AuthStore;
   /** Optional STT client for voice input. Lazily created as module singleton if absent. */
   sttClient?: SttClient;
+  /** Model id stamped on agent-authored artifacts (Q-34). */
+  modelName?: string;
 }
 
 // ── MIME map for static serving ──
@@ -140,6 +143,13 @@ function listSessions(root: string): { session: string; started: string; turnCou
   }
   return results;
 }
+
+/** Body text of one session's transcript, without frontmatter. */
+function readTranscript(root: string, session: string): string {
+  const file = join(root, 'transcripts', `${session}.md`);
+  if (!existsSync(file)) return '';
+  return matter(readFileSync(file, 'utf-8')).content;
+}
 // ── Create app ──
 
 export async function createApp(deps: ServerDeps): Promise<Hono> {
@@ -155,6 +165,11 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     composeOpener,
     composeStillTrue,
     listSessions,
+    nextConsolidation,
+    saveSummary,
+    loadSummaries,
+    readTranscript,
+    ...(deps.modelName ? { modelName: deps.modelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     vaultRoot: deps.vaultRoot,
   });
@@ -405,6 +420,11 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
         composeOpener,
         composeStillTrue,
         listSessions,
+        nextConsolidation,
+        saveSummary,
+        loadSummaries,
+        readTranscript,
+        ...(deps.modelName ? { modelName: deps.modelName } : {}),
         log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
         vaultRoot: deps.vaultRoot,
       });
@@ -688,7 +708,8 @@ if (isDirect) {
   const authStore = createFileAuth(join(vaultRoot, '.auth.json'));
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
-  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore });
+  const modelName = llmMode === 'local' ? (process.env.ELICIT_LLM_MODEL ?? 'bonsai-27b') : 'fake';
+  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
   const port = parseInt(process.env.ELICIT_PORT ?? '4517', 10);
   await serveApp(app, port);
   console.error(

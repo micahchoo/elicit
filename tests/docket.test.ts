@@ -25,6 +25,8 @@ type DocketDeps = {
   saveSummary?: (root: string, s: RangeSummary) => void;
   loadSummaries?: (root: string) => RangeSummary[];
   listSessions?: (root: string) => SessionRef[];
+  readTranscript?: (root: string, session: string) => string;
+  modelName?: string;
   vaultRoot: string;
 };
 
@@ -532,5 +534,78 @@ describe('runDocket', () => {
 
     expect(composeStillTrue).toHaveBeenCalledTimes(2);
     expect(report.minted).toHaveLength(2);
+  });
+});
+
+// ===========================================================================
+// Consolidation (ticket 030 — Cover layer wired)
+// ===========================================================================
+
+describe('consolidation', () => {
+  const IDX: LexicalIndex = { _brand: 'LexicalIndex' } as LexicalIndex;
+
+  it('summarizes the due range with transcript content and stamps the model', async () => {
+    const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+    const saveSummary = vi.fn();
+    const complete = vi.fn().mockResolvedValue('They talked about gardens and deadlines.');
+    const log = vi.fn();
+
+    await runDocket({
+      vault: fakeVault([sn]),
+      queue: makeFakeQueue(),
+      complete: complete as unknown as Complete,
+      buildIndex: vi.fn().mockReturnValue(IDX),
+      composeOpener: vi.fn().mockResolvedValue(null),
+      composeStillTrue: vi.fn(),
+      log,
+      listSessions: vi.fn().mockReturnValue([
+        { session: 's1', started: daysAgo(2), turnCount: 3, chars: 100 },
+        { session: 's2', started: daysAgo(1), turnCount: 3, chars: 100 },
+      ]),
+      nextConsolidation: vi.fn().mockReturnValue(['s1', 's2']),
+      loadSummaries: vi.fn().mockReturnValue([]),
+      saveSummary,
+      readTranscript: vi.fn().mockReturnValue('## user\n\nThe garden taught me estimation.'),
+      modelName: 'test-model',
+      vaultRoot: '/tmp/fake',
+    });
+
+    expect(saveSummary).toHaveBeenCalledTimes(1);
+    const saved = saveSummary.mock.calls[0]![1];
+    expect(saved.sessions).toEqual(['s1', 's2']);
+    expect(saved.line).toBe('They talked about gardens and deadlines.');
+    expect(saved.model).toBe('test-model');
+
+    // The prompt must carry actual transcript content, not just session ids
+    const lastCall = complete.mock.calls.at(-1)!;
+    expect(lastCall[1][0].text).toContain('The garden taught me estimation.');
+    expect(log.mock.calls.some((c) => c[0].kind === 'consolidated')).toBe(true);
+  });
+
+  it('a consolidation failure is logged and never kills the docket run', async () => {
+    const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+    const log = vi.fn();
+
+    const report = await runDocket({
+      vault: fakeVault([sn]),
+      queue: makeFakeQueue(),
+      complete: vi.fn().mockRejectedValue(new Error('model down')) as unknown as Complete,
+      buildIndex: vi.fn().mockReturnValue(IDX),
+      composeOpener: vi.fn().mockResolvedValue(null),
+      composeStillTrue: vi.fn(),
+      log,
+      listSessions: vi.fn().mockReturnValue([
+        { session: 's1', started: daysAgo(2), turnCount: 3, chars: 100 },
+        { session: 's2', started: daysAgo(1), turnCount: 3, chars: 100 },
+      ]),
+      nextConsolidation: vi.fn().mockReturnValue(['s1', 's2']),
+      loadSummaries: vi.fn().mockReturnValue([]),
+      saveSummary: vi.fn(),
+      readTranscript: vi.fn().mockReturnValue('body'),
+      vaultRoot: '/tmp/fake',
+    });
+
+    expect(report.reindexed).toBe(1);
+    expect(log.mock.calls.some((c) => c[0].kind === 'consolidation-failed')).toBe(true);
   });
 });

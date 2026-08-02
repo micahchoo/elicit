@@ -2,7 +2,7 @@
 title: "Fix: wire the Cover memory layer — ADR-0002's third layer is dormant"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude
 blocked_by: []
 ---
 
