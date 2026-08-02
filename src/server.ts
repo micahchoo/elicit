@@ -852,7 +852,7 @@ if (isDirect) {
   const authStore = createFileAuth(join(vaultRoot, '.auth.json'));
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
-  const modelName = llmMode === 'local' ? (process.env.ELICIT_LLM_MODEL ?? 'bonsai-27b') : 'fake';
+  const modelName = llmMode === 'local' ? (process.env.ELICIT_LLM_MODEL ?? 'qwen3.6:35b') : 'fake';
   const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
   const port = parseInt(process.env.ELICIT_PORT ?? '4517', 10);
   await serveApp(app, port);

@@ -2,8 +2,8 @@ import type { Model, Context } from '@mariozechner/pi-ai';
 import { complete } from '@mariozechner/pi-ai';
 import type { Complete, Turn } from './types.js';
 
-const BASE_URL = process.env.ELICIT_LLM_BASE_URL ?? 'http://192.168.0.229:8088/v1';
-const MODEL_ID = process.env.ELICIT_LLM_MODEL ?? 'bonsai-27b';
+const BASE_URL = process.env.ELICIT_LLM_BASE_URL ?? 'http://192.168.0.229:11434/v1';
+const MODEL_ID = process.env.ELICIT_LLM_MODEL ?? 'qwen3.6:35b';
 
 /**
  * Build a custom pi-ai Model targeting a local OpenAI-compatible endpoint.

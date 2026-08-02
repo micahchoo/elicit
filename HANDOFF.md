@@ -118,7 +118,7 @@ every term in it was explicitly decided, not drafted.
 
 ## Hard facts a fresh session needs
 
-- Local LLM endpoint: `http://192.168.0.229:8088/v1`, model `bonsai-27b`
+- Local LLM endpoint: `http://192.168.0.229:11434/v1`, model `qwen3.6:35b`
   (llama.cpp, n_ctx 16384, health-checked live 2026-08-01). Never call a
   hosted API (ADR-0001).
 - Runtime: `@mariozechner/pi-ai` v0.73.x is the LLM seam (the
@@ -130,7 +130,7 @@ every term in it was explicitly decided, not drafted.
 
 ## Open threads
 
-- Plan Open Questions: `[SATURATED]` stop-token reliability on bonsai-27b;
+- Plan Open Questions: `[SATURATED]` stop-token reliability on qwen3.6:35b;
   JSON cut-list validity from a 27B local model (parser should tolerate a
   line-oriented fallback). Both exploratory, answered during Wave 1.
 - Next-slice note (in plan): stored-transcript format has no questionForm

@@ -18,7 +18,7 @@ without an explicit escalation. Slice 1 (interview loop) is built; slice 2
 Standing preferences for every session working this map:
 - Build execution uses `omp -p --auto-approve` subagents (user-approved),
   orchestrated per executing-plans; plans get reviewer rounds before dispatch.
-- All inference local: chat `192.168.0.229:8088/v1` (bonsai-27b), embeddings
+- All inference local: chat `192.168.0.229:11434/v1` (qwen3.6:35b), embeddings
   `192.168.0.229:11434/v1` (qwen3-embedding / nomic). Never a hosted API.
 - Markdown is truth; invariants are enforced in code and tests, not prompts.
 - Skills: /grilling + /domain-modeling for design tickets; /writing-plans +
@@ -123,7 +123,7 @@ unassigned, all blockers closed.
 - **Selection maturation from usage data** — FSRS as the still-true horizon,
   uptake-as-signal, calibration period. All need weeks of Activity Log and
   queue history before they can be tuned honestly.
-- **Model lifecycle** — when bonsai-27b gets upgraded: re-annotation batch jobs
+- **Model lifecycle** — when qwen3.6:35b gets upgraded: re-annotation batch jobs
   over reading stamps, prompt re-tuning, whether the null-rate on composed
   questions demands the template-assembly fallback. Hangs on slice-2 RESULTS.
 <!-- cleared 2026-08-01: "Vault custody" resolved by grilling → Q-25

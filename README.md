@@ -113,8 +113,8 @@ git clone <this-repo> elicit && cd elicit
 npm install
 
 # point it at your model server (defaults shown)
-export ELICIT_LLM_BASE_URL="http://192.168.0.229:8088/v1"
-export ELICIT_LLM_MODEL="bonsai-27b"
+export ELICIT_LLM_BASE_URL="http://192.168.0.229:11434/v1"
+export ELICIT_LLM_MODEL="qwen3.6:35b"
 
 npm start
 # open http://127.0.0.1:4517
@@ -153,8 +153,8 @@ found, voice input is disabled — no error, no crash.
 | Variable | Default | What it does |
 |---|---|---|
 | `ELICIT_LLM` | `fake` | `local` = real model; `fake` = scripted responses for development |
-| `ELICIT_LLM_BASE_URL` | `http://192.168.0.229:8088/v1` | OpenAI-compatible chat endpoint |
-| `ELICIT_LLM_MODEL` | `bonsai-27b` | Model id at that endpoint |
+| `ELICIT_LLM_BASE_URL` | `http://192.168.0.229:11434/v1` | OpenAI-compatible chat endpoint |
+| `ELICIT_LLM_MODEL` | `qwen3.6:35b` | Model id at that endpoint |
 | `ELICIT_VAULT_ROOT` | `./vault` | Where your corpus lives — plain markdown, portable, yours |
 | `ELICIT_HOST` | `127.0.0.1` | Bind address; set to `0.0.0.0` for LAN access |
 | `ELICIT_PORT` | `4517` | Port the server listens on |
