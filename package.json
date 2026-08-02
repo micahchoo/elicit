@@ -10,7 +10,10 @@
     "test": "vitest run",
     "dev:server": "tsx watch src/server.ts",
     "dev:web": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "start": "ELICIT_LLM=local tsx src/server.ts",
+    "prestart": "vite build",
+    "dev": "ELICIT_LLM=fake tsx watch src/server.ts"
   },
   "keywords": [],
   "author": "",
