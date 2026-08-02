@@ -63,6 +63,25 @@ transcript appears in the answer field; you ratify or correct it before it
 becomes part of the exchange. If the STT model isn't installed, dictation
 simply isn't available — everything else works the same.
 
+A sitting, in three screens:
+
+![The mode screen: dropdowns for how long, what energy, and what the sitting is about, over a topic line](docs/guide/mode.png)
+
+*You declare the mode before anything else — 25 minutes, high energy, about myself.*
+
+![The exchange screen: a question, a dated quote from a past session beneath it, and a half-written answer](docs/guide/exchange.png)
+
+*One question at a time. When today's words touch something you wrote in an earlier sitting, that older quote comes back under the question, dated.*
+
+![The harvest screen: a proposed cut with its facet, stance, and reading, above approve, trim, discard, and restate](docs/guide/harvest.png)
+
+*At harvest you re-read your own words. Each proposed cut is an exact substring of what you typed, carries the agent's reading, and is saved only if you approve it.*
+
+The rest of the screens — the waiting surface with its queue and activity log,
+and the exchange at phone width — are in [`docs/guide/`](docs/guide/). All of
+them were captured against a running app with `ELICIT_LLM=fake`, so the
+questions are scripted; everything else is the real interface.
+
 ## Status
 
 Early and moving. The interview loop (slice 1) works end to end against a
