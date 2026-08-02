@@ -865,10 +865,17 @@ if (isDirect) {
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
   const modelName = llmMode === 'local' ? (process.env.ELICIT_LLM_MODEL ?? 'qwen3.6:35b') : 'fake';
-  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
   const port = parseInt(process.env.ELICIT_PORT ?? '4517', 10);
+
+  // Say where we are BEFORE the boot docket runs: on a populated vault with a
+  // slow local model the docket takes minutes, and a silent terminal reads as
+  // a hang. The address is knowable now, so print it now.
+  console.error(`\n  elicit → http://${bindHost}:${port}`);
+  console.error(`  model: ${modelName} (ELICIT_LLM=${llmMode})`);
+  console.error(`  vault: ${vaultRoot}`);
+  console.error('  starting…\n');
+
+  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore, modelName });
   await serveApp(app, port);
-  console.error(
-    `elicit server on http://${bindHost}:${port} [ELICIT_LLM=${llmMode}]`,
-  );
+  console.error(`  ready → http://${bindHost}:${port}\n`);
 }
