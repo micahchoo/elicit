@@ -329,5 +329,5 @@ function tryBuildStillTrue(
   return null;
  }
 
- return buildOpenerDraft(snippet, question, fragment, 'still-true', 'days');
+ return buildOpenerDraft(snippet, question, fragment, 'still-true', 'session');
 }

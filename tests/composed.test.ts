@@ -303,7 +303,7 @@ describe('composeStillTrue', () => {
     expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
     expect(draft.questionForm).toBe('deliberative');
-    expect(draft.horizon).toBe('days');
+    expect(draft.horizon).toBe('session');
     expect(draft.cites).toEqual(['s1@3']);
     // Must quote the snippet
     expect(draft.quotedFragment).toBeDefined();
