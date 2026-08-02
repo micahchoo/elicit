@@ -286,6 +286,27 @@ unassigned, all blockers closed.
   the pool" are one function rather than two. Rung 1 turned out to be a log
   line: facet balance already refuses to empty a pool.
 
+- [Research: embedding channel eval](tickets/007-embedding-eval.md) — measured
+  on the real 139-snippet corpus. **0.82 was inert, not imprecise**: max cosine
+  over 9,591 pairs is 0.808, so it admitted zero pairs and scored 0/8 —
+  the lexical baseline through a slower mechanism. Now 0.70 on
+  `qwen3-embedding`, 3/8 at 100% precision, still shadow. Q-52 confirmed on
+  real data: rephrased oppositions and genuine paraphrases are one population.
+
+- [Research: embedding channel eval](tickets/007-embedding-eval.md) — measured
+  on the real 139-snippet corpus. **0.82 was inert, not imprecise**: max cosine
+  over 9,591 pairs is 0.808, so it admitted zero pairs and scored 0/8 —
+  the lexical baseline through a slower mechanism. Now 0.70 on
+  `qwen3-embedding`, 3/8 at 100% precision, still shadow. Q-52 confirmed on
+  real data: rephrased oppositions and genuine paraphrases are one population.
+
+- [Research: embedding channel eval](tickets/007-embedding-eval.md) — measured
+  on the real 139-snippet corpus. **0.82 was inert, not imprecise**: max cosine
+  over 9,591 pairs is 0.808, so it admitted zero pairs and scored 0/8 —
+  the lexical baseline through a slower mechanism. Now 0.70 on
+  `qwen3-embedding`, 3/8 at 100% precision, still shadow. Q-52 confirmed on
+  real data: rephrased oppositions and genuine paraphrases are one population.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
