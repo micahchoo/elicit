@@ -305,6 +305,20 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `session=${ULID} hits=2`,
   reads: 'looked for echoes of what was just said and found 2',
  },
+
+ // The adoption step (T8): the one-off script's keeps and refusals folded
+ // into the staging store. Bare words after the fields are the names that
+ // did not resolve — the sentence must name them, not bury them.
+ {
+  kind: 'import-adopted',
+  detail: 'accepted=19 excluded=28 unresolved=0',
+  reads: 'adopted 19 prior keeps and 28 prior refusals, nothing left unresolved',
+ },
+ {
+  kind: 'import-adopted',
+  detail: 'accepted=1 excluded=0 unresolved=1 jingle-tales',
+  reads: 'adopted 1 prior keep and 0 prior refusals; 1 name unresolved — jingle-tales',
+ },
 ];
 
 describe('formatEvent', () => {

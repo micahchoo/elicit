@@ -505,6 +505,19 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  const why = IMPORT_REFUSED[reason] ?? 'was not imported';
  return `${file} ${why}`;
 },
+
+// Emitted by the adoption step (T8): the one-off script's nineteen keeps and
+// twenty-eight refusals folded into the staging store. Bare words after the
+// fields are the names that did not resolve — `unresolved=1 jingle-tales`.
+'import-adopted': (f, d) => {
+ const accepted = f.accepted === undefined ? nth(d, 0) : num(f, 'accepted');
+ const excluded = f.excluded === undefined ? nth(d, 1) : num(f, 'excluded');
+ const unresolved = f.unresolved === undefined ? nth(d, 2) : num(f, 'unresolved');
+ const base = `adopted ${count(accepted, 'prior keep')} and ${count(excluded, 'prior refusal')}`;
+ if (unresolved === 0) return `${base}, nothing left unresolved`;
+ const names = d.replace(FIELD, ' ').trim().split(/\s+/).filter(Boolean).join(', ');
+ return `${base}; ${count(unresolved, 'name')} unresolved — ${names}`;
+},
 };
 
 /**
