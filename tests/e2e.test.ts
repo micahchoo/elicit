@@ -17,7 +17,7 @@ import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
-import type { Complete, Vault } from '../src/types.js';
+import type { Complete, CutProposal, Vault } from '../src/types.js';
 import { statSync } from 'node:fs';
 import { createClaimStore } from '../src/wiki/store.js';
 import type { QueueStore } from '../src/types.js';
@@ -187,6 +187,29 @@ async function call(app: Hono, path: string, body?: unknown): Promise<Response> 
  return app.fetch(new Request(`http://localhost${path}`, init), { remoteAddr: '127.0.0.1' });
 }
 
+/**
+ * The harvest runs behind the response and lands in the review queue on disk
+ * (ticket 084). Polling is the only wait available: the record appears from a
+ * background setImmediate in the server process, which fake timers cannot
+ * advance, so this deliberately polls the real clock.
+ */
+async function waitForProposals(
+ request: (path: string) => Promise<Response>,
+ sessionId: string,
+ timeoutMs = 5000,
+): Promise<CutProposal[]> {
+ const deadline = Date.now() + timeoutMs;
+ for (; ;) {
+  const res = await request(`/api/harvest-queue/${sessionId}`);
+  if (res.status === 200) {
+   const body = (await res.json()) as { proposals: CutProposal[] };
+   return body.proposals;
+  }
+  if (Date.now() > deadline) throw new Error(`harvest for ${sessionId} never landed`);
+  await new Promise<void>((r) => setTimeout(r, 25));
+ }
+}
+
 /** How many events of one kind the vault's activity log holds. */
 function kindCount(vaultDir: string, kind: string): number {
  return readEvents(vaultDir).filter((e) => e.kind === kind).length;
@@ -327,21 +350,16 @@ describe('HTTP API e2e', () => {
   expect(turn2.kind).toBe('probe');
   expect(turn2.text).toBe(scriptedResponses[3]);
 
-  // ── Step 3: End → proposals ──
+  // ── Step 3: End → proposals land in the review queue ──
   const endRes = await fetch(`${baseUrl}/api/session/${sessionId}/end`, {
    method: 'POST',
   });
   expect(endRes.status).toBe(200);
-  const { proposals } = (await endRes.json()) as {
-   proposals: Array<{
-    text: string;
-    sourceTurn: number;
-    facet: string;
-    stance: string;
-    reading: string;
-    questionForm: string;
-   }>;
-  };
+  const endBody = (await endRes.json()) as { status: string; sessionId: string };
+  expect(endBody.status).toBe('harvesting');
+  expect(endBody.sessionId).toBe(sessionId);
+
+  const proposals = await waitForProposals((p) => fetch(`${baseUrl}${p}`), sessionId);
   expect(proposals.length).toBe(3);
 
   // ── Step 4: Harvest — one approve, one restate, one discard ──
@@ -507,8 +525,11 @@ describe('HTTP API e2e', () => {
    method: 'POST',
   });
   expect(s4.status).toBe(200);
-  const endResult = (await s4.json()) as { proposals: unknown[] };
-  expect(Array.isArray(endResult.proposals)).toBe(true);
+  const endResult = (await s4.json()) as { status: string; sessionId: string };
+  expect(endResult.status).toBe('harvesting');
+  expect(endResult.sessionId).toBe(sessionId);
+  // The harvest lands in the review queue while the transcript checks follow.
+  await waitForProposals((p) => fetch(`${baseUrl}${p}`), sessionId);
 
   // 5. Verify transcript on disk has the skip marker
   const transcriptPath = join(vaultDir, 'transcripts', `${sessionId}.md`);
@@ -721,7 +742,9 @@ describe('full session with docket and juxtaposition', () => {
    method: 'POST',
   });
   expect(endRes.status).toBe(200);
-  const { proposals } = (await endRes.json()) as { proposals: Array<{ text: string }> };
+  const endBody = (await endRes.json()) as { status: string };
+  expect(endBody.status).toBe('harvesting');
+  const proposals = await waitForProposals((p) => fetch(`${baseUrl}${p}`), sessionId);
   expect(proposals.length).toBe(2);
 
   const settledBefore = barrier.count;
@@ -1140,8 +1163,11 @@ describe('docket off the response path', () => {
   await barrier.waitFor(1); // boot docket over an empty vault
 
   const entryRes = await call(app, '/api/unprompted', { text: careerProse });
-  const entry = (await entryRes.json()) as { sessionId: string; proposals: unknown[] };
-  expect(entry.proposals.length).toBe(1);
+  const entry = (await entryRes.json()) as { status: string; sessionId: string };
+  expect(entry.status).toBe('harvesting');
+  // The harvest consumes the scripted cut while the gate is still open.
+  const proposals = await waitForProposals((p) => call(app, p), entry.sessionId);
+  expect(proposals.length).toBe(1);
 
   // Every model call from here blocks: the docket the harvest starts cannot finish.
   gate.close();
@@ -1213,7 +1239,11 @@ describe('docket off the response path', () => {
   await barrier.waitFor(1);
 
   const entryRes = await call(app, '/api/unprompted', { text: careerProse });
-  const entry = (await entryRes.json()) as { sessionId: string };
+  const entry = (await entryRes.json()) as { status: string; sessionId: string };
+  expect(entry.status).toBe('harvesting');
+  // The record must exist before /harvest, and propose does not read the vault.
+  const proposals = await waitForProposals((p) => call(app, p), entry.sessionId);
+  expect(proposals.length).toBe(1);
 
   unreadable = true;
   const settledBefore = barrier.count;
@@ -1488,7 +1518,9 @@ describe('clerk slice: harvest to claim to contradiction', () => {
   // `call` sends POST only when a body is given, and `/end` is a POST route.
   const endRes = await call(second.app, `/api/session/${sessionId}/end`, {});
   expect(endRes.status).toBe(200);
-  const { proposals } = (await endRes.json()) as { proposals: Array<{ text: string }> };
+  const endBody = (await endRes.json()) as { status: string; sessionId: string };
+  expect(endBody.status).toBe('harvesting');
+  const proposals = await waitForProposals((p) => call(second.app, p), sessionId);
   expect(proposals.length).toBe(1);
 
   const settled = second.barrier.count;
@@ -1603,6 +1635,7 @@ describe('clerk slice: a re-measure counts only from a different sitting (Q-53)'
   const { sessionId } = (await sessionRes.json()) as { sessionId: string };
   await call(app1.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
   await call(app1.app, `/api/session/${sessionId}/end`, {});
+  await waitForProposals((p) => call(app1.app, p), sessionId);
   const settled = app1.barrier.count;
   await call(app1.app, `/api/session/${sessionId}/harvest`, {
    decisions: [{ proposal: 0, action: 'discard' }],
@@ -1831,6 +1864,7 @@ describe('clerk slice: presweep confirmation opens the Contradiction before the 
   const { sessionId } = (await sessionRes.json()) as { sessionId: string };
   await call(app.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
   await call(app.app, `/api/session/${sessionId}/end`, {});
+  await waitForProposals((p) => call(app.app, p), sessionId);
   const settled = app.barrier.count;
   await call(app.app, `/api/session/${sessionId}/harvest`, {
    decisions: [{ proposal: 0, action: 'approve' }],
@@ -1956,6 +1990,7 @@ describe('clerk slice: a fabricated confirming quote opens nothing (Q-46)', () =
   const { sessionId } = (await sessionRes.json()) as { sessionId: string };
   await call(app.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
   await call(app.app, `/api/session/${sessionId}/end`, {});
+  await waitForProposals((p) => call(app.app, p), sessionId);
   const settled = app.barrier.count;
   await call(app.app, `/api/session/${sessionId}/harvest`, {
    decisions: [{ proposal: 0, action: 'approve' }],

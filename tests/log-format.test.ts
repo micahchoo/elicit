@@ -87,6 +87,30 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
    '3 turns named when something happened, and 1 produced no episode cut; ' +
    'the gate read 9 cuts and rejected 1; skipped 2 turns that had no content',
  },
+ // Ticket 084: harvests run behind /end and /unprompted. `harvest-started`
+ // logs the launch with the turn count handed to propose; `harvest-failed`
+ // has two shapes — every chunk failing to parse renders as the parsed=false
+ // harvestProposed line (034: ran-and-found-nothing is not did-not-run), while
+ // propose() throwing carries only the session id.
+ {
+  kind: 'harvest-started',
+  detail: `session=${ULID} chunks=3`,
+  reads: 'started a background harvest of 3 turns',
+ },
+ {
+  kind: 'harvest-failed',
+  detail:
+   'proposals=0 buds=0 parsed=false parseMode=failed chunks=0/2 chunkErrors=2 rawChars=0 ' +
+   'fabricationDrops=0 cutsSeen=0 inadmissibleDrops=0 contentFreeSkips=0 sourceTurnCorrections=0 ' +
+   'fragmentBuds=0 outOfVocabularyLabels=0 supersessionCorrections=0 unmarkedIntentions=0 ' +
+   'episodeAnchoredTurns=0 episodeBlindTurns=0',
+  reads: 'could not read the sitting back, so proposed nothing',
+ },
+ {
+  kind: 'harvest-failed',
+  detail: `session=${ULID}`,
+  reads: 'could not finish the harvest',
+ },
  { kind: 'session-harvested', detail: 'kept=1 budded=0', reads: 'kept 1, budded 0' },
  { kind: 'transcribed', detail: '820ms 47chars', reads: 'transcribed 47 characters of speech' },
  { kind: 'unprompted-entry', detail: `session=${ULID} chars=412`, reads: 'wrote 412 characters unprompted' },
@@ -330,29 +354,29 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'accepted=19 excluded=28 unresolved=0',
   reads: 'adopted 19 prior keeps and 28 prior refusals, nothing left unresolved',
  },
-{
- kind: 'import-adopted',
- detail: 'accepted=1 excluded=0 unresolved=1 jingle-tales',
- reads: 'adopted 1 prior keep and 0 prior refusals; 1 name unresolved — jingle-tales',
-},
+ {
+  kind: 'import-adopted',
+  detail: 'accepted=1 excluded=0 unresolved=1 jingle-tales',
+  reads: 'adopted 1 prior keep and 0 prior refusals; 1 name unresolved — jingle-tales',
+ },
 
-// The extraction job (T5): one line per item processed. The detail carries
-// the full path and the counts; the sentence shows the basename only.
-{
- kind: 'import-extracted',
- detail: 'path=vault/posts/dated-essay.md cuts=3',
- reads: 'extracted 3 cuts from dated-essay.md',
-},
-{
- kind: 'import-extract-failed',
- detail: 'path=vault/posts/dated-essay.md attempts=3',
- reads: 'could not extract from dated-essay.md after 3 attempts',
-},
-{
- kind: 'import-quoted-dropped',
- detail: 'path=vault/posts/quoted.md cuts=1',
- reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
-},
+ // The extraction job (T5): one line per item processed. The detail carries
+ // the full path and the counts; the sentence shows the basename only.
+ {
+  kind: 'import-extracted',
+  detail: 'path=vault/posts/dated-essay.md cuts=3',
+  reads: 'extracted 3 cuts from dated-essay.md',
+ },
+ {
+  kind: 'import-extract-failed',
+  detail: 'path=vault/posts/dated-essay.md attempts=3',
+  reads: 'could not extract from dated-essay.md after 3 attempts',
+ },
+ {
+  kind: 'import-quoted-dropped',
+  detail: 'path=vault/posts/quoted.md cuts=1',
+  reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
+ },
 ];
 
 describe('formatEvent', () => {
@@ -667,8 +691,17 @@ describe('the harvest diagnostics reach the surface', () => {
   );
   expect(res.status).toBe(200);
 
-  const harvest = readEvents(root).filter((e) => e.kind === 'harvest-proposed');
-  expect(harvest).toHaveLength(1);
+  // The harvest runs behind the response now (ticket 084), so the line is
+  // polled off the log: the record and its event land together from the same
+  // background setImmediate, which fake timers cannot advance.
+  let harvest: FormattableEvent[] = [];
+  const deadline = Date.now() + 5000;
+  for (; ;) {
+   harvest = readEvents(root).filter((e) => e.kind === 'harvest-proposed');
+   if (harvest.length === 1) break;
+   if (Date.now() > deadline) throw new Error('harvest-proposed never landed');
+   await new Promise<void>((r) => setTimeout(r, 25));
+  }
   return formatEvent(harvest[0]!);
  }
 

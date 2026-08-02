@@ -33,6 +33,25 @@ interface TurnData {
 }
 
 interface EndResponse {
+ status: string;
+ sessionId: string;
+}
+
+interface HarvestQueueEntry {
+ sessionId: string;
+ at: string;
+ started: string;
+ protocol: string;
+ origin: 'harvest' | 'unprompted';
+ proposalCount: number;
+}
+
+interface HarvestQueueRecord {
+ sessionId: string;
+ at: string;
+ started: string;
+ protocol: string;
+ origin: 'harvest' | 'unprompted';
  proposals: CutProposal[];
 }
 
@@ -126,7 +145,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews';
 
 interface AppState {
  screen: Screen;
@@ -142,6 +161,8 @@ interface AppState {
  sttAvailable: boolean;
  dictating: boolean;
  turnHadSpeech: boolean;
+ /** Session whose harvest is running behind the /end response (084). */
+ pendingReviewSession: string | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -156,6 +177,7 @@ const state: AppState = {
  sttAvailable: false,
  dictating: false,
  turnHadSpeech: false,
+ pendingReviewSession: null,
 };
 
 const main = $('main')!;
@@ -170,6 +192,7 @@ function navTo(screen: Screen) {
   case 'harvest': renderHarvest(); break;
   case 'done': renderDone(); break;
   case 'waiting': renderWaiting(); break;
+  case 'reviews': renderReviews(); break;
   case 'wiki': renderWiki(false); break;
   case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
@@ -197,7 +220,7 @@ class ApiError extends Error {
  * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
  * the same path and is the one write the wiki surface makes.
  */
-const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets'];
+const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue'];
 
 function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
@@ -470,6 +493,26 @@ function renderMode(showSetupHint?: boolean) {
  wikiLink.addEventListener('click', () => navTo('wiki'));
  navRow.append(waitingLink, writeLink, wikiLink);
 
+ // A quiet count of finished harvests awaiting review — offer-only (Q-62):
+ // it sits in the nav row of a surface the person opened, never outbound.
+ (async () => {
+  try {
+   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+   if (state.screen !== 'mode') return;
+   if (data.pending.length === 0) return;
+   const n = data.pending.length;
+   const countLink = el(
+    'button',
+    { class: 'nav-link harvest-ready-count' },
+    `${n} harvest${n === 1 ? '' : 's'} ready for review`,
+   );
+   countLink.addEventListener('click', () => navTo('reviews'));
+   navRow.append(countLink);
+  } catch {
+   // The queue is offer-only; a failed read just means no count.
+  }
+ })();
+
  if (showSetupHint) {
   const setupLink = el('button', { class: 'nav-link' }, 'set a password');
   setupLink.addEventListener('click', () => navTo('setup'));
@@ -573,14 +616,14 @@ function renderUnprompted() {
   errorSlot.innerHTML = '';
   const wait = beginWait(errorSlot, 'reading what you wrote…');
   try {
-   const res = await api<{ sessionId: string; proposals: CutProposal[] }>(
+   const res = await api<EndResponse>(
     '/api/unprompted',
     { text, channel: pasted ? 'pasted' : 'typed' },
    );
    state.sessionId = res.sessionId;
-   state.proposals = res.proposals;
+   state.pendingReviewSession = res.sessionId;
    wait.done();
-   renderHarvest();
+   navTo('reviews');
   } catch (e) {
    wait.failed(e);
    doneBtn.disabled = false;
@@ -817,8 +860,20 @@ function renderExchange() {
 
     appendTurn('agent', res.text!);
    } else {
-    // saturated
-    renderHarvest();
+    // saturated — the sitting is over. The harvest runs behind the response
+    // and lands in the review queue (084), where the existing review cards
+    // pick it up — no stale empty card.
+    try {
+     const res = await api<EndResponse>(
+      `/api/session/${state.sessionId}/end`,
+     );
+     state.pendingReviewSession = res.sessionId;
+     wait.done();
+     navTo('reviews');
+    } catch (e) {
+     wait.failed(e);
+     setControlsBusy(false);
+    }
     return;
    }
   } catch (e) {
@@ -857,16 +912,16 @@ function renderExchange() {
 
  harvestBtn.addEventListener('click', async () => {
   setControlsBusy(true);
-  // The longest wait in the app — around twenty seconds. Phase 2 turns this
-  // label into "reading turn 3 of 6" once the harvest reports its progress.
+  // Near-instant now: the harvest runs behind the response and lands in the
+  // review queue (084), whose cards await the person's decisions.
   const wait = beginWait(answerArea, 'reading back what you said…');
   try {
    const res = await api<EndResponse>(
     `/api/session/${state.sessionId}/end`,
    );
-   state.proposals = res.proposals;
+   state.pendingReviewSession = res.sessionId;
    wait.done();
-   renderHarvest();
+   navTo('reviews');
   } catch (e) {
    wait.failed(e);
    setControlsBusy(false);
@@ -1262,6 +1317,107 @@ function renderProposal(idx: number, container: HTMLElement) {
 
  block.append(textWrapper, actions);
  container.append(block);
+}
+
+/* ── Review queue: finished harvests awaiting a decision ── */
+
+let reviewPollTimer: ReturnType<typeof setInterval> | null = null;
+
+function renderReviews() {
+ clear();
+ state.screen = 'reviews';
+
+ // Re-entry must never stack timers; clearing a dead handle is a no-op.
+ if (reviewPollTimer !== null) clearInterval(reviewPollTimer);
+ reviewPollTimer = null;
+
+ const div = el('div', { class: 'screen active reviews-screen' });
+
+ const backRow = el('div', { class: 'waiting-nav' });
+ const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
+ backBtn.addEventListener('click', () => navTo('mode'));
+ backRow.append(backBtn);
+
+ const heading = el('h2', { class: 'waiting-heading' }, 'harvests awaiting review');
+ const list = el('div', { class: 'harvest-queue-list' });
+ div.append(backRow, heading, list);
+ main.append(div);
+
+ const pending = state.pendingReviewSession;
+
+ (async () => {
+  try {
+   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+   if (state.screen !== 'reviews') return;
+   list.innerHTML = '';
+
+   const landed = pending !== null && data.pending.some((e) => e.sessionId === pending);
+
+   // The harvest we just launched has not landed yet: say so quietly and
+   // poll for its record, then re-render the list once it exists.
+   if (pending !== null && !landed) {
+    list.append(
+     el(
+      'p',
+      { class: 'harvest-running' },
+      'harvest running — it will appear here when it is done',
+     ),
+    );
+    const poll = setInterval(async () => {
+     if (state.screen !== 'reviews') {
+      clearInterval(poll);
+      reviewPollTimer = null;
+      return;
+     }
+     try {
+      await api<HarvestQueueRecord>(`/api/harvest-queue/${pending}`);
+      if (state.screen !== 'reviews') return;
+      state.pendingReviewSession = null;
+      renderReviews();
+     } catch {
+      // Not there yet — keep polling.
+     }
+    }, 2000);
+    reviewPollTimer = poll;
+   }
+
+   if (data.pending.length === 0 && pending === null) {
+    list.append(el('p', { class: 'empty-msg' }, 'nothing awaiting review'));
+    return;
+   }
+
+   for (const entry of data.pending) {
+    const row = el('button', { class: 'harvest-queue-row' });
+    const date = el('span', { class: 'harvest-queue-date' }, relativeTime(entry.started));
+    const meta = el(
+     'span',
+     { class: 'harvest-queue-meta' },
+     `${entry.protocol} \u00b7 ${entry.proposalCount} proposal${entry.proposalCount === 1 ? '' : 's'}`,
+    );
+    row.append(date, meta);
+    row.addEventListener('click', async () => {
+     row.disabled = true;
+     try {
+      const rec = await api<HarvestQueueRecord>(`/api/harvest-queue/${entry.sessionId}`);
+      state.sessionId = rec.sessionId;
+      state.proposals = rec.proposals;
+      state.pendingReviewSession = null;
+      renderHarvest();
+     } catch (e) {
+      row.disabled = false;
+      list.append(el('p', { class: 'empty-msg' }, 'that harvest did not load'));
+      console.error(e);
+     }
+    });
+    list.append(row);
+   }
+  } catch (e) {
+   if (state.screen !== 'reviews') return;
+   list.innerHTML = '';
+   list.append(el('p', { class: 'empty-msg' }, 'could not load the review queue'));
+   console.error(e);
+  }
+ })();
 }
 
 /* ── Done screen ── */

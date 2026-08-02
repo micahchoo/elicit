@@ -138,7 +138,9 @@ function aliasesOf(text: string, spans: Span[]): Map<string, string> {
  * the draw's shadow record, `sourceLabel` on the web surface — would
  * otherwise read as caller-less. Comments, strings and nested templates
  * inside the expression are skipped, so a `}` inside one cannot close the
- * expression early.
+ * expression early. Backslash escapes are skipped inside strings, so the
+ * repo's own `\uXXXX` convention (`'listening\u2026'`) cannot desync the
+ * scan into swallowing the rest of the file.
  */
 function templateExprSpans(text: string): Span[] {
  const spans: Span[] = [];
@@ -159,7 +161,10 @@ function templateExprSpans(text: string): Span[] {
   }
   if (c === "'" || c === '"') {
    i++;
-   while (i < n && text[i] !== '\\' && text[i] !== c) i++;
+   while (i < n && text[i] !== c) {
+    if (text[i] === '\\') i++;
+    i++;
+   }
    i++;
    continue;
   }
@@ -191,14 +196,20 @@ function templateExprSpans(text: string): Span[] {
      }
      if (e === "'" || e === '"') {
       j++;
-      while (j < n && text[j] !== '\\' && text[j] !== e) j++;
+      while (j < n && text[j] !== e) {
+       if (text[j] === '\\') j++;
+       j++;
+      }
       j++;
       continue;
      }
      if (e === '`') {
       // A nested template inside the expression: skip to its close.
       j++;
-      while (j < n && text[j] !== '\\' && text[j] !== '`') j++;
+      while (j < n && text[j] !== '`') {
+       if (text[j] === '\\') j++;
+       j++;
+      }
       j++;
       continue;
      }

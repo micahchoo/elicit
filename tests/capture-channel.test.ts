@@ -28,6 +28,36 @@ async function post(app: Hono, path: string, body?: unknown): Promise<Response> 
  });
 }
 
+/** GET from the app directly. Loopback remoteAddr — no auth file, so the gate opens. */
+async function get(app: Hono, path: string): Promise<Response> {
+ return app.fetch(new Request(`http://127.0.0.1${path}`, { method: 'GET' }), {
+  remoteAddr: '127.0.0.1',
+ });
+}
+
+/**
+ * The harvest runs behind the response and lands in the review queue on disk
+ * (ticket 084). Polling is the only wait available: the record appears from a
+ * background setImmediate in the server process, which fake timers cannot
+ * advance, so this deliberately polls the real clock.
+ */
+async function waitForProposals(
+ request: (path: string) => Promise<Response>,
+ sessionId: string,
+ timeoutMs = 5000,
+): Promise<CutProposal[]> {
+ const deadline = Date.now() + timeoutMs;
+ for (; ;) {
+  const res = await request(`/api/harvest-queue/${sessionId}`);
+  if (res.status === 200) {
+   const body = (await res.json()) as { proposals: CutProposal[] };
+   return body.proposals;
+  }
+  if (Date.now() > deadline) throw new Error(`harvest for ${sessionId} never landed`);
+  await new Promise<void>((r) => setTimeout(r, 25));
+ }
+}
+
 /**
  * A fresh app over a fresh temp vault with one scripted Complete list.
  * Per-test isolation: no two tests share a scripted consumption order.
@@ -104,6 +134,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const { snippets } = await approveFirst(app, sessionId);
    expect(snippets.length).toBe(1);
@@ -135,6 +166,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const { snippets } = await approveFirst(app, sessionId);
    expect(snippets[0]!.provenance.channel).toBe('spoken');
@@ -161,6 +193,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const { snippets } = await approveFirst(app, sessionId);
    expect(snippets[0]!.provenance.channel).toBeUndefined();
@@ -188,6 +221,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const harvestRes = await post(app, `/api/session/${sessionId}/harvest`, {
     decisions: [{ proposal: 0, action: 'restate', text: restate, channel: 'pasted' }],
@@ -219,6 +253,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const harvestRes = await post(app, `/api/session/${sessionId}/harvest`, {
     decisions: [{ proposal: 0, action: 'restate', text: restate }],
@@ -268,6 +303,7 @@ describe('capture channel on the capture paths (ticket 048)', () => {
 
    const endRes = await post(app, `/api/session/${sessionId}/end`);
    expect(endRes.status).toBe(200);
+   await waitForProposals((p) => get(app, p), sessionId);
 
    const harvestRes = await post(app, `/api/session/${sessionId}/harvest`, {
     decisions: [
@@ -297,11 +333,10 @@ describe('capture channel on the capture paths (ticket 048)', () => {
     channel: 'pasted',
    });
    expect(entryRes.status).toBe(200);
-   const entry = (await entryRes.json()) as {
-    sessionId: string;
-    proposals: CutProposal[];
-   };
-   expect(entry.proposals.length).toBe(1);
+   const entry = (await entryRes.json()) as { status: string; sessionId: string };
+   expect(entry.status).toBe('harvesting');
+   const proposals = await waitForProposals((p) => get(app, p), entry.sessionId);
+   expect(proposals.length).toBe(1);
 
    const { snippets } = await approveFirst(app, entry.sessionId);
    expect(snippets.length).toBe(1);
@@ -324,6 +359,8 @@ describe('capture channel on the capture paths (ticket 048)', () => {
    expect(turnRes.status).toBe(200);
    const endRes = await post(app, `/api/session/${goodId}/end`);
    expect(endRes.status).toBe(200);
+   // The record must exist so the 400 comes from the channel validation.
+   await waitForProposals((p) => get(app, p), goodId);
    const badHarvest = await post(app, `/api/session/${goodId}/harvest`, {
     decisions: [{ proposal: 0, action: 'restate', text: 'x', channel: 'nope' }],
    });

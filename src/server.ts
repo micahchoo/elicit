@@ -10,6 +10,12 @@ import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, CUTS_RESPONSE_FORMAT, type HarvestDiagnostics } from './harvester/harvester.js';
+import {
+ writePendingHarvest,
+ readPendingHarvest,
+ listPendingHarvests,
+ removePendingHarvest,
+} from './harvester/pending.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex } from './index/lexical.js';
 import {
@@ -299,6 +305,14 @@ function readTranscript(root: string, session: string): string {
  const file = join(root, 'transcripts', `${session}.md`);
  if (!existsSync(file)) return '';
  return matter(readFileSync(file, 'utf-8')).content;
+}
+
+/** The `started` stamp of a session transcript frontmatter, the review date shown on a pending harvest. */
+function sessionStartedAt(root: string, sessionId: string): string {
+ const file = join(root, 'transcripts', `${sessionId}.md`);
+ if (!existsSync(file)) return new Date().toISOString();
+ const started = matter(readFileSync(file, 'utf-8')).data.started;
+ return typeof started === 'string' ? started : new Date().toISOString();
 }
 // ── Create app ──
 
@@ -877,22 +891,79 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   return c.json(result);
  });
 
- // POST /api/session/:id/end → {proposals, buds}
- app.post('/api/session/:id/end', async (c) => {
+ /**
+  * Fire-and-return harvest (ticket 084): /end and /unprompted answer
+  * immediately, propose runs behind the response. A finished run writes its
+  * record to the pending queue, restart-proof and claimable by /harvest; a
+  * failed run logs as failed and writes nothing, so the transcript stays the
+  * recovery path. The queue is offer-only — deciding happens through /harvest.
+  */
+ function startBackgroundHarvest(args: {
+  sessionId: string;
+  turns: Turn[];
+  protocol: string;
+  started: string;
+  origin: 'harvest' | 'unprompted';
+  turnChannels?: (CaptureChannel | undefined)[];
+  unpromptedChannel?: CaptureChannel;
+ }): void {
+  serverEmit(deps.vaultRoot, 'harvester', 'harvest-started', `session=${args.sessionId} chunks=${args.turns.length}`);
+  setImmediate(() => {
+   propose(args.sessionId, args.turns, harvestComplete)
+    .then((result) => {
+     if (result.diagnostics.parseMode === 'failed') {
+      serverEmit(deps.vaultRoot, 'harvester', 'harvest-failed', harvestDetail(result));
+      return;
+     }
+     writePendingHarvest(deps.vaultRoot, {
+      sessionId: args.sessionId,
+      at: new Date().toISOString(),
+      started: args.started,
+      protocol: args.protocol,
+      origin: args.origin,
+      proposals: result.proposals,
+      ...(args.turnChannels !== undefined ? { turnChannels: args.turnChannels } : {}),
+      ...(args.unpromptedChannel !== undefined ? { unpromptedChannel: args.unpromptedChannel } : {}),
+     });
+     sessionProposals.set(args.sessionId, result.proposals);
+     serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
+    })
+    .catch((err: unknown) => {
+     console.error(`harvest (${args.sessionId}) failed:`, String(err));
+     serverEmit(deps.vaultRoot, 'harvester', 'harvest-failed', `session=${args.sessionId}`);
+    });
+  });
+ }
+
+ // POST /api/session/:id/end → harvesting (ticket 084)
+ // The harvest runs behind this response; the finished proposals land in the
+ // pending queue for the review surface.
+ app.post('/api/session/:id/end', (c) => {
   const sessionId = c.req.param('id');
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
-  const result = await propose(sessionId, state.turns, harvestComplete);
-  serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
-  sessionProposals.set(sessionId, result.proposals);
-  return c.json({ proposals: result.proposals, buds: result.buds });
+  // Snapshot the capture channels by value (ticket 048): the sitting may be
+  // gone by the time the background run writes its record.
+  const turnChannels = state.turnChannels ? [...state.turnChannels] : undefined;
+  startBackgroundHarvest({
+   sessionId,
+   turns: state.turns,
+   protocol: state.protocol,
+   started: sessionStartedAt(deps.vaultRoot, sessionId),
+   origin: 'harvest',
+   ...(turnChannels !== undefined ? { turnChannels } : {}),
+  });
+  return c.json({ status: 'harvesting', sessionId });
  });
 
  // POST /api/session/:id/harvest {decisions} → {snippets, buds}
  app.post('/api/session/:id/harvest', async (c) => {
   const sessionId = c.req.param('id');
-  const proposals = sessionProposals.get(sessionId);
+  // The pending record is the primary source (ticket 084); the in-memory map
+  // is the migration fallback for a harvest proposed before this build.
+  const record = readPendingHarvest(deps.vaultRoot, sessionId);
+  const proposals = record?.proposals ?? sessionProposals.get(sessionId);
   if (!proposals) {
    return c.json(
     { error: 'no proposals — call /end first' },
@@ -929,17 +1000,23 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   }
 
   const state = sessions.get(sessionId);
-  const channelOf = unpromptedSessions.has(sessionId)
-   ? () => unpromptedChannels.get(sessionId)
-   : state?.turnChannels
-    ? (p: CutProposal) => state.turnChannels?.[p.sourceTurn]
-    : undefined;
+  const channelOf = record
+   ? record.origin === 'unprompted'
+     ? () => record.unpromptedChannel
+     : record.turnChannels
+       ? (p: CutProposal) => record.turnChannels?.[p.sourceTurn] ?? undefined
+       : undefined
+   : unpromptedSessions.has(sessionId)
+     ? () => unpromptedChannels.get(sessionId)
+     : state?.turnChannels
+       ? (p: CutProposal) => state.turnChannels?.[p.sourceTurn]
+       : undefined;
   const result = decide(
    sessionId,
    proposals,
    body.decisions,
    deps.vault,
-   unpromptedSessions.has(sessionId) ? 'unprompted' : 'harvest',
+   record ? record.origin : unpromptedSessions.has(sessionId) ? 'unprompted' : 'harvest',
    channelOf,
   );
 
@@ -949,13 +1026,46 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   // reindexes them and mints their openers runs behind this response.
   startDocket('harvest');
 
+  // A decided harvest leaves the queue; the map entry goes with it so a
+  // later decide cannot double-claim the same material.
+  if (record) removePendingHarvest(deps.vaultRoot, sessionId);
+  sessionProposals.delete(sessionId);
+
   return c.json({ snippets: result.snippets, buds: result.buds });
  });
 
- // POST /api/unprompted {text} → {sessionId, proposals, buds}
+ // GET /api/harvest-queue → {pending} (ticket 084)
+ // The review surface: every finished harvest awaiting a decision, newest
+ // first. Offer-only — deciding still happens through POST /harvest.
+ app.get('/api/harvest-queue', (c) => {
+  const pending = listPendingHarvests(deps.vaultRoot).map((r) => ({
+   sessionId: r.sessionId,
+   at: r.at,
+   started: r.started,
+   protocol: r.protocol,
+   origin: r.origin,
+   proposalCount: r.proposals.length,
+  }));
+  return c.json({ pending });
+ });
+
+ // GET /api/harvest-queue/:sessionId → the full pending record (ticket 084)
+ // The id is a plain token, gated before any file read so a crafted id
+ // cannot walk out of the pending directory.
+ app.get('/api/harvest-queue/:sessionId', (c) => {
+  const sessionId = c.req.param('sessionId');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) {
+   return c.json({ error: 'not found' }, 404);
+  }
+  const record = readPendingHarvest(deps.vaultRoot, sessionId);
+  if (!record) return c.json({ error: 'not found' }, 404);
+  return c.json(record);
+ });
+
+ // POST /api/unprompted {text} → harvesting (ticket 084)
  // The user wrote or pasted material with no question asked. It becomes a
- // transcript of one user turn, then takes the ordinary propose→decide path:
- // review the cuts, then POST them to /api/session/:id/harvest.
+ // transcript of one user turn, then harvests behind this response; the
+ // review cards for its cuts land in the pending queue.
  app.post('/api/unprompted', async (c) => {
   const body = await c.req.json<{ text: string; channel?: CaptureChannel }>();
   if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
@@ -982,11 +1092,15 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   // Never log the content — only how much of it there was.
   serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
 
-  const result = await propose(sessionId, [turn], harvestComplete);
-  serverEmit(deps.vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
-  sessionProposals.set(sessionId, result.proposals);
-
-  return c.json({ sessionId, proposals: result.proposals, buds: result.buds });
+  startBackgroundHarvest({
+   sessionId,
+   turns: [turn],
+   protocol: 'unprompted',
+   started: at,
+   origin: 'unprompted',
+   ...(body.channel !== undefined ? { unpromptedChannel: body.channel } : {}),
+  });
+  return c.json({ status: 'harvesting', sessionId });
  });
 
  // GET /api/queue → {pending, open}

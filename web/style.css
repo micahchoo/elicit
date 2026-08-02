@@ -688,6 +688,66 @@ main {
  font-style: italic;
 }
 
+/* ── review queue — finished harvests awaiting a decision ── */
+
+.harvest-ready-count {
+ font-size: 0.7rem;
+ opacity: 0.8;
+}
+
+.harvest-ready-count:hover {
+ opacity: 1;
+}
+
+.harvest-queue-list {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+}
+
+.harvest-queue-row {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--fg);
+ background: none;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ padding: 0.4rem 0;
+ cursor: pointer;
+ text-align: left;
+ display: flex;
+ flex-direction: column;
+ gap: 0.15rem;
+}
+
+.harvest-queue-row:last-child {
+ border-bottom: none;
+}
+
+.harvest-queue-row:hover {
+ color: var(--accent);
+}
+
+.harvest-queue-row:disabled {
+ opacity: 0.5;
+ cursor: default;
+}
+
+.harvest-queue-date {
+ color: var(--accent);
+}
+
+.harvest-queue-meta {
+ font-size: 0.65rem;
+ color: var(--dim);
+}
+
+.harvest-running {
+ font-size: 0.85rem;
+ color: var(--dim);
+ font-style: italic;
+}
+
 /* ── waiting ──
    A model-backed call takes seconds. The signal is typographic: a hairline
    drawing itself across the text measure, and one dimmed line saying what is

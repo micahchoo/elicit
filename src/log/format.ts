@@ -316,6 +316,11 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
   return 'deferred a question';
  },
  'harvest-proposed': (f) => harvestProposed(f),
+ 'harvest-started': (f) => `started a background harvest of ${count(num(f, 'chunks'), 'turn')}`,
+ // A failed harvest is either every chunk failing to parse (the parsed=false
+ // harvestProposed line, distinct from proposed-zero by the 034 rule) or the
+ // propose run itself throwing, which carries only the session id.
+ 'harvest-failed': (f) => (f.parsed === 'false' ? harvestProposed(f) : 'could not finish the harvest'),
  'session-harvested': (f) => `kept ${num(f, 'kept')}, budded ${num(f, 'budded')}`,
  'transcribed': (_f, d) => {
   const chars = /(\d+)chars/.exec(d);

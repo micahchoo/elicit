@@ -428,6 +428,28 @@ http://localhost:3002/?board=elicit-ideal-state).
   question and context; the draw's lineage rides the session response and
   never outlives the opener exchange.
 
+- [Build: ClashChannel returns rank, not a filtered set](tickets/083-clash-channel-rank-contract.md)
+  — ordered lists cut to the judgment quota; Q-65 ordering inside;
+  `clash.embeddingCosine` demoted to a 0.5 sanity floor; every pair
+  stamped `joinsTwoSittings`.
+
+- [Build: record the capture channel on every Snippet](tickets/048-capture-channel.md)
+  — all three capture paths set `typed | spoken | pasted`; pasted wins on
+  strict character majority; absent stays absent on disk, and nothing
+  filters on it.
+
+- [Build: harvest runs behind the sitting](tickets/084-harvest-review-queue.md)
+  — /end and /unprompted return in milliseconds; proposals persist to a
+  claimable disk record (restart-proof) and wait in a review queue with a
+  quiet count; failed is logged distinct from empty.
+
+- [Grill: the Seeding slice](tickets/013-grill-seeding.md) — seven rulings,
+  Q-66..Q-72: weak prior deleted (Q-50 stands; Confirm is a licence);
+  per-region mechanical dating; the review gate survives scale by bounding
+  regions (folder subtrees); Reach is offer-only, live; per-region
+  authorship, three values; a Link is no new object; repairs are capped
+  Buds with no repair surface. Unblocks the Seeding build.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

@@ -172,6 +172,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/harvester/harvester.ts ──
  { module: 'src/harvester/harvester', name: 'propose', status: 'live' },
  { module: 'src/harvester/harvester', name: 'decide', status: 'live' },
+
+ // ── src/harvester/pending.ts (ticket 084 — the review queue on disk) ──
+ { module: 'src/harvester/pending', name: 'writePendingHarvest', status: 'live' },
+ { module: 'src/harvester/pending', name: 'readPendingHarvest', status: 'live' },
+ { module: 'src/harvester/pending', name: 'listPendingHarvests', status: 'live' },
+ { module: 'src/harvester/pending', name: 'removePendingHarvest', status: 'live' },
  {
   module: 'src/harvester/harvester',
   name: 'CUTS_RESPONSE_FORMAT',
@@ -533,19 +539,19 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
   reason: 'data: the threshold table; each entry carries its own live flag (Q-35/Q-56) and decisions pass through shadowDecision',
  },
-{
+ {
   module: 'src/wiki/thresholds',
   name: 'shadowDecision',
   status: 'shadow',
   shadowKind: 'shadow-decision',
   reason: 'Q-35 door: shadow mode writes shadow-decision, live mode writes threshold-clipped; per-threshold live flags decide',
-},
+ },
 
-// ── src/import/adopt.ts ──
-{
- module: 'src/import/adopt',
- name: 'adoptPriorIngest',
- status: 'unwired',
- reason: 'no production caller yet — the scan route (T9) calls it before admit in a later wave; tests and scripts do not count',
-},
+ // ── src/import/adopt.ts ──
+ {
+  module: 'src/import/adopt',
+  name: 'adoptPriorIngest',
+  status: 'unwired',
+  reason: 'no production caller yet — the scan route (T9) calls it before admit in a later wave; tests and scripts do not count',
+ },
 ];

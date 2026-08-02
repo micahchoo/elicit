@@ -29,6 +29,36 @@ async function post(app: Hono, path: string, body?: unknown): Promise<Response> 
  });
 }
 
+/** GET from the app directly. Loopback remoteAddr — no auth file, so the gate opens. */
+async function get(app: Hono, path: string): Promise<Response> {
+ return app.fetch(new Request(`http://127.0.0.1${path}`, { method: 'GET' }), {
+  remoteAddr: '127.0.0.1',
+ });
+}
+
+/**
+ * The harvest runs behind the response and lands in the review queue on disk
+ * (ticket 084). Polling is the only wait available: the record appears from a
+ * background setImmediate in the server process, which fake timers cannot
+ * advance, so this deliberately polls the real clock.
+ */
+async function waitForProposals(
+ request: (path: string) => Promise<Response>,
+ sessionId: string,
+ timeoutMs = 5000,
+): Promise<CutProposal[]> {
+ const deadline = Date.now() + timeoutMs;
+ for (; ;) {
+  const res = await request(`/api/harvest-queue/${sessionId}`);
+  if (res.status === 200) {
+   const body = (await res.json()) as { proposals: CutProposal[] };
+   return body.proposals;
+  }
+  if (Date.now() > deadline) throw new Error(`harvest for ${sessionId} never landed`);
+  await new Promise<void>((r) => setTimeout(r, 25));
+ }
+}
+
 // ── Unprompted entry ──
 
 const entryText =
@@ -77,16 +107,14 @@ describe('unprompted entry', () => {
   // ── Write, with no question asked ──
   const entryRes = await post(app, '/api/unprompted', { text: entryText });
   expect(entryRes.status).toBe(200);
-  const entry = (await entryRes.json()) as {
-   sessionId: string;
-   proposals: CutProposal[];
-   buds: unknown[];
-  };
+  const entry = (await entryRes.json()) as { status: string; sessionId: string };
+  expect(entry.status).toBe('harvesting');
   expect(entry.sessionId).toBeTypeOf('string');
-  expect(entry.proposals.length).toBe(1);
-  expect(entry.proposals[0]!.text).toBe(entryCut);
+  const proposals = await waitForProposals((p) => get(app, p), entry.sessionId);
+  expect(proposals.length).toBe(1);
+  expect(proposals[0]!.text).toBe(entryCut);
   // No eliciting question — nothing asked for these words
-  expect(entry.proposals[0]!.question).toBe('');
+  expect(proposals[0]!.question).toBe('');
 
   // The transcript exists and carries the unprompted protocol
   const transcriptFile = join(vaultDir, 'transcripts', `${entry.sessionId}.md`);
@@ -287,12 +315,15 @@ describe('harvest rides the constrained clerk variant (ticket 078)', () => {
 
    const res = await post(app, '/api/unprompted', { text: entryText });
    expect(res.status).toBe(200);
-   const body = (await res.json()) as { proposals: CutProposal[] };
+   const body = (await res.json()) as { status: string; sessionId: string };
+   expect(body.status).toBe('harvesting');
    // The proposal text comes from harvestComplete's scripted cuts — the
-   // constrained variant answered the harvest, not the wiki clerk.
+   // constrained variant answered the harvest, not the wiki clerk. The harvest
+   // runs behind the response now, so the roles check waits for the record.
+   const proposals = await waitForProposals((p) => get(app, p), body.sessionId);
    expect(roles).toContain('harvest');
-   expect(body.proposals.length).toBe(1);
-   expect(body.proposals[0]!.text).toBe(entryCut);
+   expect(proposals.length).toBe(1);
+   expect(proposals[0]!.text).toBe(entryCut);
   } finally {
    rmSync(dir, { recursive: true, force: true });
   }
