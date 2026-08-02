@@ -49,6 +49,32 @@ function num(f: Fields, key: string): number {
  return Number.isFinite(n) ? n : 0;
 }
 
+/** A quoted field: `name="Micah Alex"`. `FIELD` stops at the first space, so this does not. */
+function quoted(detail: string, key: string): string | undefined {
+ return new RegExp(`${key}="([^"]*)"`).exec(detail)?.[1];
+}
+
+/**
+ * Everything after `key=` to the end of the line. Several events end in a
+ * prose clause the emitter wrote — `would=`, `clipped=` — and a clause with
+ * spaces in it is not a field.
+ */
+function clause(detail: string, key: string): string {
+ const at = detail.indexOf(`${key}=`);
+ return at === -1 ? '' : detail.slice(at + key.length + 1).trim();
+}
+
+/** `a` or `an`, so a facet name reads as English rather than as a slot. */
+function article(word: string): string {
+ return /^[aeiou]/i.test(word) ? 'an' : 'a';
+}
+
+/** A list in prose: `x`, `x and y`, `x, y and z`. */
+function series(items: string[]): string {
+ if (items.length <= 1) return items[0] ?? '';
+ return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]!}`;
+}
+
 /** Remove every identifier and tidy the whitespace it leaves behind. */
 function scrubIds(text: string): string {
  return text
@@ -87,6 +113,64 @@ function harvestProposed(f: Fields): string {
  return `proposed ${count(num(f, 'proposals'), 'snippet')} and ${count(num(f, 'buds'), 'bud')}`;
 }
 
+/**
+ * The queue's draw filters, in the reader's words. The log names them as the
+ * code does — `modeNeeds`, `sharpness` — and a field name is not English.
+ */
+const CONSTRAINTS: Record<string, string> = {
+ 'facet-balance': 'the balance of facets',
+ 'status': 'the check for an unanswered question',
+ 'modeNeeds': 'what this sitting has time and energy for',
+ 'sharpness': 'the sharpness this sitting allows',
+ 'horizon': 'how far off a question looks',
+ 'target': 'what this sitting is for',
+};
+
+/** One or more filter names, comma-joined by the emitter, read back as prose. */
+function constraints(raw: string | undefined): string {
+ const names = (raw ?? '').split(',').filter((n) => n !== '' && n !== 'none');
+ const words = names.map((n) => CONSTRAINTS[n] ?? n.replace(/[-_]/g, ' '));
+ return words.length === 0 ? 'a filter' : series(words);
+}
+
+/** A Facet as a word: `causal-theory` is a hyphenated slug on a reading surface. */
+function facetWord(raw: string | undefined): string {
+ return raw === undefined || raw === 'none' ? 'untagged' : raw.replace(/-/g, ' ');
+}
+
+/**
+ * The facet-balance shadow record (Q-35): whether the filter would have drawn
+ * a different question, and how far it narrowed the pool to get there. The
+ * numbers ARE the record — this is the evidence the filter graduates on.
+ */
+function facetBalance(f: Fields, live: boolean): string {
+ const pool = num(f, 'pool');
+ if (f.applied !== 'true') {
+  return `left all ${count(pool, 'candidate')} in the draw — balancing by facet narrowed nothing`;
+ }
+ const narrowed = `${num(f, 'kept')} of ${pool} candidates carry a facet the vault is short on`;
+ if (f.diverged !== 'true') {
+  return `${live ? 'picked' : 'would have picked'} the same question — ${narrowed}`;
+ }
+ const would = facetWord(f.wouldFacet);
+ const open = facetWord(f.openFacet);
+ return `${live ? 'asked' : 'would have asked'} ${article(would)} ${would} question ` +
+  `instead of ${article(open)} ${open} one — ${narrowed}`;
+}
+
+/** A rejection code — `cite-does-not-resolve:01K…` — as the phrase it stands for. */
+function rejection(raw: string | undefined): string {
+ const code = (raw ?? '').split(':')[0] ?? '';
+ return code === '' ? 'it did not pass validation' : code.replace(/-/g, ' ');
+}
+
+/** `channels=lexical:5,referent:4` — which channel found how many. */
+function channels(raw: string | undefined): string {
+ if (raw === undefined || raw === '(none)') return '';
+ const parts = raw.split(',').filter((p) => p !== '').map((p) => p.replace(':', ' '));
+ return parts.length === 0 ? '' : ` (${parts.join(', ')})`;
+}
+
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
 const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'run-started': () => 'started a docket run',
@@ -118,7 +202,149 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
   return `transcribed ${count(chars ? Number(chars[1]) : 0, 'character')} of speech`;
  },
  'unprompted-entry': (f) => `wrote ${count(num(f, 'chars'), 'character')} unprompted`,
+
+ // ── The queue's degradation ladder (Q-55) ──
+
+ 'queue-rung': (f) =>
+  `relaxed ${constraints(f.relaxed)} and recovered ${count(num(f, 'after'), 'question')}`,
+ 'queue-floor': (f) => {
+  const emptiedBy = f.emptiedBy;
+  if (emptiedBy === undefined || emptiedBy === 'none') {
+   return 'found nothing in the queue, so composed a fresh question';
+  }
+  return `composed a fresh question: none of the ${num(f, 'pool')} in the queue ` +
+   `got past ${constraints(emptiedBy)}`;
+ },
+
+ // ── The facet-balance filter, shadow and live (Q-35) ──
+
+ 'facet-balance-shadow': (f) => facetBalance(f, false),
+ 'facet-balance-applied': (f) => facetBalance(f, true),
+
+ // ── The Randomizer: shuffle, never invent (Q-18, Q-16) ──
+
+ 'randomizer-license': (f) => {
+  const asked = f.invokedBy === 'user';
+  const days = Math.round(num(f, 'days'));
+  if (f.grounds === 'dry-spell') {
+   return `${asked ? 'you asked to shuffle; ' : ''}nothing has been answered for ` +
+    `${count(days, 'day')}`;
+  }
+  if (f.grounds === 'stale-region') {
+   const region = facetWord(f.region);
+   return `${asked ? 'you asked to shuffle; ' : ''}no ${region} question has been ` +
+    `answered for ${count(days, 'day')}`;
+  }
+  return asked ? 'you asked to shuffle' : 'found no coverage reason to offer a shuffle';
+ },
+ // `pool` and `cooldown` carry the whole record: without them "0 and 0 were
+ // available" cannot tell an empty vault from one whose every card was drawn
+ // last week, and a draw cannot say how much it had to choose between.
+ 'randomizer-drawn': (f) => {
+  if (f.channel === 'resurfacing') {
+   return `brought back something you wrote on ${f.wrote ?? 'an earlier day'}, ` +
+    `one of ${num(f, 'pool')} in the ${f.stratum ?? 'sampled'} band`;
+  }
+  return `dealt a card from the ${f.deck ?? 'shuffled'} deck, one of ${num(f, 'pool')}`;
+ },
+ 'randomizer-empty': (f) => {
+  const resting = num(f, 'cooldown');
+  const had = `had nothing left to shuffle: ${num(f, 'decks')} deck cards and ` +
+   `${count(num(f, 'snippets'), 'snippet')} were available`;
+  return resting === 0 ? had : `${had}, with ${resting} drawn too recently`;
+ },
+
+ // ── The wiki: thresholds, the registry, claims (Q-35, Q-56) ──
+
+ // The wiki run's own failures carry ids and an exception message, never a
+ // number. The reader gets the step that stopped; the JSONL keeps the rest.
+ 'wiki-jobs-failed': (f) => {
+  if (f.job === 'lock') return 'did not start a wiki run: one was already in progress';
+  const job = (f.job ?? '').replace(/-/g, ' ');
+  return job === '' ? 'could not finish a step of the wiki run' : `could not finish the ${job} step of the wiki run`;
+ },
+ 'mint-oversized': () => 'set a reading aside: it did not fit the payload budget',
+ 'mint-parse-failed': () => "could not read the model's claim proposal back",
+ 'mint-empty': () => 'read a reading cleanly and proposed no change to the wiki',
+ 'mint-call-failed': () => 'could not ask the model about a reading',
+ 'shadow-decision': (f, d) =>
+  `did not act on ${f.threshold ?? 'a threshold'}, set to ${f.value ?? 'nothing'} — ` +
+  `it would ${clause(d, 'would')}`,
+ 'threshold-clipped': (f, d) =>
+  `enforced ${f.threshold ?? 'a threshold'} at ${f.value ?? 'its setting'} and clipped: ` +
+  `${clause(d, 'clipped')}`,
+ 'lint-threshold-unhonored': (f, d) => {
+  const why = clause(d, 'value').replace(/^\S+\s*/, '');
+  const head = `could not honour ${f.threshold ?? 'a threshold'}, set to ${f.value ?? 'nothing'}`;
+  return why === '' ? head : `${head}: ${why}`;
+ },
+ 'claim-status-changed': (f, d) => {
+  const dash = d.indexOf('—');
+  const why = dash === -1 ? '' : d.slice(dash + 1).trim();
+  const moved = `moved a claim from ${f.from ?? 'nothing'} to ${f.to ?? 'nothing'}`;
+  return why === '' ? moved : `${moved}: ${why}`;
+ },
+ 'claim-op-rejected': (f) => `rejected an edit to the wiki: ${rejection(f.reason)}`,
+ 'referent-minted': (f, d) => {
+  const name = quoted(d, 'name') ?? f.slug ?? 'a name';
+  const kind = f.kind ?? 'referent';
+  return `added ${name} to the registry as ${article(kind)} ${kind}`;
+ },
+ 'referent-aliased': (f, d) =>
+  `recorded "${quoted(d, 'alias') ?? 'another name'}" as another name for ${f.slug ?? 'an entry'}`,
+ 'referent-kind-differs': (f) => {
+  const stored = f.stored ?? 'referent';
+  const proposed = f.proposed ?? 'something else';
+  return `left ${f.slug ?? 'an entry'} recorded as ${article(stored)} ${stored}, ` +
+   `though it was proposed as ${article(proposed)} ${proposed}`;
+ },
+ 'referent-alias-refused': (f) =>
+  `refused to fold ${f.existing ?? 'one entry'} into ${f.aliasOf ?? 'another'}: ` +
+  'both are already entries, and only you can say they name the same thing',
+ 'referent-alias-unresolved': (f, d) =>
+  `kept "${quoted(d, 'name') ?? 'a name'}" as its own entry: ` +
+  `nothing in the registry is called "${quoted(d, 'aliasOf') ?? ''}"`,
+
+ // ── The contradiction channels (Q-52, Q-56) ──
+
+ 'clash-referent-clipped': (f) =>
+  `compared ${num(f, 'cap')} of ${count(num(f, 'claims'), 'claim')} about ` +
+  `${f.referent ?? 'one referent'} and set ${num(f, 'clipped')} aside`,
+ 'clash-embedding-clipped': (f) => {
+  if (f.reason === 'window') {
+   return `compared ${num(f, 'window')} of ${count(num(f, 'claims'), 'claim')} ` +
+    `and set ${num(f, 'clipped')} aside`;
+  }
+  return `stopped embedding at a budget of ${num(f, 'budgetMs')}ms: ` +
+   `${num(f, 'embedded')} done, ${num(f, 'pending')} still waiting`;
+ },
+ 'embedding-unavailable': (f) =>
+  `could not reach ${f.model ?? 'the embedding model'}: ` +
+  `${num(f, 'embedded')} claims embedded, ${num(f, 'pending')} still waiting`,
+ 'clash-checked': (f) =>
+  `found ${count(num(f, 'pool'), 'pair')} that might contradict${channels(f.channels)}, ` +
+  `suppressed ${num(f, 'suppressed')}, reproposed ${num(f, 'reproposed')}`,
+ // The live turn path emits this one, as `elicitor` rather than `clerk`. The
+ // sentence lands here because `formatEvent` keys on kind alone, so writing it
+ // now renders whoever emits it later (S15). A `hits=` field is read when the
+ // emitter supplies one; otherwise the first number in the line is the count.
+ 'resonance-checked': (f, d) =>
+  `looked for echoes of what was just said and found ` +
+  `${f.hits === undefined ? nth(d, 0) : num(f, 'hits')}`,
 };
+
+/**
+ * Whether this file has a sentence for `kind`, or will fall back to reading the
+ * kind aloud as words.
+ *
+ * Exported for `tests/log-format.test.ts`, which sweeps `src/` for every kind
+ * the codebase emits and asserts this returns true for each. That sweep is the
+ * enforcement ticket 063 asked for: a kind added without a sentence fails a
+ * test instead of reaching the reader as two context-free words.
+ */
+export function hasSentence(kind: string): boolean {
+ return Object.hasOwn(SENTENCES, kind);
+}
 
 /**
  * A kind this file does not know yet. Read the kind as words and keep whatever
