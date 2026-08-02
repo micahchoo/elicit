@@ -253,6 +253,7 @@ function renderSetup() {
 /* ── Mode screen ── */
 
 function renderMode(showSetupHint?: boolean) {
+  clear();
   state.screen = 'mode';
   state.turnPhase = null;
   state.juxtaposition = null;

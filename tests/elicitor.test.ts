@@ -437,3 +437,162 @@ describe('elicitor', () => {
   expect(replacement.questionSource).toEqual(entry.source);
  });
 });
+
+describe('guards', () => {
+ test('conversation-referential probe is rejected and retried', async () => {
+  const vault = makeFakeVault();
+  // 3 complete calls: redLights, bad probe (triggers guard), retry probe
+  const complete = makeScriptedComplete([
+   '{}',                                                    // redLights
+   'What are you trying to achieve in this conversation?',  // triggers guard
+   'What drives you?',                                      // retry — passes
+  ]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx },
+  );
+
+  const result = await userTurn(session, 'I think a lot about meaning.');
+  expect(result.kind).toBe('probe');
+  if (result.kind === 'probe') {
+   expect(result.text).toBe('What drives you?');
+   expect(result.text).not.toMatch(/\bthis conversation\b/i);
+  }
+ });
+
+ test('conversation-referential retry also fails → fallback to bank', async () => {
+  const vault = makeFakeVault();
+  const bank = [
+   { text: 'What do you value?', questionForm: 'deliberative' as const },
+   { text: 'Why are you here?', questionForm: 'why' as const },
+  ];
+  // 3 complete calls: redLights, bad probe, retry (still bad)
+  const complete = makeScriptedComplete([
+   '{}',
+   'What is this conversation about?',
+   'Is this conversation helping you?',
+  ]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  const result = await userTurn(session, 'OK.');
+  if (result.kind === 'probe') {
+   // Should fall back to the unused bank entry
+   expect(['What do you value?', 'Why are you here?']).toContain(result.text);
+   expect(result.provenance).toBe('bank');
+  }
+ });
+
+ test('near-duplicate probe is rejected and retried', async () => {
+  const vault = makeFakeVault();
+  const bank = [
+   { text: 'What is your earliest memory?', questionForm: 'deliberative' as const },
+  ];
+  // 3 complete calls: redLights, near-dup, retry
+  const complete = makeScriptedComplete([
+   '{}',
+   'What is your earliest memory of childhood?',  // near-dup of bank opener
+   'When did you first notice that pattern?',     // retry — fresh
+  ]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  const result = await userTurn(session, 'I remember a lot from childhood.');
+  expect(result.kind).toBe('probe');
+  if (result.kind === 'probe') {
+   expect(result.text).toBe('When did you first notice that pattern?');
+  }
+ });
+
+ test('near-duplicate retry also fails → fallback to queue', async () => {
+  const vault = makeFakeVault();
+  const bank = [
+   { text: 'What do you value?', questionForm: 'deliberative' as const },
+  ];
+  // 3 complete calls: redLights, near-dup, retry (still near-dup)
+  const complete = makeScriptedComplete([
+   '{}',
+   'What do you value the most?',     // near-dup of opener
+   'What do you value above all?',     // still near-dup (4/7 = 0.571)
+  ]);
+  // Queue that returns a fallback draw
+  const fallbackText = 'What matters to you?';
+  const q: QueueStore & { _adds: Array<{ question: string }> } = {
+   _adds: [],
+   add(draft) { this._adds.push({ question: draft.question }); return { ...draft, id: 'q', created: '', status: 'pending' as const }; },
+   list: () => [],
+   draw: (_mode, phase) => {
+    if (phase === 'mid') return { id: 'fb', question: fallbackText, questionForm: 'deliberative' as const, source: 'composed', license: 'machine', sharpness: 'sharp', horizon: 'now', status: 'pending', created: '' };
+    return null;
+   },
+   markAsked: () => { },
+   markAnswered: () => { },
+   defer: () => { },
+   expire: () => 0,
+  };
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  const result = await userTurn(session, 'I think about values.');
+  expect(result.kind).toBe('probe');
+  if (result.kind === 'probe') {
+   expect(result.text).toBe(fallbackText);
+   expect(result.provenance).toBe('bank');
+  }
+ });
+});
+
+describe('startSession invariants', () => {
+ test('exactly one opener turn per session', () => {
+  const vault = makeFakeVault();
+  const complete = makeScriptedComplete([]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const bank = [
+   { text: 'What do you value?', questionForm: 'deliberative' as const },
+  ];
+
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  // Exactly one turn, which is the agent opener
+  expect(session.turns).toHaveLength(1);
+  expect(session.turns[0]!.role).toBe('agent');
+
+  // The vault also has exactly one turn
+  const vaultTurns = vault._turns(session.id);
+  expect(vaultTurns).toHaveLength(1);
+  expect(vaultTurns[0]!.role).toBe('agent');
+ });
+
+ test('opener is never null or empty', () => {
+  const vault = makeFakeVault();
+  const complete = makeScriptedComplete([]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+
+  // No bank — uses starterBank from protocol
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx },
+  );
+
+  expect(session.turns[0]!.text.length).toBeGreaterThan(0);
+  expect(session.turns[0]!.text).toBeTruthy();
+ });
+});

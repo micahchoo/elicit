@@ -338,30 +338,79 @@ export async function userTurn(
   }
   probeText = retryResponse.trim();
   if (isParrot(probeText, systemPrompt)) {
-   console.warn('Elicitor: parrot guard retry also failed — drawing from bank');
-   // Fall back to bank draw
-   const unused = (s.bank ?? []).filter(
-    (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
-   );
-   if (unused.length > 0) {
-    const pick = unused[Math.floor(Math.random() * unused.length)]!;
-    const agentTurn: Turn = {
-     role: 'agent',
-     text: pick.text,
-     at: new Date().toISOString(),
-     questionForm: pick.questionForm,
-     ...(pick.source ? { questionSource: pick.source } : {}),
-    };
-    s.deps.vault.appendTurn(s.id, agentTurn);
-    s.turns.push(agentTurn);
-    s.questionCount++;
-    return {
-     kind: 'probe',
-     text: agentTurn.text,
-     questionForm: pick.questionForm,
-     provenance: 'bank',
-    };
-   }
+   console.warn('Elicitor: parrot guard retry also failed — drawing fallback');
+   const fb = drawFallback(s);
+   if (fb) return fb;
+  }
+ }
+
+ // ── Conversation-referential guard: reject "this conversation" probes ──
+ if (isConversationReferential(probeText)) {
+  console.warn('Elicitor: conversation-referential guard triggered');
+  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Your question must be about what the speaker said — not about the conversation itself. Do not reference "this conversation" or ask about the interaction.`;
+  const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
+   temperature: 0.8,
+  });
+  if (retryResponse.includes('[SATURATED]')) {
+   s.phase = 'closing-door';
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: CLOSING_DOOR_QUESTION,
+    at: new Date().toISOString(),
+    questionForm: 'deliberative',
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: 'deliberative',
+    provenance: 'close',
+   };
+  }
+  probeText = retryResponse.trim();
+  if (isConversationReferential(probeText)) {
+   console.warn('Elicitor: conversation-ref guard retry also failed — drawing fallback');
+   const fb = drawFallback(s);
+   if (fb) return fb;
+  }
+ }
+
+ // ── Near-duplicate guard: reject probes too similar to already-asked questions ──
+ if (isNearDuplicate(probeText, s)) {
+  console.warn('Elicitor: near-duplicate guard triggered');
+  const askedTexts = s.turns
+   .filter((t) => t.role === 'agent')
+   .map((t) => t.text)
+   .join(' | ');
+  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Your question is too similar to one already asked in this conversation. Already asked: ${askedTexts}\n\nCompose a genuinely different question — different syntactic shape, different angle, different move from the repertoire.`;
+  const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
+   temperature: 0.8,
+  });
+  if (retryResponse.includes('[SATURATED]')) {
+   s.phase = 'closing-door';
+   const agentTurn: Turn = {
+    role: 'agent',
+    text: CLOSING_DOOR_QUESTION,
+    at: new Date().toISOString(),
+    questionForm: 'deliberative',
+   };
+   s.deps.vault.appendTurn(s.id, agentTurn);
+   s.turns.push(agentTurn);
+   s.questionCount++;
+   return {
+    kind: 'probe',
+    text: agentTurn.text,
+    questionForm: 'deliberative',
+    provenance: 'close',
+   };
+  }
+  probeText = retryResponse.trim();
+  if (isNearDuplicate(probeText, s)) {
+   console.warn('Elicitor: near-dup guard retry also failed — drawing fallback');
+   const fb = drawFallback(s);
+   if (fb) return fb;
   }
  }
 
@@ -401,6 +450,104 @@ function isParrot(question: string, prompt: string): boolean {
   if (normP.includes(phrase)) return true;
  }
  return false;
+}
+
+/**
+ * Conversation-referential guard: rejects probes about the conversation itself.
+ * "What are you trying to achieve in this conversation?" is furniture.
+ */
+function isConversationReferential(question: string): boolean {
+ return /\bthis conversation\b/i.test(question);
+}
+
+/** Normalize question text for duplicate comparison. */
+function normalizeQuestion(text: string): string {
+ return text
+  .toLowerCase()
+  .replace(/[^\w\s]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+}
+
+/**
+ * Near-duplicate guard: rejects a generated probe that is too similar
+ * to a question already asked in this session. Uses word-set Jaccard
+ * similarity after normalization.
+ */
+function isNearDuplicate(question: string, session: SessionState): boolean {
+ const normQ = normalizeQuestion(question);
+ const qWords = new Set(normQ.split(' ').filter((w) => w.length > 1));
+ if (qWords.size < 2) return false;
+
+ for (const turn of session.turns) {
+  if (turn.role !== 'agent') continue;
+  const normA = normalizeQuestion(turn.text);
+  const aWords = new Set(normA.split(' ').filter((w) => w.length > 1));
+  if (aWords.size < 2) continue;
+
+  const intersection = new Set([...qWords].filter((w) => aWords.has(w)));
+  const union = new Set([...qWords, ...aWords]);
+  if (union.size === 0) continue;
+
+  const similarity = intersection.size / union.size;
+  if (similarity >= 0.5) return true;
+ }
+
+ return false;
+}
+
+/**
+ * Fallback draw from queue then bank. Returns a probe result or null if both empty.
+ */
+function drawFallback(s: SessionState):
+ | { kind: 'probe'; text: string; questionForm: QuestionForm; provenance: QuestionProvenance }
+ | null {
+ // Try queue first
+ const queueDraw = s.deps.queue.draw(s.mode, 'mid');
+ if (queueDraw) {
+  s.deps.queue.markAsked(queueDraw.id);
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: queueDraw.question,
+   at: new Date().toISOString(),
+   questionForm: queueDraw.questionForm,
+  };
+  s.deps.vault.appendTurn(s.id, agentTurn);
+  s.turns.push(agentTurn);
+  s.questionCount++;
+  return {
+   kind: 'probe',
+   text: agentTurn.text,
+   questionForm: queueDraw.questionForm,
+   provenance: 'bank',
+  };
+ }
+
+ // Bank fallback
+ const unused = (s.bank ?? []).filter(
+  (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
+ );
+ if (unused.length > 0) {
+  const pick = unused[Math.floor(Math.random() * unused.length)]!;
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: pick.text,
+   at: new Date().toISOString(),
+   questionForm: pick.questionForm,
+   ...(pick.source ? { questionSource: pick.source } : {}),
+  };
+  s.deps.vault.appendTurn(s.id, agentTurn);
+  s.turns.push(agentTurn);
+  s.questionCount++;
+  return {
+   kind: 'probe',
+   text: agentTurn.text,
+   questionForm: pick.questionForm,
+   provenance: 'bank',
+  };
+ }
+
+ return null;
 }
 
 /** Returns the set of bank question texts already used (asked or skipped) in this session. */
