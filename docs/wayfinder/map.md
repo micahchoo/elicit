@@ -203,6 +203,30 @@ unassigned, all blockers closed.
   no Target: Q-55 made Target un-relaxable, so wrong is permanent and absent
   serves both. (Ticket 058's open questions are now all ruled.)
 
+- [Task: git init the vault](tickets/049-vault-git-history.md) — Q-61: done,
+  first commit `6198cec` as `elicit-clerk`. History, not backup; ticket 017's
+  no-offsite-copy risk still stands. Done now because initialising an empty
+  vault costs one command while doing it after the import makes the first
+  commit a witness that saw nothing. The docket commits per run; a dirty tree
+  at boot is committed, never refused. Deletion is now hard — decided, not
+  discovered.
+
+- [Task: git init the vault](tickets/049-vault-git-history.md) — Q-61: done,
+  first commit `6198cec` as `elicit-clerk`. History, not backup; ticket 017's
+  no-offsite-copy risk still stands. Done now because initialising an empty
+  vault costs one command while doing it after the import makes the first
+  commit a witness that saw nothing. The docket commits per run; a dirty tree
+  at boot is committed, never refused. Deletion is now hard — decided, not
+  discovered.
+
+- [Task: git init the vault](tickets/049-vault-git-history.md) — Q-61: done,
+  first commit `6198cec` as `elicit-clerk`. History, not backup; ticket 017's
+  no-offsite-copy risk still stands. Done now because initialising an empty
+  vault costs one command while doing it after the import makes the first
+  commit a witness that saw nothing. The docket commits per run; a dirty tree
+  at boot is committed, never refused. Deletion is now hard — decided, not
+  discovered.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
