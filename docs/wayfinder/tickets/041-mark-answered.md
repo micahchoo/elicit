@@ -1,8 +1,8 @@
 ---
 title: "Fix: queue entries are never marked answered (live gap)"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -39,3 +39,54 @@ entry `answered` and record `answeredAt`. Owner must hold BOTH
 Clerk slice). Related: `saveReading` persists no timestamp, so "readings
 harvested since the question was asked" is not computable — either persist
 `at` on readings or derive it from the ULID prefix; pick one and record it.
+
+## Resolution (2026-08-02)
+
+Closed by the Clerk plan's **T17**, committed in `5628693` (Wave 1).
+`markAnswered` now writes `answeredAt` beside `status = 'answered'`
+(`src/queue/queue.ts:309`), the field round-trips through `#write`/`#parseEntry`
+as a string, and `src/elicitor/elicitor.ts` is its caller: `startSession` seeds
+`openQueueEntryId` from a queue opener, `drawFallback` sets it on every
+mid-session draw, and `userTurn` marks-and-clears before any branch.
+
+Status and time are one fact — a horizon that reads `answered` with no date has
+nothing to measure from.
+
+**Residual, not blocking:** `src/server.ts` holds `SessionState` in an in-memory
+`Map`, so the question↔entry pairing survives across requests but not across a
+server restart mid-sitting; that entry stays `asked` for good. Same class as the
+drawn-and-abandoned leak `expire()` already declines to touch.
+
+## Resolution (2026-08-02)
+
+Closed by the Clerk plan's **T17**, committed in `5628693` (Wave 1).
+`markAnswered` now writes `answeredAt` beside `status = 'answered'`
+(`src/queue/queue.ts:309`), the field round-trips through `#write`/`#parseEntry`
+as a string, and `src/elicitor/elicitor.ts` is its caller: `startSession` seeds
+`openQueueEntryId` from a queue opener, `drawFallback` sets it on every
+mid-session draw, and `userTurn` marks-and-clears before any branch.
+
+Status and time are one fact — a horizon that reads `answered` with no date has
+nothing to measure from.
+
+**Residual, not blocking:** `src/server.ts` holds `SessionState` in an in-memory
+`Map`, so the question↔entry pairing survives across requests but not across a
+server restart mid-sitting; that entry stays `asked` for good. Same class as the
+drawn-and-abandoned leak `expire()` already declines to touch.
+
+## Resolution (2026-08-02)
+
+Closed by the Clerk plan's **T17**, committed in `5628693` (Wave 1).
+`markAnswered` now writes `answeredAt` beside `status = 'answered'`
+(`src/queue/queue.ts:309`), the field round-trips through `#write`/`#parseEntry`
+as a string, and `src/elicitor/elicitor.ts` is its caller: `startSession` seeds
+`openQueueEntryId` from a queue opener, `drawFallback` sets it on every
+mid-session draw, and `userTurn` marks-and-clears before any branch.
+
+Status and time are one fact — a horizon that reads `answered` with no date has
+nothing to measure from.
+
+**Residual, not blocking:** `src/server.ts` holds `SessionState` in an in-memory
+`Map`, so the question↔entry pairing survives across requests but not across a
+server restart mid-sitting; that entry stays `asked` for good. Same class as the
+drawn-and-abandoned leak `expire()` already declines to touch.

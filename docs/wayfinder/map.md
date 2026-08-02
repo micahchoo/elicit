@@ -227,6 +227,33 @@ unassigned, all blockers closed.
   at boot is committed, never refused. Deletion is now hard — decided, not
   discovered.
 
+- [Build: ingest nine years of published writing](tickets/057-ingest-published-writing.md)
+  — 139 snippets across 19 dated sittings, 2017-2026, in the vault. 295 cuts
+  proposed, 139 kept; seven were other people's words (Mol, Ahmed, Shreyas) and
+  drove Q-51's cut-level rule into code. No Readings — the dry run kept text
+  only, so Claims wait on a reading pass.
+- [Fix: queue entries never marked answered](tickets/041-mark-answered.md) —
+  closed by the Clerk plan's T17. `answeredAt` is written beside the status and
+  the elicitor is its caller; status and time are one fact.
+
+- [Build: ingest nine years of published writing](tickets/057-ingest-published-writing.md)
+  — 139 snippets across 19 dated sittings, 2017-2026, in the vault. 295 cuts
+  proposed, 139 kept; seven were other people's words (Mol, Ahmed, Shreyas) and
+  drove Q-51's cut-level rule into code. No Readings — the dry run kept text
+  only, so Claims wait on a reading pass.
+- [Fix: queue entries never marked answered](tickets/041-mark-answered.md) —
+  closed by the Clerk plan's T17. `answeredAt` is written beside the status and
+  the elicitor is its caller; status and time are one fact.
+
+- [Build: ingest nine years of published writing](tickets/057-ingest-published-writing.md)
+  — 139 snippets across 19 dated sittings, 2017-2026, in the vault. 295 cuts
+  proposed, 139 kept; seven were other people's words (Mol, Ahmed, Shreyas) and
+  drove Q-51's cut-level rule into code. No Readings — the dry run kept text
+  only, so Claims wait on a reading pass.
+- [Fix: queue entries never marked answered](tickets/041-mark-answered.md) —
+  closed by the Clerk plan's T17. `answeredAt` is written beside the status and
+  the elicitor is its caller; status and time are one fact.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

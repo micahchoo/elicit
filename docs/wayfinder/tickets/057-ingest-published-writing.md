@@ -1,8 +1,8 @@
 ---
 title: "Build: ingest nine years of published writing as dated sittings"
 labels: [wayfinder:task]
-status: open
-assignee: claude (in flight)
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -79,3 +79,117 @@ Per post, in publication order:
   transcript the ingest itself wrote.
 - Session `started` dates span 2017-2026 and match frontmatter.
 - Re-running the script ingests nothing twice.
+
+## Resolution (2026-08-02)
+
+**Applied.** 139 snippets across 19 dated sittings, 2017-01-01 to 2026-07-14,
+in the vault at `def2b9f` (authored `elicit-import`, so the import is
+distinguishable from a hand edit and from the Clerk — Q-61).
+
+Reviewed twice. The real harvest path proposed **295** cuts over 3606s of clerk
+model time; triage kept **139** and dropped 149 as world-fact, activity log,
+document scaffolding, fragments or product spec. The criterion: *would this
+sentence be evidence about the person if you did not know who wrote it?*
+
+**Seven were another person's words** and were caught only on the second pass —
+four sentences of Annemarie Mol, one of Sara Ahmed, one of Shreyas, one quoted
+message. `dropCitedParagraphs` missed them because its regex required the year
+to sit immediately before the closing paren, so `[(Mol 2008, p. 83)]` escaped;
+three of the seven sit INSIDE otherwise-authored paragraphs and paragraph-level
+filtering cannot reach them at all. Fixed by implementing Q-51 at cut level
+(`isQuotedFromSource`, `1b19824`) — exact on the dry run, 7 of 295, no false
+positives.
+
+Every snippet verified as an exact substring of its **source file**, never
+against the review the importer wrote. `kind: 'unprompted'`, `channel:
+'pasted'` (048), no Target (Q-60), `started` set to when the prose was written
+rather than when it was imported. Re-running imports nothing.
+
+### What did not land
+
+**No Readings.** The dry run recorded cut TEXT only, so facet, stance and the
+reading sentence were not recoverable without the model, and inventing a facet
+would be an agent authoring a reading and stamping it under Q-34. The 139
+snippets are evidence — they feed resonance and composed openers immediately —
+but the Clerk mints Claims from Readings (Q-28), so no Claims appear until a
+reading pass runs. That pass is the natural next work and has not started.
+
+**Concentration:** 76 of 139 are the capstone, sharing one session, so under
+Q-50 nothing drawn from them reaches `evidenced` alone. The eighteen small
+posts are the corpus's only cross-sitting evidence.
+
+## Resolution (2026-08-02)
+
+**Applied.** 139 snippets across 19 dated sittings, 2017-01-01 to 2026-07-14,
+in the vault at `def2b9f` (authored `elicit-import`, so the import is
+distinguishable from a hand edit and from the Clerk — Q-61).
+
+Reviewed twice. The real harvest path proposed **295** cuts over 3606s of clerk
+model time; triage kept **139** and dropped 149 as world-fact, activity log,
+document scaffolding, fragments or product spec. The criterion: *would this
+sentence be evidence about the person if you did not know who wrote it?*
+
+**Seven were another person's words** and were caught only on the second pass —
+four sentences of Annemarie Mol, one of Sara Ahmed, one of Shreyas, one quoted
+message. `dropCitedParagraphs` missed them because its regex required the year
+to sit immediately before the closing paren, so `[(Mol 2008, p. 83)]` escaped;
+three of the seven sit INSIDE otherwise-authored paragraphs and paragraph-level
+filtering cannot reach them at all. Fixed by implementing Q-51 at cut level
+(`isQuotedFromSource`, `1b19824`) — exact on the dry run, 7 of 295, no false
+positives.
+
+Every snippet verified as an exact substring of its **source file**, never
+against the review the importer wrote. `kind: 'unprompted'`, `channel:
+'pasted'` (048), no Target (Q-60), `started` set to when the prose was written
+rather than when it was imported. Re-running imports nothing.
+
+### What did not land
+
+**No Readings.** The dry run recorded cut TEXT only, so facet, stance and the
+reading sentence were not recoverable without the model, and inventing a facet
+would be an agent authoring a reading and stamping it under Q-34. The 139
+snippets are evidence — they feed resonance and composed openers immediately —
+but the Clerk mints Claims from Readings (Q-28), so no Claims appear until a
+reading pass runs. That pass is the natural next work and has not started.
+
+**Concentration:** 76 of 139 are the capstone, sharing one session, so under
+Q-50 nothing drawn from them reaches `evidenced` alone. The eighteen small
+posts are the corpus's only cross-sitting evidence.
+
+## Resolution (2026-08-02)
+
+**Applied.** 139 snippets across 19 dated sittings, 2017-01-01 to 2026-07-14,
+in the vault at `def2b9f` (authored `elicit-import`, so the import is
+distinguishable from a hand edit and from the Clerk — Q-61).
+
+Reviewed twice. The real harvest path proposed **295** cuts over 3606s of clerk
+model time; triage kept **139** and dropped 149 as world-fact, activity log,
+document scaffolding, fragments or product spec. The criterion: *would this
+sentence be evidence about the person if you did not know who wrote it?*
+
+**Seven were another person's words** and were caught only on the second pass —
+four sentences of Annemarie Mol, one of Sara Ahmed, one of Shreyas, one quoted
+message. `dropCitedParagraphs` missed them because its regex required the year
+to sit immediately before the closing paren, so `[(Mol 2008, p. 83)]` escaped;
+three of the seven sit INSIDE otherwise-authored paragraphs and paragraph-level
+filtering cannot reach them at all. Fixed by implementing Q-51 at cut level
+(`isQuotedFromSource`, `1b19824`) — exact on the dry run, 7 of 295, no false
+positives.
+
+Every snippet verified as an exact substring of its **source file**, never
+against the review the importer wrote. `kind: 'unprompted'`, `channel:
+'pasted'` (048), no Target (Q-60), `started` set to when the prose was written
+rather than when it was imported. Re-running imports nothing.
+
+### What did not land
+
+**No Readings.** The dry run recorded cut TEXT only, so facet, stance and the
+reading sentence were not recoverable without the model, and inventing a facet
+would be an agent authoring a reading and stamping it under Q-34. The 139
+snippets are evidence — they feed resonance and composed openers immediately —
+but the Clerk mints Claims from Readings (Q-28), so no Claims appear until a
+reading pass runs. That pass is the natural next work and has not started.
+
+**Concentration:** 76 of 139 are the capstone, sharing one session, so under
+Q-50 nothing drawn from them reaches `evidenced` alone. The eighteen small
+posts are the corpus's only cross-sitting evidence.
