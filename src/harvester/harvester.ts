@@ -180,13 +180,19 @@ export async function propose(
       });
       continue;
     }
+    // Derive sourceTurn from transcript, not the model's number
+    const derivedTurn = foundIn.userIdx;
+    if (cut.sourceTurn !== derivedTurn) {
+      console.warn(
+        `Harvester: model sourceTurn=${cut.sourceTurn} corrected to actual=${derivedTurn}`
+      );
+    }
 
-    // Valid standalone cut → proposal
-    const probe = findElicitingProbe(transcript, cut.sourceTurn);
+    const probe = findElicitingProbe(transcript, derivedTurn);
 
     proposals.push({
       text: cut.text,
-      sourceTurn: cut.sourceTurn,
+      sourceTurn: derivedTurn,
       facet: cut.facet as CutProposal['facet'],
       stance: cut.stance as CutProposal['stance'],
       reading: cut.reading,
@@ -196,7 +202,25 @@ export async function propose(
     });
   }
 
-  return { proposals, buds };
+  // ── Deduplicate proposals ──
+  const deduped: CutProposal[] = [];
+  for (const p of proposals) {
+    // Exact dupe: skip
+    if (deduped.some((d) => d.text === p.text)) continue;
+    // Near-dupe (existing contains new or vice versa): keep the longer
+    const nearIdx = deduped.findIndex(
+      (d) => d.text.includes(p.text) || p.text.includes(d.text),
+    );
+    if (nearIdx >= 0) {
+      if (p.text.length > deduped[nearIdx]!.text.length) {
+        deduped[nearIdx] = p;
+      }
+      continue;
+    }
+    deduped.push(p);
+  }
+
+  return { proposals: deduped, buds };
 }
 
 export function decide(
@@ -209,7 +233,7 @@ export function decide(
 
   for (const decision of decisions) {
     const proposal = proposals[decision.proposal];
-    if (!proposal) continue;
+    if (!proposal) { console.warn(`Harvester decide: proposal index ${decision.proposal} out of range (have ${proposals.length})`); continue; }
     const provenance: Provenance = {
       kind: 'harvest',
       session,
@@ -266,6 +290,9 @@ export function decide(
       case 'discard':
         // Nothing to persist
         break;
+
+      default:
+        console.warn(`Harvester decide: unknown action "${String((decision as HarvestDecision).action)}" — skipping`);
     }
   }
 

@@ -81,12 +81,16 @@ export async function runDocket(deps: {
 
       const openerRefs: string[] = [];
       for (const s of candidates) {
-        const draft = await deps.composeOpener(s, deps.complete);
-        if (draft) {
-          const entry = deps.queue.add(draft);
-          minted.push(entry);
-          openerCount++;
-          if (draft.cites) openerRefs.push(...draft.cites);
+        try {
+          const draft = await deps.composeOpener(s, deps.complete);
+          if (draft) {
+            const entry = deps.queue.add(draft);
+            minted.push(entry);
+            openerCount++;
+            if (draft.cites) openerRefs.push(...draft.cites);
+          }
+        } catch (err) {
+          deps.log({ at: ts(), actor: 'clerk', kind: 'opener-failed', detail: `composeOpener for snippet ${s.id} failed: ${String(err)}` });
         }
       }
 
@@ -100,16 +104,20 @@ export async function runDocket(deps: {
 
     // ── 3. Still-true minting: snippets captured > 90 days, quota 2 ──
     const ninetyDaysMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    let stillTrueCount = 0;
     const oldSnippets = allSnippets.filter(s => new Date(s.captured).getTime() < ninetyDaysMs);
     const stillTrueCandidates = oldSnippets.slice(0, 2);
 
-    let stillTrueCount = 0;
     for (const s of stillTrueCandidates) {
-      const draft = await deps.composeStillTrue(s, deps.complete);
-      if (draft) {
-        const entry = deps.queue.add(draft);
-        minted.push(entry);
-        stillTrueCount++;
+      try {
+        const draft = await deps.composeStillTrue(s, deps.complete);
+        if (draft) {
+          const entry = deps.queue.add(draft);
+          minted.push(entry);
+          stillTrueCount++;
+        }
+      } catch (err) {
+        deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-failed', detail: `composeStillTrue for snippet ${s.id} failed: ${String(err)}` });
       }
     }
     deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-minted', detail: `minted ${stillTrueCount} still-true` });
@@ -123,7 +131,7 @@ export async function runDocket(deps: {
       const summaries = deps.loadSummaries(deps.vaultRoot);
       const range = deps.nextConsolidation(sessions, summaries);
       if (range && range.length > 0) {
-        const line = await deps.complete('Summarize the following sessions in one line.', []);
+        const line = await deps.complete('', [{ role: 'user', text: 'Summarize the following sessions in one line.', at: '' }]);
         deps.saveSummary(deps.vaultRoot, {
           sessions: range,
           line: line || 'consolidated',

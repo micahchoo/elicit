@@ -297,7 +297,7 @@ Snippet date: ${snippet.captured}
 
 Return only the question text. No markdown, no commentary.`;
 
- const raw = await complete(prompt, [], { temperature: 0.4 });
+ const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  let question = stripFences(raw).trim();
 
  let fragment = findQuotedFragment(snippet.prose, question);
@@ -309,7 +309,7 @@ Return only the question text. No markdown, no commentary.`;
  // One retry
  console.warn('Composed: opener quotes no snippet fragment, retrying');
  const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not quote the snippet verbatim. Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
- const retryRaw = await complete(retryPrompt, [], { temperature: 0.4 });
+ const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  question = stripFences(retryRaw).trim();
  fragment = findQuotedFragment(snippet.prose, question);
 
@@ -340,14 +340,14 @@ Snippet date: ${snippet.captured}
 Return only the question text. No markdown, no commentary.`;
 
  // Attempt 1
- const raw = await complete(prompt, [], { temperature: 0.4 });
+ const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
  const draft1 = tryBuildStillTrue(snippet, question1);
  if (draft1) return draft1;
 
  // One retry — enforce both constraints
  const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected. It must satisfy TWO rules:\n1. Quote the snippet verbatim — include an exact phrase from: "${snippet.prose}"\n2. Do NOT repeat the original question: "${snippet.provenance.question}"`;
- const retryRaw = await complete(retryPrompt, [], { temperature: 0.4 });
+ const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
  const draft2 = tryBuildStillTrue(snippet, question2);
  if (draft2) return draft2;

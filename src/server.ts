@@ -12,6 +12,7 @@ import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
 import { composeOpener, composeStillTrue } from './clerk/composed.js';
+import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
@@ -373,28 +374,49 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       return c.json({ error: 'decisions must be an array' }, 400);
     }
 
+    // Validate decisions (ticket 024)
+    const VALID_ACTIONS = ['approve', 'trim', 'restate', 'discard'] as const;
+    for (const d of body.decisions) {
+      if (!(VALID_ACTIONS as readonly string[]).includes(d.action)) {
+        return c.json(
+          { error: `invalid action "${String(d.action)}" in decision`, entry: d },
+          400,
+        );
+      }
+      if (typeof d.proposal !== 'number' || d.proposal < 0 || d.proposal >= proposals.length) {
+        return c.json(
+          { error: `invalid proposal index ${d.proposal} (have ${proposals.length} proposals)`, entry: d },
+          400,
+        );
+      }
+    }
+
     const result = decide(sessionId, proposals, body.decisions, deps.vault);
 
     serverEmit(deps.vaultRoot, 'harvester', 'session-harvested', `kept=${result.snippets.length} budded=${result.buds.length}`, result.snippets.map((s) => s.id));
 
     // Re-run docket after harvest to refresh index and mint new questions
-    const newReport = await runDocket({
-      vault: deps.vault,
-      queue: deps.queue,
-      complete: deps.complete,
-      buildIndex: (snippets) => buildIndex(snippets),
-      composeOpener,
-      composeStillTrue,
-      listSessions,
-      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-      vaultRoot: deps.vaultRoot,
-    });
-    currentIndex = newReport.index;
-    for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
-      snippetMap.set(s.id, s);
+    try {
+      const newReport = await runDocket({
+        vault: deps.vault,
+        queue: deps.queue,
+        complete: deps.complete,
+        buildIndex: (snippets) => buildIndex(snippets),
+        composeOpener,
+        composeStillTrue,
+        listSessions,
+        log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+        vaultRoot: deps.vaultRoot,
+      });
+      currentIndex = newReport.index;
+      for (const s of Object.values(deps.vault.rebuildIndex().snippets)) {
+        snippetMap.set(s.id, s);
+      }
+      serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${newReport.minted.length}, expired ${newReport.expired}`);
+    } catch (err) {
+      console.error('harvest: post-harvest docket run failed — snippets saved, index stale:', String(err));
+      serverEmit(deps.vaultRoot, 'clerk', 'docket-run-failed', `post-harvest docket failed: ${String(err)}`);
     }
-
-    serverEmit(deps.vaultRoot, 'clerk', 'docket-run', `minted ${newReport.minted.length}, expired ${newReport.expired}`);
 
     return c.json({ snippets: result.snippets, buds: result.buds });
   });
@@ -657,15 +679,7 @@ if (isDirect) {
     const { makeComplete } = await import('./llm.js');
     complete = makeComplete();
   } else {
-    // ELICIT_LLM=fake: wire the scripted Complete from tests/fakes.ts.
-    // Dynamic import is legitimate — the module is runtime-selected by env var.
-    const { makeScriptedComplete } = await import('../tests/fakes.js');
-    // Standalone fake mode returns a fixed probe then empty cuts.
-    complete = makeScriptedComplete([
-      'Tell me more about that.',
-      'What else comes to mind?',
-      JSON.stringify({ cuts: [] }),
-    ]);
+    complete = makeFakeComplete();
   }
   const queueRoot = process.env.ELICIT_QUEUE_DIR ?? vaultRoot;
   const queue = createQueueStore(queueRoot);
