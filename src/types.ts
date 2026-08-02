@@ -102,6 +102,21 @@ export type Provenance = {
   /** Source span in the transcript (harvest only) */
   span?: { start: number; end: number };
   questionSource?: QuestionSource;
+  /**
+   * How the words arrived: keyed in, dictated, or pasted from somewhere else
+   * (ticket 048). Sole Authorship guarantees that no agent wrote or reworded
+   * a Snippet; it does not guarantee the user composed it. The client can
+   * tell a paste from a keystroke at the moment of capture, and one tick
+   * later nobody can, so the distinction is recorded here or lost.
+   *
+   * OPTIONAL, and absent means UNKNOWN — never 'typed'. Every Snippet already
+   * on disk was captured before this field existed, and reading 'typed' into
+   * their silence would manufacture evidence about how they arrived.
+   *
+   * Evidence, not a gate: nothing filters on it, nothing scores it, no model
+   * sees it. It exists so a later decision has something true to read.
+   */
+  channel?: 'typed' | 'spoken' | 'pasted';
 };
 
 export type Snippet = {
@@ -119,6 +134,22 @@ export type Reading = {
   /** Citations as "snippetId@version" strings */
   cites: string[];
   reading: string;
+  /**
+   * When the reading was written. Distinct from the ULID's own time only in
+   * that it survives a file the id no longer explains.
+   */
+  at?: string;
+  /**
+   * Which model wrote it, and when that model last read it (Q-34). Two
+   * timestamps rather than one because re-annotation is lazy: an upgraded
+   * model re-reads what the Docket touches anyway and restamps `modelAt`,
+   * while `at` keeps saying when the reading happened.
+   *
+   * All three are optional because every reading file written before the
+   * stamp existed has none of them and must keep parsing.
+   */
+  model?: string;
+  modelAt?: string;
 };
 
 export type Bud = {
@@ -154,12 +185,35 @@ export type RedLight = {
 export type QueueEntry = {
   id: string;
   status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired';
-  source: 'composed' | 'still-true' | 'user-declared';
+  /**
+   * Which situation licensed the question. Nothing switches over this union —
+   * `draw` and `expire` test it for equality against `'user-declared'` only —
+   * so the two Clerk sources buy no exhaustiveness check and were checked by
+   * hand instead: `draw` treats anything that is not `'user-declared'` alike,
+   * and `expire` only ever expires entries whose status is `'pending'`, which
+   * means both new sources expire at 30 days if never drawn and never expire
+   * once drawn.
+   */
+  source:
+  | 'composed'
+  | 'still-true'
+  | 'user-declared'
+  | 'contradiction-remeasure'
+  | 'lint-still-true';
   license: string;
   question: string;
   questionForm: QuestionForm;
   cites?: string[];
   quotedFragment?: string;
+  /**
+   * The Claim a lint-minted still-true question is about. Optional, because
+   * only `lint-still-true` entries carry one — and load-bearing, because
+   * Q-31's "one still-true question per flagged Claim" is not expressible
+   * without it: a composed still-true draft cites a single
+   * `snippetId@version`, so deduping through the snippet would let two Claims
+   * resting on one stale snippet suppress each other's question.
+   */
+  claim?: string;
   /**
    * The sitting Target this question belongs to — carried from the sitting
    * whose material minted it, not from the question's wording. A domain
@@ -188,6 +242,12 @@ export type QueueEntry = {
   direction?: string;
   horizon: 'now' | 'session' | 'days';
   created: string;
+  /**
+   * When the user answered it — set with the status by `markAnswered`. Absent
+   * on an entry that was drawn and abandoned, so "asked" and "answered" stay
+   * distinguishable in the record rather than collapsing into "drawn".
+   */
+  answeredAt?: string;
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -212,6 +272,20 @@ export type DocketReport = {
   minted: QueueEntry[];
   expired: number;
   index: LexicalIndex;
+  /**
+   * What the Clerk's wiki jobs did on this run, absent when a run did none.
+   *
+   * Structural rather than imported: this file must not depend on
+   * `src/wiki/`, so the field names the minimum the docket report renders and
+   * lets the wiki's own `WikiReport` satisfy it.
+   */
+  wiki?: {
+    swept: number;
+    applied: number;
+    rejected: number;
+    unprocessed: number;
+    [k: string]: unknown;
+  };
 };
 
 export type SessionState = {
@@ -229,6 +303,13 @@ export type SessionState = {
   bank?: { text: string; questionForm: QuestionForm; source?: QuestionSource }[];
   questionCount: number;
   phase: 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+  /**
+   * The Queue entry whose question is on the table, awaiting the user's
+   * answer. Held so the answering turn can mark the entry answered: without
+   * the pairing, a drawn entry stays `asked` for good and no uptake signal
+   * exists (ticket 041).
+   */
+  openQueueEntryId?: string;
 };
 
 export type Index = {

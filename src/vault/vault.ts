@@ -19,6 +19,22 @@ export function createVault(root: string): Vault {
   return new VaultImpl(root);
 }
 
+/**
+ * Which model wrote a reading (Q-34).
+ *
+ * Readings come from the harvester, which is clerk-role work (Q-48), so this
+ * reads the clerk role's env var and default — the same pair `src/llm.ts`
+ * resolves for that role, duplicated here rather than imported to keep the
+ * vault free of the model layer. `tests/vault.test.ts` asserts the two agree.
+ *
+ * Read here rather than passed in: `decide()` is the only caller of
+ * `saveReading` and has no model name in scope, and an optional parameter
+ * nobody passes is how Q-34 stayed unmet.
+ */
+function clerkModel(): string {
+  return process.env.ELICIT_CLERK_MODEL ?? 'qwen3.6:35b';
+}
+
 class VaultImpl implements Vault {
   #root: string;
 
@@ -95,12 +111,22 @@ class VaultImpl implements Vault {
     const dir = join(this.#root, 'wiki', 'readings');
     mkdirSync(dir, { recursive: true });
 
-    const reading: Reading = { id, ...r };
+    const at = new Date().toISOString();
+    const model = clerkModel();
+    // `modelAt` starts equal to `at` and parts from it on re-annotation: a
+    // later model restamps who read the reading without moving when the
+    // reading happened (Q-34).
+    const reading: Reading = { id, ...r, at, model, modelAt: at };
     const fm = {
       id,
       facet: r.facet,
       stance: r.stance,
       cites: r.cites,
+      // The stamp lives in the markdown, because the markdown is the truth
+      // and the index is rebuilt from it (Q-3).
+      at,
+      model,
+      modelAt: at,
     };
     const content = matter.stringify(r.reading, fm);
     writeFileSync(join(dir, `${id}.md`), content, 'utf-8');
@@ -219,6 +245,9 @@ class VaultImpl implements Vault {
           facet: Facet;
           stance: Stance;
           cites: string[];
+          at?: string;
+          model?: string;
+          modelAt?: string;
         };
         readings[data.id] = {
           id: data.id,
@@ -226,6 +255,14 @@ class VaultImpl implements Vault {
           stance: data.stance,
           cites: data.cites,
           reading: parsed.content.trimEnd(),
+          // Absent stays absent. Every reading written before the stamp
+          // existed carries none of the three, and a key holding `undefined`
+          // is a different thing from a missing key — it would read as a
+          // reading claiming to have no model rather than one written before
+          // models were recorded.
+          ...(data.at ? { at: data.at } : {}),
+          ...(data.model ? { model: data.model } : {}),
+          ...(data.modelAt ? { modelAt: data.modelAt } : {}),
         };
       }
     } catch {

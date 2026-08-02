@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createVault } from '../src/vault/vault.js';
-import type { Vault, Provenance, Mode, Turn } from '../src/types.js';
+import { roleConfig } from '../src/llm.js';
+import { decide } from '../src/harvester/harvester.js';
+import type { Vault, Provenance, Mode, Turn, CutProposal } from '../src/types.js';
 
 let root: string;
 let vault: Vault;
@@ -217,5 +219,151 @@ describe('Vault', () => {
     expect(index.readings[reading.id]!.cites).toEqual([`${snippet.id}@1`]);
     expect(index.buds[bud.id]).toBeDefined();
     expect(index.buds[bud.id]!.fragment).toBe('fragment');
+  });
+});
+
+// ── Ticket 048: the capture channel, recorded once or lost ──
+
+describe('capture channel', () => {
+  it('a snippet saved without a channel loads without one', () => {
+    const saved = vault.saveSnippet(sampleProse, makeProvenance());
+
+    const raw = readFileSync(join(root, 'snippets', saved.id, 'v1.md'), 'utf-8');
+    expect(raw).not.toContain('channel');
+
+    const loaded = createVault(root).rebuildIndex().snippets[saved.id];
+    expect(loaded).toBeDefined();
+    // Absent, not 'typed' and not undefined-valued: every snippet captured
+    // before the field existed knows nothing about how it arrived, and a
+    // default would be an answer the vault never observed.
+    expect('channel' in loaded!.provenance).toBe(false);
+  });
+
+  it('round-trips each of the three channels', () => {
+    for (const channel of ['typed', 'spoken', 'pasted'] as const) {
+      const saved = vault.saveSnippet(sampleProse, makeProvenance({ channel }));
+      const loaded = createVault(root).rebuildIndex().snippets[saved.id];
+      expect(loaded!.provenance.channel).toBe(channel);
+    }
+  });
+
+  it('carries the channel forward to a new version', () => {
+    // A v2 is the same words' next self, captured the same way — the channel
+    // travels with the provenance it belongs to.
+    const v1 = vault.saveSnippet(sampleProse, makeProvenance({ channel: 'pasted' }));
+    const v2 = vault.saveVersion(v1.id, sampleProse2);
+    expect(v2.provenance.channel).toBe('pasted');
+
+    const loaded = createVault(root).rebuildIndex().snippets[v1.id];
+    expect(loaded!.provenance.channel).toBe('pasted');
+  });
+});
+
+// ── Q-34: every agent-authored artifact carries a model stamp ──
+
+describe('reading stamps', () => {
+  let savedModel: string | undefined;
+
+  beforeEach(() => {
+    savedModel = process.env.ELICIT_CLERK_MODEL;
+    delete process.env.ELICIT_CLERK_MODEL;
+  });
+
+  afterEach(() => {
+    if (savedModel === undefined) delete process.env.ELICIT_CLERK_MODEL;
+    else process.env.ELICIT_CLERK_MODEL = savedModel;
+  });
+
+  it('saveReading stamps at, model and modelAt, and rebuildIndex reads all three back', () => {
+    const snippet = vault.saveSnippet(sampleProse, makeProvenance());
+    const before = new Date().toISOString();
+    const reading = vault.saveReading({
+      facet: 'value',
+      stance: 'avowal',
+      reading: 'User believes quiet tools shape thinking.',
+      cites: [`${snippet.id}@1`],
+    });
+
+    expect(reading.at).toBeDefined();
+    expect(reading.model).toBeDefined();
+    expect(reading.modelAt).toBeDefined();
+    expect(reading.at! >= before).toBe(true);
+
+    // The stamp lives in the markdown, not only in the returned object (Q-3).
+    const raw = readFileSync(join(root, 'wiki', 'readings', `${reading.id}.md`), 'utf-8');
+    // The model id holds a colon, so YAML quotes it — assert the key and the
+    // value, never the rendering.
+    expect(raw).toMatch(/^model: /m);
+    expect(raw).toContain(reading.model!);
+    expect(raw).toContain(reading.at!);
+
+    const indexed = createVault(root).rebuildIndex().readings[reading.id];
+    expect(indexed).toBeDefined();
+    expect(indexed!.at).toBe(reading.at);
+    expect(indexed!.model).toBe(reading.model);
+    expect(indexed!.modelAt).toBe(reading.modelAt);
+  });
+
+  it('stamps the model the clerk role is pointed at', () => {
+    process.env.ELICIT_CLERK_MODEL = 'under-test';
+    const reading = vault.saveReading({
+      facet: 'fact',
+      stance: 'report-of-fact',
+      reading: 'A reading.',
+      cites: ['01ABC@1'],
+    });
+    expect(reading.model).toBe('under-test');
+  });
+
+  it('defaults to the same model the clerk role defaults to', () => {
+    // The oracle is llm.ts, read through roleConfig at test time — a reading
+    // is clerk work (Q-48), so a stamp naming any other model is a false
+    // record of who wrote it.
+    const reading = vault.saveReading({
+      facet: 'fact',
+      stance: 'report-of-fact',
+      reading: 'A reading.',
+      cites: ['01ABC@1'],
+    });
+    expect(reading.model).toBe(roleConfig('clerk').modelId);
+  });
+
+  it('parses a reading file written before the stamp existed, with all three absent', () => {
+    const dir = join(root, 'wiki', 'readings');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'OLDREADING.md'),
+      ['---', 'id: OLDREADING', 'facet: value', 'stance: avowal', 'cites:', '  - 01ABC@1', '---', 'An older reading.', ''].join('\n'),
+      'utf-8',
+    );
+
+    const indexed = vault.rebuildIndex().readings.OLDREADING;
+    expect(indexed).toBeDefined();
+    expect(indexed!.reading).toBe('An older reading.');
+    // Absent, not present-and-undefined: exactOptionalPropertyTypes makes
+    // those two different states, and only one of them is what disk says.
+    expect('at' in indexed!).toBe(false);
+    expect('model' in indexed!).toBe(false);
+    expect('modelAt' in indexed!).toBe(false);
+  });
+
+  it('stamps a reading written through the harvest path, with no model passed in', () => {
+    process.env.ELICIT_CLERK_MODEL = 'harvest-path-model';
+    const proposal: CutProposal = {
+      text: sampleProse,
+      sourceTurn: 0,
+      facet: 'value',
+      stance: 'avowal',
+      reading: 'Quiet tools shape thinking.',
+      question: 'What shaped your thinking?',
+      questionForm: 'deliberative',
+    };
+
+    decide('test-session', [proposal], [{ proposal: 0, action: 'approve' }], vault);
+
+    const readings = Object.values(vault.rebuildIndex().readings);
+    expect(readings.length).toBe(1);
+    expect(readings[0]!.model).toBe('harvest-path-model');
+    expect(readings[0]!.at).toBeDefined();
   });
 });
