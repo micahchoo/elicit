@@ -352,6 +352,12 @@ unassigned, all blockers closed.
   changed. The narrowing filters the work list, never the graph: pruning
   against a subset would have deleted every vector the first prime wrote.
 
+- [Fix: the harvest diagnostics reach nobody](tickets/066-harvest-diagnostics-surface.md)
+  — six counters now reach the activity line as English with the numbers kept.
+  Zeros render as words, because a check that renders as nothing at zero cannot
+  be told from a check that is not running. Also found that ticket 044's
+  acceptance ran on the ELICITOR while printing the clerk model's name.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

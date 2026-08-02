@@ -1,8 +1,8 @@
 ---
 title: "Fix: the harvest's five new diagnostics reach nobody"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -60,3 +60,50 @@ leaving an acceptance that no longer describes the system.
   a sentence.
 - `scripts/accept-044-047.ts` passes against the real model, or its assertion is
   updated with a recorded reason.
+
+## Resolution (2026-08-02) — commit `de74c3f`
+
+All six counters reach the activity line, rendered as English clauses with the
+numbers intact. Live, from the real model:
+
+```
+proposed 3 snippets and 3 buds; held 2 cuts lifted mid-sentence and 1 label
+outside the vocabulary as buds; corrected 1 stance to superseded and found 2
+cuts labelled intention with no want, plan or goal in the words; 1 turn named
+when something happened, and 1 produced no episode cut
+```
+
+**Three rendering rules, all now load-bearing:**
+
+- **Zeros render as English, not silence.** A check that renders as nothing at
+  zero cannot be told from a check that is not running — which is exactly how
+  the 044 gate stayed inert for a month with green tests.
+- **"No dated turn" reads differently from "every dated turn caught."**
+  Conflating them makes the shadow record unable to distinguish "the fix held"
+  from "nothing tested it".
+- **Absent is not zero.** A `harvest-proposed` line written before this change
+  carries none of the fields, and `num()` reads absent as 0 — the renderer
+  would otherwise have claimed a measurement nobody made, on every historical
+  line.
+
+### The defect found while re-running the acceptance
+
+`scripts/accept-044-047.ts` handed `createApp` one `makeComplete()` — **the
+ELICITOR, `bonsai-27b`** — while printing the clerk's model id beside it. So
+ticket 044's acceptance ran the harvest on the model `src/llm.ts` records as
+collapsing on long structured payloads, under a banner naming `qwen3.6:35b`.
+Now wired with both roles and both printed; re-run live, ALL PASS.
+
+**That compounds with 037.** The 044 gate rejected 0 of 295 real cuts, *and*
+its acceptance was measuring a different model than it claimed. Two independent
+reasons the same closure was not what it looked like.
+
+The `:136` assertion was not wrong, only fragile, so it was **split rather than
+relaxed**: material-not-destroyed (proposals ∪ buds) plus the original stronger
+claim kept, with a per-marker landing report.
+
+11 mutations, 11 caught — but only 3 of 5 on the first pass, because the seam
+test had every counter at 1 and any swap was invisible. Rebuilt with a distinct
+value per counter.
+
+**Passed on:** see [the 044 gate's own counter](069-inadmissible-drops-unsurfaced.md).
