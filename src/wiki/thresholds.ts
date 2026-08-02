@@ -114,10 +114,10 @@ export const THRESHOLDS = {
   },
   'clash.embeddingCosine': {
     name: 'clash.embeddingCosine',
-    value: 0.82,
+    value: 0.7,
     live: false,
     graduatesWhen:
-      'The shadow record shows the pairs it would surface are worth a re-measure. The number is a guess against 4096-dim qwen3-embedding with no measurement behind it; T18 records fixture recall at this value and at 0.75, and that measurement sets it.',
+      'The shadow record shows that a proposed pair joins TWO SITTINGS. That is the specific thing to watch, not general precision: every corpus pair above 0.640 is two sentences of one document, so at this value the channel may be measuring how tightly an essay stays on topic rather than how a belief moved across years (ticket 064). If no cross-sitting pair ever appears, the threshold is not what needs fixing.',
   },
   'sweep.attemptsBeforeBackoff': {
     name: 'sweep.attemptsBeforeBackoff',
