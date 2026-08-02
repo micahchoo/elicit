@@ -12,6 +12,8 @@ import type {
 import {
  isInterrogative,
  hasFirstPersonOutsideQuote,
+ quotesFragmentSetOff,
+ setOffSpans,
 } from '../elicitor/guards.js';
 
 // ---------------------------------------------------------------------------
@@ -50,6 +52,26 @@ function findQuotedFragment(
  if (best.length === 0) return null;
  const wordCount = best.trim().split(/\s+/).length;
  if (wordCount < minWords) return null;
+ return best;
+}
+
+/**
+ * The longest run of `source` that the question quotes AND sets off (040).
+ *
+ * Searched span by span rather than over the whole question, so an incidental
+ * unmarked match cannot outrank the fragment the model actually framed.
+ */
+function findSetOffFragment(
+ question: string,
+ source: string,
+ minWords = 3,
+): string | null {
+ let best: string | null = null;
+ for (const span of setOffSpans(question)) {
+  const inner = question.slice(span.start, span.end);
+  const candidate = findQuotedFragment(source, inner, minWords);
+  if (candidate && (!best || candidate.length > best.length)) best = candidate;
+ }
  return best;
 }
 
@@ -93,6 +115,7 @@ function isDegenerateComposition(
 /** Why a composed question was refused. Each reason drives its own retry. */
 type Rejection =
  | 'no-quote'
+ | 'unframed-quote'
  | 'degenerate'
  | 'not-interrogative'
  | 'first-person'
@@ -104,8 +127,13 @@ type Rejection =
  * Quoting is checked first and never weakened (Q-1/Q-12); these run after,
  * because "contains a quote" was the ONLY thing any compose path asked, and a
  * raw echo of the source satisfies it (eval 2026-08-02 #3).
+ *
+ * Framing runs before person agreement, and not by accident: an unmarked
+ * splice is what let a first-person fragment pass as the agent's own words
+ * (040). Reject the shape and the person question does not arise.
  */
 function checkAfterQuote(question: string, fragment: string): Rejection | null {
+ if (!quotesFragmentSetOff(question, fragment)) return 'unframed-quote';
  if (!isInterrogative(question, fragment)) return 'not-interrogative';
  if (hasFirstPersonOutsideQuote(question, fragment)) return 'first-person';
  return null;
@@ -128,8 +156,16 @@ type QuoteResult =
 
 /** Gate for a question that must quote SOMEWHERE in `source` (opener, still-true, expedition). */
 function checkQuotesSource(question: string, source: string): QuoteResult {
- const fragment = findQuotedFragment(source, question);
- if (!fragment) return { ok: false, rejection: 'no-quote' };
+ const longest = findQuotedFragment(source, question);
+ const fragment =
+  longest && quotesFragmentSetOff(question, longest)
+   ? longest
+   : findSetOffFragment(question, source);
+
+ if (!fragment) {
+  return { ok: false, rejection: longest ? 'unframed-quote' : 'no-quote' };
+ }
+
  const rejection = checkAfterQuote(question, fragment);
  if (rejection) return { ok: false, rejection };
  return { ok: true, fragment };
@@ -144,6 +180,8 @@ function corrective(rejection: Rejection, quoteRule: string): string {
  switch (rejection) {
   case 'no-quote':
    return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
+  case 'unframed-quote':
+   return `CRITICAL: Your previous response was rejected because it wove the speaker's words into your own sentence. Put their words inside quotation marks. Then ask your question after them, in your own words. ${quoteRule}`;
   case 'degenerate':
    return `CRITICAL: Your previous response was rejected because it only handed the speaker their own words back. ${quoteRule} Then ask your own question around that quote.`;
   case 'not-interrogative':
@@ -183,6 +221,28 @@ function buildOpenerDraft(
 // ---------------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------------
+
+/**
+ * The one shape every composed question takes (040).
+ *
+ * Splicing the user's words into the middle of the agent's clause produced
+ * "When did you last experience the kind of resonance that I thought that I
+ * long lost?" — syntax bent around the fragment until it meant nothing, and no
+ * way for the reader to tell whose "I" that was. Framing separates the two
+ * voices on the page: the quote is untouched and visibly theirs, the question
+ * is the agent's own.
+ *
+ * Q-36 holds either side of the quotation mark. Inside it, the model has no
+ * freedom at all — the words are the user's, character for character. Outside
+ * it, the model has full freedom over what it asks; the example below fixes
+ * the shape, never the wording.
+ */
+const FRAMING_RULE = `HOW TO USE THEIR WORDS — frame the quote, never splice it:
+Put the speaker's exact words inside quotation marks. Then ask your question after them, in your own words.
+Shape: You wrote: "<their exact words>." <your question>?
+The shape is fixed. The question is yours — write your own, do not copy this example.
+Never weave their words into the grammar of your own sentence.
+Keep the quoted words exactly as they wrote them, first person and all. Outside the quotation marks, address the speaker as "you".`;
 
 const RED_LIGHT_SYSTEM = `You are a clerk for Elicit. Review this user turn for "red lights" — phrases that signal the user is being abstract, vague, or disconnected from concrete experience. Return a JSON object with a "lights" array. Each light has:
 - "kind": one of "odd-term", "unexplored-referent", "abstraction-no-episode", "pole-no-contrast", "cause-no-event"
@@ -262,10 +322,13 @@ export async function composeFollowUp(
 User turn: "${turnText}"
 Concern: ${light.kind} — the phrase "${light.phrase}" triggered this.
 
-Your question MUST contain the exact phrase "${light.phrase}" verbatim.
+Your question MUST contain this exact phrase, verbatim and inside quotation marks: "${light.phrase}".
+
+${FRAMING_RULE}
+
 Return only the question text. No markdown, no commentary.`;
 
- const quoteRule = `Your question MUST contain this exact substring: "${light.phrase}".`;
+ const quoteRule = `Your question MUST contain this exact substring, inside quotation marks: "${light.phrase}".`;
 
  const raw = await complete(prompt, userTurn(turnText), {
   temperature: 0.4,
@@ -307,11 +370,14 @@ What they just said: "${turnText}"
 Past snippet: "${hit.snippetText}"
 Shared phrase that appears in both: "${hit.sharedPhrase}"
 
-Your question MUST contain the exact phrase "${hit.sharedPhrase}" verbatim.
-Frame the question as connecting their present thought to their past one.
+Your question MUST contain this exact phrase, verbatim and inside quotation marks: "${hit.sharedPhrase}".
+Ask about the connection between their present thought and their past one.
+
+${FRAMING_RULE}
+
 Return only the question text. No markdown, no commentary.`;
 
- const quoteRule = `Your question MUST contain this exact substring: "${hit.sharedPhrase}".`;
+ const quoteRule = `Your question MUST contain this exact substring, inside quotation marks: "${hit.sharedPhrase}".`;
 
  const raw = await complete(prompt, userTurn(turnText), {
   temperature: 0.4,
@@ -346,14 +412,16 @@ export async function composeOpener(
  snippet: Snippet,
  complete: Complete,
 ): Promise<QueueDraft | null> {
- const prompt = `You are a clerk for Elicit — a quiet, reflective interview tool. Given a snippet the user wrote in a prior session, compose ONE question that returns them to that thought. Quote the snippet verbatim — your question must contain an exact phrase from the snippet.
+ const prompt = `You are a clerk for Elicit — a quiet, reflective interview tool. Given a snippet the user wrote in a prior session, compose ONE question that returns them to that thought. Quote the snippet verbatim — your question must set off an exact phrase from the snippet inside quotation marks.
 
 Snippet: "${snippet.prose}"
 Snippet date: ${snippet.captured}
 
+${FRAMING_RULE}
+
 Return only the question text. No markdown, no commentary.`;
 
- const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+ const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  let question = stripFences(raw).trim();
@@ -388,15 +456,17 @@ export async function composeStillTrue(
  snippet: Snippet,
  complete: Complete,
 ): Promise<QueueDraft | null> {
- const prompt = `You are a clerk for Elicit. Given an old snippet the user wrote, compose ONE question asking whether it still holds true. Quote the snippet verbatim — your question must contain an exact phrase from it. DO NOT repeat or echo the original question that elicited the snippet.
+ const prompt = `You are a clerk for Elicit. Given an old snippet the user wrote, compose ONE question asking whether it still holds true. Quote the snippet verbatim — your question must set off an exact phrase from it inside quotation marks. DO NOT repeat or echo the original question that elicited the snippet.
 
 Snippet: "${snippet.prose}"
 Original question (do NOT repeat this): "${snippet.provenance.question}"
 Snippet date: ${snippet.captured}
 
+${FRAMING_RULE}
+
 Return only the question text. No markdown, no commentary.`;
 
- const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
+ const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
 
  // Attempt 1
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
@@ -525,12 +595,16 @@ export async function composeExpedition(
 
 Your question must have two parts: (1) a send-out — ask them to go learn something specific this snippet touches but does not answer, and (2) the reflection ask — "What surprised you, and what does it change?"
 
+It must also set off an exact phrase from the snippet inside quotation marks.
+
 Snippet: "${snippet.prose}"
 Snippet date: ${snippet.captured}
 
+${FRAMING_RULE}
+
 Return only the question text. No markdown, no commentary.`;
 
- const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+ const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
  const raw = await complete(
   '',

@@ -43,6 +43,127 @@ export function isInterrogative(text: string, quotedFragment?: string): boolean 
 }
 
 // ---------------------------------------------------------------------------
+// Set-off quotation
+// ---------------------------------------------------------------------------
+
+/** A half-open range over a string. */
+export interface Span {
+ start: number;
+ end: number;
+}
+
+/** Each opening mark and the closing mark it expects. */
+const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
+ ['"', '"'],
+ ['“', '”'],
+ ['‘', '’'],
+ ["'", "'"],
+];
+
+/** Marks and punctuation that may hug a quotation without belonging to it. */
+const EDGE_CHARS = /[\s>"“”‘’'.,;:!?…—-]/u;
+
+/** A straight quote opens a span only where an apostrophe cannot sit. */
+function opensSpan(text: string, i: number): boolean {
+ if (i === 0) return true;
+ return /[\s([]/u.test(text[i - 1]!);
+}
+
+/** A straight quote closes a span only where an apostrophe cannot sit. */
+function closesSpan(text: string, i: number): boolean {
+ if (i + 1 >= text.length) return true;
+ return /[\s.,;:!?)\]—-]/u.test(text[i + 1]!);
+}
+
+/** The inner material of every quotation mark pair, delimiters excluded. */
+function quotedSpans(text: string): Span[] {
+ const spans: Span[] = [];
+ for (let i = 0; i < text.length; i++) {
+  const pair = QUOTE_PAIRS.find(([open]) => open === text[i]);
+  if (!pair) continue;
+  const [open, close] = pair;
+  if (open === "'" && !opensSpan(text, i)) continue;
+
+  let j = -1;
+  for (let k = i + 1; k < text.length; k++) {
+   if (text[k] !== close) continue;
+   if (close === "'" && !closesSpan(text, k)) continue;
+   j = k;
+   break;
+  }
+  if (j === -1) continue; // An unclosed mark sets nothing off.
+
+  spans.push({ start: i + 1, end: j });
+  i = j;
+ }
+ return spans;
+}
+
+/** Strip the marks and punctuation that may hug quoted material. */
+function core(text: string): string {
+ let s = text;
+ while (s.length > 0 && EDGE_CHARS.test(s[0]!)) s = s.slice(1);
+ while (s.length > 0 && EDGE_CHARS.test(s[s.length - 1]!)) s = s.slice(0, -1);
+ return s;
+}
+
+/** Lines that hold the fragment and nothing else. Single-line text has none. */
+function ownLineSpans(text: string, fragment: string): Span[] {
+ const lines = text.split('\n');
+ if (lines.filter((l) => l.trim().length > 0).length < 2) return [];
+
+ const target = core(fragment);
+ if (target.length === 0) return [];
+
+ const spans: Span[] = [];
+ let at = 0;
+ for (const line of lines) {
+  if (core(line) === target) spans.push({ start: at, end: at + line.length });
+  at += line.length + 1;
+ }
+ return spans;
+}
+
+/**
+ * Every span of `text` that reads as the speaker's words rather than the
+ * agent's: inside quotation marks, or — when the fragment is known — alone on
+ * its own line.
+ */
+export function setOffSpans(text: string, fragment?: string): Span[] {
+ const spans = quotedSpans(text);
+ const f = fragment?.trim();
+ if (f) spans.push(...ownLineSpans(text, f));
+ return spans;
+}
+
+/**
+ * Does the text quote the fragment verbatim AND SET OFF (040)?
+ *
+ * Q-12 asked only "is the fragment present", and a fragment spliced into the
+ * middle of the agent's own clause satisfies that. Live evidence: "When did
+ * you last experience the kind of resonance that I thought that I long lost?"
+ * — the user's words carry no marking, so the reader cannot tell whose "I"
+ * that is, and the syntax bends around the splice until it means nothing.
+ *
+ * Set off means one of two things: the fragment sits inside a quotation mark
+ * pair, or it stands alone on its own line. Either way the seam between the
+ * user's words and the agent's is visible on the page.
+ */
+export function quotesFragmentSetOff(text: string, fragment: string): boolean {
+ const f = fragment.trim();
+ if (f.length === 0) return false;
+
+ const spans = setOffSpans(text, f);
+ if (spans.length === 0) return false;
+
+ for (let at = text.indexOf(f); at !== -1; at = text.indexOf(f, at + 1)) {
+  const end = at + f.length;
+  if (spans.some((s) => s.start <= at && end <= s.end)) return true;
+ }
+ return false;
+}
+
+// ---------------------------------------------------------------------------
 // Person agreement
 // ---------------------------------------------------------------------------
 
@@ -56,21 +177,6 @@ function blank(text: string, start: number, end: number): string {
  return text.slice(0, start) + ' '.repeat(end - start) + text.slice(end);
 }
 
-/** Blank out every `open`…`close` span, including the delimiters. */
-function maskPairs(text: string, open: string, close: string): string {
- let out = text;
- let from = 0;
- for (;;) {
-  const i = out.indexOf(open, from);
-  if (i === -1) break;
-  const j = out.indexOf(close, i + open.length);
-  if (j === -1) break;
-  out = blank(out, i, j + close.length);
-  from = j + close.length;
- }
- return out;
-}
-
 /**
  * Does the text speak in first person OUTSIDE the material it quotes?
  *
@@ -81,33 +187,19 @@ function maskPairs(text: string, open: string, close: string): string {
  * closing quotation mark ("…particularly when considering my actual
  * confidence?"). Only the outside is checked; the quote is never rewritten.
  *
- * The quoted span may be delimited by " ", ' ', typographic quotes, or not
- * delimited at all — so pass `quotedFragment` when it is known, and it is
- * masked wherever it appears.
+ * Masking follows the SET-OFF spans, never every occurrence of the fragment
+ * (040). A fragment spliced unmarked into the agent's clause is left visible
+ * on purpose: masking it would launder the user's "I" into the agent's half of
+ * the sentence, which is how the malformed question of 2026-08-02 passed.
  */
 export function hasFirstPersonOutsideQuote(
  text: string,
  quotedFragment?: string,
 ): boolean {
  let scan = text;
-
- const fragment = quotedFragment?.trim();
- if (fragment) {
-  let at = scan.indexOf(fragment);
-  while (at !== -1) {
-   scan = blank(scan, at, at + fragment.length);
-   at = scan.indexOf(fragment, at + fragment.length);
-  }
+ for (const span of setOffSpans(text, quotedFragment)) {
+  scan = blank(scan, span.start, span.end);
  }
-
- scan = maskPairs(scan, '"', '"');
- scan = maskPairs(scan, '“', '”');
- scan = maskPairs(scan, '‘', '’');
- // Straight single quotes bound a span only when they are not apostrophes.
- scan = scan.replace(
-  /(^|[\s([])'[^']+'(?=$|[\s.,;:!?)\]])/g,
-  (m) => ' '.repeat(m.length),
- );
 
  return FIRST_PERSON_I.test(scan) || FIRST_PERSON_OTHER.test(scan);
 }

@@ -584,8 +584,8 @@ describe('guard scope — every branch, not just the generic probe', () => {
   // Build both juxtapositions from the phrase resonance will actually return,
   // so the test asserts the guard, not the phrase extractor.
   const phrase = resonate(idx, ANSWER_A)[0]!.sharedPhrase;
-  const first = `Back in March you wrote ${phrase} — what did that cost you?`;
-  const second = `Back in March you wrote ${phrase} — what has that cost you?`;
+  const first = `Back in March you wrote "${phrase}" — what did that cost you?`;
+  const second = `Back in March you wrote "${phrase}" — what has that cost you?`;
 
   const vault = makeFakeVault();
   const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
@@ -625,7 +625,7 @@ describe('guard scope — every branch, not just the generic probe', () => {
   const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
   const complete = makeScriptedComplete([
    JSON.stringify({ lights: [{ kind: 'odd-term', phrase: 'socially cheaper' }] }),
-   'What are you trying to achieve in this conversation about being socially cheaper?',
+   'You wrote "socially cheaper". What are you trying to achieve in this conversation?',
    'When did you last notice yourself doing that?',
   ]);
   const q = makeFakeQueue();
@@ -651,8 +651,8 @@ describe('guard scope — every branch, not just the generic probe', () => {
  test('a guard rejection in priority 1 costs no budget', async () => {
   const idx = makeEchoIndex();
   const phrase = resonate(idx, ANSWER_A)[0]!.sharedPhrase;
-  const first = `Back in March you wrote ${phrase} — what did that cost you?`;
-  const second = `Back in March you wrote ${phrase} — what has that cost you?`;
+  const first = `Back in March you wrote "${phrase}" — what did that cost you?`;
+  const second = `Back in March you wrote "${phrase}" — what has that cost you?`;
 
   const vault = makeFakeVault();
   const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];

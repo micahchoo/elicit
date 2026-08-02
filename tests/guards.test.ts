@@ -2,11 +2,26 @@ import { describe, it, expect } from 'vitest';
 import {
   isInterrogative,
   hasFirstPersonOutsideQuote,
+  quotesFragmentSetOff,
+  setOffSpans,
   isParrot,
   isConversationReferential,
   isNearDuplicate,
   checkQuestion,
 } from '../src/elicitor/guards.js';
+
+// ---------------------------------------------------------------------------
+// The malformed question of 2026-08-02 (ticket 040), and its framed twin.
+// Same fragment, same source turn — only the framing differs.
+// ---------------------------------------------------------------------------
+
+const SPLICED_FRAGMENT = 'I thought that I long lost';
+
+const SPLICED_QUESTION =
+  'When did you last experience the kind of resonance that I thought that I long lost?';
+
+const FRAMED_QUESTION =
+  'You wrote: "I thought that I long lost." When did you last feel that resonance again?';
 
 // ---------------------------------------------------------------------------
 // isInterrogative — eval 2026-08-02 #3
@@ -47,6 +62,83 @@ describe('isInterrogative', () => {
 });
 
 // ---------------------------------------------------------------------------
+// quotesFragmentSetOff — ticket 040
+// ---------------------------------------------------------------------------
+
+describe('quotesFragmentSetOff', () => {
+  it('rejects the malformed question that spliced the fragment mid-clause', () => {
+    // Live evidence, 2026-08-02. Verbatim, so it passed Q-12 as it stood.
+    expect(SPLICED_QUESTION).toContain(SPLICED_FRAGMENT);
+    expect(quotesFragmentSetOff(SPLICED_QUESTION, SPLICED_FRAGMENT)).toBe(false);
+  });
+
+  it('accepts the same fragment framed as a quotation', () => {
+    expect(quotesFragmentSetOff(FRAMED_QUESTION, SPLICED_FRAGMENT)).toBe(true);
+  });
+
+  it('accepts typographic and straight quotation marks alike', () => {
+    const fragment = 'my hedges get shorter';
+    expect(
+      quotesFragmentSetOff(`You wrote “${fragment}.” What did that buy you?`, fragment),
+    ).toBe(true);
+    expect(
+      quotesFragmentSetOff(`You wrote '${fragment}.' What did that buy you?`, fragment),
+    ).toBe(true);
+  });
+
+  it('accepts a fragment standing on its own line', () => {
+    const fragment = 'Meetings steal my best hours';
+    expect(
+      quotesFragmentSetOff(`You wrote:\n${fragment}.\nWhich meeting was the worst?`, fragment),
+    ).toBe(true);
+  });
+
+  it('rejects a fragment that only trails an unmarked colon', () => {
+    const fragment = 'Meetings steal my best hours';
+    expect(
+      quotesFragmentSetOff(`You wrote: ${fragment}. Which one was worst?`, fragment),
+    ).toBe(false);
+  });
+
+  it('rejects an unclosed quotation mark', () => {
+    const fragment = 'Meetings steal my best hours';
+    expect(
+      quotesFragmentSetOff(`You wrote "${fragment} — which one was worst?`, fragment),
+    ).toBe(false);
+  });
+
+  it('accepts a fragment quoted inside a longer quotation', () => {
+    const fragment = 'Meetings steal my best hours';
+    const question = `You wrote: "I value deep work. ${fragment}." What changed?`;
+    expect(quotesFragmentSetOff(question, fragment)).toBe(true);
+  });
+
+  it('does not read contraction apostrophes as a quotation', () => {
+    const fragment = "it's my job to notice";
+    expect(
+      quotesFragmentSetOff(`Do you still think it's my job to notice?`, fragment),
+    ).toBe(false);
+  });
+
+  it('rejects an empty fragment', () => {
+    expect(quotesFragmentSetOff('You wrote "something" — and then?', '   ')).toBe(false);
+  });
+});
+
+describe('setOffSpans', () => {
+  it('returns the inner material of a quotation, delimiters excluded', () => {
+    const text = 'You wrote "deep work" — still?';
+    const spans = setOffSpans(text);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0]!.start, spans[0]!.end)).toBe('deep work');
+  });
+
+  it('finds no span in a question that quotes nothing', () => {
+    expect(setOffSpans(SPLICED_QUESTION, SPLICED_FRAGMENT)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // hasFirstPersonOutsideQuote — eval 2026-08-02 #5 (observed 6/6)
 // ---------------------------------------------------------------------------
 
@@ -82,12 +174,32 @@ describe('hasFirstPersonOutsideQuote', () => {
     ).toBe(true);
   });
 
-  it('masks an UNQUOTED verbatim fragment when it is named', () => {
+  // 040: naming the fragment used to mask it wherever it appeared, which let an
+  // unmarked splice launder the user's "my" into the agent's own clause.
+  it('does NOT mask an unquoted fragment, even when it is named', () => {
     const fragment = 'Meetings steal my best hours';
     const question = `When you say ${fragment}, what does that look like on a Tuesday?`;
-    expect(hasFirstPersonOutsideQuote(question, fragment)).toBe(false);
-    // Without the fragment there is no way to tell the quote from the frame.
+    expect(hasFirstPersonOutsideQuote(question, fragment)).toBe(true);
     expect(hasFirstPersonOutsideQuote(question)).toBe(true);
+  });
+
+  it('masks the fragment once it is set off in quotation marks', () => {
+    const fragment = 'Meetings steal my best hours';
+    const question = `You wrote: "${fragment}." What does that look like on a Tuesday?`;
+    expect(hasFirstPersonOutsideQuote(question, fragment)).toBe(false);
+  });
+
+  it('masks a fragment standing on its own line', () => {
+    const fragment = 'Meetings steal my best hours';
+    const question = `You wrote:\n${fragment}.\nWhat did the worst one cost you?`;
+    expect(hasFirstPersonOutsideQuote(question, fragment)).toBe(false);
+    // Without the fragment, a bare line is just the agent talking.
+    expect(hasFirstPersonOutsideQuote(question)).toBe(true);
+  });
+
+  it('flags the spliced first person of the malformed live question', () => {
+    expect(hasFirstPersonOutsideQuote(SPLICED_QUESTION, SPLICED_FRAGMENT)).toBe(true);
+    expect(hasFirstPersonOutsideQuote(FRAMED_QUESTION, SPLICED_FRAGMENT)).toBe(false);
   });
 
   it('does not treat contraction apostrophes as a quoted span', () => {

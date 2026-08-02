@@ -5,6 +5,7 @@ import {
   composeJuxtaposition,
   composeOpener,
   composeStillTrue,
+  composeExpedition,
 } from '../src/clerk/composed.js';
 import type {
   Complete,
@@ -64,6 +65,144 @@ function makeResonanceHit(overrides?: Partial<ResonanceHit>): ResonanceHit {
     ...overrides,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Quote framing (040) — the live malformed question and its framed twin
+// ---------------------------------------------------------------------------
+
+/** The turn the malformed question of 2026-08-02 was built from. */
+const TURN_RESONANCE =
+  'There was a resonance in the room, the kind I thought that I long lost.';
+
+const RESONANCE_FRAGMENT = 'I thought that I long lost';
+
+/** Verbatim from the app, ticket 040: the fragment spliced into mid-clause. */
+const SPLICED =
+  'When did you last experience the kind of resonance that I thought that I long lost?';
+
+/** The same fragment, same source, framed instead of spliced. */
+const FRAMED =
+  'You wrote: "I thought that I long lost." When did you last feel it come back?';
+
+describe('quote framing (040)', () => {
+  const light: RedLight = {
+    kind: 'abstraction-no-episode',
+    phrase: RESONANCE_FRAGMENT,
+  };
+
+  it('composeFollowUp refuses the spliced question twice and returns null', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+    const complete = fakeComplete(SPLICED, SPLICED);
+
+    const result = await composeFollowUp(TURN_RESONANCE, light, complete);
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unframed-quote'));
+    warn.mockRestore();
+  });
+
+  it('composeFollowUp accepts the framed question', async () => {
+    const complete = fakeComplete(FRAMED);
+
+    const result = await composeFollowUp(TURN_RESONANCE, light, complete);
+
+    expect(result).toBe(FRAMED);
+  });
+
+  it('composeFollowUp retries a splice and accepts the framing', async () => {
+    const complete = fakeComplete(SPLICED, FRAMED);
+
+    const result = await composeFollowUp(TURN_RESONANCE, light, complete);
+
+    expect(result).toBe(FRAMED);
+  });
+
+  const snippet = makeSnippet({ prose: TURN_RESONANCE });
+
+  it('composeOpener refuses the spliced question and returns null', async () => {
+    const complete = fakeComplete(SPLICED, SPLICED);
+
+    const result = await composeOpener(snippet, complete);
+
+    expect(result).toBeNull();
+  });
+
+  it('composeOpener accepts the framed question and records the fragment', async () => {
+    const complete = fakeComplete(FRAMED);
+
+    const result = await composeOpener(snippet, complete);
+
+    expect(result).not.toBeNull();
+    expect(result!.question).toBe(FRAMED);
+    expect(result!.quotedFragment).toContain(RESONANCE_FRAGMENT);
+    expect(snippet.prose).toContain(result!.quotedFragment!);
+  });
+
+  it('composeStillTrue refuses the spliced question and returns null', async () => {
+    const complete = fakeComplete(SPLICED, SPLICED);
+
+    const result = await composeStillTrue(snippet, complete);
+
+    expect(result).toBeNull();
+  });
+
+  it('composeStillTrue accepts the framed question', async () => {
+    const complete = fakeComplete(FRAMED);
+
+    const result = await composeStillTrue(snippet, complete);
+
+    expect(result).not.toBeNull();
+    expect(result!.question).toBe(FRAMED);
+  });
+
+  it('composeJuxtaposition refuses the spliced question and returns null', async () => {
+    const hit = makeResonanceHit({
+      sharedPhrase: RESONANCE_FRAGMENT,
+      snippetText: TURN_RESONANCE,
+    });
+    const complete = fakeComplete(SPLICED, SPLICED);
+
+    const result = await composeJuxtaposition(TURN_RESONANCE, hit, complete);
+
+    expect(result).toBeNull();
+  });
+
+  it('composeJuxtaposition accepts the framed question', async () => {
+    const hit = makeResonanceHit({
+      sharedPhrase: RESONANCE_FRAGMENT,
+      snippetText: TURN_RESONANCE,
+    });
+    const complete = fakeComplete(FRAMED);
+
+    const result = await composeJuxtaposition(TURN_RESONANCE, hit, complete);
+
+    expect(result).toBe(FRAMED);
+  });
+
+  it('every compose prompt carries the framing rule', async () => {
+    const prompts: string[] = [];
+    const capture: Complete = async (system: string, turns: Turn[]) => {
+      prompts.push(system.length > 0 ? system : (turns[0]?.text ?? ''));
+      return FRAMED;
+    };
+
+    await composeFollowUp(TURN_RESONANCE, light, capture);
+    await composeJuxtaposition(
+      TURN_RESONANCE,
+      makeResonanceHit({ sharedPhrase: RESONANCE_FRAGMENT, snippetText: TURN_RESONANCE }),
+      capture,
+    );
+    await composeOpener(snippet, capture);
+    await composeStillTrue(snippet, capture);
+    await composeExpedition(snippet, capture);
+
+    expect(prompts).toHaveLength(5);
+    for (const prompt of prompts) {
+      expect(prompt).toContain('frame the quote, never splice it');
+      expect(prompt).toContain('inside quotation marks');
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // redLights
@@ -149,11 +288,13 @@ describe('composeFollowUp', () => {
   const light: RedLight = { kind: 'odd-term', phrase: 'synergy' };
 
   it('accepts question containing the light phrase verbatim', async () => {
-    const complete = fakeComplete('What does synergy mean to you in concrete terms?');
+    const complete = fakeComplete(
+      'You said "synergy". What did that look like on the day it happened?',
+    );
 
     const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
 
-    expect(result).toBe('What does synergy mean to you in concrete terms?');
+    expect(result).toBe('You said "synergy". What did that look like on the day it happened?');
     expect(result).toContain('synergy');
   });
 
@@ -170,8 +311,8 @@ describe('composeFollowUp', () => {
 
   it('succeeds on retry if second response contains the phrase', async () => {
     const complete = fakeComplete(
-      'What does that term mean?',                 // first — missing
-      'Can you give an example of synergy at work?', // retry — has it
+      'What does that term mean?',                        // first — missing
+      'You said "synergy". Can you give one example?',    // retry — quoted and framed
     );
 
     const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
@@ -180,43 +321,45 @@ describe('composeFollowUp', () => {
   });
 
   it('strips markdown fences from LLM output', async () => {
-    const complete = fakeComplete('```\nWhat does synergy mean to you?\n```');
-
-    const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
-
-    expect(result).toBe('What does synergy mean to you?');
-  });
-
-  it('rejects a declarative that quotes the phrase, then accepts the retry', async () => {
     const complete = fakeComplete(
-      'The synergy between teams is worth examining.',  // quotes, but is not a question
-      'What did synergy look like on the day it worked?',
+      '```\nYou said "synergy". What does that mean to you?\n```',
     );
 
     const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
 
-    expect(result).toBe('What did synergy look like on the day it worked?');
+    expect(result).toBe('You said "synergy". What does that mean to you?');
+  });
+
+  it('rejects a declarative that quotes the phrase, then accepts the retry', async () => {
+    const complete = fakeComplete(
+      'You said "synergy", and that is worth examining.',  // quotes, but is not a question
+      'You said "synergy". What did that look like on the day it worked?',
+    );
+
+    const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
+
+    expect(result).toBe('You said "synergy". What did that look like on the day it worked?');
   });
 
   it('retries a first-person leak outside the quote, then accepts second person', async () => {
     const turn = 'If a claim is popular, my hedges get shorter, and I stop saying what I think.';
     const hedges: RedLight = { kind: 'abstraction-no-episode', phrase: 'my hedges get shorter' };
     const complete = fakeComplete(
-      'When my hedges get shorter, what does that protect me from?',   // "me" outside the quote
-      'When my hedges get shorter, what does that protect you from?',  // person agrees
+      'You wrote "my hedges get shorter". What does that protect me from?',   // "me" outside the quote
+      'You wrote "my hedges get shorter". What does that protect you from?',  // person agrees
     );
 
     const result = await composeFollowUp(turn, hedges, complete);
 
-    expect(result).toBe('When my hedges get shorter, what does that protect you from?');
+    expect(result).toBe('You wrote "my hedges get shorter". What does that protect you from?');
   });
 
   it('returns null when both attempts leak first person outside the quote', async () => {
     const turn = 'If a claim is popular, my hedges get shorter, and I stop saying what I think.';
     const hedges: RedLight = { kind: 'abstraction-no-episode', phrase: 'my hedges get shorter' };
     const complete = fakeComplete(
-      'When my hedges get shorter, what does that protect me from?',
-      'When my hedges get shorter, what am I protecting?',
+      'You wrote "my hedges get shorter". What does that protect me from?',
+      'You wrote "my hedges get shorter". What am I protecting?',
     );
 
     const result = await composeFollowUp(turn, hedges, complete);
@@ -235,7 +378,7 @@ describe('composeJuxtaposition', () => {
 
   it('accepts question containing sharedPhrase verbatim', async () => {
     const complete = fakeComplete(
-      'You mentioned deep work matters — how does that connect to what you valued in January?',
+      'You wrote "deep work" — how does that connect to what you valued in January?',
     );
 
     const result = await composeJuxtaposition(TURN_ECHO, hit, complete);
@@ -257,7 +400,7 @@ describe('composeJuxtaposition', () => {
   it('succeeds on retry with sharedPhrase', async () => {
     const complete = fakeComplete(
       'How does that connect to your past views?',
-      'You mentioned deep work before — has anything changed?',
+      'You wrote "deep work" before — has anything changed?',
     );
 
     const result = await composeJuxtaposition(TURN_ECHO, hit, complete);
@@ -267,13 +410,13 @@ describe('composeJuxtaposition', () => {
 
   it('rejects a statement that quotes the sharedPhrase but asks nothing', async () => {
     const complete = fakeComplete(
-      'In January you valued deep work over meetings, and you still do.',
-      'In January you valued deep work — is that still where the hours go?',
+      'In January you wrote "deep work", and you still do.',
+      'In January you wrote "deep work" — is that still where the hours go?',
     );
 
     const result = await composeJuxtaposition(TURN_ECHO, hit, complete);
 
-    expect(result).toBe('In January you valued deep work — is that still where the hours go?');
+    expect(result).toBe('In January you wrote "deep work" — is that still where the hours go?');
   });
 });
 
@@ -319,8 +462,8 @@ describe('composeOpener', () => {
 
   it('succeeds on retry when second response quotes the snippet', async () => {
     const complete = fakeComplete(
-      'Has your perspective changed?',                                        // no quote
-      'You mentioned that Meetings steal my best hours — still true?',        // quotes snippet verbatim
+      'Has your perspective changed?',                                     // no quote
+      'You wrote "Meetings steal my best hours." Is that still true?',      // quotes snippet, set off
     );
 
     const result = await composeOpener(snippet, complete);
