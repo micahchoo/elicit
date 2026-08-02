@@ -118,7 +118,9 @@ function parseLineOriented(raw: string): RawCut[] {
 export async function propose(
   session: string,
   transcript: Turn[],
-  complete: Complete
+  complete: Complete,
+  /** Prompt variant under test by the ratchet harness (scripts/ratchet). */
+  promptOverride?: string,
 ): Promise<{ proposals: CutProposal[]; buds: Bud[] }> {
   // llama.cpp generates nothing when the message list ends with an assistant
   // turn (an unanswered probe reads as an already-complete exchange) — always
@@ -127,7 +129,7 @@ export async function propose(
   while (sendable.length > 0 && sendable[sendable.length - 1]!.role === 'agent') {
     sendable = sendable.slice(0, -1);
   }
-  const raw = await complete(SYSTEM_PROMPT, sendable, { temperature: 0.1 });
+  const raw = await complete(promptOverride ?? SYSTEM_PROMPT, sendable, { temperature: 0.1 });
 
   // Parse — try JSON first, fall back to line-oriented
   let cuts: RawCut[];
