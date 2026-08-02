@@ -3,7 +3,7 @@ import type { Turn, Vault, QueueStore, LexicalIndex } from '../src/types.js';
 import { makeScriptedComplete } from './fakes.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
 import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
-import { buildIndex } from '../src/index/lexical.js';
+import { buildIndex, resonate } from '../src/index/lexical.js';
 
 /** In-memory fake Vault that records turns for inspection. */
 function makeFakeVault() {
@@ -552,6 +552,127 @@ describe('guards', () => {
    expect(result.text).toBe(fallbackText);
    expect(result.provenance).toBe('bank');
   }
+ });
+});
+
+describe('guard scope — every branch, not just the generic probe', () => {
+ /** A snippet whose phrase the user is about to echo, so resonance fires. */
+ function makeEchoIndex(): LexicalIndex {
+  return buildIndex([
+   {
+    id: 's1',
+    version: 1,
+    captured: '2026-03-01T10:00:00Z',
+    provenance: {
+     kind: 'harvest' as const,
+     session: 'sess-0',
+     question: 'What do you do when a claim is popular?',
+     questionForm: 'deliberative' as const,
+    },
+    prose: 'I default to hedging in whichever direction is socially cheaper.',
+   },
+  ]);
+ }
+
+ const ANSWER_A =
+  'I default to hedging in whichever direction is socially cheaper, honestly.';
+ const ANSWER_B =
+  'Yes, I default to hedging in whichever direction is socially cheaper, still.';
+
+ test('a near-duplicate juxtaposition is caught and falls through to the next priority', async () => {
+  const idx = makeEchoIndex();
+  // Build both juxtapositions from the phrase resonance will actually return,
+  // so the test asserts the guard, not the phrase extractor.
+  const phrase = resonate(idx, ANSWER_A)[0]!.sharedPhrase;
+  const first = `Back in March you wrote ${phrase} — what did that cost you?`;
+  const second = `Back in March you wrote ${phrase} — what has that cost you?`;
+
+  const vault = makeFakeVault();
+  const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
+  const complete = makeScriptedComplete([
+   first,                                          // turn 1: juxtaposition, accepted
+   second,                                         // turn 2: juxtaposition, near-duplicate
+   '{}',                                           // turn 2: redLights — no lights
+   'When did you first notice yourself doing that?', // turn 2: generic probe
+  ]);
+  const q = makeFakeQueue();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  const one = await userTurn(session, ANSWER_A);
+  expect(one.kind).toBe('probe');
+  if (one.kind === 'probe') {
+   expect(one.text).toBe(first);
+   expect(one.provenance).toBe('juxtaposition');
+  }
+
+  const two = await userTurn(session, ANSWER_B);
+  expect(two.kind).toBe('probe');
+  if (two.kind === 'probe') {
+   expect(two.text).not.toBe(second);
+   expect(two.text).toBe('When did you first notice yourself doing that?');
+   expect(two.provenance).toBe('probe');
+  }
+
+  // The rejected juxtaposition never reached the transcript or the budget.
+  expect(vault._turns(session.id).some((t) => t.text === second)).toBe(false);
+ });
+
+ test('a conversation-referential composed follow-up falls through to the generic probe', async () => {
+  const vault = makeFakeVault();
+  const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
+  const complete = makeScriptedComplete([
+   JSON.stringify({ lights: [{ kind: 'odd-term', phrase: 'socially cheaper' }] }),
+   'What are you trying to achieve in this conversation about being socially cheaper?',
+   'When did you last notice yourself doing that?',
+  ]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex(); // empty — no juxtaposition
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  const result = await userTurn(
+   session,
+   'I hedge in whichever direction is socially cheaper.',
+  );
+
+  expect(result.kind).toBe('probe');
+  if (result.kind === 'probe') {
+   expect(result.text).toBe('When did you last notice yourself doing that?');
+   expect(result.provenance).toBe('probe');
+   expect(result.text).not.toMatch(/\bthis conversation\b/i);
+  }
+ });
+
+ test('a guard rejection in priority 1 costs no budget', async () => {
+  const idx = makeEchoIndex();
+  const phrase = resonate(idx, ANSWER_A)[0]!.sharedPhrase;
+  const first = `Back in March you wrote ${phrase} — what did that cost you?`;
+  const second = `Back in March you wrote ${phrase} — what has that cost you?`;
+
+  const vault = makeFakeVault();
+  const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
+  const complete = makeScriptedComplete([
+   first,
+   second,
+   '{}',
+   'When did you first notice yourself doing that?',
+  ]);
+  const q = makeFakeQueue();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx, bank },
+  );
+
+  await userTurn(session, ANSWER_A);
+  await userTurn(session, ANSWER_B);
+
+  // opener + one juxtaposition + one probe — the rejected question is not counted
+  expect(session.questionCount).toBe(3);
  });
 });
 

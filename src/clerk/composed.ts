@@ -9,6 +9,10 @@ import type {
  QueueEntry,
  QuestionForm,
 } from '../types.js';
+import {
+ isInterrogative,
+ hasFirstPersonOutsideQuote,
+} from '../elicitor/guards.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +84,75 @@ function isDegenerateComposition(
  if (contentWords.length < 3) return true;
 
  return false;
+}
+
+// ---------------------------------------------------------------------------
+// The composed-question gate
+// ---------------------------------------------------------------------------
+
+/** Why a composed question was refused. Each reason drives its own retry. */
+type Rejection =
+ | 'no-quote'
+ | 'degenerate'
+ | 'not-interrogative'
+ | 'first-person'
+ | 'repeats-original';
+
+/**
+ * Checks that apply once a verbatim fragment is in hand.
+ *
+ * Quoting is checked first and never weakened (Q-1/Q-12); these run after,
+ * because "contains a quote" was the ONLY thing any compose path asked, and a
+ * raw echo of the source satisfies it (eval 2026-08-02 #3).
+ */
+function checkAfterQuote(question: string, fragment: string): Rejection | null {
+ if (!isInterrogative(question, fragment)) return 'not-interrogative';
+ if (hasFirstPersonOutsideQuote(question, fragment)) return 'first-person';
+ return null;
+}
+
+/** Gate for a question built around a KNOWN phrase (follow-up, juxtaposition). */
+function checkAroundPhrase(
+ question: string,
+ phrase: string,
+ turnText: string,
+): Rejection | null {
+ if (!question || !question.includes(phrase)) return 'no-quote';
+ if (isDegenerateComposition(question, phrase, turnText)) return 'degenerate';
+ return checkAfterQuote(question, phrase);
+}
+
+type QuoteResult =
+ | { ok: true; fragment: string }
+ | { ok: false; rejection: Rejection };
+
+/** Gate for a question that must quote SOMEWHERE in `source` (opener, still-true, expedition). */
+function checkQuotesSource(question: string, source: string): QuoteResult {
+ const fragment = findQuotedFragment(source, question);
+ if (!fragment) return { ok: false, rejection: 'no-quote' };
+ const rejection = checkAfterQuote(question, fragment);
+ if (rejection) return { ok: false, rejection };
+ return { ok: true, fragment };
+}
+
+/**
+ * Build the corrective suffix for the single retry. `quoteRule` is the
+ * path-specific verbatim requirement, repeated in every correction so the
+ * retry never trades one invariant for another.
+ */
+function corrective(rejection: Rejection, quoteRule: string): string {
+ switch (rejection) {
+  case 'no-quote':
+   return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
+  case 'degenerate':
+   return `CRITICAL: Your previous response was rejected because it only handed the speaker their own words back. ${quoteRule} Then ask your own question around that quote.`;
+  case 'not-interrogative':
+   return `CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark. ${quoteRule}`;
+  case 'first-person':
+   return `CRITICAL: Your previous response was rejected because it spoke in the first person outside the quote. Keep the quoted words exactly as they are; everywhere else address the speaker as "you" — never "I", "my", or "me". ${quoteRule}`;
+  case 'repeats-original':
+   return `CRITICAL: Your previous response was rejected because it repeated the question that first elicited the snippet. Ask something different. ${quoteRule}`;
+ }
 }
 
 /** Wrap text as a single user turn for LLM calls that need a Turn[]. */
@@ -192,39 +265,29 @@ Concern: ${light.kind} — the phrase "${light.phrase}" triggered this.
 Your question MUST contain the exact phrase "${light.phrase}" verbatim.
 Return only the question text. No markdown, no commentary.`;
 
+ const quoteRule = `Your question MUST contain this exact substring: "${light.phrase}".`;
+
  const raw = await complete(prompt, userTurn(turnText), {
   temperature: 0.4,
  });
  let question = stripFences(raw).trim();
 
- // Q-12: substring verification
- if (question && question.includes(light.phrase)) {
-  // Q-12 tightening: degenerate-composition guard (ticket 020)
-  if (!isDegenerateComposition(question, light.phrase, turnText)) return question;
-  console.warn(
-   `Composed: follow-up degenerate (equals fragment or turn), retrying`,
-  );
- }
+ let rejection = checkAroundPhrase(question, light.phrase, turnText);
+ if (!rejection) return question;
 
  // One retry with corrective prompt
- console.warn(
-  `Composed: follow-up missing phrase "${light.phrase}", retrying`,
- );
- const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not include the exact phrase "${light.phrase}". Your question MUST contain this exact substring: "${light.phrase}".`;
+ console.warn(`Composed: follow-up rejected (${rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
  const retryRaw = await complete(retryPrompt, userTurn(turnText), {
   temperature: 0.4,
  });
  question = stripFences(retryRaw).trim();
 
- if (question && question.includes(light.phrase)) {
-  if (!isDegenerateComposition(question, light.phrase, turnText)) return question;
-  console.warn(
-   `Composed: follow-up retry degenerate — returning null`,
-  );
- }
+ rejection = checkAroundPhrase(question, light.phrase, turnText);
+ if (!rejection) return question;
 
  console.warn(
-  `Composed: follow-up retry also missing phrase "${light.phrase}" — returning null`,
+  `Composed: follow-up retry also rejected (${rejection}) — returning null`,
  );
  return null;
 }
@@ -248,38 +311,29 @@ Your question MUST contain the exact phrase "${hit.sharedPhrase}" verbatim.
 Frame the question as connecting their present thought to their past one.
 Return only the question text. No markdown, no commentary.`;
 
+ const quoteRule = `Your question MUST contain this exact substring: "${hit.sharedPhrase}".`;
+
  const raw = await complete(prompt, userTurn(turnText), {
   temperature: 0.4,
  });
  const question = stripFences(raw).trim();
 
- // Q-12: substring verification
- if (question && question.includes(hit.sharedPhrase)) {
-  if (!isDegenerateComposition(question, hit.sharedPhrase, turnText)) return question;
-  console.warn(
-   'Composed: juxtaposition degenerate (equals fragment or turn), retrying',
-  );
- }
+ let rejection = checkAroundPhrase(question, hit.sharedPhrase, turnText);
+ if (!rejection) return question;
 
  // One retry
- console.warn(
-  `Composed: juxtaposition missing sharedPhrase "${hit.sharedPhrase}", retrying`,
- );
- const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not include the exact phrase "${hit.sharedPhrase}". Your question MUST contain this exact substring: "${hit.sharedPhrase}".`;
+ console.warn(`Composed: juxtaposition rejected (${rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
  const retryRaw = await complete(retryPrompt, userTurn(turnText), {
   temperature: 0.4,
  });
  const retryQuestion = stripFences(retryRaw).trim();
 
- if (retryQuestion && retryQuestion.includes(hit.sharedPhrase)) {
-  if (!isDegenerateComposition(retryQuestion, hit.sharedPhrase, turnText))
-   return retryQuestion;
-  console.warn(
-   'Composed: juxtaposition retry degenerate — returning null',
-  );
- }
+ rejection = checkAroundPhrase(retryQuestion, hit.sharedPhrase, turnText);
+ if (!rejection) return retryQuestion;
+
  console.warn(
-  `Composed: juxtaposition retry also missing sharedPhrase "${hit.sharedPhrase}" — returning null`,
+  `Composed: juxtaposition retry also rejected (${rejection}) — returning null`,
  );
  return null;
 }
@@ -299,28 +353,29 @@ Snippet date: ${snippet.captured}
 
 Return only the question text. No markdown, no commentary.`;
 
+ const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  let question = stripFences(raw).trim();
 
- let fragment = findQuotedFragment(snippet.prose, question);
-
- if (fragment) {
-  return buildOpenerDraft(snippet, question, fragment, 'composed', 'session');
+ let check = checkQuotesSource(question, snippet.prose);
+ if (check.ok) {
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session');
  }
 
  // One retry
- console.warn('Composed: opener quotes no snippet fragment, retrying');
- const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not quote the snippet verbatim. Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+ console.warn(`Composed: opener rejected (${check.rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  question = stripFences(retryRaw).trim();
- fragment = findQuotedFragment(snippet.prose, question);
+ check = checkQuotesSource(question, snippet.prose);
 
- if (fragment) {
-  return buildOpenerDraft(snippet, question, fragment, 'composed', 'session');
+ if (check.ok) {
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session');
  }
 
  console.warn(
-  'Composed: opener retry also missing snippet quote — returning null',
+  `Composed: opener retry also rejected (${check.rejection}) — returning null`,
  );
  return null;
 }
@@ -341,50 +396,58 @@ Snippet date: ${snippet.captured}
 
 Return only the question text. No markdown, no commentary.`;
 
+ const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
+
  // Attempt 1
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
- const draft1 = tryBuildStillTrue(snippet, question1);
- if (draft1) return draft1;
+ const attempt1 = tryBuildStillTrue(snippet, question1);
+ if (attempt1.ok) return attempt1.draft;
 
- // One retry — enforce both constraints
- const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected. It must satisfy TWO rules:\n1. Quote the snippet verbatim — include an exact phrase from: "${snippet.prose}"\n2. Do NOT repeat the original question: "${snippet.provenance.question}"`;
+ // One retry — enforce every constraint, corrected for what failed
+ console.warn(`Composed: still-true rejected (${attempt1.rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
- const draft2 = tryBuildStillTrue(snippet, question2);
- if (draft2) return draft2;
+ const attempt2 = tryBuildStillTrue(snippet, question2);
+ if (attempt2.ok) return attempt2.draft;
 
  console.warn(
-  'Composed: still-true retry failed — returning null',
+  `Composed: still-true retry also rejected (${attempt2.rejection}) — returning null`,
  );
  return null;
 }
 
-/** Validate and build a still-true draft, or return null with a warning. */
+type StillTrueResult =
+ | { ok: true; draft: QueueDraft }
+ | { ok: false; rejection: Rejection };
+
+/** Validate and build a still-true draft, or name why it was refused. */
 function tryBuildStillTrue(
  snippet: Snippet,
  question: string,
-): QueueDraft | null {
+): StillTrueResult {
  if (
   question.length === 0 ||
   question === snippet.provenance.question ||
   question.includes(snippet.provenance.question)
  ) {
-  console.warn(
-   'Composed: still-true repeated provenance.question',
-  );
-  return null;
+  return { ok: false, rejection: 'repeats-original' };
  }
 
- const fragment = findQuotedFragment(snippet.prose, question);
- if (!fragment) {
-  console.warn(
-   'Composed: still-true quotes no snippet fragment',
-  );
-  return null;
- }
+ const check = checkQuotesSource(question, snippet.prose);
+ if (!check.ok) return { ok: false, rejection: check.rejection };
 
- return buildOpenerDraft(snippet, question, fragment, 'still-true', 'session');
+ return {
+  ok: true,
+  draft: buildOpenerDraft(
+   snippet,
+   question,
+   check.fragment,
+   'still-true',
+   'session',
+  ),
+ };
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +530,8 @@ Snippet date: ${snippet.captured}
 
 Return only the question text. No markdown, no commentary.`;
 
+ const quoteRule = `Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+
  const raw = await complete(
   '',
   [{ role: 'user', text: prompt, at: '' }],
@@ -474,29 +539,28 @@ Return only the question text. No markdown, no commentary.`;
  );
  let question = stripFences(raw).trim();
 
- let fragment = findQuotedFragment(snippet.prose, question);
-
- if (fragment) {
-  return buildOpenerDraft(snippet, question, fragment, 'composed', 'days');
+ let check = checkQuotesSource(question, snippet.prose);
+ if (check.ok) {
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days');
  }
 
  // One retry
- console.warn('Composed: expedition quotes no snippet fragment, retrying');
- const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not quote the snippet verbatim. Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+ console.warn(`Composed: expedition rejected (${check.rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
  const retryRaw = await complete(
   '',
   [{ role: 'user', text: retryPrompt, at: '' }],
   { temperature: 0.4 },
  );
  question = stripFences(retryRaw).trim();
- fragment = findQuotedFragment(snippet.prose, question);
+ check = checkQuotesSource(question, snippet.prose);
 
- if (fragment) {
-  return buildOpenerDraft(snippet, question, fragment, 'composed', 'days');
+ if (check.ok) {
+  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days');
  }
 
  console.warn(
-  'Composed: expedition retry also missing snippet quote — returning null',
+  `Composed: expedition retry also rejected (${check.rejection}) — returning null`,
  );
  return null;
 }

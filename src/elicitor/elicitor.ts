@@ -24,6 +24,8 @@ import { resonate } from '../index/lexical.js';
 import { isContentFree } from './answer-shape.js';
 import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
+import { checkQuestion, type GuardVerdict } from './guards.js';
+
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
  bank: StarterQuestion[],
@@ -115,14 +117,86 @@ export function startSession(
  };
 }
 
+/** A question the session will ask, and where it came from. */
+export interface Probe {
+ kind: 'probe';
+ text: string;
+ questionForm: QuestionForm;
+ provenance: QuestionProvenance;
+}
+
+/**
+ * Append an agent question to the transcript and count it against the budget.
+ * The one place a question becomes real. Model-composed questions reach it
+ * only through `guardQuestion`; queue and bank draws come straight here,
+ * because canned material is the fallback that must always be available.
+ */
+function emitProbe(
+ s: SessionState,
+ text: string,
+ questionForm: QuestionForm,
+ provenance: QuestionProvenance,
+ source?: QuestionSource,
+): Probe {
+ const agentTurn: Turn = {
+  role: 'agent',
+  text,
+  at: new Date().toISOString(),
+  questionForm,
+  ...(source ? { questionSource: source } : {}),
+ };
+ s.deps.vault.appendTurn(s.id, agentTurn);
+ s.turns.push(agentTurn);
+ s.questionCount++;
+ return { kind: 'probe', text, questionForm, provenance };
+}
+
+/** Enter the close sequence and ask the door question. */
+function emitClosingDoor(s: SessionState): Probe {
+ s.phase = 'closing-door';
+ return emitProbe(s, CLOSING_DOOR_QUESTION, 'deliberative', 'close');
+}
+
+/**
+ * The guard choke point. Every model-composed question passes here, whichever
+ * priority produced it — juxtaposition and red-light follow-ups used to return
+ * unchecked, and repeated themselves within one session (eval 2026-08-02 #4).
+ *
+ * `systemPrompt` is supplied only for prompt-generated probes: a composed
+ * question is BUILT from the user's words (Q-12), so parrot-checking it
+ * against its own compose prompt would reject every valid one.
+ */
+function guardQuestion(
+ s: SessionState,
+ question: string,
+ systemPrompt?: string,
+): GuardVerdict {
+ const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+ return checkQuestion(question, {
+  asked,
+  ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+ });
+}
+
+/** The corrective instruction appended to a probe prompt after a rejection. */
+function guardCorrection(verdict: GuardVerdict, asked: string[]): string {
+ switch (verdict) {
+  case 'parrot':
+   return 'CRITICAL: Do NOT reuse any phrase, sentence shape, or near-substring from the instructions above. Compose an entirely fresh question from their words.';
+  case 'conversation-referential':
+   return 'CRITICAL: Your question must be about what the speaker said — not about the conversation itself. Do not reference "this conversation" or ask about the interaction.';
+  case 'near-duplicate':
+   return `CRITICAL: Your question is too similar to one already asked in this conversation. Already asked: ${asked.join(' | ')}\n\nCompose a genuinely different question — different syntactic shape, different angle, different move from the repertoire.`;
+  case 'ok':
+   return '';
+ }
+}
+
 export async function userTurn(
  s: SessionState,
  text: string,
  spoken?: boolean,
-): Promise<
- | { kind: 'probe'; text: string; questionForm: QuestionForm; provenance: QuestionProvenance }
- | { kind: 'saturated' }
-> {
+): Promise<Probe | { kind: 'saturated' }> {
  const now = new Date().toISOString();
  const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
@@ -144,21 +218,7 @@ export async function userTurn(
  // Closing-door → advance to the bookmark question
  if (s.phase === 'closing-door') {
   s.phase = 'closing-bookmark';
-  const agentTurn: Turn = {
-   role: 'agent',
-   text: CLOSING_BOOKMARK_QUESTION,
-   at: new Date().toISOString(),
-   questionForm: 'deliberative',
-  };
-  s.deps.vault.appendTurn(s.id, agentTurn);
-  s.turns.push(agentTurn);
-  s.questionCount++;
-  return {
-   kind: 'probe',
-   text: agentTurn.text,
-   questionForm: 'deliberative',
-   provenance: 'close',
-  };
+  return emitProbe(s, CLOSING_BOOKMARK_QUESTION, 'deliberative', 'close');
  }
 
  // Budget: min(20, max(10, mode.minutes))
@@ -166,68 +226,13 @@ export async function userTurn(
 
  // At budget-2, trigger the close sequence
  if (s.questionCount >= budget - 2) {
-  s.phase = 'closing-door';
-  const agentTurn: Turn = {
-   role: 'agent',
-   text: CLOSING_DOOR_QUESTION,
-   at: new Date().toISOString(),
-   questionForm: 'deliberative',
-  };
-  s.deps.vault.appendTurn(s.id, agentTurn);
-  s.turns.push(agentTurn);
-  s.questionCount++;
-  return {
-   kind: 'probe',
-   text: agentTurn.text,
-   questionForm: 'deliberative',
-   provenance: 'close',
-  };
+  return emitClosingDoor(s);
  }
 
  // ── Pivot rule (ticket 020): content-free closed answers get a fresh draw ──
  if (isContentFree(text)) {
-  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
-  if (queueDraw) {
-   s.deps.queue.markAsked(queueDraw.id);
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: queueDraw.question,
-    at: new Date().toISOString(),
-    questionForm: queueDraw.questionForm,
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: queueDraw.questionForm,
-    provenance: 'bank',
-   };
-  }
-  // Queue empty — fall through to bank
-  const unused = (s.bank ?? []).filter(
-   (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
-  );
-  if (unused.length > 0) {
-   const pick = unused[Math.floor(Math.random() * unused.length)]!;
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: pick.text,
-    at: new Date().toISOString(),
-    questionForm: pick.questionForm,
-    ...(pick.source ? { questionSource: pick.source } : {}),
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: pick.questionForm,
-    provenance: 'bank',
-   };
-  }
+  const drawn = drawFallback(s);
+  if (drawn) return drawn;
   // Nothing to draw — fall through to composition
  }
 
@@ -241,46 +246,30 @@ export async function userTurn(
    hit,
    s.deps.complete,
   );
-  if (juxtaposed) {
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: juxtaposed,
-    at: new Date().toISOString(),
-    questionForm: 'deliberative',
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: 'deliberative',
-    provenance: 'juxtaposition',
-   };
+  if (!juxtaposed) continue;
+  const verdict = guardQuestion(s, juxtaposed);
+  if (verdict !== 'ok') {
+   console.warn(
+    `Elicitor: juxtaposition rejected by ${verdict} guard — trying the next source`,
+   );
+   continue;
   }
+  return emitProbe(s, juxtaposed, 'deliberative', 'juxtaposition');
  }
 
  // Priority 2: red-light detection → composed follow-up
  const lights = await redLights(text, s.deps.complete);
  for (const light of lights) {
   const followUp = await composeFollowUp(text, light, s.deps.complete);
-  if (followUp) {
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: followUp,
-    at: new Date().toISOString(),
-    questionForm: 'deliberative',
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: 'deliberative',
-    provenance: 'composed',
-   };
+  if (!followUp) continue;
+  const verdict = guardQuestion(s, followUp);
+  if (verdict !== 'ok') {
+   console.warn(
+    `Elicitor: composed follow-up rejected by ${verdict} guard — trying the next source`,
+   );
+   continue;
   }
+  return emitProbe(s, followUp, 'deliberative', 'composed');
  }
 
  // Priority 3: generic LLM probe (protocol from registry)
@@ -292,237 +281,48 @@ export async function userTurn(
  });
 
  if (response.includes('[SATURATED]')) {
-  s.phase = 'closing-door';
-  const agentTurn: Turn = {
-   role: 'agent',
-   text: CLOSING_DOOR_QUESTION,
-   at: new Date().toISOString(),
-   questionForm: 'deliberative',
-  };
-  s.deps.vault.appendTurn(s.id, agentTurn);
-  s.turns.push(agentTurn);
-  s.questionCount++;
-  return {
-   kind: 'probe',
-   text: agentTurn.text,
-   questionForm: 'deliberative',
-   provenance: 'close',
-  };
+  return emitClosingDoor(s);
  }
 
  let probeText = response.trim();
 
- // ── Parrot guard (ticket 020): reject question that parrots the prompt ──
- if (isParrot(probeText, systemPrompt)) {
-  console.warn('Elicitor: parrot guard triggered — question echoes prompt');
-  // Retry with explicit anti-parrot instruction
-  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Do NOT reuse any phrase, sentence shape, or near-substring from the instructions above. Compose an entirely fresh question from their words.`;
+ // ── Guards (ticket 020, 035): one verdict, one corrective retry, then fall back ──
+ let verdict = guardQuestion(s, probeText, systemPrompt);
+ if (verdict !== 'ok') {
+  console.warn(`Elicitor: ${verdict} guard triggered — retrying`);
+  const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+  const guardedPrompt = `${systemPrompt}\n\n${guardCorrection(verdict, asked)}`;
   const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
    temperature: 0.8,
   });
   if (retryResponse.includes('[SATURATED]')) {
-   s.phase = 'closing-door';
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: CLOSING_DOOR_QUESTION,
-    at: new Date().toISOString(),
-    questionForm: 'deliberative',
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: 'deliberative',
-    provenance: 'close',
-   };
+   return emitClosingDoor(s);
   }
   probeText = retryResponse.trim();
-  if (isParrot(probeText, systemPrompt)) {
-   console.warn('Elicitor: parrot guard retry also failed — drawing fallback');
+  verdict = guardQuestion(s, probeText, systemPrompt);
+  if (verdict !== 'ok') {
+   console.warn(
+    `Elicitor: ${verdict} guard retry also failed — drawing fallback`,
+   );
    const fb = drawFallback(s);
    if (fb) return fb;
   }
  }
 
- // ── Conversation-referential guard: reject "this conversation" probes ──
- if (isConversationReferential(probeText)) {
-  console.warn('Elicitor: conversation-referential guard triggered');
-  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Your question must be about what the speaker said — not about the conversation itself. Do not reference "this conversation" or ask about the interaction.`;
-  const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
-   temperature: 0.8,
-  });
-  if (retryResponse.includes('[SATURATED]')) {
-   s.phase = 'closing-door';
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: CLOSING_DOOR_QUESTION,
-    at: new Date().toISOString(),
-    questionForm: 'deliberative',
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: 'deliberative',
-    provenance: 'close',
-   };
-  }
-  probeText = retryResponse.trim();
-  if (isConversationReferential(probeText)) {
-   console.warn('Elicitor: conversation-ref guard retry also failed — drawing fallback');
-   const fb = drawFallback(s);
-   if (fb) return fb;
-  }
- }
-
- // ── Near-duplicate guard: reject probes too similar to already-asked questions ──
- if (isNearDuplicate(probeText, s)) {
-  console.warn('Elicitor: near-duplicate guard triggered');
-  const askedTexts = s.turns
-   .filter((t) => t.role === 'agent')
-   .map((t) => t.text)
-   .join(' | ');
-  const guardedPrompt = `${systemPrompt}\n\nCRITICAL: Your question is too similar to one already asked in this conversation. Already asked: ${askedTexts}\n\nCompose a genuinely different question — different syntactic shape, different angle, different move from the repertoire.`;
-  const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
-   temperature: 0.8,
-  });
-  if (retryResponse.includes('[SATURATED]')) {
-   s.phase = 'closing-door';
-   const agentTurn: Turn = {
-    role: 'agent',
-    text: CLOSING_DOOR_QUESTION,
-    at: new Date().toISOString(),
-    questionForm: 'deliberative',
-   };
-   s.deps.vault.appendTurn(s.id, agentTurn);
-   s.turns.push(agentTurn);
-   s.questionCount++;
-   return {
-    kind: 'probe',
-    text: agentTurn.text,
-    questionForm: 'deliberative',
-    provenance: 'close',
-   };
-  }
-  probeText = retryResponse.trim();
-  if (isNearDuplicate(probeText, s)) {
-   console.warn('Elicitor: near-dup guard retry also failed — drawing fallback');
-   const fb = drawFallback(s);
-   if (fb) return fb;
-  }
- }
-
- const agentTurn: Turn = {
-  role: 'agent',
-  text: probeText,
-  at: new Date().toISOString(),
-  questionForm: defaultQuestionForm,
- };
-
- s.deps.vault.appendTurn(s.id, agentTurn);
- s.turns.push(agentTurn);
- s.questionCount++;
-
- return {
-  kind: 'probe',
-  text: agentTurn.text,
-  questionForm: defaultQuestionForm,
-  provenance: 'probe',
- };
-}
-
-/**
- * Parrot guard: rejects a generated question that appears as a near-substring
- * of the prompt that produced it. Normalizes whitespace and case before checking.
- */
-function isParrot(question: string, prompt: string): boolean {
- const normQ = question.replace(/\s+/g, ' ').toLowerCase().trim();
- const normP = prompt.replace(/\s+/g, ' ').toLowerCase();
- // Check for verbatim substring match of at least 8 words
- const qWords = normQ.split(' ');
- if (qWords.length < 4) return false;
- // Sliding window: check if any 4+ consecutive words from the question
- // appear as a substring in the prompt
- for (let i = 0; i <= qWords.length - 4; i++) {
-  const phrase = qWords.slice(i, i + 4).join(' ');
-  if (normP.includes(phrase)) return true;
- }
- return false;
-}
-
-/**
- * Conversation-referential guard: rejects probes about the conversation itself.
- * "What are you trying to achieve in this conversation?" is furniture.
- */
-function isConversationReferential(question: string): boolean {
- return /\bthis conversation\b/i.test(question);
-}
-
-/** Normalize question text for duplicate comparison. */
-function normalizeQuestion(text: string): string {
- return text
-  .toLowerCase()
-  .replace(/[^\w\s]/g, '')
-  .replace(/\s+/g, ' ')
-  .trim();
-}
-
-/**
- * Near-duplicate guard: rejects a generated probe that is too similar
- * to a question already asked in this session. Uses word-set Jaccard
- * similarity after normalization.
- */
-function isNearDuplicate(question: string, session: SessionState): boolean {
- const normQ = normalizeQuestion(question);
- const qWords = new Set(normQ.split(' ').filter((w) => w.length > 1));
- if (qWords.size < 2) return false;
-
- for (const turn of session.turns) {
-  if (turn.role !== 'agent') continue;
-  const normA = normalizeQuestion(turn.text);
-  const aWords = new Set(normA.split(' ').filter((w) => w.length > 1));
-  if (aWords.size < 2) continue;
-
-  const intersection = new Set([...qWords].filter((w) => aWords.has(w)));
-  const union = new Set([...qWords, ...aWords]);
-  if (union.size === 0) continue;
-
-  const similarity = intersection.size / union.size;
-  if (similarity >= 0.5) return true;
- }
-
- return false;
+ return emitProbe(s, probeText, defaultQuestionForm, 'probe');
 }
 
 /**
  * Fallback draw from queue then bank. Returns a probe result or null if both empty.
+ * Canned material bypasses the guards on purpose: it is what the guards fall
+ * back TO, so it must never be rejectable.
  */
-function drawFallback(s: SessionState):
- | { kind: 'probe'; text: string; questionForm: QuestionForm; provenance: QuestionProvenance }
- | null {
+function drawFallback(s: SessionState): Probe | null {
  // Try queue first
  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
  if (queueDraw) {
   s.deps.queue.markAsked(queueDraw.id);
-  const agentTurn: Turn = {
-   role: 'agent',
-   text: queueDraw.question,
-   at: new Date().toISOString(),
-   questionForm: queueDraw.questionForm,
-  };
-  s.deps.vault.appendTurn(s.id, agentTurn);
-  s.turns.push(agentTurn);
-  s.questionCount++;
-  return {
-   kind: 'probe',
-   text: agentTurn.text,
-   questionForm: queueDraw.questionForm,
-   provenance: 'bank',
-  };
+  return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank');
  }
 
  // Bank fallback
@@ -531,22 +331,7 @@ function drawFallback(s: SessionState):
  );
  if (unused.length > 0) {
   const pick = unused[Math.floor(Math.random() * unused.length)]!;
-  const agentTurn: Turn = {
-   role: 'agent',
-   text: pick.text,
-   at: new Date().toISOString(),
-   questionForm: pick.questionForm,
-   ...(pick.source ? { questionSource: pick.source } : {}),
-  };
-  s.deps.vault.appendTurn(s.id, agentTurn);
-  s.turns.push(agentTurn);
-  s.questionCount++;
-  return {
-   kind: 'probe',
-   text: agentTurn.text,
-   questionForm: pick.questionForm,
-   provenance: 'bank',
-  };
+  return emitProbe(s, pick.text, pick.questionForm, 'bank', pick.source);
  }
 
  return null;

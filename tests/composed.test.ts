@@ -186,6 +186,43 @@ describe('composeFollowUp', () => {
 
     expect(result).toBe('What does synergy mean to you?');
   });
+
+  it('rejects a declarative that quotes the phrase, then accepts the retry', async () => {
+    const complete = fakeComplete(
+      'The synergy between teams is worth examining.',  // quotes, but is not a question
+      'What did synergy look like on the day it worked?',
+    );
+
+    const result = await composeFollowUp(TURN_WITH_ODD_TERM, light, complete);
+
+    expect(result).toBe('What did synergy look like on the day it worked?');
+  });
+
+  it('retries a first-person leak outside the quote, then accepts second person', async () => {
+    const turn = 'If a claim is popular, my hedges get shorter, and I stop saying what I think.';
+    const hedges: RedLight = { kind: 'abstraction-no-episode', phrase: 'my hedges get shorter' };
+    const complete = fakeComplete(
+      'When my hedges get shorter, what does that protect me from?',   // "me" outside the quote
+      'When my hedges get shorter, what does that protect you from?',  // person agrees
+    );
+
+    const result = await composeFollowUp(turn, hedges, complete);
+
+    expect(result).toBe('When my hedges get shorter, what does that protect you from?');
+  });
+
+  it('returns null when both attempts leak first person outside the quote', async () => {
+    const turn = 'If a claim is popular, my hedges get shorter, and I stop saying what I think.';
+    const hedges: RedLight = { kind: 'abstraction-no-episode', phrase: 'my hedges get shorter' };
+    const complete = fakeComplete(
+      'When my hedges get shorter, what does that protect me from?',
+      'When my hedges get shorter, what am I protecting?',
+    );
+
+    const result = await composeFollowUp(turn, hedges, complete);
+
+    expect(result).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -226,6 +263,17 @@ describe('composeJuxtaposition', () => {
     const result = await composeJuxtaposition(TURN_ECHO, hit, complete);
 
     expect(result).toContain('deep work');
+  });
+
+  it('rejects a statement that quotes the sharedPhrase but asks nothing', async () => {
+    const complete = fakeComplete(
+      'In January you valued deep work over meetings, and you still do.',
+      'In January you valued deep work — is that still where the hours go?',
+    );
+
+    const result = await composeJuxtaposition(TURN_ECHO, hit, complete);
+
+    expect(result).toBe('In January you valued deep work — is that still where the hours go?');
   });
 });
 
@@ -273,6 +321,37 @@ describe('composeOpener', () => {
     const complete = fakeComplete(
       'Has your perspective changed?',                                        // no quote
       'You mentioned that Meetings steal my best hours — still true?',        // quotes snippet verbatim
+    );
+
+    const result = await composeOpener(snippet, complete);
+
+    expect(result).not.toBeNull();
+    expect(result!.question).toContain('Meetings steal my best hours');
+  });
+
+  // eval 2026-08-02 #3: an unchanged echo is the longest common substring,
+  // so the quote check passes it. It is still not a question.
+  it('returns null when the model echoes the snippet back unchanged', async () => {
+    const complete = fakeComplete(snippet.prose, snippet.prose);
+
+    const result = await composeOpener(snippet, complete);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the model appends a question mark to the echo', async () => {
+    const echo = 'I value deep work over shallow productivity?';
+    const complete = fakeComplete(echo, echo);
+
+    const result = await composeOpener(snippet, complete);
+
+    expect(result).toBeNull();
+  });
+
+  it('retries an echo and accepts a real question on the second attempt', async () => {
+    const complete = fakeComplete(
+      snippet.prose,
+      'You wrote "Meetings steal my best hours" — which meeting was the worst of them?',
     );
 
     const result = await composeOpener(snippet, complete);
@@ -331,5 +410,19 @@ describe('composeStillTrue', () => {
     const result = await composeStillTrue(snippet, complete);
 
     expect(result).toBeNull();
+  });
+
+  it('retries a first-person leak outside the quote', async () => {
+    const complete = fakeComplete(
+      'Do I still value deep work over shallow productivity today?',   // "I" outside the quote
+      'Is "deep work over shallow productivity" still where your hours go?',
+    );
+
+    const result = await composeStillTrue(snippet, complete);
+
+    expect(result).not.toBeNull();
+    expect(result!.question).toBe(
+      'Is "deep work over shallow productivity" still where your hours go?',
+    );
   });
 });
