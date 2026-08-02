@@ -124,6 +124,27 @@ unassigned, all blockers closed.
   away. Two doors, and the zero-LLM lint door ships first so the highest-value
   output does not hang on the flakiest machinery.
 
+- [Grill: the degradation ladder](tickets/050-grill-degradation-ladder.md) —
+  Q-55: two rungs and a composing floor. Drop facet balance, then re-admit
+  `user-declared` entries; never relax status, Target, modeNeeds or horizon.
+  The floor is not a failure state — a freshly composed question beats a stale
+  banked one, so a long cascade makes the system worse at every rung. The
+  system drops its own inferences before the person's declarations.
+
+- [Grill: the degradation ladder](tickets/050-grill-degradation-ladder.md) —
+  Q-55: two rungs and a composing floor. Drop facet balance, then re-admit
+  `user-declared` entries; never relax status, Target, modeNeeds or horizon.
+  The floor is not a failure state — a freshly composed question beats a stale
+  banked one, so a long cascade makes the system worse at every rung. The
+  system drops its own inferences before the person's declarations.
+
+- [Grill: the degradation ladder](tickets/050-grill-degradation-ladder.md) —
+  Q-55: two rungs and a composing floor. Drop facet balance, then re-admit
+  `user-declared` entries; never relax status, Target, modeNeeds or horizon.
+  The floor is not a failure state — a freshly composed question beats a stale
+  banked one, so a long cascade makes the system worse at every rung. The
+  system drops its own inferences before the person's declarations.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
