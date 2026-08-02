@@ -18,6 +18,32 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import type { Complete, Vault } from '../src/types.js';
+import { statSync } from 'node:fs';
+import { createClaimStore } from '../src/wiki/store.js';
+import type { QueueStore } from '../src/types.js';
+import type { ClaimStore } from '../src/wiki/contract.js';
+import {
+ ANSWER_READING,
+ ANSWER_TEXT,
+ BODY_ONE,
+ BODY_TWO,
+ PROSE_ONE,
+ PROSE_ONE_B,
+ PROSE_THIRD,
+ PROSE_TWO,
+ QUESTION_ONE,
+ QUESTION_TWO,
+ READING_ONE,
+ READING_ONE_B,
+ READING_THIRD,
+ READING_TWO,
+ SITTING_ONE,
+ SITTING_TWO,
+ FABRICATED_QUOTE,
+ clerkRouter,
+ type Router,
+ type RouterOptions,
+} from './fixtures/clerk-flow.js';
 
 // ── Helpers ──
 
@@ -1260,5 +1286,711 @@ describe('docket off the response path', () => {
   gate.release();
   await barrier.waitFor(1);
   expect(kindCount(vaultDir, 'docket-run')).toBe(1);
+ });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The Clerk slice, end to end (T15)
+//
+// One rule governs everything below: the PRODUCT produces every state this file
+// asserts on. The vault is seeded with snippets and readings — material a
+// harvest writes — and after that nothing here writes a claim, a candidate, a
+// contradiction or a queue entry. The re-measure is drawn by `startSession` and
+// answered by `userTurn`, through the HTTP routes, because a test that staged
+// `answered` would prove the Clerk can read a state nothing produces.
+//
+// The fake model is a ROUTER, not a script: it dispatches on the prompt and
+// composes its answers out of the payload it was shown. See
+// `tests/fixtures/clerk-flow.ts` for why.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A booted app over one vault, plus the readers a test needs. */
+type ClerkApp = {
+ app: Hono;
+ vault: Vault;
+ queue: QueueStore;
+ store: ClaimStore;
+ router: Router;
+ barrier: ReturnType<typeof docketBarrier>;
+};
+
+/**
+ * Boot the REAL app over a vault directory and wait for its boot docket.
+ *
+ * Booting a SECOND app over the same directory is how this file takes a second
+ * docket run: it is a process restart, so everything the run reads has to have
+ * survived on disk. A helper that called `runWikiJobs` directly would skip the
+ * wiring that ticket 063 found missing, which is the wiring under test.
+ */
+async function bootClerk(
+ vaultDir: string,
+ opts: Omit<RouterOptions, 'store'> = {},
+): Promise<ClerkApp> {
+ const vault = createVault(vaultDir);
+ const queue = createQueueStore(vaultDir);
+ const store = createClaimStore(vaultDir);
+ const router = clerkRouter({ store, ...opts });
+ const barrier = docketBarrier();
+ const app = await createApp({
+  vault,
+  complete: router.complete,
+  queue,
+  index: buildIndex(Object.values(vault.rebuildIndex().snippets)),
+  vaultRoot: vaultDir,
+  authStore: createFileAuth(join(vaultDir, '.auth.json')),
+  onDocketSettled: barrier.onDocketSettled,
+ });
+ await barrier.waitFor(1);
+ return { app, vault, queue, store, router, barrier };
+}
+
+/** One sitting's material, written through the vault the product writes through. */
+function seedSitting(
+ vault: Vault,
+ session: string,
+ question: string,
+ prose: string,
+ readingText: string,
+): { snippetId: string; readingId: string } {
+ const snippet = vault.saveSnippet(prose, {
+  kind: 'harvest',
+  session,
+  question,
+  questionForm: 'deliberative',
+ });
+ const reading = vault.saveReading({
+  facet: 'construct',
+  stance: 'avowal',
+  reading: readingText,
+  cites: [`${snippet.id}@1`],
+ });
+ return { snippetId: snippet.id, readingId: reading.id };
+}
+
+/** Every file under a directory, as relative paths — the deletion check's input. */
+function walk(root: string, prefix = ''): string[] {
+ const out: string[] = [];
+ for (const name of readdirSync(join(root, prefix))) {
+  const rel = prefix ? `${prefix}/${name}` : name;
+  if (statSync(join(root, rel)).isDirectory()) out.push(...walk(root, rel));
+  else out.push(rel);
+ }
+ return out.sort();
+}
+
+/** Move a queue entry's `created` back so `expire(30)` can reach it. */
+function backdateEntry(vaultDir: string, id: string, days: number): void {
+ const path = join(vaultDir, 'queue', `${id}.md`);
+ const parsed = matter.read(path);
+ const data = parsed.data as Record<string, unknown>;
+ data['created'] = new Date(Date.now() - days * 86_400_000).toISOString();
+ writeFileSync(path, matter.stringify('', data), 'utf-8');
+}
+
+describe('clerk slice: harvest to claim to contradiction', () => {
+ let vaultDir: string;
+ let first: ClerkApp;
+ let second: ClerkApp;
+ let remeasureId: string;
+ let remeasureQuestion: string;
+ let answerSnippetId: string;
+ let filesAfterFirstRun: string[];
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-e2e-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  first = await bootClerk(vaultDir);
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('mints a claim per reading, and pairs two claims minted in the SAME run (067)', () => {
+  const claims = first.store.loadSlice().claims;
+  expect(claims.map((c) => c.body).sort()).toEqual([BODY_ONE, BODY_TWO].sort());
+
+  // Disk state, not an API response: every invariant Q-21 makes mandatory.
+  for (const c of claims) {
+   expect(c.range.trim().length).toBeGreaterThan(0);
+   expect(c.model.length).toBeGreaterThan(0);
+   expect(c.modelAt.length).toBeGreaterThan(0);
+   expect(c.cites.length).toBeGreaterThan(0);
+   expect(c.status).toBe('unconfirmed'); // Q-28: born unconfirmed, one cite
+   for (const cite of c.cites) {
+    const [id, version] = cite.split('@');
+    expect(existsSync(join(vaultDir, 'snippets', id!, `v${version}.md`))).toBe(true);
+   }
+  }
+
+  // Ticket 067's acceptance. Both claims were minted by job 1 of this run and
+  // pooled by job 3 of the SAME run. A candidate here means the second prime
+  // and the post-sweep graph rebuild are both real; without them the pool is
+  // one run behind and this is zero.
+  const candidates = first.store.listCandidates();
+  expect(candidates.length).toBe(1);
+  expect(candidates[0]!.status).toBe('pending-remeasure');
+  expect(candidates[0]!.attempts).toBe(1);
+  expect([...candidates[0]!.pair].sort()).toEqual(claims.map((c) => c.id).sort());
+
+  filesAfterFirstRun = walk(vaultDir);
+ });
+
+ it('mints exactly ONE re-measure, and a second run adds no second candidate or entry (B9)', async () => {
+  const minted = first.queue.list({ source: 'contradiction-remeasure' });
+  expect(minted.length).toBe(1);
+  const entry = minted[0]!;
+  remeasureId = entry.id;
+  remeasureQuestion = entry.question;
+
+  expect(entry.status).toBe('pending');
+  expect(entry.quotedFragment).toBeTypeOf('string');
+  expect(entry.question).toContain(entry.quotedFragment!);
+  // Q-15: it must read as an ordinary question. Neither claim body, and no
+  // machine literal, reaches the person.
+  expect(entry.question).not.toContain(BODY_ONE);
+  expect(entry.question).not.toContain(BODY_TWO);
+  expect(entry.question).not.toContain('contradiction-remeasure');
+  // Cited to BOTH sides, so the answer is legible as evidence about both.
+  expect((entry.cites ?? []).length).toBe(2);
+
+  // A whole second process over the same vault, before any answer arrives.
+  second = await bootClerk(vaultDir);
+  expect(second.store.listCandidates().length).toBe(1);
+  expect(second.queue.list({ source: 'contradiction-remeasure' }).length).toBe(1);
+ });
+
+ it('draws and answers the re-measure through the real turn path', async () => {
+  const sessionRes = await call(second.app, '/api/session', {
+   mode: { minutes: 30, energy: 'medium' },
+  });
+  expect(sessionRes.status).toBe(200);
+  const { sessionId, question } = (await sessionRes.json()) as {
+   sessionId: string;
+   question: string;
+  };
+  // The Queue put the question on the table — nothing here chose it.
+  expect(question).toBe(remeasureQuestion);
+
+  const turnRes = await call(second.app, `/api/session/${sessionId}/turn`, {
+   text: ANSWER_TEXT,
+  });
+  expect(turnRes.status).toBe(200);
+
+  // `answered` reached DISK because a user turn arrived (ticket 041).
+  const answered = second.queue.list({ source: 'contradiction-remeasure' })[0]!;
+  expect(answered.id).toBe(remeasureId);
+  expect(answered.status).toBe('answered');
+  expect(answered.answeredAt).toBeTypeOf('string');
+
+  // `call` sends POST only when a body is given, and `/end` is a POST route.
+  const endRes = await call(second.app, `/api/session/${sessionId}/end`, {});
+  expect(endRes.status).toBe(200);
+  const { proposals } = (await endRes.json()) as { proposals: Array<{ text: string }> };
+  expect(proposals.length).toBe(1);
+
+  const settled = second.barrier.count;
+  const harvestRes = await call(second.app, `/api/session/${sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'approve' }],
+  });
+  expect(harvestRes.status).toBe(200);
+  const { snippets } = (await harvestRes.json()) as { snippets: Array<{ id: string }> };
+  expect(snippets.length).toBe(1);
+  answerSnippetId = snippets[0]!.id;
+
+  // The docket behind the harvest response is the run that confirms.
+  await second.barrier.waitFor(settled + 1);
+ });
+
+ it('opens a Contradiction on the third sitting and contests both claims (Q-53, Q-30)', () => {
+  const graph = second.store.loadSlice();
+  expect(graph.contradictions.length).toBe(1);
+  const clash = graph.contradictions[0]!;
+
+  expect(clash.status).toBe('open');
+  expect(clash.remeasureQueueId).toBe(remeasureId);
+  // Q-46: the evidence is the person's own words, from the answer they gave to
+  // the question that was asked — not from the corpus that raised the suspicion.
+  expect(clash.evidence.snippetRef.startsWith(answerSnippetId)).toBe(true);
+  expect(ANSWER_TEXT).toContain(clash.evidence.quote);
+  expect(clash.model.length).toBeGreaterThan(0);
+
+  // Mechanical, never model-written (Q-29).
+  for (const c of graph.claims) expect(c.status).toBe('contested');
+
+  const candidate = second.store.listCandidates()[0]!;
+  expect(candidate.status).toBe('confirmed');
+  expect(candidate.attempts).toBe(1);
+ });
+
+ it('serves the whole wiki behind the route, and records a read', async () => {
+  const res = await call(second.app, '/api/wiki');
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+   facets: Array<{ facet: string; heading: string; claims: Array<{ id: string; body: string }> }>;
+   contradictions: unknown[];
+   lint: unknown[];
+   lintedAt: string | null;
+  };
+  const shown = body.facets.flatMap((f) => f.claims);
+  expect(shown.map((c) => c.body).sort()).toEqual([BODY_ONE, BODY_TWO].sort());
+  expect(body.contradictions.length).toBe(1);
+  // "Looked and found nothing" must not render as "never looked".
+  expect(body.lintedAt).not.toBeNull();
+
+  const claimId = shown[0]!.id;
+  const readRes = await call(second.app, `/api/wiki/claim/${claimId}/read`, { surface: 'wiki' });
+  expect(readRes.status).toBe(200);
+  const onDisk = second.store.readClaim(claimId)!;
+  expect(onDisk.readLog.length).toBe(1);
+  expect(onDisk.readLog[0]!.surface).toBe('wiki');
+ });
+
+ it('writes the wiki jobs’ events into the Activity Log file (ticket 063)', () => {
+  // Read the FILE back. A spy on `log` is what let this wiring ship missing:
+  // every wiki event went into whatever a caller passed, and in production
+  // there was no caller.
+  const logDir = join(vaultDir, 'log');
+  const raw = readdirSync(logDir)
+   .map((f) => readFileSync(join(logDir, f), 'utf-8'))
+   .join('');
+  const lines = raw
+   .split('\n')
+   .filter((l) => l.trim().length > 0)
+   .map((l) => JSON.parse(l) as ActivityEvent);
+  const kinds = new Set(lines.map((e) => e.kind));
+
+  // Three different emitters inside src/wiki/, all reaching the same file.
+  expect(kinds.has('clash-checked')).toBe(true); // src/wiki/clash.ts
+  expect(kinds.has('referent-minted')).toBe(true); // src/wiki/registry.ts
+  expect(kinds.has('claim-status-changed')).toBe(true); // src/wiki/ops.ts
+  // And the live-session counterpart, emitted on every turn including zero.
+  expect(kinds.has('resonance-checked')).toBe(true);
+
+  const contested = lines.filter(
+   (e) => e.kind === 'claim-status-changed' && e.detail.includes('to=contested'),
+  );
+  expect(contested.length).toBe(2);
+ });
+
+ it('deletes nothing anywhere in the flow', () => {
+  const now = new Set(walk(vaultDir));
+  for (const file of filesAfterFirstRun) expect(now.has(file)).toBe(true);
+ });
+});
+
+describe('clerk slice: a re-measure counts only from a different sitting (Q-53)', () => {
+ let vaultDir: string;
+ let app1: ClerkApp;
+ let app2: ClerkApp;
+ let app3: ClerkApp;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-q53-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  app1 = await bootClerk(vaultDir);
+
+  // Answer the re-measure through the real turn path, then DISCARD the cut, so
+  // the entry reaches `answered` with no reading behind it. The reading that
+  // follows is then the only thing job 5 can look at.
+  const sessionRes = await call(app1.app, '/api/session', {
+   mode: { minutes: 30, energy: 'medium' },
+  });
+  const { sessionId } = (await sessionRes.json()) as { sessionId: string };
+  await call(app1.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
+  await call(app1.app, `/api/session/${sessionId}/end`, {});
+  const settled = app1.barrier.count;
+  await call(app1.app, `/api/session/${sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'discard' }],
+  });
+  await app1.barrier.waitFor(settled + 1);
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('refuses to confirm from inside a pole’s own sitting', async () => {
+  expect(app1.store.listCandidates()[0]!.status).toBe('pending-remeasure');
+  expect(app1.store.loadSlice().contradictions.length).toBe(0);
+
+  // A reading that arrives AFTER the question was asked, but from sitting one —
+  // the sitting one of the two claims already rests on.
+  seedSitting(app1.vault, SITTING_ONE, QUESTION_ONE, PROSE_ONE_B, READING_ONE_B);
+  app2 = await bootClerk(vaultDir);
+
+  expect(app2.store.loadSlice().contradictions.length).toBe(0);
+  expect(app2.store.listCandidates()[0]!.status).toBe('pending-remeasure');
+  // Refused BEFORE the model was asked: `confirmingReadings` found nothing
+  // admissible, so no confirmation call was made at all.
+  expect(app2.router.count('confirmation')).toBe(0);
+ });
+
+ it('confirms from a sitting that is neither claim’s', async () => {
+  seedSitting(app2.vault, 'sitting-gamma', 'What did the week hold?', PROSE_THIRD, READING_THIRD);
+  app3 = await bootClerk(vaultDir);
+
+  expect(app3.router.count('confirmation')).toBe(1);
+  const graph = app3.store.loadSlice();
+  expect(graph.contradictions.length).toBe(1);
+  expect(graph.contradictions[0]!.status).toBe('open');
+  expect(PROSE_THIRD).toContain(graph.contradictions[0]!.evidence.quote);
+ });
+});
+
+/** The readings that sharpen the first claim rather than being kept (Q-50). */
+const SHARPENING = [READING_ONE_B, READING_THIRD];
+
+describe('clerk slice: two cites from one sitting are not independent (Q-50)', () => {
+ let vaultDir: string;
+ let app: ClerkApp;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-q50-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  app = await bootClerk(vaultDir, { sharpens: SHARPENING });
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('stays unconfirmed on a SECOND cite from the same sitting', async () => {
+  const before = app.store.loadSlice().claims;
+  expect(before.length).toBe(1);
+  expect(before[0]!.cites.length).toBe(1);
+  expect(before[0]!.status).toBe('unconfirmed');
+
+  // A second snippet, a second reading, a second cite — all in sitting one.
+  seedSitting(app.vault, SITTING_ONE, QUESTION_ONE, PROSE_ONE_B, READING_ONE_B);
+  const next = await bootClerk(vaultDir, { sharpens: SHARPENING });
+
+  const claim = next.store.loadSlice().claims[0]!;
+  expect(claim.cites.length).toBe(2);
+  // This is the line most likely to read as a bug: two cites, still
+  // unconfirmed. Q-50 is what `evidenced` means — a claim survived being
+  // approached again on a DIFFERENT DAY, not twice in one conversation.
+  expect(claim.status).toBe('unconfirmed');
+  app = next;
+ });
+
+ it('becomes evidenced on a cite from a second sitting', async () => {
+  seedSitting(app.vault, 'sitting-gamma', 'What did the week hold?', PROSE_THIRD, READING_THIRD);
+  const next = await bootClerk(vaultDir, { sharpens: SHARPENING });
+
+  const claim = next.store.loadSlice().claims[0]!;
+  expect(claim.cites.length).toBe(3);
+  expect(claim.status).toBe('evidenced');
+ });
+});
+
+describe('clerk slice: an expired re-measure earns exactly one more attempt (Q-53)', () => {
+ let vaultDir: string;
+ let app: ClerkApp;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-attempts-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  app = await bootClerk(vaultDir);
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('re-proposes the pair once after an expiry, then retires it', async () => {
+  const firstEntry = app.queue.list({ source: 'contradiction-remeasure' })[0]!;
+  expect(app.store.listCandidates()[0]!.attempts).toBe(1);
+
+  // A month passes and nobody opened the app. Silence is not a verdict.
+  backdateEntry(vaultDir, firstEntry.id, 40);
+  app = await bootClerk(vaultDir);
+
+  const dissolved = app.store.listCandidates();
+  expect(dissolved.length).toBe(1);
+  expect(dissolved[0]!.status).toBe('dissolved');
+  expect(dissolved[0]!.outcome).toBe('remeasure-expired');
+  // The counter survived the round trip through the candidate file.
+  expect(dissolved[0]!.attempts).toBe(1);
+
+  // The next run re-proposes it — exactly once — and the new record is born
+  // knowing it is a second attempt.
+  app = await bootClerk(vaultDir);
+  const afterRepropose = app.store.listCandidates();
+  expect(afterRepropose.length).toBe(2);
+  const second = afterRepropose.find((c) => c.status === 'pending-remeasure')!;
+  expect(second.attempts).toBe(2);
+  const entries = app.queue.list({ source: 'contradiction-remeasure' });
+  expect(entries.length).toBe(2);
+
+  // Expire the second one too.
+  const secondEntry = entries.find((e) => e.id !== firstEntry.id)!;
+  backdateEntry(vaultDir, secondEntry.id, 40);
+  app = await bootClerk(vaultDir);
+  expect(app.store.listCandidates().filter((c) => c.status === 'dissolved').length).toBe(2);
+
+  // And now it is retired: no third record, no third question, forever.
+  app = await bootClerk(vaultDir);
+  expect(app.store.listCandidates().length).toBe(2);
+  expect(app.queue.list({ source: 'contradiction-remeasure' }).length).toBe(2);
+ });
+});
+
+describe('clerk slice: every model call failing still completes the run', () => {
+ let vaultDir: string;
+ let app: ClerkApp;
+ let seeded: string[];
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-dead-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  seeded = walk(vaultDir);
+  app = await bootClerk(vaultDir, { failEverything: true });
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('finishes every job, writes the ledger, and loses no file', async () => {
+  const logDir = join(vaultDir, 'log');
+  const kinds = new Set(
+   readdirSync(logDir)
+    .flatMap((f) => readFileSync(join(logDir, f), 'utf-8').split('\n'))
+    .filter((l) => l.trim().length > 0)
+    .map((l) => (JSON.parse(l) as ActivityEvent).kind),
+  );
+
+  // Job 1 failed on both readings, per reading, and said so.
+  expect(kinds.has('mint-call-failed')).toBe(true);
+  // Jobs after it still ran: the pool looked, and the docket finished.
+  expect(kinds.has('clash-checked')).toBe(true);
+  expect(kinds.has('index-rebuilt')).toBe(true);
+  expect(kinds.has('expired')).toBe(true);
+  expect(kinds.has('docket-run')).toBe(true);
+  expect(kinds.has('docket-run-failed')).toBe(false);
+
+  // Nothing was written that a failed call could have half-written…
+  expect(app.store.loadSlice().claims.length).toBe(0);
+  expect(app.store.listCandidates().length).toBe(0);
+  // …and the attempts ARE on the ledger, so the back-off rule has its input.
+  const ledger = readFileSync(join(vaultDir, 'wiki', 'sweep-log.jsonl'), 'utf-8');
+  expect(ledger.split('\n').filter((l) => l.includes('"REJECTED"')).length).toBe(2);
+
+  // The app still answers.
+  const res = await call(app.app, '/api/wiki');
+  expect(res.status).toBe(200);
+
+  const now = new Set(walk(vaultDir));
+  for (const file of seeded) expect(now.has(file)).toBe(true);
+ });
+});
+
+/**
+ * CHARACTERIZATION, not an endorsement. This describes a defect found by T15
+ * and reported rather than fixed — the source change belongs to whoever owns
+ * `src/clerk/wiki-jobs.ts`.
+ *
+ * Job 1 sweeps the re-measure's answer BEFORE job 5 judges it, and the two read
+ * the same field. If the op the sweep applies adds the answer's cite to either
+ * pole — an `UPDATE`, which is the natural op for an answer about the very
+ * construct the claims are about — then that claim's sitting set grows to
+ * include the re-measure's sitting. Job 5 then computes `held` from the
+ * POST-SWEEP claims, finds the only admissible reading is from a sitting a pole
+ * now rests on, and refuses it.
+ *
+ * The consequence is not a delay. The queue entry reads `answered`, so it never
+ * expires; job 4 skips the candidate because it already has a
+ * `remeasureQueueId`; and `poolCandidates` refuses to re-propose a pair at
+ * `pending-remeasure`. The pair is stranded for good, and nothing anywhere
+ * counts it — the same shape as the drawn-and-abandoned leak the plan records
+ * under Open Questions, reached through a much more likely door.
+ *
+ * The assertions below are what the code does TODAY. When it is fixed, they
+ * flip, and that is the point of writing them down.
+ */
+describe('clerk slice: the sweep can strand its own re-measure (DEFECT, characterized)', () => {
+ let vaultDir: string;
+ let app: ClerkApp;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-strand-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  // The only difference from the main flow: the answer's reading sharpens a
+  // pole instead of being kept.
+  app = await bootClerk(vaultDir, { sharpens: [ANSWER_READING] });
+
+  const sessionRes = await call(app.app, '/api/session', {
+   mode: { minutes: 30, energy: 'medium' },
+  });
+  const { sessionId } = (await sessionRes.json()) as { sessionId: string };
+  await call(app.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
+  await call(app.app, `/api/session/${sessionId}/end`, {});
+  const settled = app.barrier.count;
+  await call(app.app, `/api/session/${sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'approve' }],
+  });
+  await app.barrier.waitFor(settled + 1);
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('opens no Contradiction, and the candidate can never be decided again', async () => {
+  // The answer was harvested and the cite landed on a pole.
+  const claims = app.store.loadSlice().claims;
+  const sharpened = claims.find((c) => c.body === BODY_ONE)!;
+  expect(sharpened.cites.length).toBe(2);
+
+  // The model was never asked, because no reading was admissible.
+  expect(app.router.count('confirmation')).toBe(0);
+  expect(app.store.loadSlice().contradictions.length).toBe(0);
+
+  // And the pair is now stranded. Another run changes nothing: the entry is
+  // answered so it cannot expire, the candidate has its queue id so job 4
+  // skips it, and the pool refuses a pair at `pending-remeasure`.
+  const next = await bootClerk(vaultDir, { sharpens: [ANSWER_READING] });
+  expect(next.store.listCandidates().length).toBe(1);
+  expect(next.store.listCandidates()[0]!.status).toBe('pending-remeasure');
+  expect(next.store.loadSlice().contradictions.length).toBe(0);
+  expect(next.queue.list({ source: 'contradiction-remeasure' }).length).toBe(1);
+ });
+});
+
+/**
+ * Ticket 067's fix, at the only place it is observable.
+ *
+ * `clash.embeddingCosine` is in shadow (Q-35), so this channel returns nothing
+ * live and its whole output is a `shadow-decision` line. That line IS the
+ * graduation evidence, and 067 is the finding that it was structurally missing
+ * for every claim a run minted: the server primes before `runWikiJobs`, job 1
+ * mints, and `candidates()` is cache-only. Job 1.5 is the second prime, and a
+ * shadow record naming two claims born in the SAME run is the only proof it ran.
+ *
+ * The embedder is a fake that gives every body one vector, so the cosine is 1
+ * and the threshold is not what is under test — the cache is.
+ */
+describe('clerk slice: the embedding channel sees claims minted this run (067)', () => {
+ let vaultDir: string;
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('writes a shadow record for a pair both minted in the run that pooled them', async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-embed-'));
+  const vault = createVault(vaultDir);
+  seedSitting(vault, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(vault, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+
+  const embedded: string[][] = [];
+  const embed = async (texts: string[]): Promise<number[][]> => {
+   embedded.push(texts);
+   return texts.map(() => [1, 0, 0]);
+  };
+
+  const queue = createQueueStore(vaultDir);
+  const store = createClaimStore(vaultDir);
+  const router = clerkRouter({ store });
+  const barrier = docketBarrier();
+  await createApp({
+   vault,
+   complete: router.complete,
+   queue,
+   index: buildIndex(Object.values(vault.rebuildIndex().snippets)),
+   vaultRoot: vaultDir,
+   authStore: createFileAuth(join(vaultDir, '.auth.json')),
+   embed: { embed, model: 'fake-embedder' },
+   onDocketSettled: barrier.onDocketSettled,
+  });
+  await barrier.waitFor(1);
+
+  const claims = store.loadSlice().claims;
+  expect(claims.length).toBe(2);
+
+  // The pre-run prime saw an empty wiki. Everything embedded was embedded by
+  // job 1.5, after the sweep, and only what the sweep touched.
+  expect(embedded.length).toBe(1);
+  expect(embedded[0]!.length).toBe(2);
+
+  const shadow = readEvents(vaultDir).filter(
+   (e) => e.kind === 'shadow-decision' && e.detail.includes('clash.embeddingCosine'),
+  );
+  expect(shadow.length).toBe(1);
+  for (const claim of claims) expect(shadow[0]!.detail).toContain(claim.id);
+
+  // Shadow means shadow: the channel proposed nothing live.
+  expect(readEvents(vaultDir).some((e) => e.kind === 'clash-checked' && e.detail.includes('embedding:0'))).toBe(true);
+ });
+});
+
+/**
+ * Q-46, at the seam it protects: a Contradiction that cannot name the person's
+ * words does not open.
+ *
+ * The model here does the thing a model does — it confirms fluently, with a
+ * quote that reads exactly like the person and appears in nothing they wrote.
+ * Three structural checks stand between that and a claim going `contested`, and
+ * this is the run that asks whether they are wired up rather than merely
+ * written. Everything else in this file quotes verbatim, so without this case
+ * the checks could be deleted and the whole suite would stay green — which is
+ * how the check would rot.
+ */
+describe('clerk slice: a fabricated confirming quote opens nothing (Q-46)', () => {
+ let vaultDir: string;
+ let app: ClerkApp;
+
+ beforeAll(async () => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-fabricated-'));
+  const seed = createVault(vaultDir);
+  seedSitting(seed, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
+  seedSitting(seed, SITTING_TWO, QUESTION_TWO, PROSE_TWO, READING_TWO);
+  app = await bootClerk(vaultDir, { fabricateQuote: true });
+
+  const sessionRes = await call(app.app, '/api/session', {
+   mode: { minutes: 30, energy: 'medium' },
+  });
+  const { sessionId } = (await sessionRes.json()) as { sessionId: string };
+  await call(app.app, `/api/session/${sessionId}/turn`, { text: ANSWER_TEXT });
+  await call(app.app, `/api/session/${sessionId}/end`, {});
+  const settled = app.barrier.count;
+  await call(app.app, `/api/session/${sessionId}/harvest`, {
+   decisions: [{ proposal: 0, action: 'approve' }],
+  });
+  await app.barrier.waitFor(settled + 1);
+ });
+
+ afterAll(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ it('refuses the confirmation and records WHY, apart from an honest no', () => {
+  // The model was asked, and it said yes.
+  expect(app.router.count('confirmation')).toBe(1);
+  expect(ANSWER_TEXT).not.toContain(FABRICATED_QUOTE);
+
+  // Nothing opened, and no claim was contested on it.
+  const graph = app.store.loadSlice();
+  expect(graph.contradictions.length).toBe(0);
+  for (const c of graph.claims) expect(c.status).not.toBe('contested');
+
+  // The pair is retired with the reason of record that separates "the model
+  // could not produce the evidence" from "the person said no" — the ratio T16
+  // reads to find out what the self-reported boolean was worth.
+  const candidate = app.store.listCandidates()[0]!;
+  expect(candidate.status).toBe('dissolved');
+  expect(candidate.outcome).toBe('unverified-confirmation');
  });
 });
