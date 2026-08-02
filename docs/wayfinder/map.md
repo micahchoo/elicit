@@ -340,6 +340,13 @@ unassigned, all blockers closed.
   of the junk and was NOT fixed: six predicates measured, best 74% precision at
   18% recall against a 53% baseline. The numbers are in the code.
 
+- [Build: semantic resonance for snippets](tickets/053-embeddings-before-the-clerk.md)
+  — 7/8 recall by RANK against the incumbent's 0/8. It ranks rather than
+  thresholds because every caller already wants the best few, so the caller's
+  own k is the bound. It could not share T18's cache file: that prune would
+  have deleted every snippet vector on the first docket run. Not yet wired —
+  ticket 068 names every call site.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
