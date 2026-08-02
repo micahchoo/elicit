@@ -551,7 +551,18 @@ function applyOne(op: ClerkOp, deps: ApplyDeps, now: string, touched: string[]):
  * passed predates this batch. Snippets and readings come from the caller's
  * graph — nothing here writes either.
  */
-function recomputeStatus(touched: string[], deps: ApplyDeps, now: string): void {
+/**
+ * Recompute and persist status for the touched claims (Q-29: status is never
+ * model-writable; arithmetic decides it).
+ *
+ * EXPORTED so that this file stays the only place a claim's status reaches
+ * disk. T12 opens a Contradiction, which mechanically contests both claims —
+ * not an op, so it cannot go through `applyOps`, and it had grown its own
+ * `store.writeClaim` call. That made a fourth write site and broke the
+ * invariant the plan's grep guards: only `store.ts` and `ops.ts` write claims.
+ * A caller outside the op path calls this instead of writing claims itself.
+ */
+export function recomputeStatus(touched: string[], deps: ApplyDeps, now: string): void {
   const { store, graph, log } = deps;
   const after: ClaimGraph = { ...graph, ...store.loadSlice() };
 

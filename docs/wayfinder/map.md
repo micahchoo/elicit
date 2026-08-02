@@ -325,6 +325,13 @@ unassigned, all blockers closed.
   76 of 139 snippets are one sitting; snippets are dated by their sitting, not
   by capture, or the whole import would read as "recent".
 
+- [Fix: the activity feed's kind list](tickets/063-log-format-kind-drift.md) —
+  the emitted set is now DERIVED from the tree, not restated. It found 26
+  unrendered kinds where the ticket guessed four, and caught four more that
+  landed mid-task. Its own scanner had the same blind spot it was built to fix
+  — one apostrophe in a comment hid a whole file — now closed with two guards
+  that were proved to bite.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.

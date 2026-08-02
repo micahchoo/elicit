@@ -38,7 +38,7 @@ import {
   type ThresholdLogFn,
 } from './thresholds.js';
 import type { Claim, ClaimGraph, ClaimStatus, LogFn } from './contract.js';
-import type { Facet } from '../types.js';
+import type { Facet, Snippet } from '../types.js';
 
 /**
  * What `computeStatus` returns.
@@ -119,6 +119,45 @@ function firstReadAt(claim: Claim): number | undefined {
 }
 
 /**
+ * The Q-50 sitting key for one resolved snippet, and the ONLY definition of it.
+ *
+ * Q-50 makes cite independence cross-sitting, so this string is what decides
+ * whether a claim can reach `evidenced` and — through `sittingsOfCites` — what
+ * decides under Q-53 whether a re-measure counts. Two copies of this rule that
+ * drift apart would let a claim be independent by one measure and not the
+ * other, silently, in two different files. T12 wrote a second copy before this
+ * was exported; that is the drift this prevents.
+ *
+ * Absent session keys on the SNIPPET id, never on the cite: two versions of one
+ * sessionless snippet are one sitting, while two different sessionless snippets
+ * are two. Absent is never equal to absent.
+ */
+export function sittingKey(snippetId: string, snippet: Snippet): string {
+  const session = snippet.provenance.session;
+  return session ? `session:${session}` : `no-session:${snippetId}`;
+}
+
+/**
+ * The distinct sittings a cite list draws on. Unresolvable cites contribute
+ * nothing — a cite naming a version that never existed is evidence of nothing,
+ * and counting it as a sitting would manufacture independence.
+ */
+export function sittingsOfCites(
+  cites: string[],
+  snippets: Record<string, Snippet>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const cite of cites) {
+    const id = citeSnippetId(cite);
+    const version = citeVersion(cite);
+    const snippet = snippets[id];
+    if (!snippet || Number.isNaN(version) || version > snippet.version) continue;
+    out.add(sittingKey(id, snippet));
+  }
+  return out;
+}
+
+/**
  * Resolve every cite against the graph.
  *
  * `ClaimGraph.snippets` holds only the LATEST version of each snippet, so
@@ -143,12 +182,11 @@ function resolve(
       unresolved++;
       continue;
     }
-    const session = snippet.provenance.session;
     const captured = Date.parse(snippet.captured);
     evidence.push({
       cite,
       snippetId: id,
-      sitting: session ? `session:${session}` : `no-session:${id}`,
+      sitting: sittingKey(id, snippet),
       discounted: cut !== undefined && !Number.isNaN(captured) && captured > cut,
     });
   }
