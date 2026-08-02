@@ -114,6 +114,7 @@ import { primeable } from '../wiki/embedding.js';
 import type { MintItem, MintResult } from './mint.js';
 import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } from './contradiction.js';
 import { readSitting, sittingCache } from './sitting.js';
+import { composeDiscriminatingQuestion, composeNarrowedRanges } from './composed.js';
 import type { SittingContext } from './composed.js';
 import type {
  Complete,
@@ -187,6 +188,7 @@ const RAW_EXCERPT_CHARS = 200;
  */
 const GIT_GATED_INPUTS: Record<string, readonly string[]> = {
  'presweep-confirmation': ['queue/', 'wiki/candidates/', 'wiki/claims/', 'wiki/readings/', 'snippets/'],
+ 'discriminated-answer': ['queue/', 'wiki/claims/', 'wiki/readings/', 'snippets/'],
  sweep: ['wiki/readings/', 'snippets/'],
  remeasure: ['queue/', 'wiki/candidates/', 'wiki/claims/', 'snippets/'],
  confirmation: ['queue/', 'wiki/candidates/', 'wiki/claims/', 'wiki/readings/', 'snippets/'],
@@ -231,7 +233,7 @@ export type WikiJobDeps = {
   complete: Complete,
  ) => Promise<OppositionJudgment | null>;
  composeRemeasure: (
-  candidate: { a: Claim; b: Claim; poleA: string; poleB: string },
+  candidate: { a: Claim; b: Claim; poleA: string; poleB: string; proseA: string },
   originalQuestions: string[],
   complete: Complete,
  ) => Promise<QueueDraft | null>;
@@ -246,6 +248,23 @@ export type WikiJobDeps = {
   complete: Complete,
   sitting?: SittingContext,
  ) => Promise<QueueDraft | null>;
+ /**
+  * Ticket 060's two composed functions. Optional so `src/server.ts` — which
+  * builds `WikiJobDeps` and is not this task's to touch — keeps working
+  * unchanged; the call sites fall back to the module functions when a dep is
+  * absent. Injected here (not called directly) so the tests can count calls.
+  */
+ composeDiscriminatingQuestion?: (
+  claims: { a: Claim; b: Claim },
+  prose: { a: string; b: string },
+  complete: Complete,
+ ) => Promise<QueueDraft | null>;
+ composeNarrowedRanges?: (
+  claims: { a: Claim; b: Claim },
+  prose: { a: string; b: string },
+  answers: Reading[],
+  complete: Complete,
+ ) => Promise<{ a: string; b: string } | null>;
  log: LogFn;
  vaultRoot: string;
  /** Defaults to `ELICIT_CLERK_MODEL ?? 'qwen3.6:35b'` (Q-34, Q-48). */
@@ -316,6 +335,33 @@ function quoteFor(claim: Claim, graph: ClaimGraph): string {
   if (snippet) return snippet.prose;
  }
  return '';
+}
+
+/**
+ * The prose of the first resolving cited snippet, or the empty string.
+ *
+ * Ticket 060's lint path needs the VERBATIM user prose behind a claim to
+ * quote, and it needs the same lookup twice per pair — so the shared snippet
+ * id half of a `snippetId@version` cite is resolved through `graph.snippets`
+ * here rather than at each call site.
+ */
+function firstProse(claim: Claim, graph: ClaimGraph): string {
+ for (const cite of claim.cites) {
+  const snippet = graph.snippets[snippetIdOf(cite)];
+  if (snippet) return snippet.prose;
+ }
+ return '';
+}
+
+/**
+ * The sorted-pair dedupe key the minting path holds on (ticket 060): one
+ * question per pair, order-insensitive on the two ids — exactly as T11
+ * retires candidate pairs on the sorted claim-id pair.
+ */
+function samePair(claims: string[] | undefined, pair: [string, string]): boolean {
+ if (!claims || claims.length !== 2) return false;
+ const [x, y] = claims;
+ return (x === pair[0] && y === pair[1]) || (x === pair[1] && y === pair[0]);
 }
 
 /** The questions that elicited the words two claims rest on (Q-14's input). */
@@ -449,6 +495,7 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
 
  try {
   await guardGated('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
+  await guardGated('discriminated-answer', () => jobRangeDiscrimination(deps, graph, log, model));
   await guardGated('sweep', () => jobSweep(deps, report, graph, log, model, touched));
   await guardGated('prime', () => jobPrime(deps, graph, touched, watermark));
   await guardGated('lint', () => jobLint(deps, report, graph, log, thresholds));
@@ -859,6 +906,50 @@ async function jobLint(
    });
   }
  }
+
+ for (const finding of findings) {
+  if (finding.kind !== 'undiscriminated-range') continue;
+  const compose = deps.composeDiscriminatingQuestion ?? composeDiscriminatingQuestion;
+  const [aId, bId] = finding.refs;
+  if (!aId || !bId) continue;
+  const a = live.get(aId);
+  const b = live.get(bId);
+  if (!a || !b) continue;
+
+  // One question per pair, deduped on the SORTED claim-id pair exactly as
+  // T11 retires candidate pairs; lint has no memory, so the dedupe lives
+  // here (Q-31's handoff, same as stale-citation).
+  const heldPair = deps.queue
+   .list({ source: 'lint-undiscriminated-range' })
+   .some(
+    (e) =>
+     e.status !== 'answered' &&
+     e.status !== 'expired' &&
+     samePair(e.claims, [a.id, b.id]),
+   );
+  if (heldPair) continue;
+
+  // Nothing verbatim to quote is not a finding with a question.
+  const prose = { a: firstProse(a, graph), b: firstProse(b, graph) };
+  if (prose.a === '' || prose.b === '') continue;
+
+  try {
+   const composed = await compose({ a, b }, prose, deps.complete);
+   if (!composed) continue;
+   // S21 spread: the compose function sets source
+   // 'lint-undiscriminated-range' itself; the sorted pair rides on the entry
+   // as the dedupe key and the answer's route back (Q-31's handoff).
+   deps.queue.add({ ...composed, claims: [a.id, b.id] });
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=lint-undiscriminated-range pair=${a.id},${b.id} ${err instanceof Error ? err.message : String(err)}`,
+    refs: [a.id, b.id],
+   });
+  }
+ }
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,7 +1109,7 @@ async function jobRemeasure(
 
   try {
    const draft = await deps.composeRemeasure(
-    { a, b, poleA: pair.poleA, poleB: pair.poleB },
+    { a, b, poleA: pair.poleA, poleB: pair.poleB, proseA: quoteFor(a, graph) },
     originalQuestions(a, b, graph),
     deps.complete,
    );
@@ -1194,6 +1285,109 @@ async function jobPresweepConfirmation(
     actor: 'clerk',
     kind: JOB_FAILED,
     detail: `job=presweep-confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+   });
+  }
+ }
+}
+
+// ---------------------------------------------------------------------------
+// Discriminated-answer confirmation (ticket 060) — between presweep and sweep
+// ---------------------------------------------------------------------------
+
+/**
+ * Route an answered discriminating question back to two SUPERSEDEs, one per
+ * claim, each with a narrowed Range (Q-54's consequence, Q-31's handoff).
+ *
+ * Must run BEFORE the sweep, for ticket 070's reason: the sweep would absorb
+ * the answer's cite into a claim via UPDATE, and then the Q-53 held-sittings
+ * check in `confirmingReadings` would reject the answer's own sitting.
+ * presweep-confirmation is the precedent.
+ */
+async function jobRangeDiscrimination(
+ deps: WikiJobDeps,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ model: string,
+): Promise<void> {
+ const graph = graphOf();
+ const claims = new Map(graph.claims.map((c) => [c.id, c]));
+ const compose = deps.composeNarrowedRanges ?? composeNarrowedRanges;
+
+ for (const entry of deps.queue.list({ source: 'lint-undiscriminated-range' })) {
+  if (entry.status !== 'answered') continue;
+  if (entry.answeredAt === undefined) continue;
+  const pair = entry.claims;
+  if (!pair || pair.length !== 2) continue;
+  const [aId, bId] = pair;
+  if (!aId || !bId) continue;
+  const a = claims.get(aId);
+  const b = claims.get(bId);
+  if (!a || !b) continue;
+  // Idempotence: once a claim is superseded the pair is gone from the live
+  // map, and the pair never discriminates again.
+  if (!isLive(a) || !isLive(b)) continue;
+
+  // The boundary can be named only while both claims still share a referent;
+  // the lexicographically-first shared slug is the reason of record.
+  const sharedSlug = a.referents.filter((s) => b.referents.includes(s)).sort()[0];
+  if (sharedSlug === undefined) continue;
+
+  // Exactly the Q-53 filter: readings after the answer, from sittings that
+  // are neither claim's.
+  const readings = confirmingReadings(graph, entry.answeredAt, a, b);
+  // No admissible reading is not a resolution — the answer may not have been
+  // harvested yet, and retiring the pair here would spend it on a run that
+  // learned nothing (mirrors the confirmation comment).
+  if (readings.length === 0) continue;
+
+  const prose = { a: firstProse(a, graph), b: firstProse(b, graph) };
+  if (prose.a === '' || prose.b === '') continue;
+
+  try {
+   const refined = await compose({ a, b }, prose, readings, deps.complete);
+   // null is not a failure that retires anything; the pair waits.
+   if (!refined) continue;
+
+   const answerCites = readings.flatMap((r) => r.cites ?? []);
+   const citesFor = (claim: Claim): string[] => {
+    const out = [...claim.cites];
+    for (const cite of answerCites) if (!out.includes(cite)) out.push(cite);
+    return out;
+   };
+
+   const reason = `range-discriminated:lint:${sharedSlug}`;
+   const first = readings[0];
+   if (!first) continue;
+
+   // TWO applyOps calls, one SUPERSEDE each, both on the full readings list —
+   // REQUIRED because applyOps' totality rule (validate rule 3 in
+   // src/wiki/ops.ts) allows one op per reading per batch, and two SUPERSEDEs
+   // may need to share a single answer reading.
+   deps.applyOps(
+    [{ op: 'SUPERSEDE', reading: first.id, claim: a.id, body: a.body, range: refined.a, cites: citesFor(a), reason }],
+    { readingIds: readings.map((r) => r.id) },
+    { store: deps.store, registry: deps.registry, graph, model, log },
+   );
+   deps.applyOps(
+    [{ op: 'SUPERSEDE', reading: readings[1]?.id ?? first.id, claim: b.id, body: b.body, range: refined.b, cites: citesFor(b), reason }],
+    { readingIds: readings.map((r) => r.id) },
+    { store: deps.store, registry: deps.registry, graph, model, log },
+   );
+
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: 'range-discriminated',
+    detail: `pair=${a.id},${b.id} reason=${reason}`,
+    refs: [a.id, b.id],
+   });
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=discriminated-answer pair=${a.id},${b.id} ${err instanceof Error ? err.message : String(err)}`,
+    refs: [a.id, b.id],
    });
   }
  }

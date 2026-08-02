@@ -78,7 +78,7 @@ function readSnippets(): Map<string, SnippetVersion> {
       out.set(`${id}@${version}`, {
         id,
         version,
-        captured: data.captured,
+        ...(data.captured !== undefined ? { captured: data.captured } : {}),
         provenance: data.provenance ?? {},
         prose: parsed.content.trim(),
       });
@@ -109,8 +109,8 @@ function readClaims(snippets: Map<string, SnippetVersion>): ClaimRecord[] {
       status: String(d.status ?? 'unknown'),
       referents: Array.isArray(d.referents) ? (d.referents as string[]) : [],
       attested: d.attested === true,
-      model: d.model as string | undefined,
-      created: d.created as string | undefined,
+      ...(typeof d.model === 'string' ? { model: d.model } : {}),
+      ...(typeof d.created === 'string' ? { created: d.created } : {}),
       cites,
       snippets: resolved,
       unresolved,
@@ -161,22 +161,25 @@ function distance(a: ClaimRecord, b: ClaimRecord, tok: Map<string, Set<string>>)
  *  lexicographically first id, so two runs over the same vault agree. */
 function cluster(records: ClaimRecord[], k: number) {
   const tok = new Map(records.map((r) => [r.id, tokens(`${r.range} ${r.claim}`)]));
+  if (records.length === 0) {
+    return { seeds: [] as number[], assignment: [] as { cluster: number; toSeed: number }[] };
+  }
   const seeds: number[] = [0];
-  const minDist = records.map((r) => distance(r, records[0], tok));
+  const minDist = records.map((r) => distance(r, records[0]!, tok));
   while (seeds.length < Math.min(k, records.length)) {
     let best = -1;
     let bestD = -1;
     for (let i = 0; i < records.length; i++) {
       if (seeds.includes(i)) continue;
-      if (minDist[i] > bestD) {
-        bestD = minDist[i];
+      if (minDist[i]! > bestD) {
+        bestD = minDist[i]!;
         best = i;
       }
     }
     if (best < 0) break;
     seeds.push(best);
     for (let i = 0; i < records.length; i++) {
-      minDist[i] = Math.min(minDist[i], distance(records[i], records[best], tok));
+      minDist[i] = Math.min(minDist[i]!, distance(records[i]!, records[best]!, tok));
     }
   }
 
@@ -184,7 +187,7 @@ function cluster(records: ClaimRecord[], k: number) {
     let best = 0;
     let bestD = Infinity;
     seeds.forEach((s, ci) => {
-      const d = distance(r, records[s], tok);
+      const d = distance(r, records[s]!, tok);
       if (d < bestD) {
         bestD = d;
         best = ci;
@@ -222,7 +225,7 @@ function order(records: ClaimRecord[], assignment: { cluster: number; toSeed: nu
     byCluster.get(a.cluster)!.push(i);
   });
   for (const members of byCluster.values()) {
-    members.sort((x, y) => assignment[x].toSeed - assignment[y].toSeed);
+    members.sort((x, y) => assignment[x]!.toSeed - assignment[y]!.toSeed);
   }
 
   const queues = [...byCluster.entries()]
@@ -245,7 +248,7 @@ function order(records: ClaimRecord[], assignment: { cluster: number; toSeed: nu
   const shuffled = records.map((_, i) => i);
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
   }
 
   const used = new Set<number>();
@@ -281,8 +284,8 @@ const { seeds, assignment } = cluster(claims, CLUSTERS);
 const sequence = order(claims, assignment);
 
 const records = sequence.map((idx, position) => ({
-  ...claims[idx],
-  cluster: assignment[idx].cluster,
+  ...claims[idx]!,
+  cluster: assignment[idx]!.cluster,
   isSeed: seeds.includes(idx),
   position,
   inSample: position < SAMPLE_SIZE,

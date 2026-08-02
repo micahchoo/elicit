@@ -1,7 +1,7 @@
 ---
 title: "Build: discriminating questions from lint — name the boundary without the contradiction pipeline"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude (omp wave 5)
 blocked_by: [008-build-clerk.md]
 ---
@@ -70,3 +70,43 @@ both.
 - An answered discriminating question narrows BOTH claims' Ranges and both
   recompute to `evidenced`.
 - The minted question, read aloud, does not accuse.
+
+## Resolution (2026-08-02)
+
+Built by the omp wave-5 agent; finished and verified by the session driver
+after the agent exited without closing the ticket. What landed:
+
+- `src/wiki/lint.ts`: the fifth finding kind, `undiscriminated-range` — two
+  live claims sharing a referent whose Ranges exceed
+  `lint.undiscriminatedRangeSimilarity` (arrives in shadow, Q-35; Jaccard
+  over canonical-name tokens, zero-model).
+- `src/clerk/composed.ts`: `composeDiscriminatingQuestion` (Q-12-composed,
+  both cited proses quoted whole per Q-40, invitation framing per Q-15) and
+  `composeNarrowedRanges` for the answer tail.
+- `src/clerk/wiki-jobs.ts`: the mint consequence in `jobLint` (one question
+  per sorted claim pair, deduped through the queue, `claims` on the entry as
+  the routing address) and a new git-gated docket job `discriminated-answer`
+  (`jobRangeDiscrimination`) — an answered question becomes one SUPERSEDE per
+  claim, reason `range-discriminated:lint:<referentSlug>`, both born
+  `evidenced` per Q-50/Q-53.
+- `src/queue/`: `lint-undiscriminated-range` source (reads "from your own
+  words" — no accusation, no self-announcement, S3), `claims` persisted
+  through frontmatter.
+
+Three defects the agent left, fixed at verification:
+
+1. **The consequence was dead code** — the mint block sat inside the
+   stale-citation loop after its `kind !== 'stale-citation'` filter, so no
+   undiscriminated finding could ever reach it (tsc TS2367 caught it; the
+   agent's own mint tests were red). Split into its own loop.
+2. **contract.ts arrived as a whole-file reindent** hiding a one-union-member
+   change, breaking canon conformance greps. Reverted the reformat, kept the
+   member.
+3. **The kind-sweep missed the shorthand `subject,`** in the new finding
+   literal, demanding a log sentence for a wiki-page note. The sweep's
+   subject-matcher now accepts shorthand, mirroring its detail-matcher.
+
+The docket-gates inventory test now counts five git-gated jobs. Full suite
+1480 pass, tsc clean. All acceptance criteria hold under
+`tests/wiki-jobs.test.ts` ("lint undiscriminated-range questions") and
+`tests/wiki-lint.test.ts`.

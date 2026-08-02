@@ -345,8 +345,9 @@ export function sweepEmitters(): {
    const around = lines.slice(Math.max(0, line - 1 - WINDOW), line + WINDOW).join('\n');
    // No `detail` beside it: a domain field, not an event.
    if (!/(?<![.\w$])detail\s*[:,\n]/.test(around)) continue;
-   // `subject` beside it: a LintFinding, which renders on a wiki page.
-   if (/(?<![.\w$])subject:/.test(around)) continue;
+   // `subject` beside it: a LintFinding, which renders on a wiki page. The
+   // shorthand form (`subject,`) counts, same as `detail` above.
+   if (/(?<![.\w$])subject\s*[:,\n]/.test(around)) continue;
    // A parameter, not a property: `function serverEmit(…, kind: string, …)`
    // declares where a kind arrives and emits none itself.
    if (isDeclaration(all, m.index)) continue;

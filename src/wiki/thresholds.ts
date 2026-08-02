@@ -23,16 +23,16 @@
  */
 
 export type Threshold = {
-  name: string;
-  value: number | boolean;
-  /** False means: compute, log what you would have done, change nothing. */
-  live: boolean;
-  /**
-   * The evidence that would license this threshold to act — prose, never a
-   * date. For an entry that already acts, this records the licence it acts
-   * under, so demoting it is as reviewable as promoting it.
-   */
-  graduatesWhen: string;
+ name: string;
+ value: number | boolean;
+ /** False means: compute, log what you would have done, change nothing. */
+ live: boolean;
+ /**
+  * The evidence that would license this threshold to act — prose, never a
+  * date. For an entry that already acts, this records the licence it acts
+  * under, so demoting it is as reviewable as promoting it.
+  */
+ graduatesWhen: string;
 };
 
 /**
@@ -44,11 +44,11 @@ export type Threshold = {
  * able to fail to load.
  */
 export type ThresholdLogFn = (e: {
-  at: string;
-  actor: 'clerk';
-  kind: string;
-  detail: string;
-  refs?: string[];
+ at: string;
+ actor: 'clerk';
+ kind: string;
+ detail: string;
+ refs?: string[];
 }) => void;
 
 /**
@@ -63,76 +63,83 @@ export type ThresholdLogFn = (e: {
  * in for "on" would be a magic number pretending to be a measurement.
  */
 export const THRESHOLDS = {
-  'clash.lexicalMinPhrase': {
-    name: 'clash.lexicalMinPhrase',
-    value: 3,
-    live: true,
-    graduatesWhen:
-      'Already live, inherited from slice 2 resonance: src/index/lexical.ts requires a 3-word shared phrase today, and this entry only names that number. The plan records no graduation condition, because there is nothing left to earn.',
-  },
-  'clash.oppositionGate': {
-    name: 'clash.oppositionGate',
-    value: true,
-    live: true,
-    graduatesWhen:
-      'Ships live by decision, not by record — Q-49, the one deliberate exception to Q-35 in this slice. Q-30 stage 1 defines a candidate AS two claims with model-judged opposed Stances, so a shadowed gate leaves stages 2-5 with no input and therefore no record to graduate on. The evidence Q-35 wants is collected while it acts: WikiReport.oppositionJudged over oppositionOpposed. Reverting it to shadow is a decision about the whole pipeline, not about this line.',
-  },
-  'remeasure.liveCap': {
-    name: 'remeasure.liveCap',
-    value: 2,
-    live: true,
-    graduatesWhen:
-      'Already live: a cap that protects the Queue must act from day one, and every clip is logged. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Slice-2 RESULTS set the real number.',
-  },
-  'lint.staleCitationAgeDays': {
-    name: 'lint.staleCitationAgeDays',
-    value: 0,
-    live: true,
-    graduatesWhen:
-      'Already live: mechanical, with no tuning surface. Any newer snippet version makes a citation stale, so there is no judgment here to earn and no number to calibrate.',
-  },
-  'lint.godNodeFanout': {
-    name: 'lint.godNodeFanout',
-    value: 12,
-    live: false,
-    graduatesWhen:
-      'The shadow record shows the note would fire on a real corpus, not only on a small one. A fanout note that fires because the wiki is young says nothing about the wiki.',
-  },
-  'registry.mergeCandidateSimilarity': {
-    name: 'registry.mergeCandidateSimilarity',
-    value: 0.85,
-    live: false,
-    graduatesWhen:
-      'The shadow record shows candidate pairs a human would agree are the same referent. Q-32 keeps the merge itself behind user attestation either way; this threshold only decides what gets shown.',
-  },
-  'status.readLogDiscount': {
-    name: 'status.readLogDiscount',
-    value: true,
-    live: false,
-    graduatesWhen:
-      'The shadow record shows the discount changing a status on real data, without demoting a claim the user has since attested (T4). Until then computeStatus applies it to its shadow status only, and logs the delta.',
-  },
-  'clash.embeddingCosine': {
-    name: 'clash.embeddingCosine',
-    value: 0.5,
-    live: false,
-    graduatesWhen:
-      'SANITY FLOOR, not the selection mechanism (ticket 083): selection is rank — Q-65 orders pairs with cross-sitting strictly above same-sitting, then by cosine desc, then by the sorted pair key — bounded by the judgment quota (clash.judgmentsPerRun), which cuts the ordered pool to its top-N. The floor keeps near-orthogonal pairs from spending the quota when the corpus is small; 0.5 sits below the measured cross-sitting ceiling of 0.640 (ticket 064) so it can never re-create the ceiling. Graduation evidence remains: the shadow record shows a proposed pair joining TWO SITTINGS.',
-  },
-  'sweep.attemptsBeforeBackoff': {
-    name: 'sweep.attemptsBeforeBackoff',
-    value: 3,
-    live: true,
-    graduatesWhen:
-      'Already live: a mechanical liveness rule, not a judgment. A reading that has failed three times stops standing at the head of the sweep — it stays unprocessed, as Q-29 requires — and every demotion is logged.',
-  },
-  'mint.callsPerRun': {
-    name: 'mint.callsPerRun',
-    value: 12,
-    live: true,
-    graduatesWhen:
-      'Already live: a quota that protects the docket run must act from day one, or a first run over a large corpus monopolizes every pass. Every clip is logged, and the log is what would resize it.',
-  },
+ 'clash.lexicalMinPhrase': {
+  name: 'clash.lexicalMinPhrase',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'Already live, inherited from slice 2 resonance: src/index/lexical.ts requires a 3-word shared phrase today, and this entry only names that number. The plan records no graduation condition, because there is nothing left to earn.',
+ },
+ 'clash.oppositionGate': {
+  name: 'clash.oppositionGate',
+  value: true,
+  live: true,
+  graduatesWhen:
+   'Ships live by decision, not by record — Q-49, the one deliberate exception to Q-35 in this slice. Q-30 stage 1 defines a candidate AS two claims with model-judged opposed Stances, so a shadowed gate leaves stages 2-5 with no input and therefore no record to graduate on. The evidence Q-35 wants is collected while it acts: WikiReport.oppositionJudged over oppositionOpposed. Reverting it to shadow is a decision about the whole pipeline, not about this line.',
+ },
+ 'remeasure.liveCap': {
+  name: 'remeasure.liveCap',
+  value: 2,
+  live: true,
+  graduatesWhen:
+   'Already live: a cap that protects the Queue must act from day one, and every clip is logged. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Slice-2 RESULTS set the real number.',
+ },
+ 'lint.staleCitationAgeDays': {
+  name: 'lint.staleCitationAgeDays',
+  value: 0,
+  live: true,
+  graduatesWhen:
+   'Already live: mechanical, with no tuning surface. Any newer snippet version makes a citation stale, so there is no judgment here to earn and no number to calibrate.',
+ },
+ 'lint.godNodeFanout': {
+  name: 'lint.godNodeFanout',
+  value: 12,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows the note would fire on a real corpus, not only on a small one. A fanout note that fires because the wiki is young says nothing about the wiki.',
+ },
+ 'registry.mergeCandidateSimilarity': {
+  name: 'registry.mergeCandidateSimilarity',
+  value: 0.85,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows candidate pairs a human would agree are the same referent. Q-32 keeps the merge itself behind user attestation either way; this threshold only decides what gets shown.',
+ },
+ 'lint.undiscriminatedRangeSimilarity': {
+  name: 'lint.undiscriminatedRangeSimilarity',
+  value: 0.75,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows pairs a human agrees are two descriptions of one situation (ticket 060). The same normalized-token-overlap function merge-candidate uses, over two claims\' RANGE strings: identical ranges score 1.0 after normalization (case, punctuation and word order discarded), one word of drift in a short range stays above 0.75, and ranges naming clearly different conditions share at most a function word and score far below.',
+ },
+ 'status.readLogDiscount': {
+  name: 'status.readLogDiscount',
+  value: true,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows the discount changing a status on real data, without demoting a claim the user has since attested (T4). Until then computeStatus applies it to its shadow status only, and logs the delta.',
+ },
+ 'clash.embeddingCosine': {
+  name: 'clash.embeddingCosine',
+  value: 0.5,
+  live: false,
+  graduatesWhen:
+   'SANITY FLOOR, not the selection mechanism (ticket 083): selection is rank — Q-65 orders pairs with cross-sitting strictly above same-sitting, then by cosine desc, then by the sorted pair key — bounded by the judgment quota (clash.judgmentsPerRun), which cuts the ordered pool to its top-N. The floor keeps near-orthogonal pairs from spending the quota when the corpus is small; 0.5 sits below the measured cross-sitting ceiling of 0.640 (ticket 064) so it can never re-create the ceiling. Graduation evidence remains: the shadow record shows a proposed pair joining TWO SITTINGS.',
+ },
+ 'sweep.attemptsBeforeBackoff': {
+  name: 'sweep.attemptsBeforeBackoff',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'Already live: a mechanical liveness rule, not a judgment. A reading that has failed three times stops standing at the head of the sweep — it stays unprocessed, as Q-29 requires — and every demotion is logged.',
+ },
+ 'mint.callsPerRun': {
+  name: 'mint.callsPerRun',
+  value: 12,
+  live: true,
+  graduatesWhen:
+   'Already live: a quota that protects the docket run must act from day one, or a first run over a large corpus monopolizes every pass. Every clip is logged, and the log is what would resize it.',
+ },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;
@@ -160,31 +167,31 @@ export type ThresholdName = keyof typeof THRESHOLDS;
  * defaults to false, which keeps every three-argument call correct.
  */
 export function shadowDecision(
-  t: Threshold,
-  would: string,
-  log: ThresholdLogFn,
-  clips = false,
+ t: Threshold,
+ would: string,
+ log: ThresholdLogFn,
+ clips = false,
 ): boolean {
-  if (!t.live) {
-    // Shadow: the whole point of the call. One line, every time, whether or
-    // not the decision would have changed anything downstream.
-    log({
-      at: new Date().toISOString(),
-      actor: 'clerk',
-      kind: 'shadow-decision',
-      detail: `mode=shadow threshold=${t.name} value=${String(t.value)} would=${would}`,
-    });
-    return false;
-  }
+ if (!t.live) {
+  // Shadow: the whole point of the call. One line, every time, whether or
+  // not the decision would have changed anything downstream.
+  log({
+   at: new Date().toISOString(),
+   actor: 'clerk',
+   kind: 'shadow-decision',
+   detail: `mode=shadow threshold=${t.name} value=${String(t.value)} would=${would}`,
+  });
+  return false;
+ }
 
-  if (clips) {
-    log({
-      at: new Date().toISOString(),
-      actor: 'clerk',
-      kind: 'threshold-clipped',
-      detail: `mode=live threshold=${t.name} value=${String(t.value)} clipped=${would}`,
-    });
-  }
+ if (clips) {
+  log({
+   at: new Date().toISOString(),
+   actor: 'clerk',
+   kind: 'threshold-clipped',
+   detail: `mode=live threshold=${t.name} value=${String(t.value)} clipped=${would}`,
+  });
+ }
 
-  return true;
+ return true;
 }

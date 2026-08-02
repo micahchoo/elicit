@@ -279,7 +279,12 @@ export type ClashCandidate = {
  * remove or restructure a claim (Q-31).
  */
 export type LintFinding = {
-  kind: 'stale-citation' | 'orphan-claim' | 'god-node-facet' | 'merge-candidate';
+  kind:
+    | 'stale-citation'
+    | 'orphan-claim'
+    | 'god-node-facet'
+    | 'merge-candidate'
+    | 'undiscriminated-range';
   /** The claim id, facet name or referent slug the finding is about. */
   subject: string;
   detail: string;

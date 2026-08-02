@@ -5,7 +5,7 @@ import type { Claim, ClaimGraph, LogFn, Referent } from '../src/wiki/contract.js
 import type { Complete, Facet, Snippet } from '../src/types.js';
 
 /**
- * The lint's tests have one job beyond checking four findings: they must fail
+ * The lint's tests have one job beyond checking five findings: they must fail
  * if the module ever grows the power to act. Three of them are about absence —
  * no fourth parameter, no mutation of the graph, no memory between calls — and
  * absence is the only part of a module a later reader cannot see by reading it.
@@ -92,6 +92,13 @@ const MERGE_LIVE: ThresholdRegister = {
   ...THRESHOLDS,
   'registry.mergeCandidateSimilarity': {
     ...THRESHOLDS['registry.mergeCandidateSimilarity'],
+    live: true,
+  },
+};
+const DISCRIMINATED_LIVE: ThresholdRegister = {
+  ...THRESHOLDS,
+  'lint.undiscriminatedRangeSimilarity': {
+    ...THRESHOLDS['lint.undiscriminatedRangeSimilarity'],
     live: true,
   },
 };
@@ -395,10 +402,162 @@ describe('merge-candidate (Q-32, Q-35: shadowed)', () => {
   });
 });
 
+describe('undiscriminated-range (ticket 060, Q-35: shadowed)', () => {
+  // Two claims on one referent whose RANGE strings are identical — the
+  // default fixture range, so both claims score 1.0 under the normalized
+  // token overlap. The snippets entry exists only so no other finding fires.
+  const sameRange = graphOf({
+    claims: [
+      claim('c1', { referents: ['bedtime-work'] }),
+      claim('c2', { referents: ['bedtime-work'] }),
+    ],
+    snippets: { snipA: snippet('snipA', 1) },
+  });
+
+  it('logs the pair and returns nothing while the threshold is shadowed', () => {
+    const { events, log } = collector();
+
+    const findings = lint(sameRange, THRESHOLDS, log);
+
+    expect(findings).toEqual([]);
+    const shadow = events.filter((e) => e.kind === 'shadow-decision');
+    expect(shadow).toHaveLength(1);
+    expect(shadow[0]!.detail).toContain('lint.undiscriminatedRangeSimilarity');
+    expect(shadow[0]!.detail).toContain('c1');
+    expect(shadow[0]!.detail).toContain('c2');
+    expect(shadow[0]!.detail).toContain('bedtime-work');
+    expect(shadow[0]!.actor).toBe('clerk');
+  });
+
+  it('returns exactly one finding on the SAME graph once the threshold is live', () => {
+    // Half two of the shadow proof: the mechanism does fire, and it is the
+    // register alone that withholds it.
+    const { log } = collector();
+
+    const findings = lint(sameRange, DISCRIMINATED_LIVE, log);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.kind).toBe('undiscriminated-range');
+    expect(findings[0]!.subject).toBe('bedtime-work');
+    expect(findings[0]!.refs).toEqual(['c1', 'c2']);
+  });
+
+  it('orders the refs by claim id regardless of graph order', () => {
+    // The sorted pair is the caller's dedupe key (Q-31), so it must come
+    // out sorted even when the graph hands the claims the other way round.
+    const g = graphOf({
+      claims: [
+        claim('c9', { referents: ['commute'], range: 'at the office' }),
+        claim('c2', { referents: ['commute'], range: 'at the office' }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { log } = collector();
+
+    const findings = lint(g, DISCRIMINATED_LIVE, log);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.refs).toEqual(['c2', 'c9']);
+  });
+
+  it('leaves clearly different ranges alone, with no shadow record either', () => {
+    // 'at work' vs 'with my kids': zero shared tokens. The similarity check
+    // runs before shadowDecision, so not even a shadow line is left behind.
+    const g = graphOf({
+      claims: [
+        claim('c1', { referents: ['parenting'], range: 'at work' }),
+        claim('c2', { referents: ['parenting'], range: 'with my kids' }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { events, log } = collector();
+
+    expect(lint(g, DISCRIMINATED_LIVE, log)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it('leaves a below-threshold overlap alone, with no shadow record either', () => {
+    // 'at work' vs 'at work mostly' shares two of three tokens (≈0.667) and
+    // 'in the mornings' vs 'in the evenings' two of four (0.5): both under
+    // the 0.75 bar, so neither pair even reaches the shadow record.
+    const partial = graphOf({
+      claims: [
+        claim('c1', { referents: ['commute'], range: 'at work' }),
+        claim('c2', { referents: ['commute'], range: 'at work mostly' }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const functionWords = graphOf({
+      claims: [
+        claim('c1', { referents: ['sleep'], range: 'in the mornings' }),
+        claim('c2', { referents: ['sleep'], range: 'in the evenings' }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { events: e1, log: l1 } = collector();
+    const { events: e2, log: l2 } = collector();
+
+    expect(lint(partial, DISCRIMINATED_LIVE, l1)).toEqual([]);
+    expect(lint(functionWords, DISCRIMINATED_LIVE, l2)).toEqual([]);
+    expect(e1).toEqual([]);
+    expect(e2).toEqual([]);
+  });
+
+  it('leaves a pair alone when one claim is archived or superseded', () => {
+    // Both have already been dealt with; the range sameness of a claim the
+    // graph no longer asserts asks nobody anything.
+    const g = graphOf({
+      claims: [
+        claim('c1', {
+          referents: ['bedtime-work'],
+          archived: true,
+          archiveReason: 'wrong',
+        }),
+        claim('c2', { referents: ['bedtime-work'], supersededBy: 'c3', supersedeReason: 'model-upgrade' }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { events, log } = collector();
+
+    expect(lint(g, DISCRIMINATED_LIVE, log)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it('leaves identical ranges alone when the claims share no referent', () => {
+    // Sameness of range is only a signal about a boundary nobody drew on a
+    // THING both claims name. No shared referent, no finding.
+    const g = graphOf({
+      claims: [
+        claim('c1', { referents: ['work'] }),
+        claim('c2', { referents: ['home'] }),
+      ],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { events, log } = collector();
+
+    expect(lint(g, DISCRIMINATED_LIVE, log)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it('mutates no claim', () => {
+    const before = structuredClone(sameRange);
+    const { log } = collector();
+
+    lint(sameRange, DISCRIMINATED_LIVE, log);
+
+    expect(sameRange).toEqual(before);
+  });
+});
+
 describe('the shape of the module (Q-31)', () => {
+  // g0 and g1 share a referent under identical (default) range strings: they
+  // trip the fifth finding when its register entry is flipped live, and stay
+  // shadowed — computed and logged, not returned — in the shipped register.
   const mixed = graphOf({
     claims: [
-      ...Array.from({ length: 13 }, (_, i) => claim(`g${i}`, { facet: 'construct', cites: ['snipA@1'] })),
+      ...Array.from({ length: 13 }, (_, i) =>
+        claim(`g${i}`, { facet: 'construct', cites: ['snipA@1'], referents: i < 2 ? ['work-life'] : [] }),
+      ),
       claim('stale', { facet: 'fact', cites: ['snipB@1'] }),
       claim('orphan', { facet: 'value', cites: ['gone@1'] }),
     ],
@@ -413,6 +572,20 @@ describe('the shape of the module (Q-31)', () => {
     expect(lint(mixed, GOD_NODE_LIVE, log)).toEqual(
       lint(mixed, GOD_NODE_LIVE, log),
     );
+    expect(lint(mixed, DISCRIMINATED_LIVE, log)).toEqual(
+      lint(mixed, DISCRIMINATED_LIVE, log),
+    );
+  });
+
+  it('keeps undiscriminated-range shadowed on a graph that trips it when live', () => {
+    const { log } = collector();
+
+    const shipped = lint(mixed, THRESHOLDS, log);
+    const live = lint(mixed, DISCRIMINATED_LIVE, log);
+
+    expect(shipped.some((f) => f.kind === 'undiscriminated-range')).toBe(false);
+    expect(live.some((f) => f.kind === 'undiscriminated-range')).toBe(true);
+    expect(live.filter((f) => f.kind === 'undiscriminated-range')).toHaveLength(1);
   });
 
   it('returns only the live findings from a graph that trips all four', () => {

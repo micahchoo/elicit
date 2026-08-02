@@ -46,11 +46,12 @@ import type { Complete, QueueDraft, Reading, Snippet, Turn } from '../types.js';
 import type { Claim, ClashCandidate, ClashEvidence } from '../wiki/contract.js';
 import { assertUserTurn, capPrompt, fitPayload, readingTime } from '../wiki/contract.js';
 import {
-  hasFirstPersonOutsideQuote,
-  isInterrogative,
-  isNearDuplicate,
-  quotesFragmentSetOff,
+ hasFirstPersonOutsideQuote,
+ isInterrogative,
+ isNearDuplicate,
+ quotesFragmentSetOff,
 } from '../elicitor/guards.js';
+import { widenToClause } from './clause.js';
 
 // ---------------------------------------------------------------------------
 // Budgets
@@ -104,10 +105,10 @@ export const UNVERIFIED_CONFIRMATION = 'unverified-confirmation';
 
 /** Strip markdown fences an instructed-not-to model adds anyway. */
 function stripFences(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, '');
-  s = s.replace(/\n?```\s*$/, '');
-  return s.trim();
+ let s = raw.trim();
+ s = s.replace(/^```(?:json)?\s*\n?/i, '');
+ s = s.replace(/\n?```\s*$/, '');
+ return s.trim();
 }
 
 /**
@@ -119,12 +120,12 @@ function stripFences(raw: string): string {
  * pure excerpt.
  */
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : text.slice(0, max);
+ return text.length <= max ? text : text.slice(0, max);
 }
 
 /** One user turn, which is the only message shape a local endpoint answers. */
 function userTurn(text: string): Turn[] {
-  return [{ role: 'user', text, at: '' }];
+ return [{ role: 'user', text, at: '' }];
 }
 
 /**
@@ -134,40 +135,40 @@ function userTurn(text: string): Turn[] {
  * `capPrompt` asserted is the WHOLE prompt and not a fraction of it.
  */
 async function askOnce(
-  complete: Complete,
-  payload: string,
-  temperature: number
+ complete: Complete,
+ payload: string,
+ temperature: number
 ): Promise<string> {
-  const turns = userTurn(payload);
-  // User-LAST. A list ending on an assistant turn makes llama.cpp generate
-  // nothing at all, which once surfaced as a silent total harvest failure.
-  assertUserTurn(turns);
-  return complete('', turns, { temperature });
+ const turns = userTurn(payload);
+ // User-LAST. A list ending on an assistant turn makes llama.cpp generate
+ // nothing at all, which once surfaced as a silent total harvest failure.
+ assertUserTurn(turns);
+ return complete('', turns, { temperature });
 }
 
 /** Parse a JSON object, or nothing. Prose in, `null` out — never a throw. */
 function parseObject(raw: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(stripFences(raw));
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+ try {
+  const parsed: unknown = JSON.parse(stripFences(raw));
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
+ } catch {
+  return null;
+ }
 }
 
 function asString(v: unknown): string | null {
-  return typeof v === 'string' && v.length > 0 ? v : null;
+ return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
 /** Split `snippetId@version`. A ref that does not split names no snippet. */
 function parseRef(ref: string): { id: string; version: number } | null {
-  const at = ref.lastIndexOf('@');
-  if (at <= 0 || at === ref.length - 1) return null;
-  const id = ref.slice(0, at);
-  const version = Number(ref.slice(at + 1));
-  if (!Number.isInteger(version)) return null;
-  return { id, version };
+ const at = ref.lastIndexOf('@');
+ if (at <= 0 || at === ref.length - 1) return null;
+ const id = ref.slice(0, at);
+ const version = Number(ref.slice(at + 1));
+ if (!Number.isInteger(version)) return null;
+ return { id, version };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,65 +203,65 @@ If the two are about different things, or agree, or one merely adds detail, retu
  * citation.
  */
 export async function judgeOpposition(
-  a: Claim,
-  b: Claim,
-  quotes: { a: string; b: string },
-  complete: Complete
+ a: Claim,
+ b: Claim,
+ quotes: { a: string; b: string },
+ complete: Complete
 ): Promise<OppositionJudgment | null> {
-  const quoteA = clip(quotes.a, EXCERPT_CHARS);
-  const quoteB = clip(quotes.b, EXCERPT_CHARS);
+ const quoteA = clip(quotes.a, EXCERPT_CHARS);
+ const quoteB = clip(quotes.b, EXCERPT_CHARS);
 
-  try {
-    const payload = capPrompt(
-      [
-        OPPOSITION_TASK,
-        `STATEMENT A: ${clip(a.body, EXCERPT_CHARS)}`,
-        `QUOTE A: ${quoteA}`,
-        `STATEMENT B: ${clip(b.body, EXCERPT_CHARS)}`,
-        `QUOTE B: ${quoteB}`,
-      ],
-      JUDGMENT_BUDGET_CHARS
-    );
+ try {
+  const payload = capPrompt(
+   [
+    OPPOSITION_TASK,
+    `STATEMENT A: ${clip(a.body, EXCERPT_CHARS)}`,
+    `QUOTE A: ${quoteA}`,
+    `STATEMENT B: ${clip(b.body, EXCERPT_CHARS)}`,
+    `QUOTE B: ${quoteB}`,
+   ],
+   JUDGMENT_BUDGET_CHARS
+  );
 
-    const parsed = parseObject(await askOnce(complete, payload, JUDGMENT_TEMPERATURE));
-    if (!parsed) {
-      console.warn('Contradiction: opposition judgment did not parse — dropping candidate');
-      return null;
-    }
-
-    const opposed = parsed['opposed'];
-    if (typeof opposed !== 'boolean') {
-      console.warn('Contradiction: opposition judgment carried no boolean — dropping candidate');
-      return null;
-    }
-
-    // An honest "no" needs no poles, and demanding them would turn every
-    // negative into a null and erase the precision record Q-49 acts under.
-    if (!opposed) return { opposed: false, poleA: '', poleB: '' };
-
-    const poleA = asString(parsed['poleA']);
-    const poleB = asString(parsed['poleB']);
-    if (!poleA || !poleB) {
-      console.warn('Contradiction: opposed with a missing pole — dropping candidate');
-      return null;
-    }
-
-    // Q-1's posture, applied to the judgment: the person's words carry the
-    // pole, or nothing does. Each pole is checked against ITS OWN quote —
-    // a swapped pair is the model failing an explicit instruction, and
-    // accepting it would attribute one claim's words to the other.
-    if (!quoteA.includes(poleA) || !quoteB.includes(poleB)) {
-      console.warn('Contradiction: pole not verbatim in its quote — dropping candidate');
-      return null;
-    }
-
-    return { opposed: true, poleA, poleB };
-  } catch (err) {
-    console.warn(
-      `Contradiction: opposition judgment failed — ${err instanceof Error ? err.message : String(err)}`
-    );
-    return null;
+  const parsed = parseObject(await askOnce(complete, payload, JUDGMENT_TEMPERATURE));
+  if (!parsed) {
+   console.warn('Contradiction: opposition judgment did not parse — dropping candidate');
+   return null;
   }
+
+  const opposed = parsed['opposed'];
+  if (typeof opposed !== 'boolean') {
+   console.warn('Contradiction: opposition judgment carried no boolean — dropping candidate');
+   return null;
+  }
+
+  // An honest "no" needs no poles, and demanding them would turn every
+  // negative into a null and erase the precision record Q-49 acts under.
+  if (!opposed) return { opposed: false, poleA: '', poleB: '' };
+
+  const poleA = asString(parsed['poleA']);
+  const poleB = asString(parsed['poleB']);
+  if (!poleA || !poleB) {
+   console.warn('Contradiction: opposed with a missing pole — dropping candidate');
+   return null;
+  }
+
+  // Q-1's posture, applied to the judgment: the person's words carry the
+  // pole, or nothing does. Each pole is checked against ITS OWN quote —
+  // a swapped pair is the model failing an explicit instruction, and
+  // accepting it would attribute one claim's words to the other.
+  if (!quoteA.includes(poleA) || !quoteB.includes(poleB)) {
+   console.warn('Contradiction: pole not verbatim in its quote — dropping candidate');
+   return null;
+  }
+
+  return { opposed: true, poleA, poleB };
+ } catch (err) {
+  console.warn(
+   `Contradiction: opposition judgment failed — ${err instanceof Error ? err.message : String(err)}`
+  );
+  return null;
+ }
 }
 
 // ---------------------------------------------------------------------------
@@ -285,29 +286,29 @@ Keep the quoted words exactly as they wrote them, first person and all. Outside 
 
 /** Why a re-measure was refused. Each reason drives its own correction. */
 type Rejection =
-  | 'no-quote'
-  | 'unframed-quote'
-  | 'not-interrogative'
-  | 'first-person'
-  | 'repeats-original'
-  | 'names-the-tension';
+ | 'no-quote'
+ | 'unframed-quote'
+ | 'not-interrogative'
+ | 'first-person'
+ | 'repeats-original'
+ | 'names-the-tension';
 
 function corrective(rejection: Rejection, pole: string): string {
-  const quoteRule = `Your question MUST contain this exact phrase, inside quotation marks: "${pole}".`;
-  switch (rejection) {
-    case 'no-quote':
-      return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
-    case 'unframed-quote':
-      return `CRITICAL: Your previous response was rejected because it wove the speaker's words into your own sentence. Put their words inside quotation marks. Then ask your question after them, in your own words. ${quoteRule}`;
-    case 'not-interrogative':
-      return `CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark. ${quoteRule}`;
-    case 'first-person':
-      return `CRITICAL: Your previous response was rejected because it spoke in the first person outside the quote. Keep the quoted words exactly as they are; everywhere else address the speaker as "you" — never "I", "my", or "me". ${quoteRule}`;
-    case 'repeats-original':
-      return `CRITICAL: Your previous response was rejected because it re-asked a question they have already answered. Ask about the same thing from a completely different angle — a specific occasion, a comparison, a case where it did not hold. ${quoteRule}`;
-    case 'names-the-tension':
-      return `CRITICAL: Your previous response was rejected because it repeated a summary written about the speaker back at them. Ask only about their own words. ${quoteRule}`;
-  }
+ const quoteRule = `Your question MUST contain this exact phrase, inside quotation marks: "${pole}".`;
+ switch (rejection) {
+  case 'no-quote':
+   return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
+  case 'unframed-quote':
+   return `CRITICAL: Your previous response was rejected because it wove the speaker's words into your own sentence. Put their words inside quotation marks. Then ask your question after them, in your own words. ${quoteRule}`;
+  case 'not-interrogative':
+   return `CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark. ${quoteRule}`;
+  case 'first-person':
+   return `CRITICAL: Your previous response was rejected because it spoke in the first person outside the quote. Keep the quoted words exactly as they are; everywhere else address the speaker as "you" — never "I", "my", or "me". ${quoteRule}`;
+  case 'repeats-original':
+   return `CRITICAL: Your previous response was rejected because it re-asked a question they have already answered. Ask about the same thing from a completely different angle — a specific occasion, a comparison, a case where it did not hold. ${quoteRule}`;
+  case 'names-the-tension':
+   return `CRITICAL: Your previous response was rejected because it repeated a summary written about the speaker back at them. Ask only about their own words. ${quoteRule}`;
+ }
 }
 
 /**
@@ -317,41 +318,41 @@ function corrective(rejection: Rejection, pole: string): string {
  * launder the user's first person into the agent's half of the sentence).
  */
 function checkRemeasure(
-  question: string,
-  pole: string,
-  otherPole: string,
-  bodies: string[],
-  originalQuestions: string[]
+ question: string,
+ pole: string,
+ otherPole: string,
+ bodies: string[],
+ originalQuestions: string[]
 ): Rejection | null {
-  if (!question || !question.includes(pole)) return 'no-quote';
-  if (!quotesFragmentSetOff(question, pole)) return 'unframed-quote';
-  if (!isInterrogative(question, pole)) return 'not-interrogative';
-  if (hasFirstPersonOutsideQuote(question, pole)) return 'first-person';
+ if (!question || !question.includes(pole)) return 'no-quote';
+ if (!quotesFragmentSetOff(question, pole)) return 'unframed-quote';
+ if (!isInterrogative(question, pole)) return 'not-interrogative';
+ if (hasFirstPersonOutsideQuote(question, pole)) return 'first-person';
 
-  // Q-15: the question is a fresh measurement, never a case put to the user.
-  // Neither claim body may appear — those are the agent's summaries of the
-  // person, and handing one back with a question attached is the accusation
-  // shape whatever its wording. The prompt is never shown a body, so this is a
-  // backstop; it is here because "the prompt does not mention it" is a promise
-  // and this is a check.
-  if (bodies.some((body) => body.length > 0 && question.includes(body))) {
-    return 'names-the-tension';
-  }
+ // Q-15: the question is a fresh measurement, never a case put to the user.
+ // Neither claim body may appear — those are the agent's summaries of the
+ // person, and handing one back with a question attached is the accusation
+ // shape whatever its wording. The prompt is never shown a body, so this is a
+ // backstop; it is here because "the prompt does not mention it" is a promise
+ // and this is a check.
+ if (bodies.some((body) => body.length > 0 && question.includes(body))) {
+  return 'names-the-tension';
+ }
 
-  // The other pole never appears alongside this one: quoting both sides
-  // together IS the juxtaposition, and a juxtaposition is what the Wiki shows
-  // AFTER a Contradiction opens, not what the question that might open it does.
-  // Skipped when one pole contains the other, where quoting the longer one
-  // unavoidably quotes the shorter and the rejection would be an artefact.
-  const nested = pole.includes(otherPole) || otherPole.includes(pole);
-  if (!nested && quotesFragmentSetOff(question, otherPole)) return 'names-the-tension';
+ // The other pole never appears alongside this one: quoting both sides
+ // together IS the juxtaposition, and a juxtaposition is what the Wiki shows
+ // AFTER a Contradiction opens, not what the question that might open it does.
+ // Skipped when one pole contains the other, where quoting the longer one
+ // unavoidably quotes the shorter and the rejection would be an artefact.
+ const nested = pole.includes(otherPole) || otherPole.includes(pole);
+ if (!nested && quotesFragmentSetOff(question, otherPole)) return 'names-the-tension';
 
-  // Q-14, as similarity and not as equality: a re-worded repeat of the question
-  // that produced the claim is precisely the failure Q-14 names, and `===`
-  // catches none of them.
-  if (isNearDuplicate(question, originalQuestions)) return 'repeats-original';
+ // Q-14, as similarity and not as equality: a re-worded repeat of the question
+ // that produced the claim is precisely the failure Q-14 names, and `===`
+ // catches none of them.
+ if (isNearDuplicate(question, originalQuestions)) return 'repeats-original';
 
-  return null;
+ return null;
 }
 
 /**
@@ -366,23 +367,38 @@ function checkRemeasure(
  * `null` is a legitimate return: the candidate simply waits for the next run.
  */
 export async function composeRemeasure(
-  candidate: { a: Claim; b: Claim; poleA: string; poleB: string },
-  originalQuestions: string[],
-  complete: Complete
+ candidate: { a: Claim; b: Claim; poleA: string; poleB: string; proseA: string },
+ originalQuestions: string[],
+ complete: Complete
 ): Promise<QueueDraft | null> {
-  const pole = candidate.poleA;
-  if (!pole) return null;
+ let pole = candidate.poleA;
+ if (!pole) return null;
 
-  const bodies = [candidate.a.body, candidate.b.body];
-  const shown = originalQuestions.slice(0, ORIGINALS_SHOWN);
-  const avoid =
-    shown.length > 0
-      ? `They have already been asked these. Do NOT repeat or re-word any of them:\n${shown
-          .map((q) => `- ${clip(q, EXCERPT_CHARS)}`)
-          .join('\n')}\n`
-      : '';
+ // Ticket 088: the quoted pole must be a complete clause, decided
+ // mechanically, never by a model. `worked on making` passed Q-46's
+ // verbatim check and was not a proposition (RESULTS §16.5); widening to
+ // the smallest enclosing clause inside the person's prose keeps the
+ // verbatim rule and fixes the aboutness. `proseA` is the prose the pole
+ // was quoted from, supplied by the caller that holds the snippet.
+ pole = widenToClause(pole, candidate.proseA);
+ // A widened clause longer than the excerpt budget can never be copied
+ // whole — `clip` truncates what the model sees while `checkRemeasure`
+ // demands the full pole — so the candidate waits for the next run.
+ if (pole.length > EXCERPT_CHARS) {
+  console.warn('Contradiction: widened pole exceeds the excerpt budget — returning null');
+  return null;
+ }
 
-  const base = `You are a clerk for Elicit. Compose ONE question that takes a fresh measurement of something the speaker wrote about before.
+ const bodies = [candidate.a.body, candidate.b.body];
+ const shown = originalQuestions.slice(0, ORIGINALS_SHOWN);
+ const avoid =
+  shown.length > 0
+   ? `They have already been asked these. Do NOT repeat or re-word any of them:\n${shown
+    .map((q) => `- ${clip(q, EXCERPT_CHARS)}`)
+    .join('\n')}\n`
+   : '';
+
+ const base = `You are a clerk for Elicit. Compose ONE question that takes a fresh measurement of something the speaker wrote about before.
 
 Their words: "${clip(pole, EXCERPT_CHARS)}"
 
@@ -392,31 +408,31 @@ ${avoid}${FRAMING_RULE}
 
 Return only the question text. No markdown, no commentary.`;
 
-  try {
-    const prompt = capPrompt([base], COMPOSE_BUDGET_CHARS);
-    let raw = await askOnce(complete, prompt, COMPOSE_TEMPERATURE);
-    let question = stripFences(raw).trim();
-    let rejection = checkRemeasure(question, pole, candidate.poleB, bodies, originalQuestions);
-    if (!rejection) return buildRemeasureDraft(candidate, question, pole);
+ try {
+  const prompt = capPrompt([base], COMPOSE_BUDGET_CHARS);
+  let raw = await askOnce(complete, prompt, COMPOSE_TEMPERATURE);
+  let question = stripFences(raw).trim();
+  let rejection = checkRemeasure(question, pole, candidate.poleB, bodies, originalQuestions);
+  if (!rejection) return buildRemeasureDraft(candidate, question, pole);
 
-    // One retry, corrected for what failed — the same discipline every other
-    // compose path in the tree runs (`composeStillTrue`). Two attempts, then
-    // silence: a third would spend a 40s clerk call to hear the same refusal.
-    console.warn(`Contradiction: re-measure rejected (${rejection}), retrying`);
-    const retry = capPrompt([prompt, corrective(rejection, pole)], COMPOSE_BUDGET_CHARS);
-    raw = await askOnce(complete, retry, COMPOSE_TEMPERATURE);
-    question = stripFences(raw).trim();
-    rejection = checkRemeasure(question, pole, candidate.poleB, bodies, originalQuestions);
-    if (!rejection) return buildRemeasureDraft(candidate, question, pole);
+  // One retry, corrected for what failed — the same discipline every other
+  // compose path in the tree runs (`composeStillTrue`). Two attempts, then
+  // silence: a third would spend a 40s clerk call to hear the same refusal.
+  console.warn(`Contradiction: re-measure rejected (${rejection}), retrying`);
+  const retry = capPrompt([prompt, corrective(rejection, pole)], COMPOSE_BUDGET_CHARS);
+  raw = await askOnce(complete, retry, COMPOSE_TEMPERATURE);
+  question = stripFences(raw).trim();
+  rejection = checkRemeasure(question, pole, candidate.poleB, bodies, originalQuestions);
+  if (!rejection) return buildRemeasureDraft(candidate, question, pole);
 
-    console.warn(`Contradiction: re-measure retry also rejected (${rejection}) — returning null`);
-    return null;
-  } catch (err) {
-    console.warn(
-      `Contradiction: re-measure compose failed — ${err instanceof Error ? err.message : String(err)}`
-    );
-    return null;
-  }
+  console.warn(`Contradiction: re-measure retry also rejected (${rejection}) — returning null`);
+  return null;
+ } catch (err) {
+  console.warn(
+   `Contradiction: re-measure compose failed — ${err instanceof Error ? err.message : String(err)}`
+  );
+  return null;
+ }
 }
 
 /**
@@ -428,21 +444,21 @@ Return only the question text. No markdown, no commentary.`;
  * same entry.
  */
 function buildRemeasureDraft(
-  candidate: { a: Claim; b: Claim },
-  question: string,
-  quotedFragment: string
+ candidate: { a: Claim; b: Claim },
+ question: string,
+ quotedFragment: string
 ): QueueDraft {
-  const cites = [...new Set([...candidate.a.cites, ...candidate.b.cites])];
-  return {
-    source: 'contradiction-remeasure',
-    license: 'CC0',
-    question,
-    questionForm: 'deliberative',
-    cites,
-    quotedFragment,
-    sharpness: 'weak',
-    horizon: 'session',
-  };
+ const cites = [...new Set([...candidate.a.cites, ...candidate.b.cites])];
+ return {
+  source: 'contradiction-remeasure',
+  license: 'CC0',
+  question,
+  questionForm: 'deliberative',
+  cites,
+  quotedFragment,
+  sharpness: 'weak',
+  horizon: 'session',
+ };
 }
 
 // ---------------------------------------------------------------------------
@@ -450,13 +466,13 @@ function buildRemeasureDraft(
 // ---------------------------------------------------------------------------
 
 export type ConfirmResult =
-  | {
-    confirmed: true;
-    type: 'synchronic' | 'diachronic';
-    reason: string;
-    evidence: ClashEvidence;
-  }
-  | { confirmed: false; reason: string };
+ | {
+  confirmed: true;
+  type: 'synchronic' | 'diachronic';
+  reason: string;
+  evidence: ClashEvidence;
+ }
+ | { confirmed: false; reason: string };
 
 const CONFIRMATION_TASK = `A person was asked a fresh question about something they had written about before. Below are the readings taken from their answer, and the exact words each reading rests on.
 
@@ -486,80 +502,80 @@ If confirmed is true you MUST supply evidence, "snippetRef" MUST be one of the r
  * UNVERIFIED_CONFIRMATION }`, which T12 counts apart from an honest "no".
  */
 export async function judgeConfirmation(
-  candidate: ClashCandidate,
-  remeasure: { readings: Reading[]; snippets: Record<string, Snippet> },
-  claims: { a: Claim; b: Claim },
-  complete: Complete
+ candidate: ClashCandidate,
+ remeasure: { readings: Reading[]; snippets: Record<string, Snippet> },
+ claims: { a: Claim; b: Claim },
+ complete: Complete
 ): Promise<ConfirmResult | null> {
-  // No answer to read is not a dissolution — the person may simply not have
-  // answered yet, and dissolving here would retire the pair forever on a run
-  // that learned nothing.
-  if (remeasure.readings.length === 0) return null;
+ // No answer to read is not a dissolution — the person may simply not have
+ // answered yet, and dissolving here would retire the pair forever on a run
+ // that learned nothing.
+ if (remeasure.readings.length === 0) return null;
 
-  try {
-    const parts = [
-      { name: 'task', text: CONFIRMATION_TASK, required: true },
-      {
-        name: 'statements',
-        text: `STATEMENT A: ${clip(claims.a.body, EXCERPT_CHARS)}\nSTATEMENT B: ${clip(claims.b.body, EXCERPT_CHARS)}`,
-        required: true,
-        floor: EXCERPT_FLOOR,
-      },
-      // The FIRST reading is required and the rest are droppable. A payload
-      // trimmed until no reading survives would ask the model to confirm from
-      // nothing, and it would answer "no" — dissolving a candidate on a budget
-      // decision rather than on the person's answer. Required means: if even
-      // one reading cannot fit, `fitPayload` returns null and the run skips.
-      ...remeasure.readings.map((r, i) => ({
-        name: `reading-${i}`,
-        text: readingBlock(r, remeasure.snippets),
-        required: i === 0,
-        floor: EXCERPT_FLOOR,
-      })),
-    ];
+ try {
+  const parts = [
+   { name: 'task', text: CONFIRMATION_TASK, required: true },
+   {
+    name: 'statements',
+    text: `STATEMENT A: ${clip(claims.a.body, EXCERPT_CHARS)}\nSTATEMENT B: ${clip(claims.b.body, EXCERPT_CHARS)}`,
+    required: true,
+    floor: EXCERPT_FLOOR,
+   },
+   // The FIRST reading is required and the rest are droppable. A payload
+   // trimmed until no reading survives would ask the model to confirm from
+   // nothing, and it would answer "no" — dissolving a candidate on a budget
+   // decision rather than on the person's answer. Required means: if even
+   // one reading cannot fit, `fitPayload` returns null and the run skips.
+   ...remeasure.readings.map((r, i) => ({
+    name: `reading-${i}`,
+    text: readingBlock(r, remeasure.snippets),
+    required: i === 0,
+    floor: EXCERPT_FLOOR,
+   })),
+  ];
 
-    const fitted = fitPayload(parts, JUDGMENT_BUDGET_CHARS);
-    if (!fitted) {
-      console.warn('Contradiction: confirmation payload does not fit — skipping this run');
-      return null;
-    }
-    const payload = capPrompt([fitted.text], JUDGMENT_BUDGET_CHARS);
-
-    const parsed = parseObject(await askOnce(complete, payload, JUDGMENT_TEMPERATURE));
-    if (!parsed) {
-      console.warn('Contradiction: confirmation judgment did not parse — skipping this run');
-      return null;
-    }
-
-    const reason = clip(asString(parsed['reason']) ?? 'no reason given', EXCERPT_CHARS);
-    if (parsed['confirmed'] !== true) {
-      // The expected common case, and the cheap one: the model looked at the
-      // answer and the tension was not there.
-      return { confirmed: false, reason };
-    }
-
-    const evidence = verifyEvidence(parsed['evidence'], candidate, remeasure);
-    if (!evidence) return { confirmed: false, reason: UNVERIFIED_CONFIRMATION };
-
-    return { confirmed: true, type: confirmedType(parsed['type'], remeasure), reason, evidence };
-  } catch (err) {
-    console.warn(
-      `Contradiction: confirmation judgment failed — ${err instanceof Error ? err.message : String(err)}`
-    );
-    return null;
+  const fitted = fitPayload(parts, JUDGMENT_BUDGET_CHARS);
+  if (!fitted) {
+   console.warn('Contradiction: confirmation payload does not fit — skipping this run');
+   return null;
   }
+  const payload = capPrompt([fitted.text], JUDGMENT_BUDGET_CHARS);
+
+  const parsed = parseObject(await askOnce(complete, payload, JUDGMENT_TEMPERATURE));
+  if (!parsed) {
+   console.warn('Contradiction: confirmation judgment did not parse — skipping this run');
+   return null;
+  }
+
+  const reason = clip(asString(parsed['reason']) ?? 'no reason given', EXCERPT_CHARS);
+  if (parsed['confirmed'] !== true) {
+   // The expected common case, and the cheap one: the model looked at the
+   // answer and the tension was not there.
+   return { confirmed: false, reason };
+  }
+
+  const evidence = verifyEvidence(parsed['evidence'], candidate, remeasure);
+  if (!evidence) return { confirmed: false, reason: UNVERIFIED_CONFIRMATION };
+
+  return { confirmed: true, type: confirmedType(parsed['type'], remeasure), reason, evidence };
+ } catch (err) {
+  console.warn(
+   `Contradiction: confirmation judgment failed — ${err instanceof Error ? err.message : String(err)}`
+  );
+  return null;
+ }
 }
 
 /** One reading and the words it rests on, as the model sees them. */
 function readingBlock(r: Reading, snippets: Record<string, Snippet>): string {
-  const lines = [`ANSWER READING (${r.stance}): ${clip(r.reading, EXCERPT_CHARS)}`];
-  for (const ref of r.cites) {
-    const parsedRef = parseRef(ref);
-    const snip = parsedRef ? snippets[parsedRef.id] : undefined;
-    if (!snip) continue;
-    lines.push(`  ${ref}: "${clip(snip.prose, EXCERPT_CHARS)}"`);
-  }
-  return lines.join('\n');
+ const lines = [`ANSWER READING (${r.stance}): ${clip(r.reading, EXCERPT_CHARS)}`];
+ for (const ref of r.cites) {
+  const parsedRef = parseRef(ref);
+  const snip = parsedRef ? snippets[parsedRef.id] : undefined;
+  if (!snip) continue;
+  lines.push(`  ${ref}: "${clip(snip.prose, EXCERPT_CHARS)}"`);
+ }
+ return lines.join('\n');
 }
 
 /**
@@ -568,60 +584,60 @@ function readingBlock(r: Reading, snippets: Record<string, Snippet>): string {
  * `confirmed: false`.
  */
 function verifyEvidence(
-  raw: unknown,
-  candidate: ClashCandidate,
-  remeasure: { readings: Reading[]; snippets: Record<string, Snippet> }
+ raw: unknown,
+ candidate: ClashCandidate,
+ remeasure: { readings: Reading[]; snippets: Record<string, Snippet> }
 ): ClashEvidence | null {
-  // Without a left edge there is no window, so nothing can be shown to have
-  // come from the answer rather than from the corpus that raised the suspicion.
-  const askedAt = candidate.remeasureAskedAt;
-  if (!askedAt) {
-    console.warn('Contradiction: candidate has no remeasureAskedAt — cannot verify confirmation');
-    return null;
-  }
+ // Without a left edge there is no window, so nothing can be shown to have
+ // come from the answer rather than from the corpus that raised the suspicion.
+ const askedAt = candidate.remeasureAskedAt;
+ if (!askedAt) {
+  console.warn('Contradiction: candidate has no remeasureAskedAt — cannot verify confirmation');
+  return null;
+ }
 
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    console.warn('Contradiction: confirmed with no evidence object — not confirmed');
-    return null;
-  }
-  const e = raw as Record<string, unknown>;
-  const snippetRef = asString(e['snippetRef']);
-  const quote = asString(e['quote']);
-  const side = e['side'] === 'b' ? 'b' : e['side'] === 'a' ? 'a' : null;
-  if (!snippetRef || !quote || !side) {
-    console.warn('Contradiction: confirmed with incomplete evidence — not confirmed');
-    return null;
-  }
+ if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+  console.warn('Contradiction: confirmed with no evidence object — not confirmed');
+  return null;
+ }
+ const e = raw as Record<string, unknown>;
+ const snippetRef = asString(e['snippetRef']);
+ const quote = asString(e['quote']);
+ const side = e['side'] === 'b' ? 'b' : e['side'] === 'a' ? 'a' : null;
+ if (!snippetRef || !quote || !side) {
+  console.warn('Contradiction: confirmed with incomplete evidence — not confirmed');
+  return null;
+ }
 
-  // 1. The ref is cited by a supplied re-measure reading, AND
-  // 3. that reading happened after the question was asked. Both conditions
-  //    must hold of the SAME reading: an old reading citing the same snippet
-  //    would otherwise satisfy (1) while a new unrelated one satisfied (3).
-  const witness = remeasure.readings.find(
-    (r) => r.cites.includes(snippetRef) && readingTime(r) > askedAt
+ // 1. The ref is cited by a supplied re-measure reading, AND
+ // 3. that reading happened after the question was asked. Both conditions
+ //    must hold of the SAME reading: an old reading citing the same snippet
+ //    would otherwise satisfy (1) while a new unrelated one satisfied (3).
+ const witness = remeasure.readings.find(
+  (r) => r.cites.includes(snippetRef) && readingTime(r) > askedAt
+ );
+ if (!witness) {
+  console.warn(
+   `Contradiction: no re-measure reading later than ${askedAt} cites ${snippetRef} — not confirmed`
   );
-  if (!witness) {
-    console.warn(
-      `Contradiction: no re-measure reading later than ${askedAt} cites ${snippetRef} — not confirmed`
-    );
-    return null;
-  }
+  return null;
+ }
 
-  // 2. The quote is verbatim in the prose of the snippet the ref NAMES. A
-  //    version we do not hold is a snippet we cannot check, and an unverifiable
-  //    quote is the case this whole function exists for.
-  const parsedRef = parseRef(snippetRef);
-  const snip = parsedRef ? remeasure.snippets[parsedRef.id] : undefined;
-  if (!parsedRef || !snip || snip.version !== parsedRef.version) {
-    console.warn(`Contradiction: ${snippetRef} resolves to no supplied snippet — not confirmed`);
-    return null;
-  }
-  if (!snip.prose.includes(quote)) {
-    console.warn('Contradiction: confirming quote is not verbatim in its snippet — not confirmed');
-    return null;
-  }
+ // 2. The quote is verbatim in the prose of the snippet the ref NAMES. A
+ //    version we do not hold is a snippet we cannot check, and an unverifiable
+ //    quote is the case this whole function exists for.
+ const parsedRef = parseRef(snippetRef);
+ const snip = parsedRef ? remeasure.snippets[parsedRef.id] : undefined;
+ if (!parsedRef || !snip || snip.version !== parsedRef.version) {
+  console.warn(`Contradiction: ${snippetRef} resolves to no supplied snippet — not confirmed`);
+  return null;
+ }
+ if (!snip.prose.includes(quote)) {
+  console.warn('Contradiction: confirming quote is not verbatim in its snippet — not confirmed');
+  return null;
+ }
 
-  return { snippetRef, quote, side };
+ return { snippetRef, quote, side };
 }
 
 /**
@@ -638,9 +654,9 @@ function verifyEvidence(
  * harvester read as superseding an earlier self. Reported as a deviation.
  */
 function confirmedType(
-  raw: unknown,
-  remeasure: { readings: Reading[] }
+ raw: unknown,
+ remeasure: { readings: Reading[] }
 ): 'synchronic' | 'diachronic' {
-  if (remeasure.readings.some((r) => r.stance === 'superseded')) return 'diachronic';
-  return raw === 'diachronic' ? 'diachronic' : 'synchronic';
+ if (remeasure.readings.some((r) => r.stance === 'superseded')) return 'diachronic';
+ return raw === 'diachronic' ? 'diachronic' : 'synchronic';
 }

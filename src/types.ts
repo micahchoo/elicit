@@ -257,20 +257,21 @@ export type QueueEntry = {
  id: string;
  status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired';
  /**
-  * Which situation licensed the question. Nothing switches over this union —
-  * `draw` and `expire` test it for equality against `'user-declared'` only —
-  * so the two Clerk sources buy no exhaustiveness check and were checked by
-  * hand instead: `draw` treats anything that is not `'user-declared'` alike,
-  * and `expire` only ever expires entries whose status is `'pending'`, which
-  * means both new sources expire at 30 days if never drawn and never expire
-  * once drawn.
-  */
+ * Which situation licensed the question. Nothing switches over this union —
+ * `draw` and `expire` test it for equality against `'user-declared'` only —
+ * so the Clerk sources buy no exhaustiveness check and were checked by
+ * hand instead: `draw` treats anything that is not `'user-declared'` alike,
+ * and `expire` only ever expires entries whose status is `'pending'`, which
+ * means the Clerk sources expire at 30 days if never drawn and never expire
+ * once drawn.
+ */
  source:
  | 'composed'
  | 'still-true'
  | 'user-declared'
  | 'contradiction-remeasure'
- | 'lint-still-true';
+ | 'lint-still-true'
+ | 'lint-undiscriminated-range';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -285,6 +286,13 @@ export type QueueEntry = {
   * resting on one stale snippet suppress each other's question.
   */
  claim?: string;
+ /**
+  * The two Claims an `undiscriminated-range` question stands between
+  * (ticket 060). Optional, because only `lint-undiscriminated-range` entries
+  * carry one — and load-bearing, because the sorted pair is the dedupe key
+  * T12 keys on, and the answer must route back to two SUPERSEDEs.
+  */
+ claims?: string[];
  /**
   * The sitting Target this question belongs to — carried from the sitting
   * whose material minted it, not from the question's wording. A domain
@@ -396,15 +404,15 @@ export type SessionState = {
   * exists (ticket 041).
   */
  openQueueEntryId?: string;
-/**
- * Capture channel per user turn, index-aligned with the user-turn ordinal
- * that `CutProposal.sourceTurn` uses (one slot per user turn, in order,
- * pushed as each turn lands). In-memory only, same lifetime class as
- * `openQueueEntryId` — never persisted; the transcript's Turn.spoken keeps
- * its own vocabulary. An undefined slot means the client sent no channel
- * for that turn, and the Snippet then carries none (ticket 048).
- */
-turnChannels?: (CaptureChannel | undefined)[];
+ /**
+  * Capture channel per user turn, index-aligned with the user-turn ordinal
+  * that `CutProposal.sourceTurn` uses (one slot per user turn, in order,
+  * pushed as each turn lands). In-memory only, same lifetime class as
+  * `openQueueEntryId` — never persisted; the transcript's Turn.spoken keeps
+  * its own vocabulary. An undefined slot means the client sent no channel
+  * for that turn, and the Snippet then carries none (ticket 048).
+  */
+ turnChannels?: (CaptureChannel | undefined)[];
 };
 
 export type Index = {

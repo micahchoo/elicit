@@ -10,6 +10,7 @@ import type {
  QuestionForm,
  Target,
 } from '../types.js';
+import type { Claim } from '../wiki/contract.js';
 import {
  isInterrogative,
  hasFirstPersonOutsideQuote,
@@ -657,5 +658,173 @@ Return only the question text. No markdown, no commentary.`;
  console.warn(
   `Composed: expedition retry also rejected (${check.rejection}) — returning null`,
  );
+ return null;
+}
+
+// ---------------------------------------------------------------------------
+// composeDiscriminatingQuestion (ticket 060)
+// ---------------------------------------------------------------------------
+
+type DiscriminatingResult =
+ | { ok: true; draft: QueueDraft }
+ | { ok: false; rejection: Rejection };
+
+/**
+ * Validate and build a discriminating draft, or name why it was refused.
+ *
+ * BOTH passages must be quoted (Q-40): a question that quotes one and splices
+ * the other hands the boundary half its evidence, so a missing or unframed
+ * quote in either passage is the same refusal it would be alone.
+ */
+function tryBuildDiscriminating(
+ claims: { a: Claim; b: Claim },
+ prose: { a: string; b: string },
+ question: string,
+): DiscriminatingResult {
+ const checkA = checkQuotesSource(question, prose.a);
+ if (!checkA.ok) return { ok: false, rejection: checkA.rejection };
+ const checkB = checkQuotesSource(question, prose.b);
+ if (!checkB.ok) return { ok: false, rejection: checkB.rejection };
+
+ return {
+  ok: true,
+  draft: {
+   source: 'lint-undiscriminated-range',
+   license: 'CC0',
+   question,
+   questionForm: 'deliberative',
+   cites: [
+    ...claims.a.cites,
+    ...claims.b.cites.filter((c) => !claims.a.cites.includes(c)),
+   ],
+   quotedFragment: checkA.fragment,
+   sharpness: 'weak',
+   horizon: 'session',
+  },
+ };
+}
+
+/**
+ * Compose the ONE question an `undiscriminated-range` finding may mint
+ * (Q-31): an invitation to draw the boundary between two claims that share a
+ * referent and a Range.
+ *
+ * Q-12, Q-15 and Q-40 in one shape: both passages quoted verbatim, each set
+ * off in its own quotation marks, and the ask framed as "where does the first
+ * hold, where the second, what tells them apart" — an invitation to draw a
+ * distinction, never an accusation. `checkQuotesSource` on EACH passage
+ * enforces the quoting, and `checkAfterQuote` inside it the interrogative and
+ * the voice (no first person outside the quotes).
+ */
+export async function composeDiscriminatingQuestion(
+ claims: { a: Claim; b: Claim },
+ prose: { a: string; b: string },
+ complete: Complete,
+): Promise<QueueDraft | null> {
+ const prompt = `You are a clerk for Elicit. The speaker wrote two passages, at different times, describing the same situation under the same stated conditions. Compose ONE question that invites them to draw the boundary between the two.
+
+Passage 1: "${prose.a}"
+Passage 2: "${prose.b}"
+
+Your question must set off an exact phrase from passage 1 inside its own quotation marks AND an exact phrase from passage 2 inside its own quotation marks — two quotes, never one. Ask where the first holds and where the second holds: what tells them apart?
+Both passages are true somewhere; the boundary is the question, not a contradiction. Never suggest the speaker is inconsistent or contradicts themselves.
+
+${FRAMING_RULE}
+
+Return only the question text. No markdown, no commentary.`;
+
+ const quoteRule = `Your question MUST set off an exact phrase from passage 1 inside quotation marks AND an exact phrase from passage 2 inside its own quotation marks: passage 1 "${prose.a}", passage 2 "${prose.b}".`;
+
+ // Attempt 1
+ const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
+ const question1 = stripFences(raw).trim();
+ const attempt1 = tryBuildDiscriminating(claims, prose, question1);
+ if (attempt1.ok) return attempt1.draft;
+
+ // One retry — enforce every constraint, corrected for what failed
+ console.warn(`Composed: discriminating rejected (${attempt1.rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
+ const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
+ const question2 = stripFences(retryRaw).trim();
+ const attempt2 = tryBuildDiscriminating(claims, prose, question2);
+ if (attempt2.ok) return attempt2.draft;
+
+ console.warn(
+  `Composed: discriminating retry also rejected (${attempt2.rejection}) — returning null`,
+ );
+ return null;
+}
+
+// ---------------------------------------------------------------------------
+// composeNarrowedRanges (ticket 060)
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn an answered discriminating question into the two narrowed Ranges.
+ *
+ * Receives NO graph by design — the caller passes everything this needs: the
+ * two claims (body + current Range), the verbatim passages behind them, and
+ * the answer readings' text and cites. The boundary is named in the claims'
+ * own vocabulary.
+ *
+ * The output must differ from the status quo in both directions: a range that
+ * still says what both claims said has drawn no boundary, and two ranges that
+ * collapse into one have drawn the wrong one.
+ */
+export async function composeNarrowedRanges(
+ claims: { a: Claim; b: Claim },
+ prose: { a: string; b: string },
+ answers: Reading[],
+ complete: Complete,
+): Promise<{ a: string; b: string } | null> {
+ const answersBlock = answers
+  .map((r, i) => {
+   const cites = r.cites ?? [];
+   const cited = cites.length > 0 ? ` (cites: ${cites.join(', ')})` : '';
+   return `Answer ${i + 1}: "${r.reading}"${cited}`;
+  })
+  .join('\n');
+
+ const prompt = `You are a clerk for Elicit. A question asked the speaker where two of their descriptions each hold. From their answers, name the narrowed context where the first claim holds and where the second holds.
+
+Claim 1: "${claims.a.body}" — currently held "in ${claims.a.range}"
+Passage 1: "${prose.a}"
+Claim 2: "${claims.b.body}" — currently held "in ${claims.b.range}"
+Passage 2: "${prose.b}"
+
+The speaker's answers:
+${answersBlock}
+
+Return ONLY a JSON object: {"rangeA": "<the narrowed context where claim 1 holds>", "rangeB": "<the narrowed context where claim 2 holds>"}. No markdown, no commentary.`;
+
+ const attempt = (raw: string): { a: string; b: string } | null => {
+  let parsed: unknown;
+  try {
+   parsed = JSON.parse(stripFences(raw));
+  } catch {
+   return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const rec = parsed as Record<string, unknown>;
+  const rangeA = typeof rec['rangeA'] === 'string' ? rec['rangeA'].trim() : '';
+  const rangeB = typeof rec['rangeB'] === 'string' ? rec['rangeB'].trim() : '';
+  if (rangeA === '' || rangeB === '') return null;
+  if (rangeA === rangeB) return null;
+  if (rangeA === claims.a.range || rangeB === claims.b.range) return null;
+  return { a: rangeA, b: rangeB };
+ };
+
+ // Attempt 1
+ const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
+ const first = attempt(raw);
+ if (first) return first;
+
+ // One retry
+ const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected. Return ONLY a JSON object of the form {"rangeA": "...", "rangeB": "..."} where rangeA is the narrowed context where claim 1 holds and rangeB where claim 2 holds. Both must be non-empty, different from each other, and different from the claims' current ranges.`;
+ const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
+ const second = attempt(retryRaw);
+ if (second) return second;
+
+ console.warn('Composed: narrowed-ranges retry also rejected — returning null');
  return null;
 }

@@ -1,5 +1,5 @@
 /**
- * The graph lint — four findings, no model, no writes (Q-31).
+ * The graph lint — five findings, no model, no writes (Q-31).
  *
  * **This module takes no model handle. There is no such parameter anywhere in
  * its signature, and that absence IS the contract.** A reader who wants to know
@@ -62,6 +62,7 @@ export function lint(
     ...citationFindings(graph, thresholds, log),
     ...godNodeFindings(graph, thresholds, log),
     ...mergeCandidateFindings(graph, thresholds, log),
+    ...undiscriminatedRangeFindings(graph, thresholds, log),
   ];
 }
 
@@ -292,6 +293,66 @@ function mergeCandidateFindings(
       const detail = `"${a.canonical}" and "${b.canonical}" may name one referent (similarity ${score.toFixed(2)})`;
       findings.push({ kind: 'merge-candidate', subject: a.slug, detail, refs: [a.slug, b.slug] });
       findings.push({ kind: 'merge-candidate', subject: b.slug, detail, refs: [b.slug, a.slug] });
+    }
+  }
+
+  return findings;
+}
+
+/**
+ * `undiscriminated-range` — two live claims describing the same situation
+ * under the same stated conditions, found by comparing their RANGE strings
+ * and nothing else. The signal is sameness, and sameness is a string
+ * function: no opposition judgment and no candidate pool in the path, so
+ * the finding sees the corpus as it is today (ticket 060).
+ *
+ * The subject is the referent slug — the thing both claims are about — and
+ * the refs are the two claim ids in sorted order. The sorted pair is the
+ * caller's dedupe key (exactly how T11 dedupes candidate pairs): ONE minted
+ * question per pair (Q-31), carrying both ids so the answer can route back
+ * to one SUPERSEDE per claim.
+ *
+ * Shadowed (Q-35) like its siblings: computed and logged, returned only
+ * when the register flips. It graduates when the shadow record shows pairs
+ * a human agrees are two descriptions of one situation.
+ */
+function undiscriminatedRangeFindings(
+  graph: ClaimGraph,
+  thresholds: ThresholdRegister,
+  log: LogFn,
+): LintFinding[] {
+  const t = thresholds['lint.undiscriminatedRangeSimilarity'];
+  if (typeof t.value !== 'number') return [];
+
+  // Live claims only, sorted by id so every pair is visited once in i<j
+  // order and the refs come out in the caller's dedupe key order.
+  const live = graph.claims.filter(isLive).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const findings: LintFinding[] = [];
+
+  for (let i = 0; i < live.length; i++) {
+    const a = live[i];
+    if (!a) continue;
+    for (let j = i + 1; j < live.length; j++) {
+      const b = live[j];
+      if (!b) continue;
+
+      // The referent both claims are about — the lexicographically first of
+      // the slugs they share. No shared referent, no finding.
+      const [subject] = a.referents.filter((r) => b.referents.includes(r)).sort();
+      if (subject === undefined) continue;
+
+      const score = nameSimilarity(a.range, b.range);
+      if (score <= t.value) continue;
+
+      const would = `note undiscriminated-range on ${a.id} and ${b.id} referent=${subject} similarity=${score.toFixed(2)}`;
+      if (!shadowDecision(t, would, log)) continue;
+
+      findings.push({
+        kind: 'undiscriminated-range',
+        subject,
+        detail: `${a.id} and ${b.id} describe the same situation under the same stated conditions (similarity ${score.toFixed(2)})`,
+        refs: [a.id, b.id],
+      });
     }
   }
 

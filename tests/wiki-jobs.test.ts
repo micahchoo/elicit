@@ -23,7 +23,7 @@ import {
 } from '../src/clerk/wiki-jobs.js';
 import { createClaimStore } from '../src/wiki/store.js';
 import { createRegistry } from '../src/wiki/registry.js';
-import { lint } from '../src/wiki/lint.js';
+import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
 import { poolCandidates, type ClashChannel } from '../src/wiki/clash.js';
 import { applyOps } from '../src/wiki/ops.js';
 import {
@@ -34,7 +34,7 @@ import {
   type EmbeddingIndexStore,
   type EmbeddingRecord,
 } from '../src/wiki/embedding.js';
-import type { Threshold } from '../src/wiki/thresholds.js';
+import { THRESHOLDS, type Threshold } from '../src/wiki/thresholds.js';
 import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } from '../src/clerk/contradiction.js';
 import type { MintItem, MintResult } from '../src/clerk/mint.js';
 import type {
@@ -243,6 +243,8 @@ type Recorded = {
   remeasureCalls: string[];
   confirmCalls: string[];
   stillTrueCalls: string[];
+  discriminatingCalls: number;
+  narrowedRangesCalls: number;
 };
 
 type HarnessOptions = {
@@ -253,11 +255,14 @@ type HarnessOptions = {
   readings?: Reading[];
   queue?: FakeQueue;
   channels?: ClashChannel[];
+  thresholds?: ThresholdRegister;
   propose?: (item: MintItem) => Promise<MintResult>;
   opposition?: (a: Claim, b: Claim) => Promise<OppositionJudgment | null>;
   remeasure?: () => Promise<QueueDraft | null>;
   confirm?: (c: ClashCandidate) => Promise<ConfirmResult | null>;
   stillTrue?: (s: Snippet) => Promise<QueueDraft | null>;
+  discriminating?: () => Promise<QueueDraft | null>;
+  narrowedRanges?: () => Promise<{ a: string; b: string } | null>;
 };
 
 const roots: string[] = [];
@@ -284,6 +289,8 @@ function harness(opts: HarnessOptions = {}): {
     remeasureCalls: [],
     confirmCalls: [],
     stillTrueCalls: [],
+    discriminatingCalls: 0,
+    narrowedRangesCalls: 0,
   };
   const log: LogFn = (e) => rec.events.push(e);
 
@@ -325,6 +332,15 @@ function harness(opts: HarnessOptions = {}): {
       rec.stillTrueCalls.push(s.id);
       return opts.stillTrue ? opts.stillTrue(s) : null;
     },
+    composeDiscriminatingQuestion: async () => {
+      rec.discriminatingCalls++;
+      return opts.discriminating ? opts.discriminating() : null;
+    },
+    composeNarrowedRanges: async () => {
+      rec.narrowedRangesCalls++;
+      return opts.narrowedRanges ? opts.narrowedRanges() : null;
+    },
+    ...(opts.thresholds !== undefined ? { thresholds: opts.thresholds } : {}),
     log,
     vaultRoot: root,
     model: MODEL,
@@ -762,6 +778,228 @@ describe('lint still-true questions', () => {
       },
     };
     await expect(runWikiJobs(h.deps)).resolves.toBeDefined();
+  });
+});
+
+// ── Job 2: lint — undiscriminated-range questions (ticket 060) ──
+
+/**
+ * The register with `lint.undiscriminatedRangeSimilarity` flipped live. The
+ * shipped register shadows the finding (Q-35), and a shadowed finding is
+ * computed but not returned — these tests need it returned to exercise the
+ * minting path, exactly as the god-node shadow is held shut elsewhere.
+ */
+const DISCRIMINATED_LIVE: ThresholdRegister = {
+  ...THRESHOLDS,
+  'lint.undiscriminatedRangeSimilarity': {
+    ...THRESHOLDS['lint.undiscriminatedRangeSimilarity'],
+    live: true,
+  },
+};
+
+describe('lint undiscriminated-range questions', () => {
+  const s1 = snippet('s1', 'I am happiest around the bakery counter at dawn.');
+  const s2 = snippet('s2', 'The bakery is where my week starts.', { session: 'sess-2' });
+  const draft: QueueDraft = {
+    source: 'lint-undiscriminated-range',
+    license: 'CC0',
+    question:
+      'You wrote: "I am happiest around the bakery counter at dawn." and "The bakery is where my week starts." Where does the first hold, and where does the second?',
+    questionForm: 'deliberative',
+    cites: ['s1@1', 's2@1'],
+    quotedFragment: 'I am happiest around the bakery counter at dawn',
+    sharpness: 'weak',
+    horizon: 'session',
+  };
+  const pair = (): HarnessOptions => ({
+    thresholds: DISCRIMINATED_LIVE,
+    claims: [
+      claim('c-a', 'The bakery is a refuge.', { cites: ['s1@1'], referents: ['the-bakery'] }),
+      claim('c-b', 'The bakery is a second home.', { cites: ['s2@1'], referents: ['the-bakery'] }),
+    ],
+    snippets: [s1, s2],
+    discriminating: async () => draft,
+  });
+
+  it('mints exactly one entry for a same-range pair, carrying both claim ids', async () => {
+    const h = harness(pair());
+    await h.run();
+
+    const minted = h.queue.entries.filter((e) => e.source === 'lint-undiscriminated-range');
+    expect(minted).toHaveLength(1);
+    expect(minted[0]?.claims).toEqual(['c-a', 'c-b']);
+    expect(h.rec.discriminatingCalls).toBe(1);
+  });
+
+  it('three consecutive runs mint exactly one question for the pair', async () => {
+    const h = harness(pair());
+    await h.run();
+    // Change the graph between runs so the watermark re-opens the lint job
+    // (lint is watermark-gated on the index being current). Each extra claim
+    // carries a range that pairs with nothing, so it re-opens without
+    // minting a question of its own.
+    h.store.writeClaim(claim('c-extra', 'The bakery opens at six.', { cites: ['s1@1'], referents: ['the-bakery'], range: 'at night' }));
+    await h.run();
+    h.store.writeClaim(claim('c-extra-2', 'The bakery closes at noon.', { cites: ['s1@1'], referents: ['the-bakery'], range: 'on weekends' }));
+    await h.run();
+
+    const minted = h.queue.entries.filter((e) => e.source === 'lint-undiscriminated-range');
+    expect(minted).toHaveLength(1);
+    expect(minted[0]?.claims).toEqual(['c-a', 'c-b']);
+    expect(h.rec.discriminatingCalls).toBe(1);
+  });
+
+  it('does not re-mint while the entry is held, and mints again once answered', async () => {
+    const held = fakeQueue([
+      queueEntry('q-held', { source: 'lint-undiscriminated-range', status: 'asked', claims: ['c-a', 'c-b'] }),
+    ]);
+    const h = harness({ ...pair(), queue: held });
+    await h.run();
+    expect(h.rec.discriminatingCalls).toBe(0);
+
+    const answered = fakeQueue([
+      queueEntry('q-answered', { source: 'lint-undiscriminated-range', status: 'answered', claims: ['c-a', 'c-b'] }),
+    ]);
+    const h2 = harness({ ...pair(), queue: answered });
+    await h2.run();
+    expect(h2.queue.entries.filter((e) => e.source === 'lint-undiscriminated-range')).toHaveLength(2);
+    expect(h2.rec.discriminatingCalls).toBe(1);
+  });
+
+  it('clearly different ranges produce no question', async () => {
+    const h = harness({
+      thresholds: DISCRIMINATED_LIVE,
+      claims: [
+        claim('c-a', 'The bakery is a refuge.', { cites: ['s1@1'], referents: ['the-bakery'] }),
+        claim('c-b', 'The bakery is a second home.', { cites: ['s2@1'], referents: ['the-bakery'], range: 'with my kids' }),
+      ],
+      snippets: [s1, s2],
+      discriminating: async () => draft,
+    });
+    await h.run();
+
+    expect(h.queue.entries).toHaveLength(0);
+    expect(h.rec.discriminatingCalls).toBe(0);
+  });
+
+  it('a compose that throws costs one question and not the run', async () => {
+    const h = harness({
+      ...pair(),
+      discriminating: async () => {
+        throw new Error('model down');
+      },
+    });
+    const report = await h.run();
+
+    expect(h.queue.entries).toHaveLength(0);
+    expect(report.lint.some((f) => f.kind === 'undiscriminated-range')).toBe(true);
+    // The failure names the step it happened in, which is all the reader gets.
+    expect(kinds(h.rec)).toContain('wiki-jobs-failed');
+    expectTrailIsAppendable(h.rec);
+  });
+});
+
+// ── The answer path (ticket 060): one answered question, two SUPERSEDEs ──
+
+describe('range discrimination answers', () => {
+  const ASKED_AT = '2026-02-01T00:00:00.000Z';
+  const s1 = snippet('s1', 'I am happiest around the bakery counter at dawn.', { session: 'sess-a' });
+  const s2 = snippet('s2', 'The bakery is where my week starts.', { session: 'sess-b' });
+  const s3 = snippet('s3', 'It depends on the day, honestly.', { session: 'sess-c' });
+  const answered = (): FakeQueue =>
+    fakeQueue([
+      queueEntry('q-1', {
+        source: 'lint-undiscriminated-range',
+        status: 'answered',
+        answeredAt: ASKED_AT,
+        claims: ['a-1', 'b-1'],
+      }),
+    ]);
+  const seeded = (): HarnessOptions => ({
+    claims: [
+      claim('a-1', 'The bakery is a refuge.', { cites: ['s1@1'], referents: ['the-bakery'] }),
+      claim('b-1', 'The bakery is a second home.', { cites: ['s2@1'], referents: ['the-bakery'] }),
+    ],
+    snippets: [s1, s2, s3],
+    readings: [
+      reading('r-1', ['s3@1'], 'At work it is a refuge from the floor.', { at: '2026-02-02T00:00:00.000Z' }),
+      reading('r-2', ['s3@1'], 'With my kids it is just a stop.', { at: '2026-02-02T00:00:00.000Z' }),
+    ],
+    queue: answered(),
+    narrowedRanges: async () => ({ a: 'at work', b: 'with my kids' }),
+  });
+
+  it('narrows both claims to evidenced via two SUPERSEDEs', async () => {
+    const h = harness(seeded());
+    await h.run();
+
+    const oldA = h.store.readClaim('a-1');
+    const oldB = h.store.readClaim('b-1');
+    expect(oldA?.supersededBy).toBeDefined();
+    expect(oldB?.supersededBy).toBeDefined();
+    expect(oldA?.supersedeReason).toBe('range-discriminated:lint:the-bakery');
+    expect(oldB?.supersedeReason).toBe('range-discriminated:lint:the-bakery');
+
+    const newA = h.store.readClaim(oldA?.supersededBy ?? '');
+    const newB = h.store.readClaim(oldB?.supersededBy ?? '');
+    expect(newA?.range).toBe('at work');
+    expect(newB?.range).toBe('with my kids');
+    // Each new claim cites its original snippet AND the answer's, in that order.
+    expect(newA?.cites).toEqual(['s1@1', 's3@1']);
+    expect(newB?.cites).toEqual(['s2@1', 's3@1']);
+    // applyOps recomputes status internally; ≥2 distinct sittings is evidenced.
+    expect(newA?.status).toBe('evidenced');
+    expect(newB?.status).toBe('evidenced');
+  });
+
+  it('is idempotent: a superseded pair never discriminates again', async () => {
+    const h = harness(seeded());
+    await h.run();
+    const callsAfterFirst = h.rec.narrowedRangesCalls;
+    await h.run();
+    expect(h.rec.narrowedRangesCalls).toBe(callsAfterFirst);
+  });
+
+  it('an answer from one of the claims\' own sittings is refused', async () => {
+    const sSame = snippet('s-same', 'The bakery, again.', { session: 'sess-a' });
+    const h = harness({
+      claims: [
+        claim('a-1', 'The bakery is a refuge.', { cites: ['s1@1'], referents: ['the-bakery'] }),
+        claim('b-1', 'The bakery is a second home.', { cites: ['s2@1'], referents: ['the-bakery'] }),
+      ],
+      snippets: [s1, s2, sSame],
+      readings: [
+        reading('r-same', ['s-same@1'], 'From the same sitting as the first claim.', { at: '2026-02-02T00:00:00.000Z' }),
+      ],
+      queue: answered(),
+      narrowedRanges: async () => ({ a: 'at work', b: 'with my kids' }),
+    });
+    await h.run();
+
+    expect(h.rec.narrowedRangesCalls).toBe(0);
+    expect(h.store.readClaim('a-1')?.supersededBy).toBeUndefined();
+    expect(h.store.readClaim('b-1')?.supersededBy).toBeUndefined();
+  });
+
+  it('an answered entry without a claims pair is skipped', async () => {
+    const h = harness({
+      claims: [
+        claim('a-1', 'The bakery is a refuge.', { cites: ['s1@1'], referents: ['the-bakery'] }),
+        claim('b-1', 'The bakery is a second home.', { cites: ['s2@1'], referents: ['the-bakery'] }),
+      ],
+      snippets: [s1, s2, s3],
+      readings: [
+        reading('r-1', ['s3@1'], 'At work it is a refuge from the floor.', { at: '2026-02-02T00:00:00.000Z' }),
+      ],
+      queue: fakeQueue([
+        queueEntry('q-bare', { source: 'lint-undiscriminated-range', status: 'answered', answeredAt: ASKED_AT }),
+      ]),
+      narrowedRanges: async () => ({ a: 'at work', b: 'with my kids' }),
+    });
+    await h.run();
+
+    expect(h.rec.narrowedRangesCalls).toBe(0);
+    expect(h.store.readClaim('a-1')?.supersededBy).toBeUndefined();
   });
 });
 
@@ -1831,6 +2069,7 @@ describe('the docket gates (ticket 076)', () => {
     expect(first.swept).toBe(0);
     const afterFirst = skippedDetails(h);
     expect(afterFirst.filter((d) => d.startsWith('job=presweep-confirmation '))).toHaveLength(1);
+    expect(afterFirst.filter((d) => d.startsWith('job=discriminated-answer '))).toHaveLength(1);
     expect(afterFirst.filter((d) => d.startsWith('job=sweep '))).toHaveLength(1);
     expect(afterFirst.filter((d) => d.startsWith('job=remeasure '))).toHaveLength(1);
     expect(afterFirst.filter((d) => d.startsWith('job=confirmation '))).toHaveLength(1);
@@ -1840,11 +2079,11 @@ describe('the docket gates (ticket 076)', () => {
     const second = await h.run();
     expect(second.swept).toBe(0);
     const all = skippedDetails(h);
-    // 11 lines: run 1 gated out the four queue jobs on the clean tree (4), run
-    // 2 gated out all seven (7) — so the git-gated jobs log twice and the
+    // 13 lines: run 1 gated out the five queue jobs on the clean tree (5), run
+    // 2 gated out all eight (8) — so the git-gated jobs log twice and the
     // watermark-gated passes once.
-    expect(all).toHaveLength(11);
-    for (const job of ['presweep-confirmation', 'sweep', 'remeasure', 'confirmation']) {
+    expect(all).toHaveLength(13);
+    for (const job of ['presweep-confirmation', 'discriminated-answer', 'sweep', 'remeasure', 'confirmation']) {
       expect(all.filter((d) => d.startsWith(`job=${job} `)), `skip for ${job}`).toHaveLength(2);
     }
     for (const job of ['prime', 'lint', 'candidates']) {

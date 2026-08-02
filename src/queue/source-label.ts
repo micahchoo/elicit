@@ -30,23 +30,25 @@ import type { LintFinding } from '../wiki/contract.js';
 /**
  * Where a waiting question came from, in words.
  *
- * Four of the five say the same thing, and that is the requirement rather than
- * an oversight (S3). `contradiction-remeasure` and `lint-still-true` are the
- * two literals this slice adds, and a re-measure that announces itself as a
- * re-measure is the verification Q-15 forbids — so both read as the ordinary
- * question `composed` is. Only `user-declared` differs, because the person
- * parked that one themselves and knows it.
+ * All but `user-declared` say the same thing, and that is the requirement
+ * rather than an oversight (S3). `contradiction-remeasure`, `lint-still-true`
+ * and `lint-undiscriminated-range` are the literals the Clerk slice adds, and
+ * a re-measure or a discrimination question that announces itself as one is
+ * the verification Q-15 forbids — so they read as the ordinary question
+ * `composed` is. Only `user-declared` differs, because the person parked
+ * that one themselves and knows it.
  */
 const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
-  composed: 'from your own words',
-  'still-true': 'from your own words',
-  'user-declared': 'you set this aside',
-  'contradiction-remeasure': 'from your own words',
-  'lint-still-true': 'from your own words',
+ composed: 'from your own words',
+ 'still-true': 'from your own words',
+ 'user-declared': 'you set this aside',
+ 'contradiction-remeasure': 'from your own words',
+ 'lint-still-true': 'from your own words',
+ 'lint-undiscriminated-range': 'from your own words',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {
-  return SOURCE_LABELS[s];
+ return SOURCE_LABELS[s];
 }
 
 /**
@@ -58,18 +60,18 @@ export function sourceLabel(s: QueueEntry['source']): string {
  * said in a reader's words, so the two cannot drift into different meanings.
  */
 const FACET_HEADINGS: Record<Facet, string> = {
-  episode: 'Occasions',
-  'general-event': 'What happens again and again',
-  'lifetime-period': 'Stretches of life',
-  fact: 'Steady facts',
-  construct: 'Distinctions drawn',
-  intention: 'Wants and plans',
-  value: 'What is worth doing',
-  'causal-theory': 'Explanations of the self',
+ episode: 'Occasions',
+ 'general-event': 'What happens again and again',
+ 'lifetime-period': 'Stretches of life',
+ fact: 'Steady facts',
+ construct: 'Distinctions drawn',
+ intention: 'Wants and plans',
+ value: 'What is worth doing',
+ 'causal-theory': 'Explanations of the self',
 };
 
 export function facetHeading(f: Facet): string {
-  return FACET_HEADINGS[f];
+ return FACET_HEADINGS[f];
 }
 
 /**
@@ -81,12 +83,13 @@ export function facetHeading(f: Facet): string {
  * is stale is the Clerk's business and stays in the Activity Log.
  */
 const LINT_NOTES: Record<LintFinding['kind'], string> = {
-  'stale-citation': 'the words behind this were written again since',
-  'orphan-claim': 'nothing in the vault stands behind this any more',
-  'god-node-facet': 'this section has grown large enough to be worth dividing',
-  'merge-candidate': 'two names here may turn out to be one',
+ 'stale-citation': 'the words behind this were written again since',
+ 'orphan-claim': 'nothing in the vault stands behind this any more',
+ 'god-node-facet': 'this section has grown large enough to be worth dividing',
+ 'merge-candidate': 'two names here may turn out to be one',
+ 'undiscriminated-range': 'two descriptions here may be one situation with a boundary not yet drawn',
 };
 
 export function lintNote(k: LintFinding['kind']): string {
-  return LINT_NOTES[k];
+ return LINT_NOTES[k];
 }

@@ -494,6 +494,18 @@ http://localhost:3002/?board=elicit-ideal-state).
   into 087; first field evidence for 033. The verbatim gate holds —
   interpretation, not invention, is what drifts.
 
+- [Build: discriminating questions from lint](tickets/060-discriminating-question-lint.md)
+  — Q-54's Door 2, live: a zero-model `undiscriminated-range` lint finding
+  (shadow threshold) mints one invitation-framed question per claim pair;
+  the answer becomes two SUPERSEDEs with narrowed Ranges, born `evidenced`,
+  via a new git-gated docket job. Agent left the consequence dead-wired
+  inside the wrong loop; caught by tsc at verification and fixed.
+
+- [Fix: a quoted pole must be a complete clause](tickets/088-quoted-pole-complete-clause.md)
+  — remeasure poles widen mechanically to the containing clause
+  (`src/clerk/clause.ts`); verbatim invariant holds; juxtaposition path
+  deliberately untouched (two-text containment) — recorded remainder.
+
 ## Fog
 
 - **The outer loop's experience** — re-reading practice, meeting past selves.
