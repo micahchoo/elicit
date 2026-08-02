@@ -443,6 +443,18 @@ http://localhost:3002/?board=elicit-ideal-state).
   claimable disk record (restart-proof) and wait in a review queue with a
   quiet count; failed is logged distinct from empty.
 
+- [Plan and build: the Clerk slice](tickets/008-build-clerk.md) — CLOSED on
+  T16's real-model RESULTS
+  ([the document](../superpowers/plans/2026-08-02-the-clerk.RESULTS.md)):
+  144/144 ops accepted but all MINT (five branches never exercised — corpus
+  shape, not model skill); 144/144 `unconfirmed` is Q-50 working; the wiki
+  is a pile until claims share evidence — the correctives are seeding and
+  the embedding channel's graduation, not the Clerk; the one live-gate
+  opposition is a lexical false positive absorbed by Q-30's person-gate at
+  the cost of one queue entry; an 84-minute runaway generation mid-drain
+  became ticket 086, fixed before the drain ended. Follow-ups 087/088/089.
+  Unblocked: 014-plan-done, 016, 027, 033, 060, 085.
+
 - [Grill: the Seeding slice](tickets/013-grill-seeding.md) — seven rulings,
   Q-66..Q-72: weak prior deleted (Q-50 stands; Confirm is a licence);
   per-region mechanical dating; the review gate survives scale by bounding
