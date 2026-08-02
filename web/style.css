@@ -661,6 +661,58 @@ main {
  font-style: italic;
 }
 
+/* ── waiting ──
+   A model-backed call takes seconds. The signal is typographic: a hairline
+   drawing itself across the text measure, and one dimmed line saying what is
+   happening. No spinner, no box, no percentage. */
+
+.wait {
+ width: 100%;
+ align-self: stretch;
+ display: flex;
+ flex-direction: column;
+ gap: 0.3rem;
+ padding-top: 0.4rem;
+}
+
+.wait-rule {
+ position: relative;
+ height: 1px;
+ width: 100%;
+ overflow: hidden;
+}
+
+.wait-sweep {
+ position: absolute;
+ top: 0;
+ height: 1px;
+ background: var(--border);
+ animation: wait-sweep 2s ease-in-out infinite;
+}
+
+/* Draws left to right, holds, then withdraws off the right edge. */
+@keyframes wait-sweep {
+ 0% { left: 0; right: 100%; }
+ 45% { left: 0; right: 0; }
+ 55% { left: 0; right: 0; }
+ 100% { left: 100%; right: 0; }
+}
+
+.wait-label,
+.quiet-error {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+ .wait-sweep {
+  animation: none;
+  left: 0;
+  right: 0;
+ }
+}
+
 /* ── shared ── */
 
 .submit-btn {
@@ -788,5 +840,16 @@ main {
   max-width: none;
   font-size: 1rem;
   padding: 0.6rem 0.75rem;
+ }
+
+ .wait {
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+ }
+
+ .wait-label,
+ .quiet-error {
+  font-size: 0.8rem;
+  line-height: 1.4;
  }
 }

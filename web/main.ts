@@ -113,6 +113,20 @@ function navTo(screen: Screen) {
 }
 
 
+/**
+ * A failed call. `handled` means api() already put the explanation on screen,
+ * so the caller's waiting affordance leaves without adding a second line.
+ */
+class ApiError extends Error {
+  readonly status: number;
+  readonly handled: boolean;
+  constructor(message: string, status: number, handled = false) {
+    super(message);
+    this.status = status;
+    this.handled = handled;
+  }
+}
+
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') || path.startsWith('/api/stt/status') ? 'GET' : 'POST';
   const init: RequestInit = { method };
@@ -122,19 +136,27 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   }
   const res = await fetch(path, init);
   if (!res.ok) {
-    if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
+    // A 401 from /api/login is a wrong password, not an expired session —
+    // the login screen must stay put so it can say so.
+    if (res.status === 401 && !path.startsWith('/api/login')) {
+      navTo('login');
+      throw new ApiError('unauthorized', 401, true);
+    }
     if (res.status === 403) {
+      let setupRequired = false;
       try {
-        const data = await res.json();
-        if (data.error === 'setup required') {
-          // Server wants setup from host machine — this client is remote
-          showError('finish setup from the host machine');
-          throw new Error('Setup required');
-        }
-      } catch { /* not JSON — fall through */ }
+        const data = await res.json() as { error?: string };
+        setupRequired = data.error === 'setup required';
+      } catch { /* not JSON */ }
+      if (setupRequired) {
+        // Server wants setup from host machine — this client is remote
+        showError('finish setup from the host machine');
+        throw new ApiError('setup required', 403, true);
+      }
+      throw new ApiError('403 Forbidden', 403);
     }
     const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    throw new ApiError(`${res.status} ${res.statusText}: ${text}`, res.status);
   }
   return res.json() as T;
 }
@@ -142,8 +164,8 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 async function apiRaw(path: string): Promise<Response> {
   const res = await fetch(path, { method: 'GET' });
   if (!res.ok) {
-    if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
-    throw new Error(`${res.status}`);
+    if (res.status === 401) { navTo('login'); throw new ApiError('unauthorized', 401, true); }
+    throw new ApiError(`${res.status}`, res.status);
   }
   return res;
 }
@@ -157,6 +179,70 @@ function clear() {
 function showError(msg: string) {
   const err = el('p', { class: 'error-msg' }, msg);
   main.append(err);
+}
+
+/* ── Waiting ── */
+
+const WAIT_FAILED = 'that did not go through — try again';
+
+interface Wait {
+  /** The call returned. Take the affordance away. */
+  done(): void;
+  /** The call failed. Leave one dimmed line where the affordance was. */
+  failed(cause: unknown, message?: string): void;
+}
+
+function showQuietError(container: HTMLElement, message: string) {
+  container.append(el('p', { class: 'quiet-error' }, message));
+}
+
+/**
+ * Say that something is happening, in the register of the page: a hairline
+ * drawing across the measure plus one dimmed line. `delayMs` holds it back so
+ * a fast call does not flash.
+ *
+ * Phase 2 (ticket 039) replaces the label of the /end wait with turn-by-turn
+ * progress, once the chunked harvest reports which turn it is reading.
+ */
+function beginWait(container: HTMLElement, label: string, delayMs = 0): Wait {
+  for (const stale of container.querySelectorAll(':scope > .wait, :scope > .quiet-error')) {
+    stale.remove();
+  }
+
+  const block = el('div', { class: 'wait' });
+  block.append(
+    el('div', { class: 'wait-rule' }, el('span', { class: 'wait-sweep' })),
+    el('p', { class: 'wait-label' }, label),
+  );
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  if (delayMs > 0) timer = setTimeout(() => container.append(block), delayMs);
+  else container.append(block);
+
+  let live = true;
+  /** Ends the wait once; reports whether this call is the one that ended it. */
+  function stop(): boolean {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    const wasLive = live;
+    live = false;
+    return wasLive;
+  }
+
+  return {
+    done() {
+      if (stop()) block.remove();
+    },
+    failed(cause: unknown, message = WAIT_FAILED) {
+      if (!stop()) return;
+      console.error(cause);
+      block.remove();
+      if (cause instanceof ApiError && cause.handled) return;
+      showQuietError(container, message);
+    },
+  };
 }
 
 /* ── Login screen ── */
@@ -177,13 +263,17 @@ function renderLogin() {
 
   submit.addEventListener('click', async () => {
     submit.disabled = true;
+    errorSlot.innerHTML = '';
+    const wait = beginWait(errorSlot, 'checking…');
     try {
       await api('/api/login', { password: input.value });
+      wait.done();
       navTo('mode');
-    } catch {
-      errorSlot.innerHTML = '';
-      errorSlot.append('wrong password');
+    } catch (e) {
+      const rejected = e instanceof ApiError && e.status === 401;
+      wait.failed(e, rejected ? 'wrong password' : undefined);
       submit.disabled = false;
+      input.focus();
     }
   });
 
@@ -233,12 +323,14 @@ function renderSetup() {
       return;
     }
     submit.disabled = true;
+    errorSlot.innerHTML = '';
+    const wait = beginWait(errorSlot, 'saving the password…');
     try {
       await api('/api/setup', { password: pw });
+      wait.done();
       navTo('mode');
     } catch (e) {
-      errorSlot.innerHTML = '';
-      errorSlot.append(String(e));
+      wait.failed(e);
       submit.disabled = false;
     }
   });
@@ -310,6 +402,7 @@ function renderMode(showSetupHint?: boolean) {
   submit.addEventListener('click', async () => {
     submit.disabled = true;
     errorSlot.innerHTML = '';
+    const wait = beginWait(errorSlot, 'finding a question…');
     try {
       const mode: Mode = {
         minutes: Number(minSelect.value),
@@ -322,10 +415,10 @@ function renderMode(showSetupHint?: boolean) {
       const res = await api<SessionResponse>('/api/session', { mode });
       state.sessionId = res.sessionId;
       state.question = res.question;
+      wait.done();
       renderExchange();
     } catch (e) {
-      errorSlot.innerHTML = '';
-      errorSlot.append(String(e));
+      wait.failed(e);
       submit.disabled = false;
     }
   });
@@ -375,6 +468,7 @@ function renderUnprompted() {
     doneBtn.disabled = true;
     page.disabled = true;
     errorSlot.innerHTML = '';
+    const wait = beginWait(errorSlot, 'reading what you wrote…');
     try {
       const res = await api<{ sessionId: string; proposals: CutProposal[] }>(
         '/api/unprompted',
@@ -382,9 +476,10 @@ function renderUnprompted() {
       );
       state.sessionId = res.sessionId;
       state.proposals = res.proposals;
+      wait.done();
       renderHarvest();
     } catch (e) {
-      errorSlot.append(String(e));
+      wait.failed(e);
       doneBtn.disabled = false;
       page.disabled = false;
     }
@@ -564,10 +659,16 @@ function renderExchange() {
     deferRow.classList.remove('active');
     if (state.sttAvailable) micBtn.disabled = true;
 
-    appendTurn('user', text);
+    // The answer moves into the transcript now, so it is not on screen twice
+    // while the probe is out. A failure puts it back in the field.
+    const userTurn = appendTurn('user', text);
+    textarea.value = '';
+    textarea.style.height = 'auto';
 
     const body: Record<string, unknown> = { text };
     if (state.turnHadSpeech) body.spoken = true;
+
+    const wait = beginWait(answerArea, 'thinking…');
 
     try {
       const res = await api<TurnData>(
@@ -575,6 +676,7 @@ function renderExchange() {
         body,
       );
 
+      wait.done();
       state.turnHadSpeech = false;
 
       if (res.kind === 'probe') {
@@ -602,11 +704,14 @@ function renderExchange() {
         return;
       }
     } catch (e) {
-      showError(String(e));
+      // Their words go back to the field, or "try again" means nothing.
+      wait.failed(e);
+      userTurn.remove();
+      exchangeTurnCount--;
+      textarea.value = text;
+      textarea.dispatchEvent(new Event('input'));
     }
 
-    textarea.value = '';
-    textarea.style.height = 'auto';
     textarea.disabled = false;
     harvestBtn.disabled = false;
     skipBtn.disabled = false;
@@ -623,15 +728,30 @@ function renderExchange() {
     }
   });
 
+  /** Enable or disable everything that would race the call in flight. */
+  function setControlsBusy(busy: boolean) {
+    textarea.disabled = busy;
+    harvestBtn.disabled = busy;
+    skipBtn.disabled = busy;
+    laterBtn.disabled = busy;
+    if (state.sttAvailable) micBtn.disabled = busy;
+  }
+
   harvestBtn.addEventListener('click', async () => {
+    setControlsBusy(true);
+    // The longest wait in the app — around twenty seconds. Phase 2 turns this
+    // label into "reading turn 3 of 6" once the harvest reports its progress.
+    const wait = beginWait(answerArea, 'reading back what you said…');
     try {
       const res = await api<EndResponse>(
         `/api/session/${state.sessionId}/end`,
       );
       state.proposals = res.proposals;
+      wait.done();
       renderHarvest();
     } catch (e) {
-      showError(String(e));
+      wait.failed(e);
+      setControlsBusy(false);
     }
   });
 
@@ -660,13 +780,15 @@ function renderExchange() {
 
   skipBtn.addEventListener('click', async () => {
     skipBtn.disabled = true;
+    const wait = beginWait(answerArea, 'finding another…');
     try {
       const res = await api<{ kind: string; text?: string }>(
         `/api/session/${state.sessionId}/skip`,
       );
+      wait.done();
       takeNextQuestion(res);
     } catch (e) {
-      showError(String(e));
+      wait.failed(e);
       skipBtn.disabled = false;
     }
   });
@@ -680,15 +802,17 @@ function renderExchange() {
   async function defer(need?: 'time' | 'energy') {
     laterBtn.disabled = true;
     skipBtn.disabled = true;
+    const wait = beginWait(answerArea, 'putting it back…');
     try {
       const res = await api<{ kind: string; text?: string }>(
         `/api/session/${state.sessionId}/defer`,
         need ? { need } : undefined,
       );
+      wait.done();
       deferRow.classList.remove('active');
       takeNextQuestion(res);
     } catch (e) {
-      showError(String(e));
+      wait.failed(e);
       laterBtn.disabled = false;
       skipBtn.disabled = false;
     }
@@ -714,7 +838,8 @@ function renderExchange() {
         micStatus.textContent = 'listening\u2026';
         state.dictating = true;
       } catch (e) {
-        showError('microphone unavailable');
+        console.error(e);
+        showQuietError(answerArea, 'the microphone did not open — check permission');
       }
     } else {
       // Stop and transcribe
@@ -737,7 +862,8 @@ function renderExchange() {
           textarea.focus();
         }
       } catch (e) {
-        showError(String(e));
+        console.error(e);
+        showQuietError(answerArea, 'that did not come through — say it again');
       }
       micBusy = false;
       micBtn.disabled = false;
@@ -765,11 +891,12 @@ function renderExchange() {
     textarea.scrollIntoView({ block: 'center' });
   });
 
-  function appendTurn(role: 'agent' | 'user', text: string) {
+  function appendTurn(role: 'agent' | 'user', text: string): HTMLDivElement {
     exchangeTurnCount++;
     const turn = el('div', { class: `turn ${role}` }, text);
     transcript.append(turn);
     turn.scrollIntoView({ block: 'nearest' });
+    return turn;
   }
 }
 
@@ -822,15 +949,17 @@ function renderHarvest() {
         return;
       }
       submitBtn.disabled = true;
+      errorSlot.innerHTML = '';
+      const wait = beginWait(errorSlot, 'writing them down…');
       try {
         await api<HarvestResponse>(
           `/api/session/${state.sessionId}/harvest`,
           { decisions: state.decisions },
         );
+        wait.done();
         renderDone();
       } catch (e) {
-        errorSlot.innerHTML = '';
-        errorSlot.append(String(e));
+        wait.failed(e);
         submitBtn.disabled = false;
       }
     });
@@ -1071,8 +1200,10 @@ function renderWaiting() {
 
   // Load queue
   (async () => {
+    const wait = beginWait(queueList, 'looking…', 400);
     try {
       const data = await api<QueueData>('/api/queue');
+      wait.done();
       queueList.innerHTML = '';
       expList.innerHTML = '';
 
@@ -1100,8 +1231,11 @@ function renderWaiting() {
           queueList.append(row);
         }
       }
-    } catch {
-      queueList.append(el('p', { class: 'empty-msg' }, 'could not load queue'));
+    } catch (e) {
+      wait.done();
+      queueList.innerHTML = '';
+      queueList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
+      console.error(e);
     }
   })();
 
@@ -1156,26 +1290,33 @@ function renderWaiting() {
 /* ─── Bootstrap ─── */
 
 (async () => {
-  // Check if password needs to be set (no auth file; we are on loopback)
-  let needsSetup = false;
+  // First paint waits on two calls. If they are quick the page just appears;
+  // if they are not, the page says it is starting rather than sitting blank.
+  const wait = beginWait(main, 'starting…', 400);
   try {
-    const resp = await fetch('/api/auth/status');
-    if (resp.ok) {
-      const status = await resp.json() as { needsSetup: boolean };
-      needsSetup = status.needsSetup;
+    // Check if password needs to be set (no auth file; we are on loopback)
+    let needsSetup = false;
+    try {
+      const resp = await fetch('/api/auth/status');
+      if (resp.ok) {
+        const status = await resp.json() as { needsSetup: boolean };
+        needsSetup = status.needsSetup;
+      }
+    } catch { /* server may return HTML on non-loopback */ }
+
+    if (needsSetup) {
+      renderMode(true);
+      return;
     }
-  } catch { /* server may return HTML on non-loopback */ }
 
-  if (needsSetup) {
-    renderMode(true);
-    return;
-  }
-
-  // Auth file exists — check if we have a valid session
-  try {
-    await api<QueueData>('/api/queue');
-    renderMode(false);
-  } catch {
-    renderLogin();
+    // Auth file exists — check if we have a valid session
+    try {
+      await api<QueueData>('/api/queue');
+      renderMode(false);
+    } catch {
+      renderLogin();
+    }
+  } finally {
+    wait.done();
   }
 })();
