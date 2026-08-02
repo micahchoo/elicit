@@ -477,6 +477,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  },
  { module: 'src/wiki/clash', name: 'referentChannel', status: 'live' },
  { module: 'src/wiki/clash', name: 'poolCandidates', status: 'live' },
+ {
+  module: 'src/wiki/clash',
+  name: 'sameSitting',
+  status: 'live',
+  reason: 'Q-65 predicate: a pair joins two sittings unless both claims draw on exactly one shared sitting; drives the embedding rank order and the per-pair shadow field (ticket 083)',
+ },
 
  // ── src/wiki/contract.ts ──
  { module: 'src/wiki/contract', name: 'shadowCollector', status: 'live' },

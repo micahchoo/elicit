@@ -114,10 +114,10 @@ export const THRESHOLDS = {
   },
   'clash.embeddingCosine': {
     name: 'clash.embeddingCosine',
-    value: 0.7,
+    value: 0.5,
     live: false,
     graduatesWhen:
-      'The shadow record shows that a proposed pair joins TWO SITTINGS. That is the specific thing to watch, not general precision: every corpus pair above 0.640 is two sentences of one document, so at this value the channel may be measuring how tightly an essay stays on topic rather than how a belief moved across years (ticket 064). If no cross-sitting pair ever appears, the threshold is not what needs fixing.',
+      'SANITY FLOOR, not the selection mechanism (ticket 083): selection is rank — Q-65 orders pairs with cross-sitting strictly above same-sitting, then by cosine desc, then by the sorted pair key — bounded by the judgment quota (clash.judgmentsPerRun), which cuts the ordered pool to its top-N. The floor keeps near-orthogonal pairs from spending the quota when the corpus is small; 0.5 sits below the measured cross-sitting ceiling of 0.640 (ticket 064) so it can never re-create the ceiling. Graduation evidence remains: the shadow record shows a proposed pair joining TWO SITTINGS.',
   },
   'sweep.attemptsBeforeBackoff': {
     name: 'sweep.attemptsBeforeBackoff',

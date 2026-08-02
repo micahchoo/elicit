@@ -371,6 +371,37 @@ describe('ClaimStore — contradictions, candidates, referents', () => {
     expect(first?.pair).toEqual(asked.pair);
   });
 
+  it('round-trips a ClashCandidate with joinsTwoSittings present AND absent', () => {
+    // Ticket 007's watch-item (ticket 083): every NEW record is born with the
+    // pool's stamp, but records written before 083 lack it — and a key holding
+    // `undefined` is a different fact from a key that is absent.
+    const store = createClaimStore(root);
+    const bare = makeCandidate({ id: '01KCANDJOINBARE' });
+    const stamped = makeCandidate({
+      id: '01KCANDJOINSTAMP',
+      joinsTwoSittings: true,
+    });
+    store.writeCandidate(bare);
+    store.writeCandidate(stamped);
+
+    const loaded = createClaimStore(root).listCandidates();
+    expect(loaded).toEqual([stamped, bare].sort((a, b) => a.id.localeCompare(b.id)));
+
+    // Present in the frontmatter when written with the field.
+    const rawStamped = readFileSync(join(root, 'wiki', 'candidates', '01KCANDJOINSTAMP.md'), 'utf-8');
+    expect(matter(rawStamped).data.joinsTwoSittings).toBe(true);
+
+    // Absent stays absent — the old record loads without the field.
+    const rawBare = readFileSync(join(root, 'wiki', 'candidates', '01KCANDJOINBARE.md'), 'utf-8');
+    expect(Object.keys(matter(rawBare).data)).not.toContain('joinsTwoSittings');
+    expect(rawBare).not.toContain('undefined');
+
+    const first = loaded.find((c) => c.id === '01KCANDJOINSTAMP');
+    expect(first?.joinsTwoSittings).toBe(true);
+    expect(first?.pair).toEqual(stamped.pair);
+    expect(loaded.find((c) => c.id === '01KCANDJOINBARE')?.joinsTwoSittings).toBeUndefined();
+  });
+
   it('round-trips a Referent with a note and without one', () => {
     const store = createClaimStore(root);
     const noted = makeReferent({ slug: 'my-manager', note: 'Named in eleven snippets.' });

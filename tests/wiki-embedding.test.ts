@@ -158,6 +158,9 @@ describe('the cosine gate', () => {
     expect(shadow[0]).toContain('clash.embeddingCosine');
     expect(shadow[0]).toContain('c-a');
     expect(shadow[0]).toContain('c-b');
+    // Ticket 083: the shadow record also states whether the pair joins two
+    // sittings — ticket 007's watch-item, on the line that graduates the channel.
+    expect(shadow[0]).toContain('joinsTwoSittings=');
   });
 
   it('ships in shadow — the channel does not decide that for itself', () => {
@@ -790,9 +793,12 @@ describe('the embed budget', () => {
   });
 });
 
-// ── Excluding two sentences of one sitting (ticket 007's cross-sitting finding) ──
+// ── Q-65: cross-sitting ranks above same-sitting (ticket 083) ──
+// Same-sitting pairs are POOLED, never excluded: the embedding channel orders
+// cross-sitting pairs strictly above same-sitting ones whatever their cosines,
+// then cosine desc, then the sorted claim-id pair key.
 
-describe('excludeSameSitting', () => {
+describe('Q-65: cross-sitting ranks above same-sitting (ticket 083)', () => {
   function withSittings(sessions: Record<string, string[]>): ClaimGraph {
     // sessions: claimId -> the session of each snippet that claim cites.
     const claims: Claim[] = [];
@@ -815,62 +821,131 @@ describe('excludeSameSitting', () => {
     return { claims, snippets, readings: {}, contradictions: [], referents: [] };
   }
 
-  async function pairsOf(g: ClaimGraph, exclude: boolean): Promise<string[]> {
+  async function pairsOf(
+    g: ClaimGraph,
+    table: Record<string, number[]>,
+    floor: number,
+  ): Promise<string[]> {
     const { log } = recorder();
-    const table: Record<string, number[]> = {};
-    for (const [i, c] of g.claims.entries()) table[c.body] = ray(i * 0.05);
     const ch = embeddingChannel({
       embed: scripted(table).embed,
       model: 'fake-embed',
       store: memStore(),
       log,
-      threshold: liveAt(0.82),
-      excludeSameSitting: exclude,
+      threshold: liveAt(floor),
     });
     await ch.prime(g);
     return ch.candidates(g).map((p) => `${p[0].id}+${p[1].id}`);
   }
 
-  it('is OFF by default — the pool means what it meant before this option existed', async () => {
-    const g = withSittings({ 'c-a': ['sitting-1'], 'c-b': ['sitting-1'] });
-    const { log } = recorder();
-    const table: Record<string, number[]> = { 'body c-a': ray(0), 'body c-b': ray(0.05) };
-    const ch = embeddingChannel({
-      embed: scripted(table).embed,
-      model: 'fake-embed',
-      store: memStore(),
-      log,
-      threshold: liveAt(0.82),
+  it('a 0.80 same-sitting pair ranks below a 0.60 cross-sitting pair', async () => {
+    // The Q-65 fixture: c-a and c-b both draw on sitting-1 and sit 0.6435 rad
+    // apart (cos ≈ 0.80, same-sitting); c-c and c-d draw on sitting-2 /
+    // sitting-3 and sit 0.9273 rad apart (cos ≈ 0.60, cross-sitting). Every
+    // cross-group angle is ≥ 1.85 rad, so every cross-group cosine sits below
+    // the 0.5 sanity floor: exactly two pairs survive — and the 0.60 CROSS
+    // pair ranks above the 0.80 same-sitting one.
+    const g = withSittings({
+      'c-a': ['sitting-1'],
+      'c-b': ['sitting-1'],
+      'c-c': ['sitting-2'],
+      'c-d': ['sitting-3'],
     });
-    await ch.prime(g);
-
-    expect(ch.candidates(g)).toHaveLength(1);
+    const table = {
+      'body c-a': ray(0),
+      'body c-b': ray(0.6435),
+      'body c-c': ray(2.5),
+      'body c-d': ray(3.4273),
+    };
+    expect(await pairsOf(g, table, 0.5)).toEqual(['c-c+c-d', 'c-a+c-b']);
   });
 
-  it('drops a pair whose two claims both draw on one and the same sitting', async () => {
+  it('same-sitting pairs are pooled, never excluded — ranked below only', async () => {
     const g = withSittings({ 'c-a': ['sitting-1'], 'c-b': ['sitting-1'] });
-    expect(await pairsOf(g, true)).toEqual([]);
+    expect(await pairsOf(g, { 'body c-a': ray(0), 'body c-b': ray(0.05) }, 0.82)).toEqual([
+      'c-a+c-b',
+    ]);
   });
 
-  it('keeps a pair that joins two different sittings — the pair the channel is for', async () => {
-    const g = withSittings({ 'c-a': ['sitting-1'], 'c-b': ['sitting-2'] });
-    expect(await pairsOf(g, true)).toEqual(['c-a+c-b']);
-  });
-
-  it('never excludes a claim whose cites the graph cannot resolve', async () => {
+  it('a claim whose cites the graph cannot resolve is not treated as same-sitting', async () => {
     // Ignorance is not evidence of sameness. A claim citing a snippet the graph
     // does not hold has an EMPTY session set, and an empty set must not be read
-    // as "the same sitting as everything else".
+    // as "the same sitting as everything else" — the pair is cross-sitting.
     const g = withSittings({ 'c-a': ['sitting-1'] });
     g.claims.push(claim('c-b', 'body c-b', { cites: ['nowhere@1'] }));
-    expect(await pairsOf(g, true)).toEqual(['c-a+c-b']);
+    expect(await pairsOf(g, { 'body c-a': ray(0), 'body c-b': ray(0.05) }, 0.82)).toEqual([
+      'c-a+c-b',
+    ]);
   });
 
-  it('never excludes a claim that spans two sittings', async () => {
+  it('a claim spanning two sittings is not treated as same-sitting', async () => {
     // A claim already built from two sittings is not one thought said twice,
     // whatever the other claim cites.
     const g = withSittings({ 'c-a': ['sitting-1', 'sitting-2'], 'c-b': ['sitting-1'] });
-    expect(await pairsOf(g, true)).toEqual(['c-a+c-b']);
+    expect(await pairsOf(g, { 'body c-a': ray(0), 'body c-b': ray(0.05) }, 0.82)).toEqual([
+      'c-a+c-b',
+    ]);
+  });
+
+  it('a cosine tie resolves by the pair key, never arrival order', async () => {
+    // Two pairs with the SAME cosine (cos 0.25 ≈ 0.969) at different absolute
+    // angles, all four claims cross-sitting. The channel's total order must put
+    // the smaller claim-id pair key first whether the graph arrives forward or
+    // shuffled — a quota cut at the boundary must not depend on file order.
+    const forward = withSittings({
+      'c-a': ['s1'],
+      'c-b': ['s2'],
+      'c-c': ['s3'],
+      'c-d': ['s4'],
+    });
+    const shuffled = withSittings({
+      'c-d': ['s4'],
+      'c-c': ['s3'],
+      'c-b': ['s2'],
+      'c-a': ['s1'],
+    });
+    const table = {
+      'body c-a': ray(0),
+      'body c-b': ray(0.25),
+      'body c-c': ray(1.0),
+      'body c-d': ray(1.25),
+    };
+    // The pair's ORIENTATION follows the window (which claim is p[0]); what the
+    // tie-break promises is the same SET in the same rank order, keyed by the
+    // sorted claim ids.
+    const canonical = (ids: string) => ids.split('+').sort().join('+');
+    const forwardRun = await pairsOf(forward, table, 0.82);
+    const shuffledRun = await pairsOf(shuffled, table, 0.82);
+    expect(forwardRun.map(canonical)).toEqual(['c-a+c-b', 'c-c+c-d']);
+    expect(shuffledRun.map(canonical)).toEqual(forwardRun.map(canonical));
+  });
+
+  it('keeps a pair at the same rank across batch-size drift (±0.005 score)', async () => {
+    // T18's batch-size nondeterminism moves a cosine by ±0.005 between runs:
+    // the pair scores ≈0.600 one run and ≈0.596 the next. A threshold at 0.60
+    // would pool it one run and drop it the next; a RANK never flips, so a
+    // quota cut at 3 is stable where a threshold at the boundary is not. The
+    // isolation angles keep every cross-group cosine below the 0.5 floor.
+    const g = withSittings({
+      'c-a': ['s1'],
+      'c-b': ['s2'],
+      'c-c': ['s3'],
+      'c-d': ['s4'],
+    });
+    const high = {
+      'body c-a': ray(0),
+      'body c-b': ray(0.9273),
+      'body c-c': ray(2.0),
+      'body c-d': ray(2.7954),
+    };
+    const low = {
+      'body c-a': ray(0),
+      'body c-b': ray(0.9322),
+      'body c-c': ray(2.0),
+      'body c-d': ray(2.7954),
+    };
+    expect(await pairsOf(g, high, 0.5)).toEqual(['c-c+c-d', 'c-a+c-b']);
+    expect(await pairsOf(g, low, 0.5)).toEqual(['c-c+c-d', 'c-a+c-b']);
   });
 });
 
@@ -960,7 +1035,11 @@ describe('paraphrase fixture, hash-embedding harness', () => {
     // a real embedding model.
     const shipped = THRESHOLDS['clash.embeddingCosine'].value;
     expect(typeof shipped).toBe('number');
-    expect(await fixtureRecall(shipped as number)).toEqual({ recall: 0, falsePairs: 0 });
+    // Ticket 083 lowered the register entry from 0.7 to 0.5 (the sanity floor).
+    // The harness still recalls nothing — the fixture defeats vocabulary — and
+    // admits exactly ONE false pair at the floor, so the 0/8 claim is the one
+    // this test protects.
+    expect(await fixtureRecall(shipped as number)).toEqual({ recall: 0, falsePairs: 1 });
   });
 
   it('recalls 0/8 at 0.50 too — a hash embedding has no path to these pairs at all', async () => {
@@ -1032,12 +1111,15 @@ describe('the module', () => {
   });
 
   it('reads its threshold through the register, never as a literal', () => {
-    // T5's invariant: no threshold value is read outside src/wiki/thresholds.ts.
+    // T5's invariant: no threshold value is READ outside src/wiki/thresholds.ts.
     // Tracked against the register rather than against a number typed here, so
-    // the guard survives the next re-tuning.
+    // the guard survives the next re-tuning. The scan strips comments first: a
+    // doc comment quoting the shipped floor (ticket 083's "SANITY FLOOR, 0.5")
+    // is prose about the number, not a read of it.
     expect(source).toContain("THRESHOLDS['clash.embeddingCosine']");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
     const shipped = String(THRESHOLDS['clash.embeddingCosine'].value).replace('.', '\\.');
-    expect(source).not.toMatch(new RegExp(`(?<![\\d.])${shipped}(?![\\d])`));
+    expect(code).not.toMatch(new RegExp(`(?<![\\d.])${shipped}(?![\\d])`));
   });
 
   it('routes every pooling decision through shadowDecision', () => {

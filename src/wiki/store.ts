@@ -389,6 +389,7 @@ class ClaimStoreImpl implements ClaimStore {
       // so a candidate written with `attempts: 2` reads back as 1 and an
       // expired pair re-proposes forever. Found by T11, 2026-08-02.
       attempts: c.attempts,
+      ...(c.joinsTwoSittings !== undefined ? { joinsTwoSittings: c.joinsTwoSittings } : {}),
       model: c.model,
       modelAt: c.modelAt,
       created: c.created,
@@ -432,6 +433,7 @@ class ClaimStoreImpl implements ClaimStore {
         // candidate file written before Q-53 has had exactly one re-measure,
         // so 1 is what an absent key already means. Nothing is fabricated.
         attempts: typeof d.attempts === 'number' && d.attempts > 0 ? d.attempts : 1,
+        ...(typeof d.joinsTwoSittings === 'boolean' ? { joinsTwoSittings: d.joinsTwoSittings as boolean } : {}),
         model,
         modelAt,
         created,

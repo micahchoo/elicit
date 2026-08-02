@@ -259,6 +259,13 @@ export type ClashCandidate = {
    * 2 — absence of evidence gets one more chance, then stops (Q-53).
    */
   attempts: number;
+  /**
+   * Whether the pair joins two sittings — the per-pair shadow field ticket
+   * 007's watch-item asks for (Q-65, ticket 083). Optional because records
+   * written before 083 lack it; every NEW record is born with it, because the
+   * pool computes it for every pair.
+   */
+  joinsTwoSittings?: boolean;
   model: string;
   modelAt: string;
   created: string;

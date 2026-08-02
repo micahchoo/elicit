@@ -43,6 +43,18 @@
  * and a cosine computed across two vector spaces is a number with no meaning.
  * Q-61 already gitignores the file inside the vault.
  *
+ * ── Rank, not threshold (Q-65, ticket 083) ──
+ *
+ * `candidates` returns pairs in RANK order, best first: cross-sitting pairs
+ * (the two claims draw on different sittings, `sameSitting` false) rank
+ * strictly above same-sitting pairs whatever their cosines; within each class
+ * cosine descends; ties break by the sorted claim-id pair key.
+ * `THRESHOLDS['clash.embeddingCosine']` is no longer the selection gate — it
+ * survives only as a SANITY FLOOR, 0.5, that keeps near-orthogonal pairs from
+ * consuming the pool. The judgment quota that bounds what reaches a judgment
+ * lives in the pool: `poolCandidates` cuts this channel's ranked list along
+ * with the others' after the union.
+ *
  * ── Zero chat-model calls ──
  *
  * `Embed` is injected, so every test runs on a scripted fake. The one path that
@@ -54,7 +66,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { ClashChannel } from './clash.js';
+import { sameSitting, type ClashChannel } from './clash.js';
 import type { Claim, ClaimGraph, LogFn } from './contract.js';
 import { THRESHOLDS, shadowDecision, type Threshold } from './thresholds.js';
 
@@ -129,15 +141,12 @@ export type EmbeddingDeps = {
   /** Overrides `EMBED_BUDGET_MS`. */
   budgetMs?: number;
   /**
-   * Drop pairs whose two claims draw on one and the same sitting. OFF by
-   * default — see `sameSitting` for what turning it on would mean.
-   */
-  excludeSameSitting?: boolean;
-  /**
-   * The gate. Defaults to the shipped register entry, and exists so a test can
-   * exercise the live branch without editing `thresholds.ts`. Either way the
-   * decision goes through `shadowDecision`, which is T5's invariant: no
-   * threshold is read outside that module.
+   * The sanity floor. Defaults to the shipped register entry, and exists so a
+   * test can exercise the live branch without editing `thresholds.ts`. Either
+   * way the decision goes through `shadowDecision`, which is T5's invariant:
+   * no threshold is read outside that module. Since ticket 083 this is the
+   * FLOOR, not the gate — selection is rank (Q-65) and the judgment quota
+   * lives in the pool — it only keeps near-orthogonal pairs out of the pool.
    */
   threshold?: Threshold;
   /** Injectable clock, for the budget only. Never used to order anything. */
@@ -259,53 +268,6 @@ function windowOf(graph: ClaimGraph, cap: number): { window: Claim[]; total: num
     .slice(0, cap)
     .sort(byId);
   return { window: kept, total: live.length };
-}
-
-/**
- * The sittings a claim draws on, read through its cites.
- *
- * A cite is `snippetId@version`; the snippet's `provenance.session` is the
- * sitting. A cite the graph cannot resolve contributes nothing — the set comes
- * back smaller, never wrong.
- */
-function sessionsOf(claim: Claim, graph: ClaimGraph): Set<string> {
-  const out = new Set<string>();
-  for (const cite of claim.cites) {
-    const id = cite.split('@')[0];
-    if (!id) continue;
-    const session = graph.snippets[id]?.provenance.session;
-    if (session) out.add(session);
-  }
-  return out;
-}
-
-/**
- * Whether two claims are two sentences of one sitting.
- *
- * Ticket 007's finding, and the reason this predicate exists at all: on the
- * 139-snippet import the highest cosine between two snippets of the SAME
- * sitting is 0.808, and between two DIFFERENT sittings it is 0.640. Every pair
- * above 0.65 is two sentences of one essay. So at a precision-preserving
- * threshold this channel currently measures how tightly an essay stays on
- * topic, not how a belief moved across nine years — and under Q-50 two cites
- * from one sitting are one thought said twice.
- *
- * It is OFF by default, deliberately. Turning it on changes what the pool
- * MEANS, and that is a decision for the register with a shadow record behind
- * it, not a default chosen inside the channel that would implement it. Built
- * now because building it now costs little and retrofitting it costs more.
- *
- * The predicate is strict on purpose: a pair is excluded only when both claims
- * draw on exactly ONE session and it is the same one. A claim spanning two
- * sittings, or one whose cites the graph cannot resolve, is never excluded —
- * ignorance is not evidence of sameness.
- */
-function sameSitting(a: Claim, b: Claim, graph: ClaimGraph): boolean {
-  const sa = sessionsOf(a, graph);
-  const sb = sessionsOf(b, graph);
-  if (sa.size !== 1 || sb.size !== 1) return false;
-  const [only] = sa;
-  return only !== undefined && sb.has(only);
 }
 
 // ── The cache file ──
@@ -494,16 +456,21 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
     },
 
     /**
-     * Pairs of live claims whose bodies sit close in the vector space.
+     * Pairs of live claims whose bodies sit close in the vector space,
+     * RANKED best first (Q-65, ticket 083).
      *
      * Synchronous and cache-only, so it satisfies `ClashChannel` and stays
      * deterministic: the same graph yields the same pairs in the same order,
      * whatever order the claims arrive in. A claim with no valid vector is
      * simply absent — it is never an error and never a fabricated pair.
      *
-     * Every pair that clears the cosine goes through `shadowDecision`, so while
-     * Q-35 keeps the threshold in shadow this returns nothing and writes what
-     * it WOULD have pooled. That record is what graduates the number.
+     * The threshold is a SANITY FLOOR now, not the gate: every pair at or
+     * above it is collected, ranked (cross-sitting first, then cosine desc,
+     * then the sorted claim-id pair key asc — a total order, so batch-size
+     * nondeterminism cannot reorder), and sent through `shadowDecision` one by
+     * one IN RANK ORDER. While Q-35 keeps the channel in shadow this returns
+     * nothing and writes, in rank order, what it WOULD have pooled — the
+     * record that graduates the channel, one pair at a time.
      */
     candidates(graph: ClaimGraph): [Claim, Claim][] {
       const { window, total } = windowOf(graph, cap);
@@ -517,7 +484,7 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
         if (vector) scored.push({ claim, vector });
       }
 
-      const out: [Claim, Claim][] = [];
+      const ranked: { a: Claim; b: Claim; score: number; cross: boolean }[] = [];
       for (let i = 0; i < scored.length; i++) {
         const a = scored[i];
         if (!a) continue;
@@ -526,11 +493,24 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
           if (!b) continue;
           const score = cosine(a.vector, b.vector);
           if (score < cut) continue;
-          if (deps.excludeSameSitting === true && sameSitting(a.claim, b.claim, graph)) continue;
-          const would = `pool ${a.claim.id}+${b.claim.id} cosine=${score.toFixed(4)}`;
-          if (!shadowDecision(threshold, would, log)) continue;
-          out.push([a.claim, b.claim]);
+          ranked.push({ a: a.claim, b: b.claim, score, cross: !sameSitting(a.claim, b.claim, graph) });
         }
+      }
+
+      const pairKey = (a: Claim, b: Claim): string => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
+      ranked.sort((x, y) => {
+        if (x.cross !== y.cross) return x.cross ? -1 : 1;
+        if (x.score !== y.score) return x.score < y.score ? 1 : -1;
+        const kx = pairKey(x.a, x.b);
+        const ky = pairKey(y.a, y.b);
+        return kx < ky ? -1 : kx > ky ? 1 : 0;
+      });
+
+      const out: [Claim, Claim][] = [];
+      for (const { a, b, score, cross } of ranked) {
+        const would = `pool ${a.id}+${b.id} cosine=${score.toFixed(4)} joinsTwoSittings=${cross}`;
+        if (!shadowDecision(threshold, would, log)) continue;
+        out.push([a, b]);
       }
       return out;
     },

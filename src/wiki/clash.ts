@@ -57,14 +57,15 @@
 import { buildIndex, resonate } from '../index/lexical.js';
 import type { Provenance, Snippet } from '../types.js';
 import type {
-  Claim,
-  ClaimGraph,
-  ClaimStore,
-  ClashCandidate,
-  ClashChannelName,
-  LogFn,
-  Registry,
+ Claim,
+ ClaimGraph,
+ ClaimStore,
+ ClashCandidate,
+ ClashChannelName,
+ LogFn,
+ Registry,
 } from './contract.js';
+import { shadowDecision, type Threshold } from './thresholds.js';
 
 // ── The interface every channel implements ──
 
@@ -76,13 +77,16 @@ import type {
  * string here would mean a cast there, and a cast on a provenance field is how
  * a fabricated provenance gets written.
  *
- * `candidates` is pure and takes no clock: given the same graph it returns the
- * same pairs in the same order. That is what makes `poolCandidates`
- * deterministic, which the anti-repetition filter below depends on.
+ * `candidates` returns its pairs in the channel's own RANK order, best first
+ * (Q-65, ticket 083). The pool preserves that order across the union, and the
+ * judgment quota cuts the ordered result to its top-N. A channel must
+ * therefore be deterministic — the same graph yields the same order — and
+ * TOTAL: no pair may be left to iteration order, or a quota boundary would
+ * decide what gets judged by accident.
  */
 export interface ClashChannel {
-  readonly name: ClashChannelName;
-  candidates(graph: ClaimGraph): [Claim, Claim][];
+ readonly name: ClashChannelName;
+ candidates(graph: ClaimGraph): [Claim, Claim][];
 }
 
 /**
@@ -96,9 +100,17 @@ export interface ClashChannel {
  * attempt to write.
  */
 export type PooledPair = {
-  pair: [Claim, Claim];
-  channel: ClashChannelName;
-  attempts: 1 | 2;
+ pair: [Claim, Claim];
+ channel: ClashChannelName;
+ attempts: 1 | 2;
+ /**
+  * Whether the pair joins two sittings — Q-65's ordering key and the per-pair
+  * shadow field ticket 007's watch-item asks for. Computed by the pool from
+  * the graph via `!sameSitting(a, b, graph)`, never by the channel: a
+  * cross-sitting pair ranks above a same-sitting one, and the record must
+  * say which it was.
+  */
+ joinsTwoSittings: boolean;
 };
 
 /**
@@ -114,10 +126,10 @@ export type PooledPair = {
  * corpus or a pool that never filled.
  */
 export type ClashPool = {
-  pairs: PooledPair[];
-  perChannel: Record<string, number>;
-  suppressed: number;
-  reproposed: number;
+ pairs: PooledPair[];
+ perChannel: Record<string, number>;
+ suppressed: number;
+ reproposed: number;
 };
 
 // ── Shared helpers ──
@@ -128,12 +140,12 @@ export type ClashPool = {
  * claim and one the wiki has already retired is not a tension, it is history.
  */
 function isLive(c: Claim): boolean {
-  return c.archived !== true && c.supersededBy === undefined;
+ return c.archived !== true && c.supersededBy === undefined;
 }
 
 /** Live claims in id order — the one traversal order every channel uses. */
 function liveClaims(graph: ClaimGraph): Claim[] {
-  return graph.claims.filter(isLive).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+ return graph.claims.filter(isLive).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**
@@ -147,16 +159,59 @@ function liveClaims(graph: ClaimGraph): Claim[] {
  * for exactly that reason. A claim id is a ULID, which cannot contain `|`.
  */
 function idKey(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
+ return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 function pairKey(a: Claim, b: Claim): string {
-  return idKey(a.id, b.id);
+ return idKey(a.id, b.id);
 }
 
 /** The same two claims, in the same order the key puts them. */
 function orderPair(a: Claim, b: Claim): [Claim, Claim] {
-  return a.id < b.id ? [a, b] : [b, a];
+ return a.id < b.id ? [a, b] : [b, a];
+}
+
+/**
+ * The sittings a claim draws on, read through its cites.
+ *
+ * A cite is `snippetId@version`; the snippet's `provenance.session` is the
+ * sitting. A cite the graph cannot resolve contributes nothing — the set comes
+ * back smaller, never wrong.
+ */
+function sessionsOf(claim: Claim, graph: ClaimGraph): Set<string> {
+ const out = new Set<string>();
+ for (const cite of claim.cites) {
+  const id = cite.split('@')[0];
+  if (!id) continue;
+  const session = graph.snippets[id]?.provenance.session;
+  if (session) out.add(session);
+ }
+ return out;
+}
+
+/**
+ * Whether two claims are two sentences of one sitting.
+ *
+ * Q-65's ORDERING key (ticket 083), not an exclusion predicate: a pair that
+ * joins two sittings ranks strictly above a same-sitting pair whatever their
+ * cosines, and a same-sitting pair is still pooled — just ranked below.
+ * Ticket 007 measured why the distinction matters: on the 139-snippet import
+ * the highest cosine between two snippets of the SAME sitting is 0.808, and
+ * between two DIFFERENT sittings it is 0.640 — every pair above 0.65 is two
+ * sentences of one essay, and under Q-50 two cites from one sitting are one
+ * thought said twice.
+ *
+ * The predicate is strict on purpose: a pair counts as same-sitting only when
+ * both claims draw on exactly ONE session and it is the same one. A claim
+ * spanning two sittings, or one whose cites the graph cannot resolve, is never
+ * same-sitting — ignorance is not evidence of sameness.
+ */
+export function sameSitting(a: Claim, b: Claim, graph: ClaimGraph): boolean {
+ const sa = sessionsOf(a, graph);
+ const sb = sessionsOf(b, graph);
+ if (sa.size !== 1 || sb.size !== 1) return false;
+ const [only] = sa;
+ return only !== undefined && sb.has(only);
 }
 
 // ── The lexical channel ──
@@ -175,20 +230,20 @@ function orderPair(a: Claim, b: Claim): [Claim, Claim] {
  * prose. If this value ever escapes this module, that is the bug.
  */
 const CLAIM_PROVENANCE: Provenance = {
-  kind: 'harvest',
-  session: '',
-  question: '',
-  questionForm: 'deliberative',
+ kind: 'harvest',
+ session: '',
+ question: '',
+ questionForm: 'deliberative',
 };
 
 function asIndexEntry(c: Claim): Snippet {
-  return {
-    id: c.id,
-    version: 1,
-    captured: c.created,
-    provenance: CLAIM_PROVENANCE,
-    prose: c.body,
-  };
+ return {
+  id: c.id,
+  version: 1,
+  captured: c.created,
+  provenance: CLAIM_PROVENANCE,
+  prose: c.body,
+ };
 }
 
 /**
@@ -208,32 +263,32 @@ function asIndexEntry(c: Claim): Snippet {
  * trigram matcher.
  */
 function lexicalPairs(graph: ClaimGraph): [Claim, Claim][] {
-  const live = liveClaims(graph);
-  if (live.length < 2) return [];
+ const live = liveClaims(graph);
+ if (live.length < 2) return [];
 
-  const index = buildIndex(live.map(asIndexEntry));
-  const byId = new Map(live.map((c) => [c.id, c]));
+ const index = buildIndex(live.map(asIndexEntry));
+ const byId = new Map(live.map((c) => [c.id, c]));
 
-  const seen = new Set<string>();
-  const out: [Claim, Claim][] = [];
-  for (const claim of live) {
-    for (const hit of resonate(index, claim.body)) {
-      if (hit.snippetId === claim.id) continue;
-      const other = byId.get(hit.snippetId);
-      if (!other) continue;
-      const key = pairKey(claim, other);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(orderPair(claim, other));
-    }
+ const seen = new Set<string>();
+ const out: [Claim, Claim][] = [];
+ for (const claim of live) {
+  for (const hit of resonate(index, claim.body)) {
+   if (hit.snippetId === claim.id) continue;
+   const other = byId.get(hit.snippetId);
+   if (!other) continue;
+   const key = pairKey(claim, other);
+   if (seen.has(key)) continue;
+   seen.add(key);
+   out.push(orderPair(claim, other));
   }
-  return out;
+ }
+ return out;
 }
 
 /** The lexical channel. Stateless, so it is a value rather than a factory. */
 export const lexicalChannel: ClashChannel = {
-  name: 'lexical',
-  candidates: lexicalPairs,
+ name: 'lexical',
+ candidates: lexicalPairs,
 };
 
 // ── The referent channel ──
@@ -281,52 +336,52 @@ export const REFERENT_FANOUT_CAP = 12;
  * everything reached through an alias — is the registry's question to answer.
  */
 export function referentChannel(
-  registry: Registry,
-  opts: { fanoutCap?: number; log?: LogFn } = {},
+ registry: Registry,
+ opts: { fanoutCap?: number; log?: LogFn } = {},
 ): ClashChannel {
-  const cap = opts.fanoutCap ?? REFERENT_FANOUT_CAP;
-  const log = opts.log;
+ const cap = opts.fanoutCap ?? REFERENT_FANOUT_CAP;
+ const log = opts.log;
 
-  return {
-    name: 'referent',
-    candidates(graph: ClaimGraph): [Claim, Claim][] {
-      const slugs = graph.referents
-        .map((r) => r.slug)
-        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+ return {
+  name: 'referent',
+  candidates(graph: ClaimGraph): [Claim, Claim][] {
+   const slugs = graph.referents
+    .map((r) => r.slug)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
-      const seen = new Set<string>();
-      const out: [Claim, Claim][] = [];
+   const seen = new Set<string>();
+   const out: [Claim, Claim][] = [];
 
-      for (const slug of slugs) {
-        const claims = registry.claimsFor(slug, graph).filter(isLive);
-        const window = fanoutWindow(claims, cap);
+   for (const slug of slugs) {
+    const claims = registry.claimsFor(slug, graph).filter(isLive);
+    const window = fanoutWindow(claims, cap);
 
-        if (window.length < claims.length && log) {
-          log({
-            at: new Date().toISOString(),
-            actor: 'clerk',
-            kind: 'clash-referent-clipped',
-            detail:
-              `referent=${slug} cap=${cap} claims=${claims.length} ` +
-              `clipped=${claims.length - window.length}`,
-          });
-        }
+    if (window.length < claims.length && log) {
+     log({
+      at: new Date().toISOString(),
+      actor: 'clerk',
+      kind: 'clash-referent-clipped',
+      detail:
+       `referent=${slug} cap=${cap} claims=${claims.length} ` +
+       `clipped=${claims.length - window.length}`,
+     });
+    }
 
-        for (let i = 0; i < window.length; i++) {
-          for (let j = i + 1; j < window.length; j++) {
-            const a = window[i];
-            const b = window[j];
-            if (!a || !b) continue;
-            const key = pairKey(a, b);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            out.push(orderPair(a, b));
-          }
-        }
-      }
-      return out;
-    },
-  };
+    for (let i = 0; i < window.length; i++) {
+     for (let j = i + 1; j < window.length; j++) {
+      const a = window[i];
+      const b = window[j];
+      if (!a || !b) continue;
+      const key = pairKey(a, b);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(orderPair(a, b));
+     }
+    }
+   }
+   return out;
+  },
+ };
 }
 
 /**
@@ -337,13 +392,13 @@ export function referentChannel(
  * graph always produces the same list.
  */
 function fanoutWindow(claims: Claim[], cap: number): Claim[] {
-  if (claims.length <= cap) {
-    return [...claims].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  }
-  return [...claims]
-    .sort((a, b) => (a.updated === b.updated ? (a.id < b.id ? -1 : 1) : a.updated < b.updated ? 1 : -1))
-    .slice(0, cap)
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+ if (claims.length <= cap) {
+  return [...claims].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+ }
+ return [...claims]
+  .sort((a, b) => (a.updated === b.updated ? (a.id < b.id ? -1 : 1) : a.updated < b.updated ? 1 : -1))
+  .slice(0, cap)
+  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 // ── The pool ──
@@ -373,14 +428,14 @@ function fanoutWindow(claims: Claim[], cap: number): Claim[] {
  * unrecorded reason is not the exception; it is a record nobody can read.
  */
 function verdict(records: ClashCandidate[]): 'fresh' | 'blocked' | 'reproposable' {
-  if (records.length === 0) return 'fresh';
-  let attempts = 0;
-  for (const r of records) {
-    if (r.status !== 'dissolved') return 'blocked';
-    if (r.outcome !== 'remeasure-expired') return 'blocked';
-    attempts = Math.max(attempts, r.attempts);
-  }
-  return attempts >= 2 ? 'blocked' : 'reproposable';
+ if (records.length === 0) return 'fresh';
+ let attempts = 0;
+ for (const r of records) {
+  if (r.status !== 'dissolved') return 'blocked';
+  if (r.outcome !== 'remeasure-expired') return 'blocked';
+  attempts = Math.max(attempts, r.attempts);
+ }
+ return attempts >= 2 ? 'blocked' : 'reproposable';
 }
 
 /**
@@ -397,81 +452,108 @@ function verdict(records: ClashCandidate[]): 'fresh' | 'blocked' | 'reproposable
  *   3. The anti-repetition filter refuses any pair that already has a record
  *      (except Q-53's one re-proposal), any pair that is the two members of an
  *      open Contradiction, and any pair whose claims are not both live.
- *   4. `clash-checked` is emitted on EVERY run, zero included. A run that
- *      looked and found nothing must not read like a run that never looked.
+ *   4. The judgment quota cuts the ordered, filtered union to its top-N. A
+ *      bound ships live (Q-56): the cut is unconditional, and every clip is
+ *      recorded through shadowDecision.
+ *   5. `clash-checked` is emitted on EVERY run, zero included — with `pool=`
+ *      naming the pool after the cut, the number the caller receives. A run
+ *      that looked and found nothing must not read like a run that never
+ *      looked.
  *
  * Pure apart from the log sink and the clock inside it: same graph, same store
  * contents, same result, in the same order.
  */
 export function poolCandidates(
-  graph: ClaimGraph,
-  channels: ClashChannel[],
-  store: ClaimStore,
-  log: LogFn,
+ graph: ClaimGraph,
+ channels: ClashChannel[],
+ store: ClaimStore,
+ log: LogFn,
+ quota: Threshold,
 ): ClashPool {
-  const live = new Map(graph.claims.filter(isLive).map((c) => [c.id, c]));
+ const live = new Map(graph.claims.filter(isLive).map((c) => [c.id, c]));
 
-  const recordsByPair = new Map<string, ClashCandidate[]>();
-  for (const record of store.listCandidates()) {
-    const [a, b] = record.pair;
-    const key = idKey(a, b);
-    const existing = recordsByPair.get(key);
-    if (existing) existing.push(record);
-    else recordsByPair.set(key, [record]);
+ const recordsByPair = new Map<string, ClashCandidate[]>();
+ for (const record of store.listCandidates()) {
+  const [a, b] = record.pair;
+  const key = idKey(a, b);
+  const existing = recordsByPair.get(key);
+  if (existing) existing.push(record);
+  else recordsByPair.set(key, [record]);
+ }
+
+ const openContradictions = new Set<string>();
+ for (const c of graph.contradictions) {
+  if (c.status !== 'open') continue;
+  const [a, b] = c.claims;
+  openContradictions.add(idKey(a, b));
+ }
+
+ // Union first, filter second: the dedupe decides WHICH channel gets credit
+ // for a pair, and the filter must not change that answer.
+ const perChannel: Record<string, number> = {};
+ const union = new Map<string, { pair: [Claim, Claim]; channel: ClashChannelName }>();
+ for (const channel of channels) {
+  const produced = channel.candidates(graph);
+  perChannel[channel.name] = produced.length;
+  for (const [a, b] of produced) {
+   const key = pairKey(a, b);
+   if (union.has(key)) continue;
+   union.set(key, { pair: orderPair(a, b), channel: channel.name });
   }
+ }
 
-  const openContradictions = new Set<string>();
-  for (const c of graph.contradictions) {
-    if (c.status !== 'open') continue;
-    const [a, b] = c.claims;
-    openContradictions.add(idKey(a, b));
+ const pairs: PooledPair[] = [];
+ let suppressed = 0;
+ let reproposed = 0;
+ for (const [key, found] of union) {
+  const [a, b] = found.pair;
+  if (a.id === b.id || !live.has(a.id) || !live.has(b.id)) {
+   suppressed++;
+   continue;
   }
-
-  // Union first, filter second: the dedupe decides WHICH channel gets credit
-  // for a pair, and the filter must not change that answer.
-  const perChannel: Record<string, number> = {};
-  const union = new Map<string, { pair: [Claim, Claim]; channel: ClashChannelName }>();
-  for (const channel of channels) {
-    const produced = channel.candidates(graph);
-    perChannel[channel.name] = produced.length;
-    for (const [a, b] of produced) {
-      const key = pairKey(a, b);
-      if (union.has(key)) continue;
-      union.set(key, { pair: orderPair(a, b), channel: channel.name });
-    }
+  if (openContradictions.has(key)) {
+   suppressed++;
+   continue;
   }
-
-  const pairs: PooledPair[] = [];
-  let suppressed = 0;
-  let reproposed = 0;
-  for (const [key, found] of union) {
-    const [a, b] = found.pair;
-    if (a.id === b.id || !live.has(a.id) || !live.has(b.id)) {
-      suppressed++;
-      continue;
-    }
-    if (openContradictions.has(key)) {
-      suppressed++;
-      continue;
-    }
-    const state = verdict(recordsByPair.get(key) ?? []);
-    if (state === 'blocked') {
-      suppressed++;
-      continue;
-    }
-    if (state === 'reproposable') reproposed++;
-    pairs.push({ pair: found.pair, channel: found.channel, attempts: state === 'fresh' ? 1 : 2 });
+  const state = verdict(recordsByPair.get(key) ?? []);
+  if (state === 'blocked') {
+   suppressed++;
+   continue;
   }
-
-  const counts = channels.map((c) => `${c.name}:${perChannel[c.name] ?? 0}`).join(',');
-  log({
-    at: new Date().toISOString(),
-    actor: 'clerk',
-    kind: 'clash-checked',
-    detail:
-      `pool=${pairs.length} suppressed=${suppressed} reproposed=${reproposed} ` +
-      `channels=${counts || '(none)'}`,
+  if (state === 'reproposable') reproposed++;
+  pairs.push({
+   pair: found.pair,
+   channel: found.channel,
+   attempts: state === 'fresh' ? 1 : 2,
+   joinsTwoSittings: !sameSitting(a, b, graph),
   });
+ }
 
-  return { pairs, perChannel, suppressed, reproposed };
+ // Q-65 (ticket 083): the judgment quota bounds the ordered, filtered union
+ // BEFORE the record is written, so `clash-checked`'s `pool=` is the pool the
+ // caller actually receives (the number `WikiReport.pool.size` reports) and
+ // the clip below is the only place the cut is visible. 0 is the safe
+ // direction for a cap, mirroring `bound()` in wiki-jobs.
+ const n = typeof quota.value === 'number' ? quota.value : 0;
+ if (pairs.length > n) {
+  shadowDecision(
+   quota,
+   `${pairs.length - n} pooled pairs left without a judgment this run`,
+   log,
+   true,
+  );
+  pairs.length = n;
+ }
+
+ const counts = channels.map((c) => `${c.name}:${perChannel[c.name] ?? 0}`).join(',');
+ log({
+  at: new Date().toISOString(),
+  actor: 'clerk',
+  kind: 'clash-checked',
+  detail:
+   `pool=${pairs.length} suppressed=${suppressed} reproposed=${reproposed} ` +
+   `channels=${counts || '(none)'}`,
+ });
+
+ return { pairs, perChannel, suppressed, reproposed };
 }

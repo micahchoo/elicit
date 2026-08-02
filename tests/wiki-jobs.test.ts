@@ -857,6 +857,45 @@ describe('candidates', () => {
     expect(h.rec.events.some((e) => e.kind === 'threshold-clipped' && e.detail.includes('judgment'))).toBe(true);
   });
 
+  it('the shadow record states whether each proposed pair joins two sittings', async () => {
+    // Ticket 007's watch-item at the pipeline seam: the minted ClashCandidate
+    // carries the pool's joinsTwoSittings stamp, computed from the sessions the
+    // pair's snippets were captured in — not from anything the judge said.
+    const same = harness({
+      claims: [
+        claim('c-a', 'They treat estimates as coordination.', { cites: ['sa1@1'] }),
+        claim('c-b', 'They treat estimates as promises.', { cites: ['sa2@1'] }),
+      ],
+      snippets: [
+        snippet('sa1', 'estimates are for coordination', { session: 'sess-a' }),
+        snippet('sa2', 'estimates are promises, full stop', { session: 'sess-a' }),
+      ],
+      channels: [staticChannel([['c-a', 'c-b']])],
+      opposition: async () => opposed,
+    });
+    await same.run();
+
+    const cross = harness({
+      claims: [
+        claim('c-c', 'They treat estimates as coordination.', { cites: ['sb1@1'] }),
+        claim('c-d', 'They treat estimates as promises.', { cites: ['sb2@1'] }),
+      ],
+      snippets: [
+        snippet('sb1', 'estimates are for coordination', { session: 'sess-b' }),
+        snippet('sb2', 'estimates are promises, full stop', { session: 'sess-c' }),
+      ],
+      channels: [staticChannel([['c-c', 'c-d']])],
+      opposition: async () => opposed,
+    });
+    await cross.run();
+
+    const all = [...same.store.listCandidates(), ...cross.store.listCandidates()];
+    expect(all).toHaveLength(2);
+    expect(all.every((c) => typeof c.joinsTwoSittings === 'boolean')).toBe(true);
+    expect(all.find((c) => c.pair.includes('c-a'))?.joinsTwoSittings).toBe(false);
+    expect(all.find((c) => c.pair.includes('c-c'))?.joinsTwoSittings).toBe(true);
+  });
+
   it('a judgeOpposition that throws costs one pair and not the run', async () => {
     const h = harness({
       claims: [cA, cB],

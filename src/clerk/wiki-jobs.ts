@@ -157,6 +157,11 @@ export const RANGE_DISCRIMINATED = 'range-discriminated';
  * as a `Threshold` and passed through `shadowDecision` with `clips: true` — a
  * clip therefore leaves the same `threshold-clipped` line a register entry
  * would, and moving it into `src/wiki/thresholds.ts` later changes one import.
+ *
+ * Since ticket 083 this quota also bounds the POOL: `poolCandidates` receives
+ * it and cuts the ordered, filtered union to its top-N before the loop below
+ * ever runs. The loop's own `bound(OPPOSITION_QUOTA)` check stays as a safety
+ * net for an injected poolCandidates that returns more than the quota.
  */
 export const OPPOSITION_QUOTA: Threshold = {
  name: 'clash.judgmentsPerRun',
@@ -217,6 +222,7 @@ export type WikiJobDeps = {
   channels: ClashChannel[],
   store: ClaimStore,
   log: LogFn,
+  quota: Threshold,
  ) => ClashPool;
  judgeOpposition: (
   a: Claim,
@@ -869,7 +875,7 @@ async function jobCandidates(
  spend: { opposition: number },
 ): Promise<void> {
  const graph = graphOf();
- const pool = deps.poolCandidates(graph, deps.channels, deps.store, log);
+ const pool = deps.poolCandidates(graph, deps.channels, deps.store, log, OPPOSITION_QUOTA);
 
  report.candidates = pool.perChannel;
  report.pool = {
@@ -925,6 +931,7 @@ async function jobCandidates(
     pair: [a.id, b.id],
     channel: pooled.channel,
     status: 'pending-remeasure',
+    joinsTwoSittings: pooled.joinsTwoSittings,
     // Q-53: the pool decided this, and defaulting it here would make an
     // expired pair re-proposable forever.
     attempts: pooled.attempts,
