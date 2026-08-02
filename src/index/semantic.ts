@@ -1,0 +1,688 @@
+/**
+ * The semantic resonance channel — Q-17's staged hybrid arriving on the surface
+ * the person actually meets.
+ *
+ * `resonate()` in `./lexical.ts` is a 3-consecutive-word exact-match index. Its
+ * measured paraphrase recall is **0/8** (`tests/resonance-paraphrase.test.ts`),
+ * and it feeds resonance, juxtaposition and every composed opener in a sitting.
+ * People re-say themselves; they do not quote themselves. This module is the
+ * second channel Q-17 stages in beside it.
+ *
+ * ── It RANKS. It does not threshold. ──
+ *
+ * Ticket 007's eval measured both instruments on the same fixture and the same
+ * corpus (`docs/eval-2026-08-02-embedding-channel.md`):
+ *
+ * | instrument | recall |
+ * |---|---|
+ * | best precision-preserving absolute cut (0.70) | 3/8 |
+ * | nearest neighbour | **7/8** |
+ *
+ * Four reasons the rank is the right instrument HERE, and the fourth is the one
+ * that makes it structural rather than merely better:
+ *
+ * 1. **It recovers more than twice the recall** on the only measurement anyone
+ *    has (AUC 0.952 — the ordering is good even where the cut is not).
+ * 2. **An absolute cosine does not travel.** The eval measured two backgrounds
+ *    at two different heights — mean 0.454 on the fixture, 0.353 on the corpus —
+ *    from a genre difference, not a length artefact (cosine↔length correlates
+ *    at 0.032). 0.70 is the 100th percentile of one and the 99.94th of the
+ *    other. A rank is corpus-relative by construction.
+ * 3. **The cut is not stable to the third decimal.** The eval's addendum: one
+ *    text scored 0.7606 in a batch of 8 and 0.7631 in a batch of 16. A pair
+ *    within ~0.003 of a cut flips between runs on batch composition alone. A
+ *    rank is invariant to that wobble.
+ * 4. **Every caller of `resonate()` already wants the best few, not everything
+ *    above a line.** `src/server.ts` takes `hits[0]`. `src/elicitor/elicitor.ts`
+ *    walks the list in order and stops at the first that composes.
+ *    `src/clerk/wiki-jobs.ts` takes the first three. Not one of them consumes
+ *    "everything admitted". A resonance channel is exactly the place where
+ *    top-N-by-rank is the natural shape, because the caller's own `k` IS the
+ *    bound — which is why this channel needs no register entry to act, and the
+ *    claim-level channel (ticket 064) does.
+ *
+ * What ticket 064 inherits: at the claim level the pool is not "the best few
+ * for one query" but "every pair worth judging", and a quota bounds it (Q-56).
+ * Top-N-by-rank there means **top-N pairs by cosine, quota-bounded**, replacing
+ * `clash.embeddingCosine` as the selection instrument rather than re-tuning it.
+ * The eval already sized it: at 0.60 the pool is 47 pairs over 54 snippets with
+ * no god-node, which a top-N of ~10 would trim to the ten most similar without
+ * caring what the background height of that corpus happens to be.
+ *
+ * ── A floor still exists, and it is SHADOW (Q-35) ──
+ *
+ * Ranking alone always returns something, including for an utterance with no
+ * relative in the vault. So there is a floor — but a floor under a ranker has a
+ * different job from a cut: it drops obvious noise, it does not select. Its
+ * value is 0.50, measured rather than guessed: it sits below every true pair the
+ * eval found (`posMin` 0.507) and above the bottom of the non-pair distribution
+ * (0.330, mean 0.454), so on the measured fixture it costs ZERO recall and
+ * still removes a tail. Q-35 keeps it in shadow: it logs the hits it would have
+ * dropped and drops nothing, and the record is what graduates it.
+ *
+ * ── The opposite pole is a FEATURE here, and the channel could not suppress it
+ * even if it were not ──
+ *
+ * The eval settled that cosine cannot tell "the same belief restated" from "the
+ * opposite belief restated" — rephrased oppositions score 0.429–0.729, genuine
+ * paraphrases 0.507–0.761, one population. On the shared fixture the
+ * social-hedging belief's nearest neighbour is not its own paraphrase (0.507)
+ * but the distractor asserting its OPPOSITE (0.697).
+ *
+ * **This channel surfaces that, deliberately.** Three reasons:
+ *
+ * 1. A channel that avoided opposites would need an organ it does not have.
+ *    Any filter here would be a guess wearing the clothes of a policy. Q-52
+ *    already rules that aboutness retrieval is the mechanism and polarity is
+ *    judged one layer down.
+ * 2. Surfacing the pole a person is now contradicting is the most interesting
+ *    juxtaposition the system can offer — Q-15's "met as material, never
+ *    accusation". Suppressing it would mean the system found the most
+ *    informative thing in the vault and threw it away.
+ * 3. The hazard the other way — the system appearing to AGREE with something it
+ *    has misread — is a framing failure, and framing does not live here. What
+ *    retrieval owes is to make the agreement claim unavailable, and this module
+ *    does that structurally: see `SemanticHit`.
+ *
+ * ── `SemanticHit` has no `sharedPhrase`, and that absence is the guarantee ──
+ *
+ * `ResonanceHit.sharedPhrase` is an exact substring of BOTH the turn and the
+ * snippet, and `src/clerk/composed.ts` requires the composed question to
+ * contain it verbatim — that is Q-12 enforced by code. A semantic hit has no
+ * such substring; there is no verbatim run of three words in common, which is
+ * the whole definition of the fixture. So this type omits the field rather than
+ * filling it with the snippet's own words, which would let a composer write
+ * `"you said <phrase> before"` about words the person did not just say.
+ *
+ * The omission is load-bearing at the type level: `composeJuxtaposition(text,
+ * hit, complete)` does not accept a `SemanticHit`, and cannot be made to
+ * without someone deciding, in the open, what it may quote.
+ * `tests/semantic-resonance.test.ts` holds that with a `@ts-expect-error`.
+ *
+ * ── The cross-sitting ceiling does not bite this consumer ──
+ *
+ * The eval's sharpest finding about the clash channel — every corpus pair above
+ * 0.640 is two sentences of ONE essay, so at a precision-preserving threshold
+ * that channel measures how tightly an essay stays on topic — is a property of
+ * pairing two STORED snippets. Here one side of every pair is the utterance the
+ * person just made, in today's sitting. Every hit is cross-sitting by
+ * construction. There is nothing for `excludeSameSitting` to do.
+ *
+ * ── What is reused from T18, and the one thing that could not be ──
+ *
+ * `Embed`, `EmbeddingRecord`, `EmbeddingIndexStore`, `cosine`, `bodyHash`,
+ * `localEmbedder` and `embedderConfig` are imported from `src/wiki/embedding.ts`
+ * unchanged. One seam, one cache format, one endpoint, one model, one hash — so
+ * a text embedded by either channel hashes and scores identically.
+ *
+ * What could not be shared is the FILE. T18's `persist` prunes every record
+ * whose id is not a live CLAIM; pointing this channel at
+ * `vault/wiki/embeddings.jsonl` would make the first Clerk docket run delete
+ * every snippet vector, and the first `prime` here delete every claim vector.
+ * Two keyspaces cannot share one pruned file. So the records are the same
+ * shape, in `vault/index/snippet-embeddings.jsonl`, where `claimId` holds the
+ * id of the thing embedded — a claim there, a snippet here. Derived and
+ * rebuildable (Q-3), and `vault/.gitignore` already ignores `/index/`.
+ *
+ * ── Zero chat-model calls, one network path ──
+ *
+ * `Embed` is injected, so every test runs on a scripted fake. The only path
+ * that touches the network is T18's `localEmbedder`, pointing at the local
+ * Ollama endpoint and nowhere else (Q-2 / ADR-0001).
+ */
+
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+import {
+  bodyHash,
+  cosine,
+  type Embed,
+  type EmbeddingIndexStore,
+  type EmbeddingRecord,
+} from '../wiki/embedding.js';
+import { shadowDecision, type Threshold, type ThresholdLogFn } from '../wiki/thresholds.js';
+import type { LexicalIndex, ResonanceHit, Snippet } from '../types.js';
+import { resonate } from './lexical.js';
+
+// ── What a semantic hit is, and what it deliberately is not ──
+
+/**
+ * One ranked neighbour of the query text.
+ *
+ * `rank` is 1-based and is the field a caller should reason about; `score` is
+ * the raw cosine, carried for the record and for the shadow floor, and is NOT
+ * comparable across corpora (see the module note). There is no `sharedPhrase`,
+ * on purpose — nothing verbatim is shared, and a field claiming otherwise is
+ * how a composer ends up quoting the person's past words back as if they had
+ * just said them.
+ */
+export type SemanticHit = {
+  snippetId: string;
+  version: number;
+  /** Raw cosine. Ordering is the signal; the absolute value is not portable. */
+  score: number;
+  /** 1-based position in this query's returned list. */
+  rank: number;
+  snippetText: string;
+};
+
+/**
+ * A hit from either channel, tagged with which one found it.
+ *
+ * The tag is not decoration. Only the lexical arm carries `sharedPhrase`, so a
+ * consumer that needs a verbatim quote (Q-12) must narrow to `'lexical'` and
+ * the compiler will not let it forget.
+ */
+export type HybridHit =
+  | ({ channel: 'lexical' } & ResonanceHit)
+  | ({ channel: 'semantic' } & SemanticHit);
+
+// ── The bounds (Q-56: a bound ships LIVE and owes a clip record) ──
+
+/**
+ * How many snippets one `prime` run may embed.
+ *
+ * **This is deliberately NOT T18's recency window, and the difference matters.**
+ * `EMBEDDING_WINDOW` keeps the 400 most recently updated claims and drops the
+ * rest permanently — correct there, because that channel is quadratic and an
+ * old claim is still reachable through two other channels. Applying it here
+ * would delete the product: Q-18 stratifies resurfacing by the AGE of the
+ * writing, and the vault holds 2017–2026. A recency window would make the
+ * channel structurally unable to surface the nine-year-old material that is the
+ * entire reason it exists.
+ *
+ * So the bound is per-RUN, not per-corpus, and `prime` is resumable: every
+ * completed batch is persisted before the next one starts, so a clipped run
+ * loses no work and the next run continues where it stopped. Over a few runs
+ * the whole corpus is embedded, however large it grows. What the bound protects
+ * is a single run's wall clock, not the corpus's reach.
+ *
+ * 500 is a ceiling, not a measurement: at the eval's warm throughput (~170
+ * ms/text) it is about 85 seconds, and today's corpus of 139 snippets fits in
+ * one run with room to grow. The clip record is what would resize it.
+ */
+export const PRIME_CAP = 500;
+
+/**
+ * How long one `prime` may spend embedding before it stops for this run.
+ * Ticket 007's cold-start trap: the first request against an unloaded
+ * `qwen3-embedding` took 370 seconds and THEN returned HTTP 500. Warm, the same
+ * call is 100–120 ms.
+ */
+export const PRIME_BUDGET_MS = 300_000;
+
+/**
+ * How long `resonate` may wait for the query's own vector before giving up and
+ * returning nothing.
+ *
+ * This is the bound the clash channel does not need and this one cannot do
+ * without: `prime` runs in the background, but the query is embedded DURING A
+ * LIVE TURN with a person waiting. `localEmbedder`'s own ceiling is 120 seconds,
+ * which is right for a batch job and unacceptable here. Warm is 100–120 ms, so
+ * 3 seconds is 25× headroom and still shorter than a person's patience.
+ *
+ * A cold model therefore costs the first turn its semantic hits and warms the
+ * model for the second — the request keeps running after this returns, and the
+ * eval measured that even a failed cold request loads the weights into VRAM.
+ */
+export const QUERY_BUDGET_MS = 3_000;
+
+/** Default `k`, matching `resonate()`'s so the two channels agree by default. */
+export const TOP_N = 5;
+
+/** Texts per request — T18's batch size, for the same reasons. */
+const EMBED_BATCH = 16;
+
+// ── The register entries (Q-35 / Q-56) ──
+
+/**
+ * These four belong in `src/wiki/thresholds.ts`, which this task does not own.
+ * They are declared here in the register's own shape and passed through
+ * `shadowDecision` like every other threshold in the system, so moving each one
+ * into the table is a copy of the literal below and nothing else. The invariant
+ * that matters — no mechanism reads a number without a `live` flag and a
+ * `graduatesWhen` beside it — holds either way.
+ */
+export const SEMANTIC_FLOOR: Threshold = {
+  name: 'resonance.semanticFloor',
+  value: 0.5,
+  live: false,
+  graduatesWhen:
+    'The shadow record shows it would drop hits a reader agrees are unrelated, and drops none the reader wanted. 0.50 is measured, not guessed: on the paraphrase fixture it sits below every true pair (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064).',
+};
+
+/** Live. A per-run bound; see `PRIME_CAP` for why it is not a recency window. */
+export const PRIME_CAP_BOUND: Threshold = {
+  name: 'resonance.primeCap',
+  value: PRIME_CAP,
+  live: true,
+  graduatesWhen:
+    'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
+};
+
+/** Live. The cold-start ceiling for a background pass. */
+export const PRIME_BUDGET_BOUND: Threshold = {
+  name: 'resonance.primeBudgetMs',
+  value: PRIME_BUDGET_MS,
+  live: true,
+  graduatesWhen:
+    'Already live per Q-56. The value is ticket 007\'s cold-start measurement — 370 s then HTTP 500 on an unloaded model — and the clip record says how often a run stops here rather than finishing.',
+};
+
+/** Live. The one bound a person waits on. */
+export const QUERY_BUDGET_BOUND: Threshold = {
+  name: 'resonance.queryBudgetMs',
+  value: QUERY_BUDGET_MS,
+  live: true,
+  graduatesWhen:
+    'Already live per Q-56, and this one is not a background bound: it is how long a person waits mid-turn for a channel that is warm in 100-120 ms. A clip here means the model was cold or the box was busy, and the clip record is how often that costs a turn its hits.',
+};
+
+// ── The cache file ──
+
+/**
+ * `vault/index/snippet-embeddings.jsonl` — T18's record shape, T18's line
+ * format, a second file for a second keyspace. See the module note for why one
+ * file is impossible.
+ *
+ * `load` NEVER throws. A missing file is the ordinary cold state; a torn line
+ * costs one vector. Q-3: the index is derived, so its absence costs one embed
+ * pass and nothing else, and it can never be the reason a sitting fails.
+ */
+export function fileSnippetVectorStore(vaultRoot: string): EmbeddingIndexStore {
+  const path = join(vaultRoot, 'index', 'snippet-embeddings.jsonl');
+  return {
+    load(): EmbeddingRecord[] {
+      let text: string;
+      try {
+        text = readFileSync(path, 'utf-8');
+      } catch {
+        return [];
+      }
+      const out: EmbeddingRecord[] = [];
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        const record = asRecord(parsed);
+        if (record) out.push(record);
+      }
+      return out;
+    },
+    save(records: EmbeddingRecord[]): void {
+      mkdirSync(dirname(path), { recursive: true });
+      const body = records.map((r) => JSON.stringify(r)).join('\n');
+      writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
+    },
+  };
+}
+
+/**
+ * A parsed line, or null. Every field is checked: a well-formed JSON object of
+ * the wrong shape is what a half-finished format change leaves behind, and a
+ * `vector` of strings would make every cosine silently 0.
+ *
+ * This duplicates T18's private `asRecord` because that function is not
+ * exported and `src/wiki/` is not this task's to edit. The FORMAT is shared;
+ * only the reader is copied, and the two must be changed together.
+ */
+function asRecord(value: unknown): EmbeddingRecord | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.claimId !== 'string' || v.claimId === '') return null;
+  if (typeof v.hash !== 'string' || typeof v.model !== 'string') return null;
+  if (!Array.isArray(v.vector) || v.vector.length === 0) return null;
+  if (!v.vector.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return { claimId: v.claimId, hash: v.hash, model: v.model, vector: v.vector as number[] };
+}
+
+// ── The channel ──
+
+export type SemanticDeps = {
+  embed: Embed;
+  /** The embedder's name, written into every record it produces. */
+  model: string;
+  store: EmbeddingIndexStore;
+  log: ThresholdLogFn;
+  /** Overrides `PRIME_CAP`. */
+  primeCap?: number;
+  /** Overrides `PRIME_BUDGET_MS`. */
+  primeBudgetMs?: number;
+  /** Overrides `QUERY_BUDGET_MS`. */
+  queryBudgetMs?: number;
+  /** Overrides `SEMANTIC_FLOOR`, so a test can exercise the live branch. */
+  floor?: Threshold;
+  /** Injectable clock, for the prime budget only. Never used to order anything. */
+  now?: () => number;
+};
+
+export interface SemanticIndex {
+  /**
+   * Fill the vector cache. Async, batched, budgeted, resumable, and it NEVER
+   * throws or rejects — an unreachable endpoint logs once and returns.
+   */
+  prime(): Promise<void>;
+  /**
+   * The top `k` snippets by cosine to `text`, ranked. Async because the query
+   * itself must be embedded, and that is a network call. Returns `[]` rather
+   * than throwing when the endpoint is unreachable, slow, or the cache is cold.
+   */
+  resonate(text: string, k?: number): Promise<SemanticHit[]>;
+  /** How many snippets currently hold a usable vector. Observability, not state. */
+  vectored(): number;
+}
+
+/**
+ * Build the channel over a corpus.
+ *
+ * **Build it from the WHOLE corpus.** `prime` prunes the cache to the ids it
+ * was given, exactly as T18's does, so an index built from a subset would
+ * delete every other snippet's vector on its first pass. That is the same
+ * contract T18 has and it is stated here because the mistake is cheap to make.
+ */
+export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): SemanticIndex {
+  const { embed, model, store, log } = deps;
+  const cap = deps.primeCap ?? PRIME_CAP;
+  const primeBudgetMs = deps.primeBudgetMs ?? PRIME_BUDGET_MS;
+  const queryBudgetMs = deps.queryBudgetMs ?? QUERY_BUDGET_MS;
+  const floor = deps.floor ?? SEMANTIC_FLOOR;
+  const clock = deps.now ?? (() => Date.now());
+
+  // A boolean floor would be a misconfiguration. It must drop NOTHING rather
+  // than everything: this channel's job is recall, and a silent total blackout
+  // is the failure mode ticket 053 exists to end.
+  const floorValue = typeof floor.value === 'number' ? floor.value : Number.NEGATIVE_INFINITY;
+
+  /**
+   * The corpus as given, first occurrence of an id wins. Deliberately NOT
+   * sorted here: ordering the corpus by id would make `resonate`'s tie-break
+   * unobservable, and an invariant that no test can see is an invariant that
+   * quietly stops holding. `prime` sorts its own copy, where the order decides
+   * which snippets a clipped run embeds first and therefore has to be fixed.
+   */
+  const corpus: Snippet[] = [];
+  const seen = new Set<string>();
+  for (const s of snippets) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    corpus.push(s);
+  }
+  const byId = (a: Snippet, b: Snippet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+  let cache: Map<string, EmbeddingRecord> | undefined;
+  function loaded(): Map<string, EmbeddingRecord> {
+    if (!cache) {
+      cache = new Map();
+      for (const record of store.load()) cache.set(record.claimId, record);
+    }
+    return cache;
+  }
+
+  function unavailable(detail: string): void {
+    log({ at: new Date().toISOString(), actor: 'clerk', kind: 'embedding-unavailable', detail });
+  }
+
+  /** A vector that is still valid for this snippet's prose under this model. */
+  function vectorFor(snippet: Snippet): number[] | undefined {
+    const record = loaded().get(snippet.id);
+    if (!record) return undefined;
+    if (record.model !== model) return undefined;
+    if (record.hash !== bodyHash(snippet.prose)) return undefined;
+    return record.vector;
+  }
+
+  /**
+   * The query's vector, or undefined — never a throw, never a fabrication.
+   *
+   * The budget is a race rather than an abort because `Embed` is an injected
+   * function with no cancellation in its contract. The losing request keeps
+   * running and, on a cold model, finishes the job of loading the weights; its
+   * rejection is caught here so it cannot surface as an unhandled rejection.
+   */
+  async function embedQuery(text: string): Promise<number[] | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<'expired'>((resolve) => {
+      timer = setTimeout(() => resolve('expired'), queryBudgetMs);
+    });
+    const call = embed([text]).then(
+      (vectors) => ({ vectors }),
+      (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
+    );
+
+    const outcome = await Promise.race([call, expired]);
+    if (timer !== undefined) clearTimeout(timer);
+
+    if (outcome === 'expired') {
+      shadowDecision(
+        QUERY_BUDGET_BOUND,
+        `stop waiting for the query vector after ${queryBudgetMs}ms and return no semantic hits`,
+        log,
+        true,
+      );
+      return undefined;
+    }
+    if ('error' in outcome) {
+      unavailable(`model=${model} subject=query embedded=0 pending=1 error=${outcome.error}`);
+      return undefined;
+    }
+    const vector = outcome.vectors[0];
+    if (
+      outcome.vectors.length !== 1 ||
+      !vector ||
+      vector.length === 0 ||
+      !vector.every((n) => Number.isFinite(n))
+    ) {
+      unavailable(
+        `model=${model} subject=query embedded=0 pending=1 error=the query came back without a usable vector`,
+      );
+      return undefined;
+    }
+    return vector;
+  }
+
+  return {
+    async prime(): Promise<void> {
+      const cached = loaded();
+      const missing = [...corpus].sort(byId).filter((s) => vectorFor(s) === undefined);
+
+      let todo = missing;
+      if (todo.length > cap) {
+        shadowDecision(
+          PRIME_CAP_BOUND,
+          `embed ${missing.length} snippets in one run; ${missing.length - cap} wait for the next`,
+          log,
+          true,
+        );
+        todo = todo.slice(0, cap);
+      }
+
+      const deadline = clock() + primeBudgetMs;
+      let embedded = 0;
+      let stopped: string | undefined;
+
+      for (let i = 0; i < todo.length; i += EMBED_BATCH) {
+        if (clock() >= deadline) {
+          shadowDecision(
+            PRIME_BUDGET_BOUND,
+            `stop embedding: ${embedded} done, ${todo.length - embedded} still waiting`,
+            log,
+            true,
+          );
+          break;
+        }
+        const batch = todo.slice(i, i + EMBED_BATCH);
+        let vectors: number[][];
+        try {
+          vectors = await embed(batch.map((s) => s.prose));
+        } catch (err) {
+          stopped = err instanceof Error ? err.message : String(err);
+          break;
+        }
+        if (vectors.length !== batch.length) {
+          // Zipping a short list back onto the inputs would file one snippet's
+          // vector under another snippet's id, and nothing downstream could
+          // tell that every score after it was about the wrong text.
+          stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
+          break;
+        }
+        const fresh: EmbeddingRecord[] = [];
+        for (const [j, snippet] of batch.entries()) {
+          const vector = vectors[j];
+          if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
+            stopped = `snippet ${snippet.id} came back without a usable vector`;
+            break;
+          }
+          fresh.push({
+            claimId: snippet.id,
+            hash: bodyHash(snippet.prose),
+            model,
+            vector,
+          });
+        }
+        if (stopped) break;
+        for (const record of fresh) cached.set(record.claimId, record);
+        embedded += fresh.length;
+        // Persist per batch. This is what makes the two bounds above cost time
+        // and never work, and what makes a cold start survivable.
+        persist(seen, cached, store);
+      }
+
+      if (stopped !== undefined) {
+        unavailable(
+          `model=${model} subject=snippet embedded=${embedded} pending=${todo.length - embedded} error=${stopped}`,
+        );
+      }
+    },
+
+    async resonate(text: string, k: number = TOP_N): Promise<SemanticHit[]> {
+      if (k <= 0) return [];
+      if (text.trim() === '') return [];
+
+      const scorable: { snippet: Snippet; vector: number[] }[] = [];
+      for (const snippet of corpus) {
+        const vector = vectorFor(snippet);
+        if (vector) scorable.push({ snippet, vector });
+      }
+      if (scorable.length === 0) return [];
+
+      const query = await embedQuery(text);
+      if (!query) return [];
+
+      const scored = scorable
+        .map(({ snippet, vector }) => ({ snippet, score: cosine(query, vector) }))
+        // Rank descending, then by id — so a tie is broken by something stable
+        // rather than by whatever order the corpus happened to be read in.
+        .sort((a, b) =>
+          b.score !== a.score
+            ? b.score - a.score
+            : a.snippet.id < b.snippet.id
+              ? -1
+              : a.snippet.id > b.snippet.id
+                ? 1
+                : 0,
+        )
+        .slice(0, k);
+
+      // The floor, in shadow (Q-35). One line per query, and only when it would
+      // have changed something — an every-turn record would drown the feed the
+      // shadow evidence has to be read from.
+      const below = scored.filter((s) => s.score < floorValue);
+      let kept = scored;
+      if (below.length > 0) {
+        const worst = below.map((s) => `${s.snippet.id}@${s.score.toFixed(4)}`).join(',');
+        if (
+          shadowDecision(
+            floor,
+            `drop ${below.length} of ${scored.length} ranked hits below ${floorValue}: ${worst}`,
+            log,
+          )
+        ) {
+          kept = scored.filter((s) => s.score >= floorValue);
+        }
+      }
+
+      return kept.map(({ snippet, score }, i) => ({
+        snippetId: snippet.id,
+        version: snippet.version,
+        score,
+        rank: i + 1,
+        snippetText: snippet.prose,
+      }));
+    },
+
+    vectored(): number {
+      let n = 0;
+      for (const snippet of corpus) if (vectorFor(snippet) !== undefined) n++;
+      return n;
+    },
+  };
+}
+
+/**
+ * Write the cache back, minus any id the corpus no longer holds.
+ *
+ * Pruning is what keeps a file of 51 KB vectors from growing without end: a
+ * deleted snippet's vector buys nothing, and re-adding one costs one re-embed.
+ */
+function persist(
+  ids: Set<string>,
+  cached: Map<string, EmbeddingRecord>,
+  store: EmbeddingIndexStore,
+): void {
+  for (const id of [...cached.keys()]) if (!ids.has(id)) cached.delete(id);
+  store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
+}
+
+// ── The hybrid entry point (Q-17's staged hybrid, both stages) ──
+
+/**
+ * Both channels, one list — the entry point `tests/resonance-paraphrase.test.ts`
+ * names in its "when the embedding channel ships" note.
+ *
+ * **Lexical first, always, and then semantic fills to `k`.** Not because
+ * lexical scores better — it scores 0/8 where this scores 7/8 by rank — but
+ * because when it DOES fire it carries a verbatim shared phrase, and a
+ * quotable hit is strictly more useful to every downstream composer than an
+ * unquotable one (Q-17: "phrase-echo, explainable, quotable" ships first). The
+ * lexical channel is silent on most turns; the semantic channel is what stands
+ * in that silence.
+ *
+ * A snippet already returned by lexical is not returned again by semantic: the
+ * quotable hit for a snippet dominates the unquotable one for the same snippet.
+ *
+ * `semantic` is optional and `undefined` is the ordinary cold state — no
+ * endpoint, no cache, no channel — in which this degrades exactly to
+ * `resonate()`. That is the same shape T18 gave the Clerk: the system works
+ * with the embedding server switched off, because it works with it switched off
+ * today.
+ */
+export async function resonateHybrid(
+  lexical: LexicalIndex,
+  semantic: SemanticIndex | undefined,
+  text: string,
+  k: number = TOP_N,
+): Promise<HybridHit[]> {
+  const out: HybridHit[] = [];
+  const taken = new Set<string>();
+
+  for (const hit of resonate(lexical, text, k)) {
+    if (taken.has(hit.snippetId)) continue;
+    taken.add(hit.snippetId);
+    out.push({ channel: 'lexical', ...hit });
+  }
+  if (out.length >= k || !semantic) return out.slice(0, k);
+
+  for (const hit of await semantic.resonate(text, k)) {
+    if (taken.has(hit.snippetId)) continue;
+    taken.add(hit.snippetId);
+    out.push({ channel: 'semantic', ...hit });
+    if (out.length >= k) break;
+  }
+  return out;
+}

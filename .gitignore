@@ -10,5 +10,6 @@ tsx-1000/
 # A malformed path from the deck-curation run; its output lives in data/decks/
 local:/
 
-# Ticket 007 embedding eval — derived vectors, rebuildable (Q-3)
+# Embedding evals — derived vectors, rebuildable (Q-3)
 /data/eval-007/
+/data/eval-053/
