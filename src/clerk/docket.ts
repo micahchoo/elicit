@@ -8,7 +8,9 @@ import type {
   Complete,
   QueueEntry,
 } from '../types.js';
+import type { SittingContext } from './composed.js';
 import { isExpeditionCandidate } from './composed.js';
+import { readSitting, sittingCache } from './sitting.js';
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -23,9 +25,14 @@ export async function runDocket(deps: {
   queue: QueueStore;
   complete: Complete;
   buildIndex: (snippets: Snippet[]) => LexicalIndex;
-  composeOpener: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
-  composeStillTrue: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
-  composeExpedition?: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
+  composeOpener: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
+  composeStillTrue: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
+  composeExpedition?: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
+  /**
+   * The sitting a snippet's session declared (045). Injected for tests; the
+   * default reads the session's transcript frontmatter.
+   */
+  sittingOf?: (root: string, session: string) => SittingContext;
   log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
   nextConsolidation?: (sessions: SessionRef[], summaries: RangeSummary[]) => string[] | null;
   saveSummary?: (root: string, s: RangeSummary) => void;
@@ -60,6 +67,11 @@ export async function runDocket(deps: {
 
     const minted: QueueEntry[] = [];
 
+    // Every question this run mints quotes one snippet, so it belongs to the
+    // sitting that snippet came from — a domain sitting's words make a domain
+    // question, whatever the question happens to be about (045).
+    const sittingFor = sittingCache(deps.vaultRoot, deps.sittingOf ?? readSitting);
+
     // Cache sessions once for opener + consolidation use
     let sessions: SessionRef[] | undefined;
     if (deps.listSessions) {
@@ -88,7 +100,7 @@ export async function runDocket(deps: {
       const openerRefs: string[] = [];
       for (const s of candidates) {
         try {
-          const draft = await deps.composeOpener(s, deps.complete);
+          const draft = await deps.composeOpener(s, deps.complete, sittingFor(s.provenance.session));
           if (draft) {
             const entry = deps.queue.add(draft);
             minted.push(entry);
@@ -116,7 +128,7 @@ export async function runDocket(deps: {
 
     for (const s of stillTrueCandidates) {
       try {
-        const draft = await deps.composeStillTrue(s, deps.complete);
+        const draft = await deps.composeStillTrue(s, deps.complete, sittingFor(s.provenance.session));
         if (draft) {
           const entry = deps.queue.add(draft);
           minted.push(entry);
@@ -167,7 +179,7 @@ export async function runDocket(deps: {
         const allEntries = deps.queue.list();
         for (const s of allSnippets) {
           if (isExpeditionCandidate(s, allReadings, allEntries, allSnippets)) {
-            const draft = await deps.composeExpedition(s, deps.complete);
+            const draft = await deps.composeExpedition(s, deps.complete, sittingFor(s.provenance.session));
             if (draft) {
               const entry = deps.queue.add(draft);
               minted.push(entry);
