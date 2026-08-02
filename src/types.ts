@@ -27,11 +27,13 @@ export type QuestionSource = {
   blockId: number;
 };
 
+export type Target = 'self' | 'domain';
 
 export type Mode = {
   minutes: number;
   energy: 'low' | 'medium' | 'high';
   topic?: string;
+  target?: Target;
 };
 
 export type Turn = {
@@ -105,6 +107,68 @@ export type Bud = {
   fragment: string;
 };
 
+// ── Slice 2: resonance, queue, docket ──
+
+export type ResonanceHit = {
+  snippetId: string;
+  version: number;
+  /** Exact substring shared by query text AND snippet text */
+  sharedPhrase: string;
+  score: number;
+  snippetText: string;
+};
+
+export type RedLight = {
+  kind:
+  | 'odd-term'
+  | 'unexplored-referent'
+  | 'abstraction-no-episode'
+  | 'pole-no-contrast'
+  | 'cause-no-event';
+  /** Exact substring of the user turn that triggered the light */
+  phrase: string;
+};
+
+export type QueueEntry = {
+  id: string;
+  status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired';
+  source: 'composed' | 'still-true' | 'user-declared';
+  license: string;
+  question: string;
+  questionForm: QuestionForm;
+  cites?: string[];
+  quotedFragment?: string;
+  modeNeeds?: { minMinutes?: number; energy?: 'low' | 'medium' | 'high' };
+  sharpness: 'weak' | 'sharp';
+  direction?: string;
+  horizon: 'now' | 'session' | 'days';
+  created: string;
+};
+
+export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
+
+export interface QueueStore {
+  add(e: QueueDraft): QueueEntry;
+  list(filter?: { status?: QueueEntry['status']; source?: QueueEntry['source'] }): QueueEntry[];
+  draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null;
+  markAsked(id: string): void;
+  markAnswered(id: string): void;
+  defer(id: string): void;
+  expire(olderThanDays: number): number;
+}
+
+export interface LexicalIndex {
+  /** Opaque — shape defined by index/lexical.ts */
+  readonly _brand: 'LexicalIndex';
+}
+
+export type DocketReport = {
+  reindexed: number;
+  minted: QueueEntry[];
+  expired: number;
+  index: LexicalIndex;
+};
+
 export type SessionState = {
   id: string;
   mode: Mode;
@@ -112,10 +176,14 @@ export type SessionState = {
   deps: {
     complete: Complete;
     vault: Vault;
+    queue: QueueStore;
+    index: LexicalIndex;
   };
   turns: Turn[];
   /** Question bank for opener/skip selection (session-local) */
   bank?: { text: string; questionForm: QuestionForm; source?: QuestionSource }[];
+  questionCount: number;
+  phase: 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
 };
 
 export type Index = {
