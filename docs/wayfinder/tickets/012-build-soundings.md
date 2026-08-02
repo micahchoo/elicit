@@ -31,3 +31,18 @@ blocked_by: []
 > land without `web/main.ts`, which T19 (the wiki reading surface) holds. A
 > gate built server-side with no surface to press is inert by construction —
 > the failure mode this project has hit five times. Dispatch when T19 lands.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-soundings-slice.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-soundings-slice.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-soundings-slice.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.

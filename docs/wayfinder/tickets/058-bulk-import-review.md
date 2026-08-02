@@ -129,3 +129,18 @@ to catch misleading excision.
 - Re-running imports nothing twice.
 - The review surface obeys the document rule, or the ticket records why it
   cannot and what replaced it.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-bulk-import-review.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-bulk-import-review.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
+
+> PLAN APPROVED 2026-08-02: docs/superpowers/plans/2026-08-02-bulk-import-review.md — written and
+> carried through adversarial reviewer rounds to approval. Execution authorized
+> by Micah 2026-08-02, order 058 → 010 → 012, after the fix chain and the Clerk
+> RESULTS run. Seeds DAG (sd create per task) still to materialise at dispatch.
