@@ -567,11 +567,10 @@ Note the 048 hazard when writing frontmatter: a **present** key holding `undefin
 Run: `npx vitest run tests/import-store.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 3: Decide `vault/imports/` against `.gitignore`**
+- [x] **Step 3: Decide `vault/imports/` against `.gitignore`** — tracked; comment added at the store's header
 
 `vault/.gitignore` excludes only derived, rebuildable things (Q-3) and the credential. An import record is neither: it is the decision record for what entered the corpus and why something did not. It stays **tracked**. Add no ignore line; add a one-line comment in `store.ts` saying so, because the next reader will wonder.
 
-- [x] **Step 3: Decide `vault/imports/` against `.gitignore`** — tracked; comment added at the store's header
 - [x] **Step 4: Commit** — `c91ea6b`
 
 ```bash
@@ -688,7 +687,7 @@ The order matters in one place only: dedupe runs last, so a cut that is both a d
 Run: `npx vitest run tests/import-extract.test.ts`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 3: Log sentences, then commit**
+- [x] **Step 3: Log sentences, then commit** — `93170c8`; full suite green at commit (1362 passed, 0 failed)
 
 Run: `npx vitest run tests/log-format.test.ts tests/import-extract.test.ts`
 Expected: PASS both.
@@ -697,8 +696,6 @@ Expected: PASS both.
 git add src/import/extract.ts tests/import-extract.test.ts src/log/format.ts
 git commit -m "import: extraction ahead of review, Q-51 read against the source file"
 ```
-
-- [x] **Step 3: Log sentences, then commit** — `93170c8`; full suite green at commit (1362 passed, 0 failed)
 
 ---
 
