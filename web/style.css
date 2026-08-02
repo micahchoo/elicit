@@ -1143,3 +1143,241 @@ main {
   margin-left: 0;
  }
 }
+
+/* ── the review surface: the piece whole, cuts marked in place ── */
+
+.import-review {
+ max-width: var(--max-w);
+ margin: 0 auto;
+ padding: var(--pad) 0;
+ font-family: var(--font-serif);
+ font-size: 1.05rem;
+ line-height: var(--line);
+}
+
+/* The header carries two things and only two: the date sentence, and the
+   piece-level refusal. Both are quiet; neither interrupts the prose. */
+.import-header {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+ padding-bottom: 1rem;
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 1.5rem;
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+}
+
+.import-date {
+ margin: 0;
+}
+
+.import-exclude {
+ display: flex;
+ flex-direction: column;
+ gap: 0.4rem;
+ align-items: flex-start;
+}
+
+.import-exclude-toggle {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+}
+
+.import-exclude-toggle:hover {
+ color: var(--fg);
+}
+
+.import-exclude-form {
+ display: none;
+ flex-direction: column;
+ gap: 0.4rem;
+ align-items: flex-start;
+}
+
+.import-exclude-form.open {
+ display: flex;
+}
+
+.import-exclude-reason {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ padding: 0.2rem 0.35rem;
+ border: 1px solid var(--border);
+ background: transparent;
+ color: var(--fg);
+}
+
+.import-exclude-confirm {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--accent);
+ background: none;
+ border: 1px solid var(--border);
+ padding: 0.15rem 0.5rem;
+ cursor: pointer;
+}
+
+.import-piece {
+ display: flex;
+ flex-direction: column;
+ gap: 1rem;
+}
+
+.import-para-block {
+ position: relative;
+}
+
+.import-para {
+ margin: 0;
+ white-space: pre-wrap; /* paragraph text is verbatim — nothing reflowed */
+}
+
+/* A proposed cut: underlined in place, no other emphasis. */
+.import-cut {
+ text-decoration: underline;
+ text-underline-offset: 3px;
+ text-decoration-thickness: 1px;
+ cursor: pointer;
+}
+
+.import-cut.decided {
+ text-decoration-thickness: 2px;
+}
+
+/* Marginalia: dimmed, hidden until the cut is focused. */
+.import-cut-note {
+ display: none;
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ font-style: italic;
+}
+
+.import-cut-note.active {
+ display: block;
+}
+
+/* A dropped region states its reason: one dimmed margin word. */
+.import-mark {
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ color: var(--dim);
+}
+
+/* One verb cluster, revealed at the focused cut. */
+.import-verbs {
+ display: none;
+ gap: 0.75rem;
+ font-family: var(--font-ui);
+}
+
+.import-verbs.active {
+ display: flex;
+}
+
+.import-verb {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--accent);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+}
+
+.import-verb:hover {
+ color: var(--fg);
+}
+
+/* Focus dimming — the page recedes, the cut and its verbs stay. */
+.import-review.import-focus .import-para {
+ opacity: 0.3;
+}
+
+.import-review.import-focus .import-para .import-cut.focused {
+ opacity: 1;
+}
+
+.import-trim-editor-wrap {
+ display: inline;
+}
+
+.import-trim-editor {
+ font-family: var(--font-serif);
+ font-size: 1rem;
+ line-height: var(--line);
+ width: 100%;
+ background: transparent;
+ border: 1px solid var(--border);
+ padding: 0.25rem;
+ color: var(--fg);
+}
+
+.import-trim-confirm {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--accent);
+ background: none;
+ border: 1px solid var(--border);
+ padding: 0.15rem 0.5rem;
+ cursor: pointer;
+ margin-top: 0.3rem;
+}
+
+.import-foot {
+ display: flex;
+ flex-direction: column;
+ gap: 0.75rem;
+ margin-top: 2rem;
+ padding-top: 1rem;
+ border-top: 1px solid var(--border);
+}
+
+.import-remaining {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ font-style: italic;
+ margin: 0;
+}
+
+.import-save {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--fg);
+ background: none;
+ border: 1px solid var(--accent);
+ padding: 0.3rem 0.75rem;
+ cursor: pointer;
+ align-self: flex-start;
+}
+
+.import-save:disabled {
+ color: var(--dim);
+ border-color: var(--border);
+ cursor: default;
+}
+
+/* The empty state: the route's waiting sentence, and a way back. */
+.import-waiting {
+ font-family: var(--font-serif);
+ color: var(--dim);
+ font-style: italic;
+}
+
+.import-back {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--accent);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+}
