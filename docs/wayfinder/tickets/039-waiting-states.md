@@ -1,9 +1,15 @@
 ---
 title: "Build: waiting states — every wait shows the app is alive"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude
 blocked_by: []
+resolution: >
+  51fca04: one reusable waiting affordance — hairline rule sweeping the text measure + dimmed status line, applied to turn submit, /end ("reading back what you said…"), unprompted, harvest save, login and boot; error counterparts re-enable controls with a plain message instead of a silent dead end; prefers-reduced-motion holds the hairline static. Screenshot evidence: docs/guide/waiting-state.png. Phase 2 (determinate "turn 3 of 6" from ticket 034 chunked harvest) still open as a follow-up.
+resolution: >
+  51fca04: one reusable waiting affordance — hairline rule sweeping the text measure + dimmed status line, applied to turn submit, /end ("reading back what you said…"), unprompted, harvest save, login and boot; error counterparts re-enable controls with a plain message instead of a silent dead end; prefers-reduced-motion holds the hairline static. Screenshot evidence: docs/guide/waiting-state.png. Phase 2 (determinate "turn 3 of 6" from ticket 034 chunked harvest) still open as a follow-up.
+resolution: >
+  51fca04: one reusable waiting affordance — hairline rule sweeping the text measure + dimmed status line, applied to turn submit, /end ("reading back what you said…"), unprompted, harvest save, login and boot; error counterparts re-enable controls with a plain message instead of a silent dead end; prefers-reduced-motion holds the hairline static. Screenshot evidence: docs/guide/waiting-state.png. Phase 2 (determinate "turn 3 of 6" from ticket 034 chunked harvest) still open as a follow-up.
 ---
 
 ## Question
