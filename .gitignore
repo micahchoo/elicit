@@ -3,3 +3,9 @@ node_modules/
 dist/
 node-compile-cache/
 tsx-1000/
+
+# Agent tooling scratch — machine-local, never shared
+.claude/
+.seeds/
+# A malformed path from the deck-curation run; its output lives in data/decks/
+local:/

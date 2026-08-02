@@ -8,7 +8,7 @@ blocked_by: [008-build-clerk]
 
 ## Question
 
-Import 4.2 from `research-loops-to-graphs.md`: build the Clerk's per-turn
+Import 4.2 from `docs/research-loops-to-graphs.md`: build the Clerk's per-turn
 and minting context from the Wiki's citation graph instead of flat vault
 search — entities in the last utterance → their Snippets and Claims → one
 hop along citations and Contradictions → contested and recent first →
