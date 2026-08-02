@@ -3,7 +3,7 @@ title: "Plan and build: the Clerk slice"
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: []
+blocked_by: [051-grill-cite-independence, 052-grill-polarity-channel]
 ---
 
 > UNBLOCKED 2026-08-02: 006-grill-clerk closed.
