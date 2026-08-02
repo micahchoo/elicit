@@ -86,18 +86,18 @@ import { SUPERSEDE_MODEL_UPGRADE, readingTime, shadowCollector } from '../wiki/c
 import type { ApplyDeps } from '../wiki/ops.js';
 import { recomputeStatus as opsRecomputeStatus } from '../wiki/ops.js';
 import type {
-  Claim,
-  ClaimGraph,
-  ClaimStore,
-  ClashCandidate,
-  ClashOutcome,
-  ClerkOp,
-  Contradiction,
-  LintFinding,
-  LogFn,
-  OpResult,
-  Registry,
-  WikiReport,
+ Claim,
+ ClaimGraph,
+ ClaimStore,
+ ClashCandidate,
+ ClashOutcome,
+ ClerkOp,
+ Contradiction,
+ LintFinding,
+ LogFn,
+ OpResult,
+ Registry,
+ WikiReport,
 } from '../wiki/contract.js';
 import type { ClashChannel, ClashPool } from '../wiki/clash.js';
 import { primeable } from '../wiki/embedding.js';
@@ -106,13 +106,13 @@ import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } 
 import { readSitting, sittingCache } from './sitting.js';
 import type { SittingContext } from './composed.js';
 import type {
-  Complete,
-  Index,
-  QueueDraft,
-  QueueEntry,
-  QueueStore,
-  Reading,
-  Snippet,
+ Complete,
+ Index,
+ QueueDraft,
+ QueueEntry,
+ QueueStore,
+ Reading,
+ Snippet,
 } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -149,11 +149,11 @@ export const RANGE_DISCRIMINATED = 'range-discriminated';
  * would, and moving it into `src/wiki/thresholds.ts` later changes one import.
  */
 export const OPPOSITION_QUOTA: Threshold = {
-  name: 'clash.judgmentsPerRun',
-  value: 3,
-  live: true,
-  graduatesWhen:
-    'Already live: Q-56 makes quotas live at birth, since a quota in shadow lets the run it was meant to bound proceed unbounded. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Every clip emits threshold-clipped, and that record is what resizes it.',
+ name: 'clash.judgmentsPerRun',
+ value: 3,
+ live: true,
+ graduatesWhen:
+  'Already live: Q-56 makes quotas live at birth, since a quota in shadow lets the run it was meant to bound proceed unbounded. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Every clip emits threshold-clipped, and that record is what resizes it.',
 };
 
 /** At most this many existing claims are shown to the model beside one reading. */
@@ -167,52 +167,52 @@ const RAW_EXCERPT_CHARS = 200;
 // ---------------------------------------------------------------------------
 
 export type WikiJobDeps = {
-  store: ClaimStore;
-  registry: Registry;
-  queue: QueueStore;
-  /** Snippets and readings live in the Vault; `loadSlice` holds the rest of the graph. */
-  vault: { rebuildIndex(): Index };
-  /** `makeComplete('clerk')` (Q-48). Never called by this file directly. */
-  complete: Complete;
-  channels: ClashChannel[];
-  proposeOps: (item: MintItem, complete: Complete) => Promise<MintResult>;
-  applyOps: (ops: unknown[], sweep: { readingIds: string[] }, deps: ApplyDeps) => OpResult;
-  lint: (graph: ClaimGraph, thresholds: ThresholdRegister, log: LogFn) => LintFinding[];
-  poolCandidates: (
-    graph: ClaimGraph,
-    channels: ClashChannel[],
-    store: ClaimStore,
-    log: LogFn,
-  ) => ClashPool;
-  judgeOpposition: (
-    a: Claim,
-    b: Claim,
-    quotes: { a: string; b: string },
-    complete: Complete,
-  ) => Promise<OppositionJudgment | null>;
-  composeRemeasure: (
-    candidate: { a: Claim; b: Claim; poleA: string; poleB: string },
-    originalQuestions: string[],
-    complete: Complete,
-  ) => Promise<QueueDraft | null>;
-  judgeConfirmation: (
-    candidate: ClashCandidate,
-    remeasure: { readings: Reading[]; snippets: Record<string, Snippet> },
-    claims: { a: Claim; b: Claim },
-    complete: Complete,
-  ) => Promise<ConfirmResult | null>;
-  composeStillTrue: (
-    snippet: Snippet,
-    complete: Complete,
-    sitting?: SittingContext,
-  ) => Promise<QueueDraft | null>;
-  log: LogFn;
-  vaultRoot: string;
-  /** Defaults to `ELICIT_CLERK_MODEL ?? 'qwen3.6:35b'` (Q-34, Q-48). */
-  model?: string;
-  thresholds?: ThresholdRegister;
-  /** Ticket 045: a question inherits the Target of the sitting whose words it quotes. */
-  sittingOf?: (root: string, session: string) => SittingContext;
+ store: ClaimStore;
+ registry: Registry;
+ queue: QueueStore;
+ /** Snippets and readings live in the Vault; `loadSlice` holds the rest of the graph. */
+ vault: { rebuildIndex(): Index };
+ /** `makeComplete('clerk')` (Q-48). Never called by this file directly. */
+ complete: Complete;
+ channels: ClashChannel[];
+ proposeOps: (item: MintItem, complete: Complete) => Promise<MintResult>;
+ applyOps: (ops: unknown[], sweep: { readingIds: string[] }, deps: ApplyDeps) => OpResult;
+ lint: (graph: ClaimGraph, thresholds: ThresholdRegister, log: LogFn) => LintFinding[];
+ poolCandidates: (
+  graph: ClaimGraph,
+  channels: ClashChannel[],
+  store: ClaimStore,
+  log: LogFn,
+ ) => ClashPool;
+ judgeOpposition: (
+  a: Claim,
+  b: Claim,
+  quotes: { a: string; b: string },
+  complete: Complete,
+ ) => Promise<OppositionJudgment | null>;
+ composeRemeasure: (
+  candidate: { a: Claim; b: Claim; poleA: string; poleB: string },
+  originalQuestions: string[],
+  complete: Complete,
+ ) => Promise<QueueDraft | null>;
+ judgeConfirmation: (
+  candidate: ClashCandidate,
+  remeasure: { readings: Reading[]; snippets: Record<string, Snippet> },
+  claims: { a: Claim; b: Claim },
+  complete: Complete,
+ ) => Promise<ConfirmResult | null>;
+ composeStillTrue: (
+  snippet: Snippet,
+  complete: Complete,
+  sitting?: SittingContext,
+ ) => Promise<QueueDraft | null>;
+ log: LogFn;
+ vaultRoot: string;
+ /** Defaults to `ELICIT_CLERK_MODEL ?? 'qwen3.6:35b'` (Q-34, Q-48). */
+ model?: string;
+ thresholds?: ThresholdRegister;
+ /** Ticket 045: a question inherits the Target of the sitting whose words it quotes. */
+ sittingOf?: (root: string, session: string) => SittingContext;
 };
 
 /**
@@ -231,10 +231,10 @@ export type WikiJobDeps = {
  * `WikiReport` is expected, so T13 and `DocketReport.wiki` are unaffected.
  */
 export type PoolReport = {
-  size: number;
-  perChannel: Record<string, number>;
-  suppressed: number;
-  reproposed: number;
+ size: number;
+ perChannel: Record<string, number>;
+ suppressed: number;
+ reproposed: number;
 };
 
 export type WikiJobsReport = WikiReport & { pool: PoolReport };
@@ -247,8 +247,8 @@ const nowIso = (): string => new Date().toISOString();
 
 /** The snippet id half of a `snippetId@version` cite. */
 function snippetIdOf(cite: string): string {
-  const at = cite.lastIndexOf('@');
-  return at <= 0 ? cite : cite.slice(0, at);
+ const at = cite.lastIndexOf('@');
+ return at <= 0 ? cite : cite.slice(0, at);
 }
 
 /**
@@ -257,35 +257,35 @@ function snippetIdOf(cite: string): string {
  * never more.
  */
 function bound(t: Threshold): number {
-  return typeof t.value === 'number' ? t.value : 0;
+ return typeof t.value === 'number' ? t.value : 0;
 }
 
 /** A claim the graph still asserts. Archived and superseded claims are history. */
 function isLive(c: Claim): boolean {
-  return c.archived !== true && c.supersededBy === undefined;
+ return c.archived !== true && c.supersededBy === undefined;
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+ return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 /** The prose of the first cite that resolves, or the empty string. */
 function quoteFor(claim: Claim, graph: ClaimGraph): string {
-  for (const cite of claim.cites) {
-    const snippet = graph.snippets[snippetIdOf(cite)];
-    if (snippet) return snippet.prose;
-  }
-  return '';
+ for (const cite of claim.cites) {
+  const snippet = graph.snippets[snippetIdOf(cite)];
+  if (snippet) return snippet.prose;
+ }
+ return '';
 }
 
 /** The questions that elicited the words two claims rest on (Q-14's input). */
 function originalQuestions(a: Claim, b: Claim, graph: ClaimGraph): string[] {
-  const out: string[] = [];
-  for (const cite of [...a.cites, ...b.cites]) {
-    const question = graph.snippets[snippetIdOf(cite)]?.provenance.question;
-    if (question && !out.includes(question)) out.push(question);
-  }
-  return out;
+ const out: string[] = [];
+ for (const cite of [...a.cites, ...b.cites]) {
+  const question = graph.snippets[snippetIdOf(cite)]?.provenance.question;
+  if (question && !out.includes(question)) out.push(question);
+ }
+ return out;
 }
 
 /**
@@ -298,39 +298,39 @@ function originalQuestions(a: Claim, b: Claim, graph: ClaimGraph): string[] {
  * ratio). `RANGE_DISCRIMINATED` joins it on the same channel for Q-54.
  */
 export function dissolutionOutcome(reason: string): ClashOutcome {
-  if (reason === UNVERIFIED_CONFIRMATION) return 'unverified-confirmation';
-  if (reason === RANGE_DISCRIMINATED) return 'range-discriminated';
-  return 'dissolved-on-answer';
+ if (reason === UNVERIFIED_CONFIRMATION) return 'unverified-confirmation';
+ if (reason === RANGE_DISCRIMINATED) return 'range-discriminated';
+ return 'dissolved-on-answer';
 }
 
 /** The empty report — the concurrent-call answer, and the shape every job fills in. */
 function emptyReport(): WikiJobsReport {
-  return {
-    swept: 0,
-    applied: 0,
-    rejected: 0,
-    unprocessed: 0,
-    oversized: 0,
-    stuck: 0,
-    lint: [],
-    candidates: {},
-    oppositionJudged: 0,
-    oppositionOpposed: 0,
-    remeasuresMinted: 0,
-    remeasuresExpired: 0,
-    contradictionsOpened: 0,
-    candidatesDissolved: 0,
-    mint: {
-      calls: 0,
-      callsParsed: 0,
-      callErrors: 0,
-      oversized: 0,
-      opsSeen: 0,
-      readingsSwept: 0,
-    },
-    shadow: [],
-    pool: { size: 0, perChannel: {}, suppressed: 0, reproposed: 0 },
-  };
+ return {
+  swept: 0,
+  applied: 0,
+  rejected: 0,
+  unprocessed: 0,
+  oversized: 0,
+  stuck: 0,
+  lint: [],
+  candidates: {},
+  oppositionJudged: 0,
+  oppositionOpposed: 0,
+  remeasuresMinted: 0,
+  remeasuresExpired: 0,
+  contradictionsOpened: 0,
+  candidatesDissolved: 0,
+  mint: {
+   calls: 0,
+   callsParsed: 0,
+   callErrors: 0,
+   oversized: 0,
+   opsSeen: 0,
+   readingsSwept: 0,
+  },
+  shadow: [],
+  pool: { size: 0, perChannel: {}, suppressed: 0, reproposed: 0 },
+ };
 }
 
 // ---------------------------------------------------------------------------
@@ -341,66 +341,77 @@ function emptyReport(): WikiJobsReport {
 let running = false;
 
 export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
-  if (running) {
-    deps.log({
-      at: nowIso(),
-      actor: 'clerk',
-      kind: JOB_FAILED,
-      detail: 'job=lock a wiki run is already in progress, so this one did nothing',
-    });
-    return emptyReport();
-  }
-  running = true;
+ if (running) {
+  deps.log({
+   at: nowIso(),
+   actor: 'clerk',
+   kind: JOB_FAILED,
+   detail: 'job=lock a wiki run is already in progress, so this one did nothing',
+  });
+  return emptyReport();
+ }
+ running = true;
 
-  const report = emptyReport();
-  const collector = shadowCollector(deps.log);
-  const log = collector.log;
-  const model = deps.model ?? clerkModel();
-  const thresholds = deps.thresholds ?? THRESHOLDS;
-  const poles = new Map<string, { poleA: string; poleB: string }>();
-  const spend = { opposition: 0 };
-  /** What job 1 minted or rewrote, and therefore what job 1.5 must embed. */
-  const touched = new Set<string>();
+ const report = emptyReport();
+ const collector = shadowCollector(deps.log);
+ const log = collector.log;
+ const model = deps.model ?? clerkModel();
+ const thresholds = deps.thresholds ?? THRESHOLDS;
+ const poles = new Map<string, { poleA: string; poleB: string }>();
+ const spend = { opposition: 0 };
+ /** What job 1 minted or rewrote, and therefore what job 1.5 must embed. */
+ const touched = new Set<string>();
 
-  const graph = (): ClaimGraph => {
-    const index = deps.vault.rebuildIndex();
-    return { ...deps.store.loadSlice(), snippets: index.snippets, readings: index.readings };
-  };
+ const graph = (): ClaimGraph => {
+  const index = deps.vault.rebuildIndex();
+  return { ...deps.store.loadSlice(), snippets: index.snippets, readings: index.readings };
+ };
 
-  const guard = async (job: string, run: () => Promise<void>): Promise<void> => {
-    try {
-      await run();
-    } catch (err) {
-      // A caught failure leaves its counters where they stand and never
-      // throws: the report is what the docket renders, and a run that half
-      // happened must still be able to say so.
-      log({
-        at: nowIso(),
-        actor: 'clerk',
-        kind: JOB_FAILED,
-        detail: `job=${job} ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  };
-
+ const guard = async (job: string, run: () => Promise<void>): Promise<void> => {
   try {
-    await guard('sweep', () => jobSweep(deps, report, graph, log, model, touched));
-    await guard('prime', () => jobPrime(deps, graph, touched));
-    await guard('lint', () => jobLint(deps, report, graph, log, thresholds));
-    await guard('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
-    await guard('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
-    await guard('confirmation', () => jobConfirmation(deps, report, graph, log, model));
-    report.shadow = collector.records;
-    return report;
-  } finally {
-    running = false;
+   await run();
+  } catch (err) {
+   // A caught failure leaves its counters where they stand and never
+   // throws: the report is what the docket renders, and a run that half
+   // happened must still be able to say so.
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=${job} ${err instanceof Error ? err.message : String(err)}`,
+   });
   }
+ };
+
+ try {
+  await guard('sweep', () => jobSweep(deps, report, graph, log, model, touched));
+  await guard('prime', () => jobPrime(deps, graph, touched));
+  await guard('lint', () => jobLint(deps, report, graph, log, thresholds));
+  await guard('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
+  await guard('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
+  await guard('confirmation', () => jobConfirmation(deps, report, graph, log, model));
+  report.shadow = collector.records;
+  log({
+   at: nowIso(),
+   actor: 'clerk',
+   kind: 'wiki-run',
+   detail:
+    `swept=${report.swept} applied=${report.applied} rejected=${report.rejected} ` +
+    `unprocessed=${report.unprocessed} oversized=${report.oversized} stuck=${report.stuck} ` +
+    `oppositionJudged=${report.oppositionJudged} oppositionOpposed=${report.oppositionOpposed} ` +
+    `remeasuresMinted=${report.remeasuresMinted} remeasuresExpired=${report.remeasuresExpired} ` +
+    `contradictionsOpened=${report.contradictionsOpened} candidatesDissolved=${report.candidatesDissolved}`,
+  });
+  return report;
+ } finally {
+  running = false;
+ }
 }
 
 /** `ELICIT_CLERK_MODEL ?? 'qwen3.6:35b'` — the Clerk's role, never the Elicitor's (Q-48). */
 function clerkModel(): string {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  return env?.['ELICIT_CLERK_MODEL'] ?? DEFAULT_CLERK_MODEL;
+ const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+ return env?.['ELICIT_CLERK_MODEL'] ?? DEFAULT_CLERK_MODEL;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,176 +419,176 @@ function clerkModel(): string {
 // ---------------------------------------------------------------------------
 
 async function jobSweep(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  model: string,
-  touched: Set<string>,
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ model: string,
+ touched: Set<string>,
 ): Promise<void> {
-  const graph = graphOf();
-  const swept = deps.store.sweptReadingIds();
-  const attempts = deps.store.attemptCounts();
-  const backoff = bound(THRESHOLDS['sweep.attemptsBeforeBackoff']);
+ const graph = graphOf();
+ const swept = deps.store.sweptReadingIds();
+ const attempts = deps.store.attemptCounts();
+ const backoff = bound(THRESHOLDS['sweep.attemptsBeforeBackoff']);
 
-  const pending = Object.values(graph.readings)
-    .filter((r) => !swept.has(r.id))
-    .sort(byId);
+ const pending = Object.values(graph.readings)
+  .filter((r) => !swept.has(r.id))
+  .sort(byId);
 
-  // S11: a reading the model cannot handle must not sit at the head of a
-  // fixed-order queue and eat the whole run quota forever while new material
-  // starves. It stays unprocessed (Q-29) — it just stops going first.
-  const stuck = pending.filter((r) => (attempts.get(r.id) ?? 0) >= backoff);
-  const fresh = pending.filter((r) => (attempts.get(r.id) ?? 0) < backoff);
-  const ordered = [...fresh, ...stuck];
-  report.stuck = stuck.length;
+ // S11: a reading the model cannot handle must not sit at the head of a
+ // fixed-order queue and eat the whole run quota forever while new material
+ // starves. It stays unprocessed (Q-29) — it just stops going first.
+ const stuck = pending.filter((r) => (attempts.get(r.id) ?? 0) >= backoff);
+ const fresh = pending.filter((r) => (attempts.get(r.id) ?? 0) < backoff);
+ const ordered = [...fresh, ...stuck];
+ report.stuck = stuck.length;
 
-  const quota = bound(THRESHOLDS['mint.callsPerRun']);
-  if (ordered.length > quota) {
-    shadowDecision(
-      THRESHOLDS['mint.callsPerRun'],
-      `${ordered.length - quota} readings left for the next run`,
-      log,
-      true,
-    );
+ const quota = bound(THRESHOLDS['mint.callsPerRun']);
+ if (ordered.length > quota) {
+  shadowDecision(
+   THRESHOLDS['mint.callsPerRun'],
+   `${ordered.length - quota} readings left for the next run`,
+   log,
+   true,
+  );
+ }
+ const batch = ordered.slice(0, quota);
+ if (batch.length === 0) return;
+
+ const live = graph.claims.filter(isLive).sort(byId);
+ const claimIndex = buildIndex(live.map(asIndexEntry));
+ const claimsById = new Map(live.map((c) => [c.id, c]));
+
+ // The bodies as they stood BEFORE any op landed. Ticket 067's second prime
+ // needs to know what this job changed, and `applyOps` cannot say: a MINT op
+ // carries no id, because the id is minted inside the write boundary. The diff
+ // below is the only honest answer, and it is keyed on the BODY rather than on
+ // `updated` because a body is exactly what an embedding is OF.
+ const bodiesBefore = new Map(graph.claims.map((c) => [c.id, c.body]));
+
+ const ops: unknown[] = [];
+ const accepted: string[] = [];
+ const at = nowIso();
+
+ for (const reading of batch) {
+  report.mint.calls++;
+  try {
+   const result = await deps.proposeOps(
+    {
+     reading,
+     snippets: citedSnippets(reading, graph),
+     relatedClaims: relatedClaims(reading, claimIndex, claimsById),
+    },
+    deps.complete,
+   );
+   report.mint.opsSeen += result.diagnostics.opsSeen;
+
+   // The four outcomes, four kinds. `oversized` is read FIRST, because
+   // `proposeOps` reports it with `parsed: false` — nothing was parsed
+   // because no call was made.
+   if (result.diagnostics.oversized) {
+    deps.store.appendSweep({ readingId: reading.id, op: 'OVERSIZED', at, model });
+    report.oversized++;
+    report.mint.oversized++;
+    report.swept++;
+    log({
+     at,
+     actor: 'clerk',
+     kind: 'mint-oversized',
+     detail: `reading=${reading.id} did not fit the payload budget, so it was set aside`,
+     refs: [reading.id],
+    });
+    continue;
+   }
+
+   if (!result.diagnostics.parsed) {
+    deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'parse' });
+    log({
+     at,
+     actor: 'clerk',
+     kind: 'mint-parse-failed',
+     detail: `reading=${reading.id} raw="${result.raw.slice(0, RAW_EXCERPT_CHARS)}"`,
+     refs: [reading.id],
+    });
+    continue;
+   }
+   report.mint.callsParsed++;
+
+   if (result.ops.length === 0) {
+    deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'empty' });
+    log({
+     at,
+     actor: 'clerk',
+     kind: 'mint-empty',
+     detail: `reading=${reading.id} parsed cleanly and proposed no operation`,
+     refs: [reading.id],
+    });
+    continue;
+   }
+
+   accepted.push(reading.id);
+   ops.push(...withModelUpgradeReasons(result.ops, deps.store, model));
+  } catch (err) {
+   report.mint.callErrors++;
+   deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'call' });
+   log({
+    at,
+    actor: 'clerk',
+    kind: 'mint-call-failed',
+    detail: `reading=${reading.id} ${err instanceof Error ? err.message : String(err)}`,
+    refs: [reading.id],
+   });
   }
-  const batch = ordered.slice(0, quota);
-  if (batch.length === 0) return;
+ }
 
-  const live = graph.claims.filter(isLive).sort(byId);
-  const claimIndex = buildIndex(live.map(asIndexEntry));
-  const claimsById = new Map(live.map((c) => [c.id, c]));
-
-  // The bodies as they stood BEFORE any op landed. Ticket 067's second prime
-  // needs to know what this job changed, and `applyOps` cannot say: a MINT op
-  // carries no id, because the id is minted inside the write boundary. The diff
-  // below is the only honest answer, and it is keyed on the BODY rather than on
-  // `updated` because a body is exactly what an embedding is OF.
-  const bodiesBefore = new Map(graph.claims.map((c) => [c.id, c.body]));
-
-  const ops: unknown[] = [];
-  const accepted: string[] = [];
-  const at = nowIso();
-
-  for (const reading of batch) {
-    report.mint.calls++;
-    try {
-      const result = await deps.proposeOps(
-        {
-          reading,
-          snippets: citedSnippets(reading, graph),
-          relatedClaims: relatedClaims(reading, claimIndex, claimsById),
-        },
-        deps.complete,
-      );
-      report.mint.opsSeen += result.diagnostics.opsSeen;
-
-      // The four outcomes, four kinds. `oversized` is read FIRST, because
-      // `proposeOps` reports it with `parsed: false` — nothing was parsed
-      // because no call was made.
-      if (result.diagnostics.oversized) {
-        deps.store.appendSweep({ readingId: reading.id, op: 'OVERSIZED', at, model });
-        report.oversized++;
-        report.mint.oversized++;
-        report.swept++;
-        log({
-          at,
-          actor: 'clerk',
-          kind: 'mint-oversized',
-          detail: `reading=${reading.id} did not fit the payload budget, so it was set aside`,
-          refs: [reading.id],
-        });
-        continue;
-      }
-
-      if (!result.diagnostics.parsed) {
-        deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'parse' });
-        log({
-          at,
-          actor: 'clerk',
-          kind: 'mint-parse-failed',
-          detail: `reading=${reading.id} raw="${result.raw.slice(0, RAW_EXCERPT_CHARS)}"`,
-          refs: [reading.id],
-        });
-        continue;
-      }
-      report.mint.callsParsed++;
-
-      if (result.ops.length === 0) {
-        deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'empty' });
-        log({
-          at,
-          actor: 'clerk',
-          kind: 'mint-empty',
-          detail: `reading=${reading.id} parsed cleanly and proposed no operation`,
-          refs: [reading.id],
-        });
-        continue;
-      }
-
-      accepted.push(reading.id);
-      ops.push(...withModelUpgradeReasons(result.ops, deps.store, model));
-    } catch (err) {
-      report.mint.callErrors++;
-      deps.store.appendSweep({ readingId: reading.id, op: 'REJECTED', at, model, reason: 'call' });
-      log({
-        at,
-        actor: 'clerk',
-        kind: 'mint-call-failed',
-        detail: `reading=${reading.id} ${err instanceof Error ? err.message : String(err)}`,
-        refs: [reading.id],
-      });
-    }
-  }
-
-  if (accepted.length === 0) {
-    report.unprocessed = batch.length - report.swept;
-    report.mint.readingsSwept = report.swept;
-    return;
-  }
-
-  const result = deps.applyOps(ops, { readingIds: accepted }, {
-    store: deps.store,
-    registry: deps.registry,
-    graph,
-    model,
-    log,
-  });
-
-  report.applied = result.applied.length;
-  report.rejected = result.rejected.length;
-  report.swept += result.applied.length;
+ if (accepted.length === 0) {
   report.unprocessed = batch.length - report.swept;
   report.mint.readingsSwept = report.swept;
+  return;
+ }
 
-  // Ticket 067: which claims this job created or rewrote. Read from the store
-  // rather than from `graphOf()`, because the claims are the only half needed
-  // and rebuilding the vault index for them would be a sixth pass over the
-  // snippets to answer a question about the wiki.
-  //
-  // No liveness filter, and that is deliberate rather than forgotten. No op
-  // both rewrites a body and retires the claim — MERGE archives its sources
-  // with their bodies untouched, SUPERSEDE leaves the old body where it was and
-  // writes a NEW claim — so a changed body is a live claim by construction. And
-  // the consumer filters anyway: `prime` intersects this set with its own
-  // window of live claims. A guard here would be a branch no op can reach.
-  for (const claim of deps.store.loadSlice().claims) {
-    if (bodiesBefore.get(claim.id) !== claim.body) touched.add(claim.id);
-  }
+ const result = deps.applyOps(ops, { readingIds: accepted }, {
+  store: deps.store,
+  registry: deps.registry,
+  graph,
+  model,
+  log,
+ });
 
-  // T9 emits `claim-op-rejected` and leaves the ledger to us. The REJECTED line
-  // is what the back-off rule above counts on the next run, so it has to be
-  // written here or the rule has no input.
-  for (const rejection of result.rejected) {
-    if (rejection.reading === undefined) continue;
-    deps.store.appendSweep({
-      readingId: rejection.reading,
-      op: 'REJECTED',
-      at,
-      model,
-      reason: rejection.reason,
-    });
-  }
+ report.applied = result.applied.length;
+ report.rejected = result.rejected.length;
+ report.swept += result.applied.length;
+ report.unprocessed = batch.length - report.swept;
+ report.mint.readingsSwept = report.swept;
+
+ // Ticket 067: which claims this job created or rewrote. Read from the store
+ // rather than from `graphOf()`, because the claims are the only half needed
+ // and rebuilding the vault index for them would be a sixth pass over the
+ // snippets to answer a question about the wiki.
+ //
+ // No liveness filter, and that is deliberate rather than forgotten. No op
+ // both rewrites a body and retires the claim — MERGE archives its sources
+ // with their bodies untouched, SUPERSEDE leaves the old body where it was and
+ // writes a NEW claim — so a changed body is a live claim by construction. And
+ // the consumer filters anyway: `prime` intersects this set with its own
+ // window of live claims. A guard here would be a branch no op can reach.
+ for (const claim of deps.store.loadSlice().claims) {
+  if (bodiesBefore.get(claim.id) !== claim.body) touched.add(claim.id);
+ }
+
+ // T9 emits `claim-op-rejected` and leaves the ledger to us. The REJECTED line
+ // is what the back-off rule above counts on the next run, so it has to be
+ // written here or the rule has no input.
+ for (const rejection of result.rejected) {
+  if (rejection.reading === undefined) continue;
+  deps.store.appendSweep({
+   readingId: rejection.reading,
+   op: 'REJECTED',
+   at,
+   model,
+   reason: rejection.reason,
+  });
+ }
 }
 
 /**
@@ -592,40 +603,40 @@ async function jobSweep(
  * surface nobody asked for.
  */
 function asIndexEntry(c: Claim): Snippet {
-  return {
-    id: c.id,
-    version: 1,
-    captured: c.created,
-    provenance: { kind: 'harvest', session: '', question: '', questionForm: 'deliberative' },
-    prose: c.body,
-  };
+ return {
+  id: c.id,
+  version: 1,
+  captured: c.created,
+  provenance: { kind: 'harvest', session: '', question: '', questionForm: 'deliberative' },
+  prose: c.body,
+ };
 }
 
 /** The reading's cited snippets, keyed by id, latest version each. */
 function citedSnippets(reading: Reading, graph: ClaimGraph): Record<string, Snippet> {
-  const out: Record<string, Snippet> = {};
-  for (const cite of reading.cites) {
-    const id = snippetIdOf(cite);
-    const snippet = graph.snippets[id];
-    if (snippet) out[id] = snippet;
-  }
-  return out;
+ const out: Record<string, Snippet> = {};
+ for (const cite of reading.cites) {
+  const id = snippetIdOf(cite);
+  const snippet = graph.snippets[id];
+  if (snippet) out[id] = snippet;
+ }
+ return out;
 }
 
 /** Up to three live claims whose bodies resonate with this reading. */
 function relatedClaims(
-  reading: Reading,
-  index: ReturnType<typeof buildIndex>,
-  claims: Map<string, Claim>,
+ reading: Reading,
+ index: ReturnType<typeof buildIndex>,
+ claims: Map<string, Claim>,
 ): Claim[] {
-  const out: Claim[] = [];
-  for (const hit of resonate(index, reading.reading)) {
-    const claim = claims.get(hit.snippetId);
-    if (!claim) continue;
-    out.push(claim);
-    if (out.length === RELATED_CLAIMS_SHOWN) break;
-  }
-  return out;
+ const out: Claim[] = [];
+ for (const hit of resonate(index, reading.reading)) {
+  const claim = claims.get(hit.snippetId);
+  if (!claim) continue;
+  out.push(claim);
+  if (out.length === RELATED_CLAIMS_SHOWN) break;
+ }
+ return out;
 }
 
 /**
@@ -639,12 +650,12 @@ function relatedClaims(
  * trigger. Nothing extra is sent to the model; the op path is the normal one.
  */
 function withModelUpgradeReasons(ops: ClerkOp[], store: ClaimStore, model: string): unknown[] {
-  return ops.map((op) => {
-    if (op.op !== 'SUPERSEDE') return op;
-    const target = store.readClaim(op.claim);
-    if (!target || target.model === model) return op;
-    return { ...op, reason: SUPERSEDE_MODEL_UPGRADE };
-  });
+ return ops.map((op) => {
+  if (op.op !== 'SUPERSEDE') return op;
+  const target = store.readClaim(op.claim);
+  if (!target || target.model === model) return op;
+  return { ...op, reason: SUPERSEDE_MODEL_UPGRADE };
+ });
 }
 
 // ---------------------------------------------------------------------------
@@ -681,18 +692,18 @@ function withModelUpgradeReasons(ops: ClerkOp[], store: ClaimStore, model: strin
  * no network call and writes no vector file at all.
  */
 async function jobPrime(
-  deps: WikiJobDeps,
-  graphOf: () => ClaimGraph,
-  touched: Set<string>,
+ deps: WikiJobDeps,
+ graphOf: () => ClaimGraph,
+ touched: Set<string>,
 ): Promise<void> {
-  if (touched.size === 0) return;
-  // `ClashChannel` cannot express `prime`, and `primeable` is the one place
-  // that shape is tested — see `src/wiki/embedding.ts`.
-  const asyncChannels = deps.channels.filter(primeable);
-  if (asyncChannels.length === 0) return;
+ if (touched.size === 0) return;
+ // `ClashChannel` cannot express `prime`, and `primeable` is the one place
+ // that shape is tested — see `src/wiki/embedding.ts`.
+ const asyncChannels = deps.channels.filter(primeable);
+ if (asyncChannels.length === 0) return;
 
-  const graph = graphOf();
-  for (const channel of asyncChannels) await channel.prime(graph, touched);
+ const graph = graphOf();
+ for (const channel of asyncChannels) await channel.prime(graph, touched);
 }
 
 // ---------------------------------------------------------------------------
@@ -700,65 +711,65 @@ async function jobPrime(
 // ---------------------------------------------------------------------------
 
 async function jobLint(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  thresholds: ThresholdRegister,
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ thresholds: ThresholdRegister,
 ): Promise<void> {
-  const graph = graphOf();
-  const findings = deps.lint(graph, thresholds, log);
-  report.lint = findings;
+ const graph = graphOf();
+ const findings = deps.lint(graph, thresholds, log);
+ report.lint = findings;
 
-  const live = new Map(graph.claims.filter(isLive).map((c) => [c.id, c]));
-  const sittingFor = sittingCache(deps.vaultRoot, deps.sittingOf ?? readSitting);
+ const live = new Map(graph.claims.filter(isLive).map((c) => [c.id, c]));
+ const sittingFor = sittingCache(deps.vaultRoot, deps.sittingOf ?? readSitting);
 
-  for (const finding of findings) {
-    if (finding.kind !== 'stale-citation') continue;
-    const claim = live.get(finding.subject);
-    if (!claim) continue;
+ for (const finding of findings) {
+  if (finding.kind !== 'stale-citation') continue;
+  const claim = live.get(finding.subject);
+  if (!claim) continue;
 
-    // Deduped on the CLAIM, never on the cite (B8). `composeStillTrue`'s draft
-    // cites one snippet version, so joining through the snippet would let two
-    // claims resting on one stale snippet suppress each other's question —
-    // the opposite of Q-31's "one per flagged claim".
-    //
-    // The predicate is "not yet resolved", never "pending" (S8): a drawn entry
-    // reads `asked` and `expire()` only ever expires `pending` ones, so an
-    // unanswered drawn entry stays `asked` indefinitely and a pending-keyed
-    // dedupe would re-mint the run after the question was drawn.
-    const held = deps.queue
-      .list({ source: 'lint-still-true' })
-      .some((e) => e.claim === claim.id && e.status !== 'answered' && e.status !== 'expired');
-    if (held) continue;
+  // Deduped on the CLAIM, never on the cite (B8). `composeStillTrue`'s draft
+  // cites one snippet version, so joining through the snippet would let two
+  // claims resting on one stale snippet suppress each other's question —
+  // the opposite of Q-31's "one per flagged claim".
+  //
+  // The predicate is "not yet resolved", never "pending" (S8): a drawn entry
+  // reads `asked` and `expire()` only ever expires `pending` ones, so an
+  // unanswered drawn entry stays `asked` indefinitely and a pending-keyed
+  // dedupe would re-mint the run after the question was drawn.
+  const held = deps.queue
+   .list({ source: 'lint-still-true' })
+   .some((e) => e.claim === claim.id && e.status !== 'answered' && e.status !== 'expired');
+  if (held) continue;
 
-    const stale = finding.refs
-      .slice(1)
-      .map((ref) => graph.snippets[snippetIdOf(ref)])
-      .find((s): s is Snippet => s !== undefined);
-    if (!stale) continue;
+  const stale = finding.refs
+   .slice(1)
+   .map((ref) => graph.snippets[snippetIdOf(ref)])
+   .find((s): s is Snippet => s !== undefined);
+  if (!stale) continue;
 
-    try {
-      const draft = await deps.composeStillTrue(
-        stale,
-        deps.complete,
-        sittingFor(stale.provenance.session),
-      );
-      if (!draft) continue;
-      // Spread, never used unmodified (S21): `composeStillTrue` hardcodes
-      // `source: 'still-true'`, and a draft used as-is would land invisible to
-      // the dedupe above and to the report.
-      deps.queue.add({ ...draft, source: 'lint-still-true', claim: claim.id });
-    } catch (err) {
-      log({
-        at: nowIso(),
-        actor: 'clerk',
-        kind: JOB_FAILED,
-        detail: `job=lint-still-true claim=${claim.id} ${err instanceof Error ? err.message : String(err)}`,
-        refs: [claim.id],
-      });
-    }
+  try {
+   const draft = await deps.composeStillTrue(
+    stale,
+    deps.complete,
+    sittingFor(stale.provenance.session),
+   );
+   if (!draft) continue;
+   // Spread, never used unmodified (S21): `composeStillTrue` hardcodes
+   // `source: 'still-true'`, and a draft used as-is would land invisible to
+   // the dedupe above and to the report.
+   deps.queue.add({ ...draft, source: 'lint-still-true', claim: claim.id });
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=lint-still-true claim=${claim.id} ${err instanceof Error ? err.message : String(err)}`,
+    refs: [claim.id],
+   });
   }
+ }
 }
 
 // ---------------------------------------------------------------------------
@@ -766,89 +777,89 @@ async function jobLint(
 // ---------------------------------------------------------------------------
 
 async function jobCandidates(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  model: string,
-  poles: Map<string, { poleA: string; poleB: string }>,
-  spend: { opposition: number },
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ model: string,
+ poles: Map<string, { poleA: string; poleB: string }>,
+ spend: { opposition: number },
 ): Promise<void> {
-  const graph = graphOf();
-  const pool = deps.poolCandidates(graph, deps.channels, deps.store, log);
+ const graph = graphOf();
+ const pool = deps.poolCandidates(graph, deps.channels, deps.store, log);
 
-  report.candidates = pool.perChannel;
-  report.pool = {
-    size: pool.pairs.length,
-    perChannel: pool.perChannel,
-    suppressed: pool.suppressed,
-    reproposed: pool.reproposed,
-  };
+ report.candidates = pool.perChannel;
+ report.pool = {
+  size: pool.pairs.length,
+  perChannel: pool.perChannel,
+  suppressed: pool.suppressed,
+  reproposed: pool.reproposed,
+ };
 
-  const quota = bound(OPPOSITION_QUOTA);
-  for (let i = 0; i < pool.pairs.length; i++) {
-    const pooled = pool.pairs[i];
-    if (!pooled) continue;
-    if (spend.opposition >= quota) {
-      shadowDecision(
-        OPPOSITION_QUOTA,
-        `${pool.pairs.length - i} pooled pairs left without a judgment this run`,
-        log,
-        true,
-      );
-      return;
-    }
-
-    const [a, b] = pooled.pair;
-    const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
-    // Q-52: the poles must be verbatim in the quotes the model was shown, so a
-    // pair whose evidence is not in hand cannot be judged at all.
-    if (quotes.a === '' || quotes.b === '') continue;
-
-    spend.opposition++;
-    try {
-      const judgment = await deps.judgeOpposition(a, b, quotes, deps.complete);
-      // `null` is a FAILURE and `opposed: false` is a JUDGMENT. Collapsing the
-      // two would destroy the stage-1 precision record Q-49 acts under.
-      if (!judgment) continue;
-      report.oppositionJudged++;
-      if (!judgment.opposed) continue;
-      report.oppositionOpposed++;
-
-      // Routed through `shadowDecision` rather than reading `opposed` directly,
-      // so no threshold is read outside the register and reversing Q-49 is one
-      // boolean rather than a change here.
-      const admitted = shadowDecision(
-        THRESHOLDS['clash.oppositionGate'],
-        `pool a candidate on ${a.id} and ${b.id}`,
-        log,
-      );
-      if (!admitted) continue;
-
-      const at = nowIso();
-      const candidate: ClashCandidate = {
-        id: ulid(),
-        pair: [a.id, b.id],
-        channel: pooled.channel,
-        status: 'pending-remeasure',
-        // Q-53: the pool decided this, and defaulting it here would make an
-        // expired pair re-proposable forever.
-        attempts: pooled.attempts,
-        model,
-        modelAt: at,
-        created: at,
-      };
-      deps.store.writeCandidate(candidate);
-      poles.set(candidate.id, { poleA: judgment.poleA, poleB: judgment.poleB });
-    } catch (err) {
-      log({
-        at: nowIso(),
-        actor: 'clerk',
-        kind: JOB_FAILED,
-        detail: `job=opposition pair=${a.id},${b.id} ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
+ const quota = bound(OPPOSITION_QUOTA);
+ for (let i = 0; i < pool.pairs.length; i++) {
+  const pooled = pool.pairs[i];
+  if (!pooled) continue;
+  if (spend.opposition >= quota) {
+   shadowDecision(
+    OPPOSITION_QUOTA,
+    `${pool.pairs.length - i} pooled pairs left without a judgment this run`,
+    log,
+    true,
+   );
+   return;
   }
+
+  const [a, b] = pooled.pair;
+  const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
+  // Q-52: the poles must be verbatim in the quotes the model was shown, so a
+  // pair whose evidence is not in hand cannot be judged at all.
+  if (quotes.a === '' || quotes.b === '') continue;
+
+  spend.opposition++;
+  try {
+   const judgment = await deps.judgeOpposition(a, b, quotes, deps.complete);
+   // `null` is a FAILURE and `opposed: false` is a JUDGMENT. Collapsing the
+   // two would destroy the stage-1 precision record Q-49 acts under.
+   if (!judgment) continue;
+   report.oppositionJudged++;
+   if (!judgment.opposed) continue;
+   report.oppositionOpposed++;
+
+   // Routed through `shadowDecision` rather than reading `opposed` directly,
+   // so no threshold is read outside the register and reversing Q-49 is one
+   // boolean rather than a change here.
+   const admitted = shadowDecision(
+    THRESHOLDS['clash.oppositionGate'],
+    `pool a candidate on ${a.id} and ${b.id}`,
+    log,
+   );
+   if (!admitted) continue;
+
+   const at = nowIso();
+   const candidate: ClashCandidate = {
+    id: ulid(),
+    pair: [a.id, b.id],
+    channel: pooled.channel,
+    status: 'pending-remeasure',
+    // Q-53: the pool decided this, and defaulting it here would make an
+    // expired pair re-proposable forever.
+    attempts: pooled.attempts,
+    model,
+    modelAt: at,
+    created: at,
+   };
+   deps.store.writeCandidate(candidate);
+   poles.set(candidate.id, { poleA: judgment.poleA, poleB: judgment.poleB });
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=opposition pair=${a.id},${b.id} ${err instanceof Error ? err.message : String(err)}`,
+   });
+  }
+ }
 }
 
 // ---------------------------------------------------------------------------
@@ -856,98 +867,98 @@ async function jobCandidates(
 // ---------------------------------------------------------------------------
 
 async function jobRemeasure(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  poles: Map<string, { poleA: string; poleB: string }>,
-  spend: { opposition: number },
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ poles: Map<string, { poleA: string; poleB: string }>,
+ spend: { opposition: number },
 ): Promise<void> {
-  const graph = graphOf();
-  const claims = new Map(graph.claims.map((c) => [c.id, c]));
-  const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
-  const pending = deps.store.listCandidates().filter((c) => c.status === 'pending-remeasure');
+ const graph = graphOf();
+ const claims = new Map(graph.claims.map((c) => [c.id, c]));
+ const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
+ const pending = deps.store.listCandidates().filter((c) => c.status === 'pending-remeasure');
 
-  // The expired branch, FIRST (B9). Without it the pair is stranded: job 5
-  // waits for `answered`, an expired entry never reaches it, and the candidate
-  // sits in `pending-remeasure` for good while T11 correctly refuses to
-  // re-propose the pair. Dissolving retires it through the path that already
-  // exists — and under Q-53 `remeasure-expired` is the one outcome that lets
-  // the pair be proposed once more, because silence is not a verdict.
-  const stillPending: ClashCandidate[] = [];
-  for (const candidate of pending) {
-    const entry = candidate.remeasureQueueId ? entries.get(candidate.remeasureQueueId) : undefined;
-    if (entry?.status === 'expired') {
-      dissolve(deps, candidate, 'remeasure-expired');
-      report.remeasuresExpired++;
-      report.candidatesDissolved++;
-      continue;
-    }
-    stillPending.push(candidate);
+ // The expired branch, FIRST (B9). Without it the pair is stranded: job 5
+ // waits for `answered`, an expired entry never reaches it, and the candidate
+ // sits in `pending-remeasure` for good while T11 correctly refuses to
+ // re-propose the pair. Dissolving retires it through the path that already
+ // exists — and under Q-53 `remeasure-expired` is the one outcome that lets
+ // the pair be proposed once more, because silence is not a verdict.
+ const stillPending: ClashCandidate[] = [];
+ for (const candidate of pending) {
+  const entry = candidate.remeasureQueueId ? entries.get(candidate.remeasureQueueId) : undefined;
+  if (entry?.status === 'expired') {
+   dissolve(deps, candidate, 'remeasure-expired');
+   report.remeasuresExpired++;
+   report.candidatesDissolved++;
+   continue;
+  }
+  stillPending.push(candidate);
+ }
+
+ const cap = bound(THRESHOLDS['remeasure.liveCap']);
+ let liveNow = deps.queue
+  .list({ source: 'contradiction-remeasure' })
+  .filter((e) => isLiveEntry(e)).length;
+
+ for (const candidate of stillPending) {
+  // Exactly one question per candidate, ever — and because T11 filters the
+  // pair at every status, exactly one per pair.
+  if (candidate.remeasureQueueId !== undefined) continue;
+
+  if (liveNow >= cap) {
+   shadowDecision(
+    THRESHOLDS['remeasure.liveCap'],
+    `a re-measure for candidate ${candidate.id}`,
+    log,
+    true,
+   );
+   return;
   }
 
-  const cap = bound(THRESHOLDS['remeasure.liveCap']);
-  let liveNow = deps.queue
-    .list({ source: 'contradiction-remeasure' })
-    .filter((e) => isLiveEntry(e)).length;
+  const a = claims.get(candidate.pair[0]);
+  const b = claims.get(candidate.pair[1]);
+  if (!a || !b) continue;
 
-  for (const candidate of stillPending) {
-    // Exactly one question per candidate, ever — and because T11 filters the
-    // pair at every status, exactly one per pair.
-    if (candidate.remeasureQueueId !== undefined) continue;
+  const pair =
+   poles.get(candidate.id) ??
+   (await recoverPoles(deps, report, log, spend, candidate, a, b, graph));
+  if (!pair) continue;
 
-    if (liveNow >= cap) {
-      shadowDecision(
-        THRESHOLDS['remeasure.liveCap'],
-        `a re-measure for candidate ${candidate.id}`,
-        log,
-        true,
-      );
-      return;
-    }
-
-    const a = claims.get(candidate.pair[0]);
-    const b = claims.get(candidate.pair[1]);
-    if (!a || !b) continue;
-
-    const pair =
-      poles.get(candidate.id) ??
-      (await recoverPoles(deps, report, log, spend, candidate, a, b, graph));
-    if (!pair) continue;
-
-    try {
-      const draft = await deps.composeRemeasure(
-        { a, b, poleA: pair.poleA, poleB: pair.poleB },
-        originalQuestions(a, b, graph),
-        deps.complete,
-      );
-      // `null` is legitimate: the guards refused the question and the candidate
-      // simply waits for the next run.
-      if (!draft) continue;
-      const entry = deps.queue.add(draft);
-      // The left edge of stage 3's window, and there is no other way to
-      // compute it once the run that minted the question is over.
-      deps.store.writeCandidate({
-        ...candidate,
-        remeasureQueueId: entry.id,
-        remeasureAskedAt: nowIso(),
-      });
-      liveNow++;
-      report.remeasuresMinted++;
-    } catch (err) {
-      log({
-        at: nowIso(),
-        actor: 'clerk',
-        kind: JOB_FAILED,
-        detail: `job=remeasure candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
+  try {
+   const draft = await deps.composeRemeasure(
+    { a, b, poleA: pair.poleA, poleB: pair.poleB },
+    originalQuestions(a, b, graph),
+    deps.complete,
+   );
+   // `null` is legitimate: the guards refused the question and the candidate
+   // simply waits for the next run.
+   if (!draft) continue;
+   const entry = deps.queue.add(draft);
+   // The left edge of stage 3's window, and there is no other way to
+   // compute it once the run that minted the question is over.
+   deps.store.writeCandidate({
+    ...candidate,
+    remeasureQueueId: entry.id,
+    remeasureAskedAt: nowIso(),
+   });
+   liveNow++;
+   report.remeasuresMinted++;
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=remeasure candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+   });
   }
+ }
 }
 
 /** A queue entry that still occupies a slot: drawn or waiting, but not resolved. */
 function isLiveEntry(e: QueueEntry): boolean {
-  return e.status === 'pending' || e.status === 'asked' || e.status === 'deferred';
+ return e.status === 'pending' || e.status === 'asked' || e.status === 'deferred';
 }
 
 /**
@@ -963,41 +974,41 @@ function isLiveEntry(e: QueueEntry): boolean {
  * honestly as `not-opposed` rather than waiting forever.
  */
 async function recoverPoles(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  log: LogFn,
-  spend: { opposition: number },
-  candidate: ClashCandidate,
-  a: Claim,
-  b: Claim,
-  graph: ClaimGraph,
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ log: LogFn,
+ spend: { opposition: number },
+ candidate: ClashCandidate,
+ a: Claim,
+ b: Claim,
+ graph: ClaimGraph,
 ): Promise<{ poleA: string; poleB: string } | null> {
-  if (spend.opposition >= bound(OPPOSITION_QUOTA)) return null;
+ if (spend.opposition >= bound(OPPOSITION_QUOTA)) return null;
 
-  const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
-  if (quotes.a === '' || quotes.b === '') return null;
+ const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
+ if (quotes.a === '' || quotes.b === '') return null;
 
-  spend.opposition++;
-  try {
-    const judgment = await deps.judgeOpposition(a, b, quotes, deps.complete);
-    if (!judgment) return null;
-    report.oppositionJudged++;
-    if (!judgment.opposed) {
-      dissolve(deps, candidate, 'not-opposed');
-      report.candidatesDissolved++;
-      return null;
-    }
-    report.oppositionOpposed++;
-    return { poleA: judgment.poleA, poleB: judgment.poleB };
-  } catch (err) {
-    log({
-      at: nowIso(),
-      actor: 'clerk',
-      kind: JOB_FAILED,
-      detail: `job=repole candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
-    });
-    return null;
+ spend.opposition++;
+ try {
+  const judgment = await deps.judgeOpposition(a, b, quotes, deps.complete);
+  if (!judgment) return null;
+  report.oppositionJudged++;
+  if (!judgment.opposed) {
+   dissolve(deps, candidate, 'not-opposed');
+   report.candidatesDissolved++;
+   return null;
   }
+  report.oppositionOpposed++;
+  return { poleA: judgment.poleA, poleB: judgment.poleB };
+ } catch (err) {
+  log({
+   at: nowIso(),
+   actor: 'clerk',
+   kind: JOB_FAILED,
+   detail: `job=repole candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+  });
+  return null;
+ }
 }
 
 // ---------------------------------------------------------------------------
@@ -1005,85 +1016,92 @@ async function recoverPoles(
 // ---------------------------------------------------------------------------
 
 async function jobConfirmation(
-  deps: WikiJobDeps,
-  report: WikiJobsReport,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  model: string,
+ deps: WikiJobDeps,
+ report: WikiJobsReport,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ model: string,
 ): Promise<void> {
-  const graph = graphOf();
-  const claims = new Map(graph.claims.map((c) => [c.id, c]));
-  const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
+ const graph = graphOf();
+ const claims = new Map(graph.claims.map((c) => [c.id, c]));
+ const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
 
-  for (const candidate of deps.store.listCandidates()) {
-    if (candidate.status !== 'pending-remeasure') continue;
-    const queueId = candidate.remeasureQueueId;
-    const askedAt = candidate.remeasureAskedAt;
-    if (queueId === undefined || askedAt === undefined) continue;
+ for (const candidate of deps.store.listCandidates()) {
+  if (candidate.status !== 'pending-remeasure') continue;
+  const queueId = candidate.remeasureQueueId;
+  const askedAt = candidate.remeasureAskedAt;
+  if (queueId === undefined || askedAt === undefined) continue;
 
-    // A candidate whose entry still reads `asked` is skipped. That is the
-    // normal state, not a leak: an unanswered drawn entry never expires.
-    if (entries.get(queueId)?.status !== 'answered') continue;
+  // A candidate whose entry still reads `asked` is skipped. That is the
+  // normal state, not a leak: an unanswered drawn entry never expires.
+  if (entries.get(queueId)?.status !== 'answered') continue;
 
-    const a = claims.get(candidate.pair[0]);
-    const b = claims.get(candidate.pair[1]);
-    if (!a || !b) continue;
+  const a = claims.get(candidate.pair[0]);
+  const b = claims.get(candidate.pair[1]);
+  if (!a || !b) continue;
 
-    const readings = confirmingReadings(graph, askedAt, a, b);
-    // No admissible reading is not a dissolution — the answer may not have been
-    // harvested yet, and retiring the pair here would spend it on a run that
-    // learned nothing.
-    if (readings.length === 0) continue;
+  const readings = confirmingReadings(graph, askedAt, a, b);
+  // No admissible reading is not a dissolution — the answer may not have been
+  // harvested yet, and retiring the pair here would spend it on a run that
+  // learned nothing.
+  if (readings.length === 0) continue;
 
-    try {
-      const result = await deps.judgeConfirmation(
-        candidate,
-        { readings, snippets: graph.snippets },
-        { a, b },
-        deps.complete,
-      );
-      if (!result) continue;
+  try {
+   const result = await deps.judgeConfirmation(
+    candidate,
+    { readings, snippets: graph.snippets },
+    { a, b },
+    deps.complete,
+   );
+   if (!result) continue;
 
-      if (!result.confirmed) {
-        dissolve(deps, candidate, dissolutionOutcome(result.reason));
-        report.candidatesDissolved++;
-        continue;
-      }
+   if (!result.confirmed) {
+    dissolve(deps, candidate, dissolutionOutcome(result.reason));
+    report.candidatesDissolved++;
+    continue;
+   }
 
-      // Confirmed AND structurally verified — T7 did the verifying, and this
-      // job never inspects the boolean itself.
-      const at = nowIso();
-      const contradiction: Contradiction = {
-        id: ulid(),
-        type: result.type,
-        claims: [a.id, b.id],
-        candidate: candidate.id,
-        remeasureQueueId: queueId,
-        evidence: result.evidence,
-        status: 'open',
-        model,
-        modelAt: at,
-        opened: at,
-        updated: at,
-        body: juxtaposition(a, b, result),
-      };
-      deps.store.writeContradiction(contradiction);
-      deps.store.writeCandidate({ ...candidate, status: 'confirmed' });
-      report.contradictionsOpened++;
+   // Confirmed AND structurally verified — T7 did the verifying, and this
+   // job never inspects the boolean itself.
+   const at = nowIso();
+   const contradiction: Contradiction = {
+    id: ulid(),
+    type: result.type,
+    claims: [a.id, b.id],
+    candidate: candidate.id,
+    remeasureQueueId: queueId,
+    evidence: result.evidence,
+    status: 'open',
+    model,
+    modelAt: at,
+    opened: at,
+    updated: at,
+    body: juxtaposition(a, b, result),
+   };
+   deps.store.writeContradiction(contradiction);
+   log({
+    at,
+    actor: 'clerk',
+    kind: 'contradiction-opened',
+    detail: `type=${result.type}`,
+    refs: [a.id, b.id, candidate.id],
+   });
+   deps.store.writeCandidate({ ...candidate, status: 'confirmed' });
+   report.contradictionsOpened++;
 
-      // Both claims go `contested` MECHANICALLY (Q-29). Nothing here writes a
-      // status by hand; `computeStatus` reads the graph the Contradiction is
-      // now part of and answers.
-      recomputeStatus([a.id, b.id], deps, graphOf, log, at, model);
-    } catch (err) {
-      log({
-        at: nowIso(),
-        actor: 'clerk',
-        kind: JOB_FAILED,
-        detail: `job=confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
+   // Both claims go `contested` MECHANICALLY (Q-29). Nothing here writes a
+   // status by hand; `computeStatus` reads the graph the Contradiction is
+   // now part of and answers.
+   recomputeStatus([a.id, b.id], deps, graphOf, log, at, model);
+  } catch (err) {
+   log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: JOB_FAILED,
+    detail: `job=confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+   });
   }
+ }
 }
 
 /**
@@ -1101,34 +1119,34 @@ async function jobConfirmation(
  *      different sitting, so it is refused too.
  */
 function confirmingReadings(
-  graph: ClaimGraph,
-  askedAt: string,
-  a: Claim,
-  b: Claim,
+ graph: ClaimGraph,
+ askedAt: string,
+ a: Claim,
+ b: Claim,
 ): Reading[] {
-  const held = new Set([
-    ...sittingsOfCites(a.cites, graph.snippets),
-    ...sittingsOfCites(b.cites, graph.snippets),
-  ]);
+ const held = new Set([
+  ...sittingsOfCites(a.cites, graph.snippets),
+  ...sittingsOfCites(b.cites, graph.snippets),
+ ]);
 
-  return Object.values(graph.readings)
-    .filter((r) => readingTime(r) > askedAt)
-    .filter((r) => {
-      const sittings = sittingsOfCites(r.cites, graph.snippets);
-      if (sittings.size === 0) return false;
-      for (const s of sittings) if (held.has(s)) return false;
-      return true;
-    })
-    .sort(byId);
+ return Object.values(graph.readings)
+  .filter((r) => readingTime(r) > askedAt)
+  .filter((r) => {
+   const sittings = sittingsOfCites(r.cites, graph.snippets);
+   if (sittings.size === 0) return false;
+   for (const s of sittings) if (held.has(s)) return false;
+   return true;
+  })
+  .sort(byId);
 }
 
 /** The two poles, dated — Juxtaposition material (Q-15), never an accusation. */
 function juxtaposition(a: Claim, b: Claim, result: ConfirmResult & { confirmed: true }): string {
-  return [
-    `${a.body} (${a.range}, ${a.created.slice(0, 10)})`,
-    `${b.body} (${b.range}, ${b.created.slice(0, 10)})`,
-    `> ${result.evidence.quote}`,
-  ].join('\n\n');
+ return [
+  `${a.body} (${a.range}, ${a.created.slice(0, 10)})`,
+  `${b.body} (${b.range}, ${b.created.slice(0, 10)})`,
+  `> ${result.evidence.quote}`,
+ ].join('\n\n');
 }
 
 /**
@@ -1143,23 +1161,23 @@ function juxtaposition(a: Claim, b: Claim, result: ConfirmResult & { confirmed: 
  * the local one did not.
  */
 function recomputeStatus(
-  ids: string[],
-  deps: WikiJobDeps,
-  graphOf: () => ClaimGraph,
-  log: LogFn,
-  at: string,
-  model: string,
+ ids: string[],
+ deps: WikiJobDeps,
+ graphOf: () => ClaimGraph,
+ log: LogFn,
+ at: string,
+ model: string,
 ): void {
-  // The RUN's resolved stamp, not `deps.model` — re-deriving it here would drop
-  // the `ELICIT_CLERK_MODEL` fallback and stamp a different model than the one
-  // that produced everything else this run wrote (Q-34, Q-48).
-  opsRecomputeStatus(ids, {
-    store: deps.store,
-    registry: deps.registry,
-    graph: graphOf(),
-    model,
-    log,
-  }, at);
+ // The RUN's resolved stamp, not `deps.model` — re-deriving it here would drop
+ // the `ELICIT_CLERK_MODEL` fallback and stamp a different model than the one
+ // that produced everything else this run wrote (Q-34, Q-48).
+ opsRecomputeStatus(ids, {
+  store: deps.store,
+  registry: deps.registry,
+  graph: graphOf(),
+  model,
+  log,
+ }, at);
 }
 
 /**
@@ -1170,5 +1188,5 @@ function recomputeStatus(
  * for it to go missing. The candidate file stays on disk; nothing is deleted.
  */
 function dissolve(deps: WikiJobDeps, candidate: ClashCandidate, outcome: ClashOutcome): void {
-  deps.store.writeCandidate({ ...candidate, status: 'dissolved', outcome });
+ deps.store.writeCandidate({ ...candidate, status: 'dissolved', outcome });
 }

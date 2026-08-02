@@ -392,6 +392,36 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'clash-checked': (f) =>
   `found ${count(num(f, 'pool'), 'pair')} that might contradict${channels(f.channels)}, ` +
   `suppressed ${num(f, 'suppressed')}, reproposed ${num(f, 'reproposed')}`,
+ // Emitted when a Contradiction opens — the most consequential wiki act.
+ // The type is the closed contract term; ids are in refs.
+ 'contradiction-opened': (f) =>
+  `opened ${article(f.type ?? 'synchronic')} ${f.type ?? 'synchronic'} Contradiction`,
+ // A wiki run's counters on one log line — the evidence T16 reads from.
+ 'wiki-run': (f) => {
+  const swept = num(f, 'swept');
+  const applied = num(f, 'applied');
+  const rejected = num(f, 'rejected');
+  const unproc = num(f, 'unprocessed');
+  const over = num(f, 'oversized');
+  const stuck = num(f, 'stuck');
+  const judged = num(f, 'oppositionJudged');
+  const opposed = num(f, 'oppositionOpposed');
+  const minted = num(f, 'remeasuresMinted');
+  const expired = num(f, 'remeasuresExpired');
+  const opened = num(f, 'contradictionsOpened');
+  const dissolved = num(f, 'candidatesDissolved');
+  const aside: string[] = [];
+  if (unproc > 0) aside.push(`${unproc} unprocessed`);
+  if (over > 0) aside.push(`${over} oversized`);
+  if (stuck > 0) aside.push(`${stuck} stuck`);
+  const asideClause = aside.length > 0 ? `; ${aside.join(', ')} set aside` : '';
+  const oppPhrase = opposed === 0 ? 'none opposed' : `${opposed} opposed`;
+  return `swept ${count(swept, 'reading')}, applied ${count(applied, 'edit')}, ` +
+   `rejected ${count(rejected, 'update')}${asideClause}; ` +
+   `judged ${count(judged, 'pair')}, ${oppPhrase}; ` +
+   `minted ${count(minted, 're-measure')}, expired ${count(expired, 're-measure')}; ` +
+   `opened ${count(opened, 'Contradiction')}, dissolved ${count(dissolved, 'candidate')}`;
+ },
  // The live turn path emits this one, as `elicitor` rather than `clerk`. The
  // sentence lands here because `formatEvent` keys on kind alone, so writing it
  // now renders whoever emits it later (S15). A `hits=` field is read when the

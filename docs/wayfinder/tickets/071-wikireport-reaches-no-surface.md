@@ -1,8 +1,8 @@
 ---
 title: "Fix: WikiReport's measurements reach no surface — and T16's RESULTS depends on them"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
 ---
 
@@ -72,3 +72,31 @@ is currently false, and nobody would discover it from a passing test.
 - A run that judges nothing and a run that judges three and opposes none read
   differently.
 - T16's RESULTS can be written from a real run without reading the source.
+
+## Resolution (2026-08-02) — done in one session
+
+Two new Activity Log events. Both render as human sentences; both carry their ids
+in `refs` so the surface stays clean.
+
+**`wiki-run`** — emitted at the end of every `runWikiJobs`, carrying all
+`WikiReport` counters except pool (already on `clash-checked`): swept, applied,
+rejected, unprocessed, oversized, stuck, oppositionJudged, oppositionOpposed,
+remeasuresMinted, remeasuresExpired, contradictionsOpened,
+candidatesDissolved. Zeros render as English; absent is not zero; the sentence
+keeps every number. A zero run reads:
+
+> swept 0 readings, applied 0 edits, rejected 0 updates; judged 0 pairs, none
+> opposed; minted 0 re-measures, expired 0 re-measures; opened 0
+> Contradictions, dissolved 0 candidates
+
+**`contradiction-opened`** — emitted from `jobConfirmation` right after
+`writeContradiction`, carrying the same `at` and `model` as the opened record.
+The type (`synchronic`/`diachronic`) is in the detail; claim and candidate ids
+are in `refs`. Renders as e.g. "opened a synchronic Contradiction".
+
+Q-49's precision record (`oppositionJudged`/`oppositionOpposed`) now accrues on
+the Activity Log where Q-35 can read it. T16's RESULTS can be written from a
+real run without reading the source.
+
+Ticket 059 was already closed as a duplicate of this one (T15 found the pool
+instrumentation exists and is merely never surfaced).

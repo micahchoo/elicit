@@ -250,6 +250,8 @@ type RunTotals = {
   episodeBlindTurns: number;
   chunkErrors: number;
   parseFailures: number;
+  /** Attempts that parsed cleanly and proposed nothing at all. */
+  emptyResults: number;
   retries: number;
   directReads: number;
   partialSpans: number;
@@ -330,19 +332,30 @@ async function readSnippet(
       };
     }
 
-    // Parsed, and nothing survived the harvest gates — the Bud router, most
-    // often. Annotate directly rather than leave a kept snippet unread.
+    // Parsed, and nothing came back — either the Bud router took the only cut,
+    // or the model proposed none. Sampling at temperature 0.1 is not
+    // deterministic, so ask again before concluding the path cannot read this
+    // snippet. Same prompt, same model, same temperature: a retry is not an
+    // exemption, and nothing here changes what is asked.
+    totals.emptyResults++;
+    if (attempt < MAX_ATTEMPTS) { totals.retries++; continue; }
     break;
   }
 
-  try {
-    const direct = await readDirect(complete, snippet, at);
-    if (direct) { totals.directReads++; if (direct.span.trim() !== snippet.prose.trim()) totals.partialSpans++; }
-    return direct;
-  } catch (err) {
-    console.warn(`  direct read failed: ${String(err)}`);
-    return undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const direct = await readDirect(complete, snippet, at);
+      if (direct) {
+        totals.directReads++;
+        if (direct.span.trim() !== snippet.prose.trim()) totals.partialSpans++;
+        return direct;
+      }
+    } catch (err) {
+      console.warn(`  direct read failed on attempt ${attempt}: ${String(err)}`);
+    }
+    if (attempt < MAX_ATTEMPTS) totals.retries++;
   }
+  return undefined;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -477,7 +490,7 @@ async function apply(vault: Vault, limit: number): Promise<void> {
     cutsSeen: 0, fabricationDrops: 0, inadmissibleDrops: 0, fragmentBuds: 0,
     outOfVocabularyLabels: 0, supersessionCorrections: 0, unmarkedIntentions: 0,
     episodeAnchoredTurns: 0, episodeBlindTurns: 0, chunkErrors: 0,
-    parseFailures: 0, retries: 0, directReads: 0, partialSpans: 0,
+    parseFailures: 0, emptyResults: 0, retries: 0, directReads: 0, partialSpans: 0,
   };
 
   const t0 = Date.now();
