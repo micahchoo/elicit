@@ -25,8 +25,8 @@ maintains what *you* wrote, because the act of writing is load-bearing:
 | Persistent errors | Snippet versions are immutable; transcripts are append-only; your edits are protected from the agent |
 | No resolution authority | Only elicitation resolves — the agent may ask, never decide |
 
-And one more, for a tool this personal: **everything runs locally** — a
-llama.cpp/Ollama box on your LAN, no hosted API, ever.
+And one more, for a tool this personal: **every inference runs on your
+hardware** — no hosted API, ever ([ADR-0001](docs/adr/0001-local-models-only.md)).
 
 ## How a sitting works
 
@@ -55,6 +55,14 @@ Sessions build on each other: past snippets return as openers, and when what
 you say today clashes with what you wrote in March, both quotes come back
 side by side as a question.
 
+You can also dictate: press the mic, speak, and the words land as editable
+text. Elicit runs [Parakeet TDT](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8)
+via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) in-process — the
+model is ~600 MB of int8 ONNX, CPU-only, never leaves your machine. The
+transcript appears in the answer field; you ratify or correct it before it
+becomes part of the exchange. If the STT model isn't installed, dictation
+simply isn't available — everything else works the same.
+
 ## Status
 
 Early and moving. The interview loop (slice 1) works end to end against a
@@ -66,31 +74,48 @@ see [Design docs](#design-docs).
 ## Run it
 
 Requirements: Node ≥ 20, and an OpenAI-compatible local model server
-(llama.cpp, Ollama, LM Studio) reachable from this machine.
+(llama.cpp, Ollama, LM Studio) reachable from this machine. For voice
+input, the Parakeet STT model files (see below).
 
 ```bash
 git clone <this-repo> elicit && cd elicit
 npm install
-npm run build
 
 # point it at your model server (defaults shown)
 export ELICIT_LLM_BASE_URL="http://192.168.0.229:8088/v1"
 export ELICIT_LLM_MODEL="bonsai-27b"
 
-ELICIT_LLM=local npx tsx src/server.ts
+npm start
 # open http://127.0.0.1:4517
 ```
 
-For UI development with hot reload:
+On first run, Elicit shows a setup page — set a password there from the host
+machine. The password is scrypt-hashed and written to `vault/.auth.json`
+(mode 0600). There is no `ELICIT_PASSWORD` environment variable.
+
+To make Elicit reachable from your phone or another machine on the LAN:
 
 ```bash
-npm run dev:server    # tsx watch — restarts on src changes
-npm run dev:web       # vite dev server with HMR at :5173, /api proxied
+ELICIT_HOST=0.0.0.0 npm start
+# open http://<host-ip>:4517 — lands on the login page
 ```
 
-> [!NOTE]
-> A server restart drops the in-memory session, but every turn you completed
-> is already on disk — transcripts are append-only.
+Setup is always gated to loopback: LAN visitors see a "finish setup from the
+host machine" page until the password exists.
+
+### Voice model
+
+Dictation needs the Parakeet TDT int8 ONNX model files from HuggingFace:
+
+```bash
+# install the model into the cache directory Elicit checks by default:
+huggingface-cli download csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
+  --local-dir ~/.omp/agent/cache/tiny-models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+```
+
+Or set `ELICIT_STT_MODEL_DIR` to any directory containing `encoder.int8.onnx`,
+`decoder.int8.onnx`, `joiner.int8.onnx`, and `tokens.txt`. If the model isn't
+found, voice input is disabled — no error, no crash.
 
 ## Configuration
 
@@ -100,6 +125,9 @@ npm run dev:web       # vite dev server with HMR at :5173, /api proxied
 | `ELICIT_LLM_BASE_URL` | `http://192.168.0.229:8088/v1` | OpenAI-compatible chat endpoint |
 | `ELICIT_LLM_MODEL` | `bonsai-27b` | Model id at that endpoint |
 | `ELICIT_VAULT_ROOT` | `./vault` | Where your corpus lives — plain markdown, portable, yours |
+| `ELICIT_HOST` | `127.0.0.1` | Bind address; set to `0.0.0.0` for LAN access |
+| `ELICIT_PORT` | `4517` | Port the server listens on |
+| `ELICIT_STT_MODEL_DIR` | _auto-detected_ | Directory with Parakeet ONNX model files for voice input |
 
 The question bank lives in `data/question-bank.jsonl` — curated opener
 questions with provenance (mine are harvested from are.na channels via
@@ -118,10 +146,27 @@ vault/
   wiki/readings/<id>.md   agent readings, citing snippet@version
   buds/<id>.md            fragments not yet standalone, with their questions
   queue/<id>.md           pending questions (slice 2)
+  .auth.json              scrypt password hash, 0600
 ```
 
 If Elicit disappears tomorrow, your corpus opens in any editor. That is a
 design requirement, not an accident.
+
+## Interface philosophy
+
+Every surface is a page of text. Controls exist only at the point of
+attention, in the margin, on focus. The home surface is a dated page that
+*says* what waits in sentences, not a dashboard of lists. Mode declaration is
+a typed sentence ("10 quiet minutes, about myself"), not three dropdowns.
+The Q&A screen is indistinguishable from a quiet writing app that happens to
+ask questions. Harvest is re-reading your own words as continuous prose with
+proposed cuts pre-underlined — keep by touching a span, trim by dragging its
+edge. The wiki reads as a long essay in two inks: agent claims in light,
+your quoted words in dark serif. There are no button rows, no status chips,
+no alert boxes — typography carries the hierarchy, and color is reserved for
+marginalia and contradiction flags. See
+[`docs/interface-references.md`](docs/interface-references.md) for the full
+lineage and the document rule that encodes this stance.
 
 ## Design docs
 
@@ -145,7 +190,8 @@ research is checked in:
 
 ```bash
 npm test              # vitest — the invariants live here
-npx tsc --noEmit      # strict, exactOptionalPropertyTypes on
+npm start             # local model, production build
+npm run dev           # fake LLM, tsx watch (UI dev, no model required)
 ```
 
 The tests are the contract: verbatim-substring enforcement, immutable
