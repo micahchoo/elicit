@@ -33,6 +33,12 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Fix: probe freedom — loosen generation, tighten validation](tickets/031-probe-freedom.md) —
+  repertoire prompt + code guards (no-repeat, no conversation-refs);
+  real-model verified: four distinct frames, zero echoes.
+- [Fix: wire the Cover memory layer](tickets/030-wire-cover.md) —
+  ADR-0002 layer 3 live: content-bearing consolidation summaries,
+  model-stamped (Q-34), failure-isolated.
 - [Grill: the Clerk slice — claim pipeline and contradiction detection](tickets/006-grill-clerk.md) —
   eight decisions locked as Q-28…Q-35: immediate minting, the six-op write
   contract with mechanical Status, the re-measure-gated contradiction

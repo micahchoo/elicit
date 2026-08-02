@@ -1,8 +1,19 @@
 ---
 title: "Fix: probe freedom — loosen generation, tighten validation"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude
+resolution: >
+  Landed at bdb7f6b. The omp agent died (exit 144) after the work but
+  before commit; reviewed and verified personally, then committed. Prompt
+  rewritten as repertoire (7 ways in, quoting optional, no quotable
+  examples); conversation-referential ban (prompt + code guard with
+  guarded retry then fallback draw); in-session near-duplicate guard;
+  renderMode clear() fixes screen stacking. Real-model acceptance run
+  personally: 4 probes, 4 distinct frames, no repeats/echoes/
+  conversation-refs. 236 tests, tsc 0, build clean. NOTE: CDM +
+  laddered-grid prompts already existed in protocol.ts — ticket 028's gap
+  is the protocol REGISTRY + selection + yield tracking, not the prompts.
 blocked_by: []
 ---
 

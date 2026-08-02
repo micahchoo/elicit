@@ -1,8 +1,16 @@
 ---
 title: "Fix: wire the Cover memory layer — ADR-0002's third layer is dormant"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: claude
+resolution: >
+  Wired at ec511ca (worked personally, not via omp): server injects
+  nextConsolidation/saveSummary/loadSummaries + a new readTranscript helper
+  and modelName (Q-34 stamp) at both runDocket call sites. The consolidation
+  prompt now carries actual transcript content (capped 4k/transcript, 12k
+  total) instead of the contentless stub, output tolerated as non-string,
+  the job is try/catch-isolated with consolidated / consolidation-failed
+  log events. 2 new tests; 236 total green.
 blocked_by: []
 ---
 

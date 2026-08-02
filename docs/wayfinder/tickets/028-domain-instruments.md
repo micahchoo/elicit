@@ -10,9 +10,11 @@ blocked_by: [002-slice2-results]
 
 Q-19 makes Domain instruments first-class ("the product is workshop and
 mirror") and CONTEXT.md's Protocol term says Protocols are DATA, not an
-enum — but the code has exactly one protocol (a reflective-interview
-prompt) and `target: domain` only changes the probe's framing. The workshop
-half has no tools. Audit gap found 2026-08-01.
+enum. CORRECTION (2026-08-01, found while closing 031): CDM and
+laddered-grid PROMPTS already exist in `src/elicitor/protocol.ts` — the
+actual gap is narrower: no protocol registry-as-data, no concept-sorting
+instrument, no per-protocol selection, no yield tracking. Audit gap found
+2026-08-01, scope corrected same day.
 
 Build: a protocol registry (markdown data per Q-3: prerequisites, technique
 script, presentation notes), the three domain instruments (Critical

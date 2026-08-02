@@ -2,7 +2,7 @@
 title: "Build: unprompted entry and the defer verb"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude
 blocked_by: []
 ---
 
