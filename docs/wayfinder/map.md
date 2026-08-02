@@ -33,6 +33,11 @@ unassigned, all blockers closed.
 
 ## Decisions so far
 
+- [Grill: the Clerk slice — claim pipeline and contradiction detection](tickets/006-grill-clerk.md) —
+  eight decisions locked as Q-28…Q-35: immediate minting, the six-op write
+  contract with mechanical Status, the re-measure-gated contradiction
+  pipeline, add-only lint, three-tier identity registry, six editing verbs,
+  model stamps with lazy re-annotation, shadow-first calibration.
 - [Voice input: in-process Parakeet STT for sittings](tickets/018-voice-input.md) —
   shipped: sherpa-onnx child process (omp's stack, omp's model cache) +
   mic → auth-gated /api/transcribe → editable textarea; ratify-by-editing
