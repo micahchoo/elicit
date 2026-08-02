@@ -8,6 +8,7 @@ import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
+import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, type HarvestDiagnostics } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
@@ -323,15 +324,26 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     return next();
   });
 
-  // POST /api/session {mode} → {sessionId, question}
+  // GET /api/target-suggestion → {target, recent, declaredRequired}
+  // What the Mode screen should pre-fill when the user has not chosen. The
+  // Target still has to be declared (Q-19); this only stops the pre-fill from
+  // pointing inward every time.
+  app.get('/api/target-suggestion', (c) => {
+    const { target, recent } = suggestTargetForVault(deps.vaultRoot);
+    return c.json({ target, recent, declaredRequired: true });
+  });
+
+  // POST /api/session {mode} → {sessionId, question, target}
   app.post('/api/session', async (c) => {
     const body = await c.req.json<{ mode: Mode }>();
     const mode = body.mode;
     if (!mode || typeof mode.minutes !== 'number' || !mode.energy) {
       return c.json({ error: 'invalid mode' }, 400);
     }
-    // Normalize absent target to 'self'
-    const target: Target = mode.target ?? 'self';
+    // Absent target: fall back to what the corpus asks for, not inward by
+    // reflex (Q-19, ticket 042). An explicit target always wins.
+    const suggestion = suggestTargetForVault(deps.vaultRoot);
+    const target: Target = mode.target ?? suggestion.target;
     const normalized: Mode = { ...mode, target };
 
     // Protocol selection: load defs, count prior sessions, rotate deterministically
@@ -349,9 +361,9 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     sessions.set(state.id, state);
     const opener = state.turns[0]!;
 
-    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} protocol=${selectedProtocol.name}`);
+    serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name}`);
 
-    return c.json({ sessionId: state.id, question: opener.text });
+    return c.json({ sessionId: state.id, question: opener.text, target });
   });
 
   // POST /api/session/:id/turn {text} → probe | saturated

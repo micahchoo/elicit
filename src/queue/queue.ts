@@ -2,7 +2,17 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ulid } from 'ulid';
 import matter from 'gray-matter';
-import type { QueueStore, QueueEntry, QueueDraft, Mode } from '../types.js';
+import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.js';
+import { appendEvent } from '../log/activity.js';
+import {
+  applyFacetBalance,
+  facetBalanceIsLive,
+  formatDistribution,
+  readVaultFacetDistribution,
+  sessionBlueprint,
+  underRepresented,
+  type FacetDistribution,
+} from './facet-balance.js';
 
 export function createQueueStore(root: string): QueueStore {
   return new QueueStoreImpl(root);
@@ -13,6 +23,15 @@ const ENERGY_LEVEL: Record<NonNullable<Mode['energy']>, number> = {
   medium: 1,
   high: 2,
 };
+
+/** How far ahead the shadow blueprint plans. Only its first slot is ever asked. */
+const SESSION_BLUEPRINT_SLOTS = 6;
+
+/** Constraints are done; chance takes the last step (Q-13). */
+function pickTopK(pool: QueueEntry[], k = 3): QueueEntry {
+  const top = pool.slice(0, k);
+  return top[Math.floor(Math.random() * top.length)]!;
+}
 
 class QueueStoreImpl implements QueueStore {
   #root: string;
@@ -54,6 +73,9 @@ class QueueStoreImpl implements QueueStore {
       ...(data.quotedFragment
         ? { quotedFragment: data.quotedFragment as NonNullable<QueueEntry['quotedFragment']> }
         : {}),
+      ...(data.targetFacet
+        ? { targetFacet: data.targetFacet as NonNullable<QueueEntry['targetFacet']> }
+        : {}),
       ...(data.modeNeeds
         ? { modeNeeds: data.modeNeeds as NonNullable<QueueEntry['modeNeeds']> }
         : {}),
@@ -79,6 +101,7 @@ class QueueStoreImpl implements QueueStore {
     };
     if (entry.cites) fm.cites = entry.cites;
     if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;
+    if (entry.targetFacet) fm.targetFacet = entry.targetFacet;
     if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
     if (entry.direction) fm.direction = entry.direction;
     const content = matter.stringify('', fm);
@@ -162,17 +185,79 @@ class QueueStoreImpl implements QueueStore {
       return b.created.localeCompare(a.created);
     });
 
-    // Step 6: top-k (k=3)
-    const pool = candidates.slice(0, 3);
+    // Step 6: facet balance — a hard filter on the pool, applied BEFORE the
+    // top-k pick so chance runs inside the constraint (Q-13), and running in
+    // shadow until its log earns it the right to act (Q-35).
+    const dist = readVaultFacetDistribution(this.#root);
+    const wanted = underRepresented(dist);
+    const balanced = applyFacetBalance(candidates, wanted);
+    const live = facetBalanceIsLive(process.env);
 
-    // Step 7: uniform random pick
-    const idx = Math.floor(Math.random() * pool.length);
-    const picked = pool[idx]!;
+    // Step 7: top-k (k=3), uniform random pick — once for the open pool, once
+    // for the balanced pool, so the shadow log can name the road not taken.
+    const openPick = pickTopK(candidates);
+    const balancedPick = balanced.applied ? pickTopK(balanced.kept) : null;
+    const picked = live && balancedPick ? balancedPick : openPick;
+
+    this.#logFacetBalance({
+      live,
+      dist,
+      wanted,
+      poolSize: candidates.length,
+      keptSize: balanced.applied ? balanced.kept.length : candidates.length,
+      applied: balanced.applied,
+      openPick,
+      balancedPick,
+    });
 
     // Step 8: markAsked immediately
     this.markAsked(picked.id);
 
     return picked;
+  }
+
+  /**
+   * One line per draw, whether or not the filter bit. The shadow record is
+   * free evidence (Q-23) and the only thing that can graduate the filter.
+   */
+  #logFacetBalance(o: {
+    live: boolean;
+    dist: FacetDistribution;
+    wanted: Set<Facet>;
+    poolSize: number;
+    keptSize: number;
+    applied: boolean;
+    openPick: QueueEntry;
+    balancedPick: QueueEntry | null;
+  }): void {
+    const plan = sessionBlueprint(o.dist, SESSION_BLUEPRINT_SLOTS);
+    const diverged = o.balancedPick !== null && o.balancedPick.id !== o.openPick.id;
+    const detail = [
+      `mode=${o.live ? 'live' : 'shadow'}`,
+      `dist=${formatDistribution(o.dist)}`,
+      `under=${[...o.wanted].join(',') || 'none'}`,
+      `plan=${plan.join(',')}`,
+      `pool=${o.poolSize}`,
+      `kept=${o.keptSize}`,
+      `applied=${o.applied}`,
+      `would=${o.balancedPick?.id ?? 'none'}`,
+      `wouldFacet=${o.balancedPick?.targetFacet ?? 'none'}`,
+      `open=${o.openPick.id}`,
+      `openFacet=${o.openPick.targetFacet ?? 'none'}`,
+      `diverged=${diverged}`,
+    ].join(' ');
+
+    try {
+      appendEvent(this.#root, {
+        at: new Date().toISOString(),
+        actor: 'elicitor',
+        kind: o.live ? 'facet-balance-applied' : 'facet-balance-shadow',
+        detail,
+        refs: o.balancedPick ? [o.openPick.id, o.balancedPick.id] : [o.openPick.id],
+      });
+    } catch {
+      // The log is evidence, not a dependency — a draw never fails on it.
+    }
   }
 
   markAsked(id: string): void {

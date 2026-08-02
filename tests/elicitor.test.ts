@@ -181,6 +181,97 @@ describe('elicitor', () => {
   }
  });
 
+ // ── facet intent on questions (ticket 042) ──
+
+ test('a composed follow-up carries the facet its Red Light asks for', async () => {
+  const vault = makeFakeVault();
+  // Long enough to escape the content-free pivot, which would draw instead.
+  const answer = 'Routines are the only thing that hold my life together, mostly.';
+  const complete = makeScriptedComplete([
+   JSON.stringify({
+    lights: [{ kind: 'abstraction-no-episode', phrase: 'hold my life together' }],
+   }),
+   'You said routines "hold my life together" — what did that look like this week?',
+  ]);
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx },
+  );
+
+  const result = await userTurn(session, answer);
+
+  expect(result.kind).toBe('probe');
+  if (result.kind === 'probe') {
+   expect(result.provenance).toBe('composed');
+   // An abstraction with no episode under it wants the episode.
+   expect(result.targetFacet).toBe('episode');
+  }
+ });
+
+ test('a generic probe claims no facet rather than guessing one', async () => {
+  const vault = makeFakeVault();
+  const complete = makeScriptedComplete(turnResponses(['What makes you say that?']));
+  const q = makeFakeQueue();
+  const idx = makeFakeIndex();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   { complete, vault, queue: q, index: idx },
+  );
+
+  const result = await userTurn(session, 'I think routines matter.');
+  if (result.kind === 'probe') {
+   expect(result.targetFacet).toBeUndefined();
+  }
+ });
+
+ // ── target no longer defaults inward by reflex (Q-19, ticket 042) ──
+
+ test('an absent target falls back to the caller default, not to self', () => {
+  const vault = makeFakeVault();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   {
+    complete: makeScriptedComplete([]),
+    vault,
+    queue: makeFakeQueue(),
+    index: makeFakeIndex(),
+    defaultTarget: 'domain',
+   },
+  );
+  expect(session.mode.target).toBe('domain');
+ });
+
+ test('a declared target outranks the caller default', () => {
+  const vault = makeFakeVault();
+  const session = startSession(
+   { minutes: 30, energy: 'medium', target: 'self' },
+   {
+    complete: makeScriptedComplete([]),
+    vault,
+    queue: makeFakeQueue(),
+    index: makeFakeIndex(),
+    defaultTarget: 'domain',
+   },
+  );
+  expect(session.mode.target).toBe('self');
+ });
+
+ test('an absent target still starts a session when no default is given', () => {
+  const vault = makeFakeVault();
+  const session = startSession(
+   { minutes: 30, energy: 'medium' },
+   {
+    complete: makeScriptedComplete([]),
+    vault,
+    queue: makeFakeQueue(),
+    index: makeFakeIndex(),
+   },
+  );
+  expect(session.mode.target).toBe('self');
+ });
+
  test('transcript receives all turns in order via vault', async () => {
   const vault = makeFakeVault();
   // 2 userTurns → 4 complete calls

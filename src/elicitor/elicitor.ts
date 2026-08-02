@@ -1,6 +1,7 @@
 import { ulid } from 'ulid';
 import type {
  Complete,
+ Facet,
  Mode,
  QuestionForm,
  QuestionProvenance,
@@ -25,6 +26,7 @@ import { isContentFree } from './answer-shape.js';
 import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
 import { checkQuestion, type GuardVerdict } from './guards.js';
+import { facetIntentForRedLight } from './facet-intent.js';
 
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
@@ -59,11 +61,18 @@ export function startSession(
   index: LexicalIndex;
   bank?: StarterQuestion[];
   protocolName?: string;
+  /**
+   * Target to use when the Mode declares none. The caller supplies it because
+   * the honest default is corpus-shaped (`suggestTargetForVault`) and the
+   * elicitor holds no vault path. 'self' remains the last resort so an absent
+   * target never crashes a caller (Q-19, ticket 042).
+   */
+  defaultTarget?: Target;
  },
 ): SessionState {
  const id = ulid();
  const started = new Date().toISOString();
- const target: Target = mode.target ?? 'self';
+ const target: Target = mode.target ?? deps.defaultTarget ?? 'self';
  const normalizedMode: Mode = { ...mode, target };
  const bank = deps.bank ?? loadQuestionBank();
 
@@ -123,6 +132,12 @@ export interface Probe {
  text: string;
  questionForm: QuestionForm;
  provenance: QuestionProvenance;
+ /**
+  * The Facet this question asks for, when the source knows it: a queue entry
+  * tagged at curation, or a follow-up whose Red Light names what is missing.
+  * Absent means unknown — never guessed (ticket 042).
+  */
+ targetFacet?: Facet;
 }
 
 /**
@@ -136,19 +151,25 @@ function emitProbe(
  text: string,
  questionForm: QuestionForm,
  provenance: QuestionProvenance,
- source?: QuestionSource,
+ opts?: { source?: QuestionSource; targetFacet?: Facet },
 ): Probe {
  const agentTurn: Turn = {
   role: 'agent',
   text,
   at: new Date().toISOString(),
   questionForm,
-  ...(source ? { questionSource: source } : {}),
+  ...(opts?.source ? { questionSource: opts.source } : {}),
  };
  s.deps.vault.appendTurn(s.id, agentTurn);
  s.turns.push(agentTurn);
  s.questionCount++;
- return { kind: 'probe', text, questionForm, provenance };
+ return {
+  kind: 'probe',
+  text,
+  questionForm,
+  provenance,
+  ...(opts?.targetFacet ? { targetFacet: opts.targetFacet } : {}),
+ };
 }
 
 /** Enter the close sequence and ask the door question. */
@@ -269,7 +290,11 @@ export async function userTurn(
    );
    continue;
   }
-  return emitProbe(s, followUp, 'deliberative', 'composed');
+  // The Red Light names what the utterance is missing, so it names the Facet
+  // the follow-up asks for — the one place composition knows its own intent.
+  return emitProbe(s, followUp, 'deliberative', 'composed', {
+   targetFacet: facetIntentForRedLight(light.kind),
+  });
  }
 
  // Priority 3: generic LLM probe (protocol from registry)
@@ -322,7 +347,9 @@ function drawFallback(s: SessionState): Probe | null {
  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
  if (queueDraw) {
   s.deps.queue.markAsked(queueDraw.id);
-  return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank');
+  return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank', {
+   ...(queueDraw.targetFacet ? { targetFacet: queueDraw.targetFacet } : {}),
+  });
  }
 
  // Bank fallback
@@ -331,7 +358,9 @@ function drawFallback(s: SessionState): Probe | null {
  );
  if (unused.length > 0) {
   const pick = unused[Math.floor(Math.random() * unused.length)]!;
-  return emitProbe(s, pick.text, pick.questionForm, 'bank', pick.source);
+  return emitProbe(s, pick.text, pick.questionForm, 'bank', {
+   ...(pick.source ? { source: pick.source } : {}),
+  });
  }
 
  return null;

@@ -28,6 +28,23 @@ export type QuestionSource = {
 };
 export type QuestionProvenance = 'bank' | 'composed' | 'juxtaposition' | 'probe' | 'close' | 'skip';
 
+/**
+ * One curated Randomizer deck entry. `targetFacet` is the question's INTENT —
+ * what kind of person-knowledge it asks for — assigned at curation time so the
+ * facet-balance filter has something to filter on (ticket 042).
+ */
+export type DeckEntry = {
+  question: string;
+  channel: string;
+  channelTitle?: string;
+  blockId: number;
+  /** Deck file the entry belongs to, e.g. 'episodes'. */
+  deck: string;
+  targetFacet: Facet;
+  /** Curation provenance: which script or person selected this entry. */
+  curatedBy: string;
+};
+
 export type Target = 'self' | 'domain';
 
 export type Mode = {
@@ -143,6 +160,12 @@ export type QueueEntry = {
   questionForm: QuestionForm;
   cites?: string[];
   quotedFragment?: string;
+  /**
+   * The Facet this question asks for. Optional: an entry whose intent is
+   * unknown carries no facet claim rather than a guessed one, and the
+   * balance filter treats it as unknown, never as construct.
+   */
+  targetFacet?: Facet;
   modeNeeds?: { minMinutes?: number; energy?: 'low' | 'medium' | 'high' };
   sharpness: 'weak' | 'sharp';
   direction?: string;

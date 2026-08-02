@@ -450,4 +450,115 @@ describe('QueueStore', () => {
     expect(reloaded.modeNeeds).toEqual({ minMinutes: 10, energy: 'medium' });
     expect(reloaded.direction).toBe('forward');
   });
+
+  it('targetFacet roundtrips through the store', () => {
+    store.add(makeDraft({ targetFacet: 'episode' }));
+    const reloaded = createQueueStore(root).list()[0]!;
+    expect(reloaded.targetFacet).toBe('episode');
+  });
+
+  // ── facet balance: shadow first (Q-35), hard filter before the pick (Q-13) ──
+
+  describe('facet balance', () => {
+    /** Give the vault a lopsided corpus: 25 construct readings, nothing else. */
+    function writeConstructHeavyVault(): void {
+      const dir = join(root, 'wiki', 'readings');
+      mkdirSync(dir, { recursive: true });
+      for (let i = 0; i < 25; i++) {
+        writeFileSync(
+          join(dir, `r${i}.md`),
+          '---\nfacet: construct\nstance: avowal\ncites: []\n---\nA reading.\n',
+        );
+      }
+    }
+
+    /**
+     * Oldest first, so recency ordering is fixed: the three constructs fill
+     * the top-3 pool and the episode sits just outside it.
+     */
+    function seedQueue(): { episodeId: string; newestConstructId: string } {
+      vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+      const episode = store.add(makeDraft({ question: 'E', targetFacet: 'episode' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+      store.add(makeDraft({ question: 'C1', targetFacet: 'construct' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+      store.add(makeDraft({ question: 'C2', targetFacet: 'construct' }));
+      vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
+      const newest = store.add(makeDraft({ question: 'C3', targetFacet: 'construct' }));
+      vi.useRealTimers();
+      return { episodeId: episode.id, newestConstructId: newest.id };
+    }
+
+    function readLog(): string[] {
+      const dir = join(root, 'log');
+      return readdirSync(dir).flatMap((f) =>
+        readFileSync(join(dir, f), 'utf-8').split('\n').filter((l) => l.trim()),
+      );
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    it('shadow mode logs the road not taken and changes nothing', () => {
+      writeConstructHeavyVault();
+      const { episodeId, newestConstructId } = seedQueue();
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const picked = store.draw(makeMode(), 'opening');
+
+      // Behaviour is untouched: the top-3 pool is still the three constructs.
+      expect(picked!.id).toBe(newestConstructId);
+      expect(picked!.targetFacet).toBe('construct');
+
+      const events = readLog().map((l) => JSON.parse(l) as { kind: string; detail: string });
+      const shadow = events.find((e) => e.kind === 'facet-balance-shadow');
+      expect(shadow).toBeDefined();
+      expect(shadow!.detail).toContain('mode=shadow');
+      expect(shadow!.detail).toContain('dist=construct:25');
+      expect(shadow!.detail).toContain(`would=${episodeId}`);
+      expect(shadow!.detail).toContain('wouldFacet=episode');
+      expect(shadow!.detail).toContain(`open=${newestConstructId}`);
+      expect(shadow!.detail).toContain('diverged=true');
+    });
+
+    it('live mode applies the filter before the pick', () => {
+      vi.stubEnv('ELICIT_FACET_BALANCE', 'live');
+      writeConstructHeavyVault();
+      const { episodeId } = seedQueue();
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const picked = store.draw(makeMode(), 'opening');
+
+      // The episode is last by recency and would never reach the top-3 pool;
+      // the filter removes the over-represented constructs first.
+      expect(picked!.id).toBe(episodeId);
+      const events = readLog().map((l) => JSON.parse(l) as { kind: string; detail: string });
+      expect(events.some((e) => e.kind === 'facet-balance-applied')).toBe(true);
+    });
+
+    it('never starves the draw: untagged entries still get asked', () => {
+      vi.stubEnv('ELICIT_FACET_BALANCE', 'live');
+      writeConstructHeavyVault();
+      store.add(makeDraft({ question: 'untagged' }));
+
+      const picked = store.draw(makeMode(), 'opening');
+
+      expect(picked).not.toBeNull();
+      expect(picked!.question).toBe('untagged');
+      const events = readLog().map((l) => JSON.parse(l) as { detail: string });
+      expect(events.some((e) => e.detail.includes('applied=false'))).toBe(true);
+    });
+
+    it('logs the distribution even when the filter has nothing to say', () => {
+      store.add(makeDraft({ question: 'only one' }));
+      expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+      const events = readLog().map((l) => JSON.parse(l) as { kind: string; detail: string });
+      const shadow = events.find((e) => e.kind === 'facet-balance-shadow');
+      expect(shadow!.detail).toContain('dist=empty');
+      expect(shadow!.detail).toContain('applied=false');
+    });
+  });
 });
