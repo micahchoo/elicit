@@ -118,11 +118,18 @@ independent cites → evidenced; Propagation → user-attested; open Contradicti
 → contested), never model-written (Q-29). No confidence numbers anywhere;
 coreness is computed from the citation graph and never stored (Q-21).
 
-**"Independent" is undefined and that is load-bearing** (ticket 051, blocking
-the Clerk). If it means two distinct snippet ids, two cuts from one answer on
-one thread promote a claim, every claim reaches `evidenced` inside a month, and
-the vocabulary stops carrying information. The likely rule: separation across
-sittings, and ideally across question source or Facet.
+**"Independent" means CROSS-SITTING** — Q-50, ruled 2026-08-02, ticket 051
+closed. Two versions of one snippet are one piece of evidence (Q-5); two
+distinct snippets from the SAME sitting are also one piece of evidence, one
+thought said twice. Resolved mechanically through `Provenance.session`, never
+model-judged. Cites additionally separated by Facet or question source are the
+stronger tier and are recorded in `why`, though nothing acts on that yet.
+
+The plan had guessed the weaker rule (distinct snippet ids) and its own open
+question named the cost: a single rich sitting then cannot produce an evidenced
+claim. That is the intended behaviour. **The corpus today is mostly one long
+sitting, so the first Clerk runs will show a wall of `unconfirmed` — that is
+the vocabulary working, not failing. Do not "fix" it by loosening the rule.**
 
 ## What the essay pipeline actually outputs
 
