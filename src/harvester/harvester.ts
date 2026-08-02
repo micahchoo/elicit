@@ -1,4 +1,4 @@
-import type { Complete, Turn, CutProposal, Bud, HarvestDecision, Vault, Snippet, Provenance, Facet, Stance } from '../types.js';
+import type { Complete, Turn, CutProposal, Bud, HarvestDecision, CaptureChannel, Vault, Snippet, Provenance, Facet, Stance } from '../types.js';
 import type { ResponseFormat } from '../llm.js';
 import { admissible, normalize, startsMidSentence } from './admissibility.js';
 
@@ -620,13 +620,20 @@ export function decide(
  decisions: HarvestDecision[],
  vault: Vault,
  /** Origin of the kept material. 'unprompted' when no question elicited it. */
- origin: 'harvest' | 'unprompted' = 'harvest'
+ origin: 'harvest' | 'unprompted' = 'harvest',
+ /**
+  * Resolves the capture channel of a proposal's source turn (ticket 048).
+  * An absent reader — or a reader returning undefined — means the Snippet
+  * carries no channel.
+  */
+ channelOf?: (proposal: CutProposal) => CaptureChannel | undefined
 ): { snippets: Snippet[]; buds: Bud[] } {
  const snippets: Snippet[] = [];
 
  for (const decision of decisions) {
   const proposal = proposals[decision.proposal];
   if (!proposal) { console.warn(`Harvester decide: proposal index ${decision.proposal} out of range (have ${proposals.length})`); continue; }
+  const channel = channelOf?.(proposal);
   const provenance: Provenance = {
    kind: origin,
    session,
@@ -634,6 +641,7 @@ export function decide(
    questionForm: proposal.questionForm,
    ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
    ...(proposal.context !== undefined ? { context: proposal.context } : {}),
+   ...(channel !== undefined ? { channel } : {}),
   };
 
   switch (decision.action) {
@@ -674,6 +682,7 @@ export function decide(
      question: proposal.question,
      questionForm: proposal.questionForm,
      ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
+     ...(decision.channel !== undefined ? { channel: decision.channel } : {}),
     };
     // Restatement is a NEW snippet — no reading created
     const snippet = vault.saveSnippet(decision.text, restateProvenance);

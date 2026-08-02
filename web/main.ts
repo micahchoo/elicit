@@ -1,4 +1,5 @@
 import type {
+ CaptureChannel,
  CutProposal,
  HarvestDecision,
  Mode,
@@ -98,6 +99,29 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 function $<T extends HTMLElement>(sel: string): T {
  return document.querySelector(sel) as T;
+}
+
+/* Ticket 048: per-box paste accounting for capture-channel detection.
+ * A paste event adds the clipboard length to a running counter; an input
+ * event resets it when the box empties, so it only ever counts pasted
+ * characters still present. The capture is 'pasted' iff pasted characters
+ * are a strict majority of the submitted text. */
+function pasteTracker(textarea: HTMLTextAreaElement) {
+ let pastedChars = 0;
+ textarea.addEventListener('paste', (e: ClipboardEvent) => {
+  pastedChars += (e.clipboardData?.getData('text') ?? '').length;
+ });
+ textarea.addEventListener('input', () => {
+  if (textarea.value.length === 0) pastedChars = 0;
+ });
+ return {
+  isPasted(text: string): boolean {
+   return pastedChars * 2 > text.length;
+  },
+  reset(): void {
+   pastedChars = 0;
+  },
+ };
 }
 
 /* ─── State ─── */
@@ -528,6 +552,7 @@ function renderUnprompted() {
   class: 'blank-page',
   rows: '1',
  }) as HTMLTextAreaElement;
+ const pageTracker = pasteTracker(page);
 
  const doneBtn = el('button', { class: 'harvest-now' }, 'done');
  const errorSlot = el('div', { class: 'error-slot' });
@@ -541,6 +566,8 @@ function renderUnprompted() {
  doneBtn.addEventListener('click', async () => {
   const text = page.value.trim();
   if (!text) return;
+  const pasted = pageTracker.isPasted(text);
+  pageTracker.reset();
   doneBtn.disabled = true;
   page.disabled = true;
   errorSlot.innerHTML = '';
@@ -548,7 +575,7 @@ function renderUnprompted() {
   try {
    const res = await api<{ sessionId: string; proposals: CutProposal[] }>(
     '/api/unprompted',
-    { text },
+    { text, channel: pasted ? 'pasted' : 'typed' },
    );
    state.sessionId = res.sessionId;
    state.proposals = res.proposals;
@@ -695,6 +722,7 @@ function renderExchange() {
   placeholder: '\u2026',
   rows: '2',
  });
+ const turnTracker = pasteTracker(textarea);
  const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
  const micStatus = el('span', { class: 'mic-status' });
  const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
@@ -733,6 +761,8 @@ function renderExchange() {
  async function sendTurn() {
   const text = textarea.value.trim();
   if (!text) return;
+  const pasted = turnTracker.isPasted(text);
+  turnTracker.reset();
   textarea.disabled = true;
   harvestBtn.disabled = true;
   skipBtn.disabled = true;
@@ -746,7 +776,10 @@ function renderExchange() {
   textarea.value = '';
   textarea.style.height = 'auto';
 
-  const body: Record<string, unknown> = { text };
+  const body: Record<string, unknown> = {
+   text,
+   channel: pasted ? 'pasted' : state.turnHadSpeech ? 'spoken' : 'typed',
+  };
   if (state.turnHadSpeech) body.spoken = true;
 
   const wait = beginWait(answerArea, 'thinking…');
@@ -1127,10 +1160,11 @@ function renderProposal(idx: number, container: HTMLElement) {
   editorActive = false;
  }
 
- function setDecision(action: HarvestDecision['action'], text?: string) {
+ function setDecision(action: HarvestDecision['action'], text?: string, channel?: CaptureChannel) {
   state.decisions = state.decisions.filter((d) => d.proposal !== idx);
   const d: HarvestDecision = { proposal: idx, action };
   if (text !== undefined) d.text = text;
+  if (channel !== undefined) d.channel = channel;
   state.decisions.push(d);
   const all = [approveBtn, trimBtn, discardBtn, restateBtn];
   for (const b of all) b.style.opacity = '0.4';
@@ -1203,6 +1237,7 @@ function renderProposal(idx: number, container: HTMLElement) {
    class: 'restate-editor',
    placeholder: 'say it in your own words\u2026',
   }) as HTMLTextAreaElement;
+  const editorTracker = pasteTracker(editorEl);
   confirmEl = el(
    'button',
    { class: 'confirm-restate' },
@@ -1213,7 +1248,7 @@ function renderProposal(idx: number, container: HTMLElement) {
   confirmEl.addEventListener('click', () => {
    const v = editorEl!.value.trim();
    if (!v) return;
-   setDecision('restate', v);
+   setDecision('restate', v, editorTracker.isPasted(v) ? 'pasted' : 'typed');
    clearEditor();
   });
  });

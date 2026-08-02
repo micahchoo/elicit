@@ -20,6 +20,14 @@ Standing preferences for every session working this map:
   orchestrated per executing-plans; plans get reviewer rounds before dispatch.
 - All inference local: chat `192.168.0.229:11434/v1` (qwen3.6:35b), embeddings
   `192.168.0.229:11434/v1` (qwen3-embedding / nomic). Never a hosted API.
+- Harness-testing runs go FAST (Micah, 2026-08-02): any ticket that tests the
+  harness itself — plumbing acceptance, end-to-end smoke, drain mechanics —
+  runs bonsai-27b (`192.168.0.229:8088/v1`) as BOTH elicitor and clerk
+  (`ELICIT_CLERK_BASE_URL=http://192.168.0.229:8088/v1
+  ELICIT_CLERK_MODEL=bonsai-27b`). Exception, by construction: a measurement
+  ABOUT the clerk model (op-contract rate, parse-rate ratchet, RESULTS runs)
+  keeps qwen3.6:35b — the number names the model it measures, and a bonsai
+  number does not transfer.
 - Markdown is truth; invariants are enforced in code and tests, not prompts.
 - Skills: /grilling + /domain-modeling for design tickets; /writing-plans +
   /executing-plans for build tickets; /research for research tickets.

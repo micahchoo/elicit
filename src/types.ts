@@ -131,12 +131,23 @@ export type CutProposal = {
  context?: string;
 };
 
+/** How the words arrived at the box, when the client can tell (ticket 048). */
+export type CaptureChannel = 'typed' | 'spoken' | 'pasted';
+
 export type HarvestDecision = {
  /** Index into the proposals array */
  proposal: number;
  action: 'approve' | 'trim' | 'discard' | 'restate';
  /** Required for 'trim' (must be a substring of proposal text) and 'restate' */
  text?: string;
+ /**
+  * Capture channel for the restated text (ticket 048). Only the 'restate'
+  * action uses it — a restatement is new prose and may be pasted into the
+  * review box, which no derivation from the source turn can see. approve and
+  * trim take the source turn's channel via decide's channelOf. Absent means
+  * unknown and stays absent.
+  */
+ channel?: CaptureChannel;
 };
 
 export type Provenance = {
@@ -176,7 +187,7 @@ export type Provenance = {
   * Evidence, not a gate: nothing filters on it, nothing scores it, no model
   * sees it. It exists so a later decision has something true to read.
   */
- channel?: 'typed' | 'spoken' | 'pasted';
+ channel?: CaptureChannel;
 };
 
 export type Snippet = {
@@ -377,6 +388,15 @@ export type SessionState = {
   * exists (ticket 041).
   */
  openQueueEntryId?: string;
+/**
+ * Capture channel per user turn, index-aligned with the user-turn ordinal
+ * that `CutProposal.sourceTurn` uses (one slot per user turn, in order,
+ * pushed as each turn lands). In-memory only, same lifetime class as
+ * `openQueueEntryId` — never persisted; the transcript's Turn.spoken keeps
+ * its own vocabulary. An undefined slot means the client sent no channel
+ * for that turn, and the Snippet then carries none (ticket 048).
+ */
+turnChannels?: (CaptureChannel | undefined)[];
 };
 
 export type Index = {

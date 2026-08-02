@@ -58,6 +58,7 @@ import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.j
 import type {
  Vault,
  Complete,
+ CaptureChannel,
  Facet,
  Mode,
  SessionState,
@@ -262,6 +263,14 @@ function moreMinutesThan(minutes: number): number {
 function moreEnergyThan(energy: Mode['energy']): Mode['energy'] {
  if (energy === 'low') return 'medium';
  return 'high';
+}
+
+/** The channels a client may declare for a turn's arrival (ticket 048). */
+const CAPTURE_CHANNELS: readonly CaptureChannel[] = ['typed', 'spoken', 'pasted'];
+
+/** Narrowing guard for a capture channel value sent by the client. */
+function isCaptureChannel(v: unknown): v is CaptureChannel {
+ return (CAPTURE_CHANNELS as readonly unknown[]).includes(v);
 }
 
 /** Scan transcript files for session metadata (used by docket). */
@@ -562,6 +571,11 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  const sessionProposals = new Map<string, CutProposal[]>();
  /** Sessions whose material arrived unprompted — kept snippets carry that origin. */
  const unpromptedSessions = new Set<string>();
+ /**
+  * The capture channel for each unprompted session — no SessionState exists
+  * for those, so the channel rides here until harvest reads it (ticket 048).
+  */
+ const unpromptedChannels = new Map<string, CaptureChannel | undefined>();
  const { authStore } = deps;
 
  // ── Setup-required gate for non-API routes (must precede static serving) ──
@@ -737,9 +751,12 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
-  const body = await c.req.json<{ text: string; spoken?: boolean }>();
+  const body = await c.req.json<{ text: string; spoken?: boolean; channel?: CaptureChannel }>();
   if (!body.text || typeof body.text !== 'string') {
    return c.json({ error: 'text is required' }, 400);
+  }
+  if (body.channel !== undefined && !isCaptureChannel(body.channel)) {
+   return c.json({ error: `invalid channel "${String(body.channel)}"` }, 400);
   }
 
   // Detect resonance for juxtaposition info (before userTurn consumes the hit)
@@ -771,6 +788,10 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   }
 
   const result = await userTurn(state, body.text, body.spoken);
+
+  // Record the capture channel for this turn ordinal, unconditionally —
+  // an absent channel pushes undefined so the ordinals never shift (ticket 048).
+  state.turnChannels = [...(state.turnChannels ?? []), body.channel];
 
   // Activity event for close phase entry
   if (state.phase === 'closing-door') {
@@ -899,14 +920,27 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
      400,
     );
    }
+   if (d.channel !== undefined && !isCaptureChannel(d.channel)) {
+    return c.json(
+     { error: `invalid channel "${String(d.channel)}" in decision`, entry: d },
+     400,
+    );
+   }
   }
 
+  const state = sessions.get(sessionId);
+  const channelOf = unpromptedSessions.has(sessionId)
+   ? () => unpromptedChannels.get(sessionId)
+   : state?.turnChannels
+    ? (p: CutProposal) => state.turnChannels?.[p.sourceTurn]
+    : undefined;
   const result = decide(
    sessionId,
    proposals,
    body.decisions,
    deps.vault,
    unpromptedSessions.has(sessionId) ? 'unprompted' : 'harvest',
+   channelOf,
   );
 
   serverEmit(deps.vaultRoot, 'harvester', 'session-harvested', `kept=${result.snippets.length} budded=${result.buds.length}`, result.snippets.map((s) => s.id));
@@ -923,9 +957,12 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // transcript of one user turn, then takes the ordinary propose→decide path:
  // review the cuts, then POST them to /api/session/:id/harvest.
  app.post('/api/unprompted', async (c) => {
-  const body = await c.req.json<{ text: string }>();
+  const body = await c.req.json<{ text: string; channel?: CaptureChannel }>();
   if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
    return c.json({ error: 'text is required' }, 400);
+  }
+  if (body.channel !== undefined && !isCaptureChannel(body.channel)) {
+   return c.json({ error: `invalid channel "${String(body.channel)}"` }, 400);
   }
   const text = body.text.trim();
 
@@ -940,6 +977,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   });
   deps.vault.appendTurn(sessionId, turn);
   unpromptedSessions.add(sessionId);
+  unpromptedChannels.set(sessionId, body.channel);
 
   // Never log the content — only how much of it there was.
   serverEmit(deps.vaultRoot, 'elicitor', 'unprompted-entry', `session=${sessionId} chars=${text.length}`);
