@@ -46,3 +46,19 @@ Acceptance: a boot on a vault with >quota unswept readings drains them to
 zero across successive self-triggered runs with no harvest in between,
 visible as successive threshold-clipped counts falling; still-true attempts
 different snippets on consecutive runs; existing single-flight tests green.
+
+## Codex precedent (2026-08-02)
+
+research-codex-lessons.md, lesson 1 — codex's memories pipeline solved
+this without a cron. Two shapes to adopt, not just admire:
+
+- **Deferred work is a persisted, claimable record**, not an intention
+  held in memory. When the sweep clips, write the deferral to disk (the
+  sweep ledger dir is the natural home); the next run — boot, harvest, or
+  self-triggered — claims it. That is record-don't-gate, this repo's own
+  idiom, and it makes the drain chain restart-proof rather than merely
+  process-lifetime-proof.
+- **`succeeded_no_output` as an outcome distinct from `failed`** on every
+  docket job — the same "found nothing vs mechanism broken" distinction
+  tickets 034 and 066 enforce for the harvest, extended to the whole
+  docket surface.

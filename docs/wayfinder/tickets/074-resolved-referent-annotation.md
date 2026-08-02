@@ -31,3 +31,13 @@ recorded; annotations carry model stamps; a snippet with no dangling
 expression gets no annotation (silence is the default); rendering shows the
 annotation as agent-plane margin note, visually distinct from the person's
 words.
+
+**Payload discipline (codex precedent, research-codex-lessons.md lesson
+5):** when the snippet, its `Provenance.context` window and its question
+are assembled into the model payload, wrap each injected piece in typed
+markers (`<snippet>…</snippet>`, `<context>…</context>`, `<question>…
+</question>`) so the boundary between the person's prose and harness
+scaffolding is textual and greppable — in the payload itself, in logs,
+and in any later audit — rather than tracked by a parallel structure.
+Same guarantee the verbatim-substring gate gives elsewhere: the
+distinction is mechanical, not remembered.
