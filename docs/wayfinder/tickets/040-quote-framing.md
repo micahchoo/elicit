@@ -1,9 +1,15 @@
 ---
 title: "Fix: composed questions must FRAME the quote, not splice it"
 labels: [wayfinder:task]
-status: open
-assignee: 
+status: closed
+assignee: claude
 blocked_by: []
+resolution: >
+  c6b8ec3: compose prompts now FRAME the quote (set off, then the question in the agent's own words) instead of splicing it mid-clause; Q-12 strengthened in code from "contains the fragment" to "contains the fragment VERBATIM AND SET OFF" (quoted or on its own line), with the malformed live example as a rejection fixture; person-agreement guard now scans outside an explicit quoted span rather than a guessed one. 400 tests green.
+resolution: >
+  c6b8ec3: compose prompts now FRAME the quote (set off, then the question in the agent's own words) instead of splicing it mid-clause; Q-12 strengthened in code from "contains the fragment" to "contains the fragment VERBATIM AND SET OFF" (quoted or on its own line), with the malformed live example as a rejection fixture; person-agreement guard now scans outside an explicit quoted span rather than a guessed one. 400 tests green.
+resolution: >
+  c6b8ec3: compose prompts now FRAME the quote (set off, then the question in the agent's own words) instead of splicing it mid-clause; Q-12 strengthened in code from "contains the fragment" to "contains the fragment VERBATIM AND SET OFF" (quoted or on its own line), with the malformed live example as a rejection fixture; person-agreement guard now scans outside an explicit quoted span rather than a guessed one. 400 tests green.
 ---
 
 ## Question
