@@ -139,7 +139,7 @@ Anything grown from the Wiki: a written Piece, a learned skill, a built capabili
 A per-capability role the agent plays: half log (quests, artifacts, and sessions gathered per Direction — doubling as skill-claim performance evidence), half advice. Next steps are minted doing-quests; follow-ups are composed questions licensed by a quest's return; reflection on learning is elicited and harvested like anything else. Advice is Marginalia-class, in-app only, choice-expanding (options, never prescriptions), and guilt-free by construction — no streaks, no shaming; dormancy stays signal, never debt.
 
 **Piece**:
-A document composed by stacking Snippets. The agent proposes; the user reviews and rearranges. One kind of Emergent Output. May hold several candidate Arrangements of the same material until the user settles.
+A document composed by stacking Snippets — and only Snippets: prose the user writes while composing is harvested like any other prose, so a Piece never contains words that lack evidentiary standing. The agent proposes; the user reviews and rearranges. One kind of Emergent Output. May hold several candidate Arrangements of the same material until the user settles. A Piece is never finished — it is **set down**, reversibly: minting from its Gaps stops, the Arrangement stays editable, and picking it up resumes. Dormancy is signal, never debt.
 
 **Arrangement**:
 One ordering of pinned Snippet versions — the same Snippets can stack as chronology, argument, or contrast. Carries skeleton Marginalia naming the role of each Snippet. Structurally just an ordered list, so alternatives are cheap.
