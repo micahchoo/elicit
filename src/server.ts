@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import matter from 'gray-matter';
 import { join, extname } from 'node:path';
-import { timingSafeEqual, randomBytes, createHash } from 'node:crypto';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { propose, decide } from './harvester/harvester.js';
@@ -13,6 +13,7 @@ import { buildIndex, resonate } from './index/lexical.js';
 import { runDocket } from './clerk/docket.js';
 import { composeOpener, composeStillTrue } from './clerk/composed.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
+import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import type {
   Vault,
   Complete,
@@ -26,14 +27,13 @@ import type {
   QueueEntry,
 } from './types.js';
 
-// ── Types ──
-
 export interface ServerDeps {
   vault: Vault;
   complete: Complete;
   queue: QueueStore;
   index: LexicalIndex;
   vaultRoot: string;
+  authStore: AuthStore;
 }
 
 // ── MIME map for static serving ──
@@ -48,8 +48,6 @@ const MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-const ENV_PASSWORD = process.env.ELICIT_PASSWORD ?? null;
-
 // ── Password gate ──
 
 /** Session tokens for password-gated access. Maps token → expiry ms. */
@@ -57,18 +55,11 @@ const loginSessions = new Map<string, number>();
 const COOKIE_NAME = 'elicit_session';
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-/** Hash a password for constant-time comparison. */
-function hashPassword(pw: string): Buffer {
-  return createHash('sha256').update(pw).digest();
-}
-
 function newSessionToken(): string {
   return randomBytes(32).toString('hex');
 }
 
-function requireAuth(c: { req: { header: (n: string) => string | undefined }; json: (b: unknown, s: number) => Response }): boolean {
-  const pw = ENV_PASSWORD;
-  if (!pw) return true; // no password set → open access
+function checkSession(c: { req: { header: (n: string) => string | undefined } }): boolean {
   const cookie = c.req.header('cookie') ?? '';
   const match = /elicit_session=([^;]+)/.exec(cookie);
   if (!match) return false;
@@ -79,6 +70,18 @@ function requireAuth(c: { req: { header: (n: string) => string | undefined }; js
     return false;
   }
   return true;
+}
+
+// ── Helpers ──
+
+
+/** Extract the remote address from the Hono env (injected by the Node adapter). */
+function getRemoteAddr(env: unknown): string | undefined {
+  if (env && typeof env === 'object' && 'remoteAddr' in env) {
+    const v = (env as Record<string, unknown>).remoteAddr;
+    return typeof v === 'string' ? v : undefined;
+  }
+  return undefined;
 }
 
 /** Emit an activity event at the server seam. */
@@ -101,18 +104,16 @@ function listSessions(root: string): { session: string; started: string; turnCou
     const raw = readFileSync(join(dir, f), 'utf-8');
     const parsed = matter(raw);
     const session = parsed.data.session ?? f.replace('.md', '');
-    const started = parsed.data.started ?? '';
-    let turnCount = 0;
-    let chars = 0;
-    for (const line of (parsed.content ?? '').split('\n')) {
-      if (line.startsWith('## user') || line.startsWith('## agent')) turnCount++;
-      chars += line.length;
-    }
-    results.push({ session, started, turnCount, chars });
+    const data = parsed.data;
+    results.push({
+      session,
+      started: data.started ?? '',
+      turnCount: typeof data.turnCount === 'number' ? data.turnCount : 0,
+      chars: typeof data.chars === 'number' ? data.chars : 0,
+    });
   }
   return results;
 }
-
 // ── Create app ──
 
 export async function createApp(deps: ServerDeps): Promise<Hono> {
@@ -142,14 +143,50 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
   const app = new Hono();
   const sessions = new Map<string, SessionState>();
   const sessionProposals = new Map<string, CutProposal[]>();
+  const { authStore } = deps;
 
-  // ── Auth middleware for all API routes ──
-  app.use('/api/*', async (c, next) => {
-    if (c.req.path === '/api/login') return next();
-    if (!requireAuth(c)) {
-      return new Response('Unauthorized', { status: 401 });
+  // ── Setup-required gate for non-API routes (must precede static serving) ──
+  app.use('*', async (c, next) => {
+    if (c.req.path.startsWith('/api/')) return next();
+    if (!authStore.exists()) {
+      const remoteAddr = getRemoteAddr(c.env);
+      if (!isLoopback(remoteAddr)) {
+        return c.html(
+          '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elicit — setup required</title><style>body{font-family:system-ui,sans-serif;max-width:30rem;margin:4rem auto;padding:0 1rem;color:#333;line-height:1.6}h1{font-weight:400;font-size:1.25rem}p{color:#666}</style></head><body><h1>finish setup from the host machine</h1><p>Open a browser on the computer running Elicit to set a password. LAN access is blocked until the gate is configured.</p></body></html>',
+        );
+      }
     }
     return next();
+  });
+
+  // ── Public API routes (no auth required) ──
+
+  // GET /api/auth/status → {needsSetup}
+  app.get('/api/auth/status', (c) => {
+    return c.json({ needsSetup: !authStore.exists() });
+  });
+
+  // POST /api/setup {password} — loopback-only, creates auth file + issues session
+  app.post('/api/setup', async (c) => {
+    const remoteAddr = getRemoteAddr(c.env);
+    if (!isLoopback(remoteAddr)) {
+      return c.json({ error: 'setup must be done from the host machine' }, 403);
+    }
+    const body = await c.req.json<{ password: string }>();
+    if (!body.password || typeof body.password !== 'string' || body.password.length < 1) {
+      return c.json({ error: 'password required' }, 400);
+    }
+    authStore.setup(body.password);
+    const token = newSessionToken();
+    loginSessions.set(token, Date.now() + SESSION_TTL);
+    const cookie = `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL / 1000}`;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': cookie,
+      },
+    });
   });
 
   // POST /api/login {password} → {ok: true} + session cookie
@@ -158,14 +195,7 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
     if (!body.password) {
       return c.json({ error: 'password required' }, 400);
     }
-    const pw = ENV_PASSWORD;
-    if (!pw) return c.json({ ok: true });
-    const got = hashPassword(body.password);
-    const want = hashPassword(pw);
-    if (got.length !== want.length) {
-      return c.json({ error: 'invalid password' }, 401);
-    }
-    if (!timingSafeEqual(got, want)) {
+    if (!authStore.verify(body.password)) {
       return c.json({ error: 'invalid password' }, 401);
     }
     const token = newSessionToken();
@@ -178,6 +208,21 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
         'Set-Cookie': cookie,
       },
     });
+  });
+
+  // ── Auth middleware for remaining API routes ──
+  app.use('/api/*', async (c, next) => {
+    if (!authStore.exists()) {
+      // No auth file — check loopback
+      const remoteAddr = getRemoteAddr(c.env);
+      if (isLoopback(remoteAddr)) return next();
+      return c.json({ error: 'setup required' }, 403);
+    }
+    // Auth file exists — require session
+    if (!checkSession(c)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    return next();
   });
 
   // POST /api/session {mode} → {sessionId, question}
@@ -476,7 +521,7 @@ function nodeAdapter(app: Hono) {
   return async (nodeReq: IncomingMessage, nodeRes: ServerResponse) => {
     try {
       const webReq = await toWebRequest(nodeReq);
-      const webRes = await app.fetch(webReq);
+      const webRes = await app.fetch(webReq, { remoteAddr: nodeReq.socket?.remoteAddress });
 
       const resHeaders: Record<string, string> = {};
       webRes.headers.forEach((v, k) => {
@@ -547,9 +592,10 @@ if (isDirect) {
   const queue = createQueueStore(queueRoot);
   const indexData = vault.rebuildIndex();
   const index = buildIndex(Object.values(indexData.snippets));
+  const authStore = createFileAuth(join(vaultRoot, '.auth.json'));
 
   const bindHost = process.env.ELICIT_HOST ?? '127.0.0.1';
-  const app = await createApp({ vault, complete, queue, index, vaultRoot });
+  const app = await createApp({ vault, complete, queue, index, vaultRoot, authStore });
   const port = 4517;
   await serveApp(app, port);
   console.error(

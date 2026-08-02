@@ -66,7 +66,7 @@ function $<T extends HTMLElement>(sel: string): T {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup';
 
 interface AppState {
   screen: Screen;
@@ -101,6 +101,7 @@ function navTo(screen: Screen) {
     case 'done': renderDone(); break;
     case 'waiting': renderWaiting(); break;
     case 'login': renderLogin(); break;
+    case 'setup': renderSetup(); break;
   }
 }
 
@@ -116,6 +117,16 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     if (res.status === 401) { navTo('login'); throw new Error('Unauthorized'); }
+    if (res.status === 403) {
+      try {
+        const data = await res.json();
+        if (data.error === 'setup required') {
+          // Server wants setup from host machine — this client is remote
+          showError('finish setup from the host machine');
+          throw new Error('Setup required');
+        }
+      } catch { /* not JSON — fall through */ }
+    }
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
   }
@@ -179,10 +190,65 @@ function renderLogin() {
   input.focus();
 }
 
+/* ── Setup screen ── */
+
+function renderSetup() {
+  clear();
+  state.screen = 'setup';
+
+  const div = el('div', { class: 'screen active login-form' });
+  const heading = el('h1', { class: 'login-heading' }, 'set a password');
+  const hint = el('p', { style: 'color: var(--dim); font-size: 0.9rem; margin-bottom: 0.5rem' }, 'choose a password to gate LAN access');
+  const input = el('input', {
+    class: 'login-input',
+    type: 'password',
+    placeholder: 'password',
+  });
+  const confirm = el('input', {
+    class: 'login-input',
+    type: 'password',
+    placeholder: 'confirm password',
+  });
+  const submit = el('button', { class: 'submit-btn' }, 'set password');
+  const errorSlot = el('div', { class: 'error-slot' });
+  const backLink = el('button', { class: 'nav-link' }, '\u2190 back');
+  backLink.addEventListener('click', () => navTo('mode'));
+
+  submit.addEventListener('click', async () => {
+    const pw = input.value;
+    if (!pw) {
+      errorSlot.innerHTML = '';
+      errorSlot.append('password cannot be empty');
+      return;
+    }
+    if (pw !== confirm.value) {
+      errorSlot.innerHTML = '';
+      errorSlot.append('passwords do not match');
+      return;
+    }
+    submit.disabled = true;
+    try {
+      await api('/api/setup', { password: pw });
+      navTo('mode');
+    } catch (e) {
+      errorSlot.innerHTML = '';
+      errorSlot.append(String(e));
+      submit.disabled = false;
+    }
+  });
+
+  confirm.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submit.click();
+  });
+
+  div.append(backLink, heading, hint, input, confirm, submit, errorSlot);
+  main.append(div);
+  input.focus();
+}
+
 /* ── Mode screen ── */
 
-function renderMode() {
-  clear();
+function renderMode(showSetupHint?: boolean) {
   state.screen = 'mode';
   state.turnPhase = null;
   state.juxtaposition = null;
@@ -222,6 +288,12 @@ function renderMode() {
   const waitingLink = el('button', { class: 'nav-link' }, 'waiting surface');
   waitingLink.addEventListener('click', () => navTo('waiting'));
   navRow.append(waitingLink);
+
+  if (showSetupHint) {
+    const setupLink = el('button', { class: 'nav-link' }, 'set a password');
+    setupLink.addEventListener('click', () => navTo('setup'));
+    navRow.append(setupLink);
+  }
 
   const submit = el('button', { class: 'submit-btn' }, 'begin');
   const errorSlot = el('div', { class: 'error-slot' });
@@ -734,11 +806,26 @@ function renderWaiting() {
 
 /* ─── Bootstrap ─── */
 
-// Check if password gate is active by probing /api/queue
 (async () => {
+  // Check if password needs to be set (no auth file; we are on loopback)
+  let needsSetup = false;
+  try {
+    const resp = await fetch('/api/auth/status');
+    if (resp.ok) {
+      const status = await resp.json() as { needsSetup: boolean };
+      needsSetup = status.needsSetup;
+    }
+  } catch { /* server may return HTML on non-loopback */ }
+
+  if (needsSetup) {
+    renderMode(true);
+    return;
+  }
+
+  // Auth file exists — check if we have a valid session
   try {
     await api<QueueData>('/api/queue');
-    renderMode();
+    renderMode(false);
   } catch {
     renderLogin();
   }

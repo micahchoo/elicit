@@ -1,7 +1,7 @@
 import { runDocket } from '../src/clerk/docket.js';
 import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
 import { appendEvent, type ActivityEvent } from '../src/log/activity.js';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -16,6 +16,7 @@ import { makeScriptedComplete } from './fakes.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
+import { createFileAuth } from '../src/auth/auth.js';
 
 // ── Helpers ──
 
@@ -56,7 +57,7 @@ function startServer(app: Hono): Promise<{ server: Server; port: number }> {
      body: body as BodyInit | null,
     });
 
-    const webRes = await app.fetch(webReq);
+    const webRes = await app.fetch(webReq, { remoteAddr: nodeReq.socket?.remoteAddress });
 
     const resHeaders: Record<string, string> = {};
     webRes.headers.forEach((v, k) => {
@@ -160,7 +161,8 @@ describe('HTTP API e2e', () => {
   const queue = createQueueStore(vaultDir);
   const indexData = vault.rebuildIndex();
   const index = buildIndex(Object.values(indexData.snippets));
-  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir });
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  const app = await createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore });
   const result = await startServer(app);
   server = result.server;
   baseUrl = `http://127.0.0.1:${result.port}`;
@@ -488,12 +490,14 @@ describe('full session with docket and juxtaposition', () => {
    vaultRoot: vaultDir,
   });
 
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
   const app = await createApp({
    vault,
    complete,
    queue,
    index: docketReport.index,
    vaultRoot: vaultDir,
+   authStore,
   });
   const result = await startServer(app);
   server = result.server;
@@ -619,5 +623,170 @@ describe('full session with docket and juxtaposition', () => {
   const userDeclared = queueData.pending.find((e) => e.source === 'user-declared');
   expect(userDeclared).toBeDefined();
   expect(userDeclared!.question).toBe('I want to explore how to align my daily work with my values.');
+ });
+});
+
+// ── Auth e2e: password gate ──
+
+describe('auth gate', () => {
+ let vaultDir: string;
+
+ beforeEach(() => {
+  vaultDir = mkdtempSync(join(tmpdir(), 'elicit-auth-e2e-'));
+ });
+
+ afterEach(() => {
+  rmSync(vaultDir, { recursive: true, force: true });
+ });
+
+ async function makeApp(): Promise<Hono> {
+  const vault = createVault(vaultDir);
+  const complete = makeScriptedComplete(scriptedResponses);
+  const queue = createQueueStore(vaultDir);
+  const indexData = vault.rebuildIndex();
+  const index = buildIndex(Object.values(indexData.snippets));
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  return createApp({ vault, complete, queue, index, vaultRoot: vaultDir, authStore });
+ }
+
+ function loopbackEnv() {
+  return { remoteAddr: '127.0.0.1' };
+ }
+
+ function remoteEnv() {
+  return { remoteAddr: '192.168.1.100' };
+ }
+
+ it('no auth file + loopback → ungated (API returns 200)', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/queue');
+  const res = await app.fetch(req, loopbackEnv());
+  expect(res.status).toBe(200);
+ });
+
+ it('no auth file + non-loopback → API returns 403 setup required', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/queue');
+  const res = await app.fetch(req, remoteEnv());
+  expect(res.status).toBe(403);
+  const body = await res.json();
+  expect(body.error).toBe('setup required');
+ });
+
+ it('no auth file + non-loopback → static routes return setup-required HTML', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/');
+  const res = await app.fetch(req, remoteEnv());
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  expect(text).toContain('finish setup from the host machine');
+ });
+
+ it('POST /api/setup from non-loopback → rejected', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/setup', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'secret' }),
+  });
+  const res = await app.fetch(req, remoteEnv());
+  expect(res.status).toBe(403);
+  const body = await res.json();
+  expect(body.error).toBe('setup must be done from the host machine');
+ });
+
+ it('POST /api/setup from loopback → creates auth file and issues session cookie', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/setup', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'secret' }),
+  });
+  const res = await app.fetch(req, loopbackEnv());
+  expect(res.status).toBe(200);
+  const body = await res.json() as { ok: boolean };
+  expect(body.ok).toBe(true);
+  // Session cookie set
+  const setCookie = res.headers.get('Set-Cookie');
+  expect(setCookie).toBeTruthy();
+  expect(setCookie).toContain('elicit_session=');
+  // Auth file created
+  expect(existsSync(join(vaultDir, '.auth.json'))).toBe(true);
+ });
+
+ it('auth file exists → API returns 401 without cookie', async () => {
+  // Set up auth first
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/queue');
+  const res = await app.fetch(req, loopbackEnv());
+  expect(res.status).toBe(401);
+ });
+
+ it('auth file exists → login with correct password gets cookie, then API succeeds', async () => {
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await makeApp();
+
+  // Login
+  const loginReq = new Request('http://localhost/api/login', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'secret' }),
+  });
+  const loginRes = await app.fetch(loginReq, loopbackEnv());
+  expect(loginRes.status).toBe(200);
+  const setCookie = loginRes.headers.get('Set-Cookie')!;
+  expect(setCookie).toContain('elicit_session=');
+
+  // Extract cookie value
+  const match = /elicit_session=([^;]+)/.exec(setCookie);
+  expect(match).toBeTruthy();
+  const cookieVal = match![1]!;
+
+  // Access API with cookie
+  const apiReq = new Request('http://localhost/api/queue', {
+   headers: { Cookie: `elicit_session=${cookieVal}` },
+  });
+  const apiRes = await app.fetch(apiReq, loopbackEnv());
+  expect(apiRes.status).toBe(200);
+ });
+
+ it('auth file exists → login with wrong password rejected', async () => {
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await makeApp();
+  const loginReq = new Request('http://localhost/api/login', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ password: 'wrong' }),
+  });
+  const loginRes = await app.fetch(loginReq, loopbackEnv());
+  expect(loginRes.status).toBe(401);
+ });
+
+ it('GET /api/auth/status without auth file → {needsSetup: true}', async () => {
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/auth/status');
+  const res = await app.fetch(req, loopbackEnv());
+  expect(res.status).toBe(200);
+  const body = await res.json() as { needsSetup: boolean };
+  expect(body.needsSetup).toBe(true);
+ });
+
+ it('GET /api/auth/status with auth file → {needsSetup: false}', async () => {
+  const authStore = createFileAuth(join(vaultDir, '.auth.json'));
+  authStore.setup('secret');
+
+  const app = await makeApp();
+  const req = new Request('http://localhost/api/auth/status');
+  const res = await app.fetch(req, loopbackEnv());
+  expect(res.status).toBe(200);
+  const body = await res.json() as { needsSetup: boolean };
+  expect(body.needsSetup).toBe(false);
  });
 });
