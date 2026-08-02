@@ -482,9 +482,13 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
   `suppressed ${num(f, 'suppressed')}, reproposed ${num(f, 'reproposed')}`,
  // Emitted when a Contradiction opens — the most consequential wiki act.
  // The type is the closed contract term; ids are in refs.
- 'contradiction-opened': (f) =>
+'contradiction-opened': (f) =>
   `opened ${article(f.type ?? 'synchronic')} ${f.type ?? 'synchronic'} Contradiction`,
- // A wiki run's counters on one log line — the evidence T16 reads from.
+// The lint path's Q-54 tail (ticket 060): an answered discriminating question
+// routed to two SUPERSEDEs, each with a narrowed Range.
+'range-discriminated': () =>
+  'drew the boundary between two claims: each was superseded with a narrowed range',
+// A wiki run's counters on one log line — the evidence T16 reads from.
  'wiki-run': (f) => {
   const swept = num(f, 'swept');
   const applied = num(f, 'applied');
@@ -576,6 +580,13 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 'import-quoted-dropped': (f, d) => {
  const file = (f.path ?? d).split('/').pop() || 'a file';
  return `set aside ${count(num(f, 'cuts'), 'cut')} from ${file}: it sits inside a quotation in the source file`;
+},
+// Emitted by the exclude route (T9) when the reader refuses a piece whole.
+// The reason lives on the record, never in this line — the log names the
+// file and the act, not the person's words.
+'import-excluded': (f, d) => {
+ const file = (f.path ?? d).split('/').pop() || 'a file';
+ return `${file} refused whole, with the reason recorded`;
 },
 
 // Emitted by commit (T7), one line per item that passed every gate. The

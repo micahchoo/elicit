@@ -310,12 +310,19 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'type=synchronic',
   reads: 'opened a synchronic Contradiction',
  },
- {
+{
   kind: 'contradiction-opened',
   detail: 'type=diachronic',
   reads: 'opened a diachronic Contradiction',
- },
- {
+},
+{
+  // The lint path's Q-54 tail (ticket 060): an answered discriminating
+  // question routed to two SUPERSEDEs, each with a narrowed Range.
+  kind: 'range-discriminated',
+  detail: 'pair=01K0000000000000000000000A,01K0000000000000000000000B reason=range-discriminated:lint:the-bakery',
+  reads: 'drew the boundary between two claims: each was superseded with a narrowed range',
+},
+{
   kind: 'wiki-run',
   detail:
    'swept=3 applied=2 rejected=1 unprocessed=1 oversized=0 stuck=1 ' +
@@ -344,6 +351,14 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'resonance-checked',
   detail: `session=${ULID} hits=2`,
   reads: 'looked for echoes of what was just said and found 2',
+ },
+
+ // The scan route (T9): three counts — files seen, files that became pieces
+ // to review, files refused. The refusals get their own sentences below.
+ {
+  kind: 'import-scanned',
+  detail: 'files=5 toImport=3 refused=2',
+  reads: 'read 5 files: 3 to import, 2 refused',
  },
 
  // The adoption step (T8): the one-off script's keeps and refusals folded
@@ -376,6 +391,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'import-quoted-dropped',
   detail: 'path=vault/posts/quoted.md cuts=1',
   reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
+ },
+ {
+  kind: 'import-excluded',
+  detail: 'path=vault/posts/co-authored.md',
+  reads: 'co-authored.md refused whole, with the reason recorded',
  },
 
 // The commit step (T7): one line per item that passed every gate, and one

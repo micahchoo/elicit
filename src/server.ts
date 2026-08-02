@@ -1,9 +1,9 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Server } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import matter from 'gray-matter';
-import { join, extname } from 'node:path';
+import { join, extname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
@@ -31,6 +31,10 @@ import { composeOpener, composeStillTrue, composeExpedition } from './clerk/comp
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { createImportStore } from './import/store.js';
 import { runImportExtraction } from './import/extract.js';
+import { scanFolder, bodyHash, type ScanResult } from './import/scan.js';
+import { adoptPriorIngest, type AdoptResult } from './import/adopt.js';
+import { commitImport } from './import/commit.js';
+import type { ImportDecision } from './import/contract.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
 import {
@@ -329,6 +333,72 @@ function sessionStartedAt(root: string, sessionId: string): string {
  const started = matter(readFileSync(file, 'utf-8')).data.started;
  return typeof started === 'string' ? started : new Date().toISOString();
 }
+// ── Marks for the review surface (T9) ──
+
+/**
+ * One region of a source body that preparation dropped, and why — the
+ * reader sees *why* a paragraph carries no cuts. `at`/`length` are offsets
+ * into the source body, so the surface can mark the words in place.
+ */
+type DroppedRegion = { at: number; length: number; why: 'quoted' | 'cited' | 'not-prose' };
+
+/** A line preparation deletes outright, in `clean`'s own terms (body.ts). */
+const IMAGE_LINE = /^!\[/;
+const LINK_ONLY_LINE = /^\[.*\]\(.*\)$/;
+const BARE_URL_LINE = /^https?:\/\//;
+const RAW_HTML_LINE = /^<.*>$/;
+const SHORTCODE = /\{\{[<%][\s\S]*?[>%]\}\}/;
+
+/** The two citation shapes `dropCitedParagraphs` drops on (body.ts). */
+const INLINE_CITE = /\[\([A-Z][^)]*\d{4}\)\]\(#/;
+const PAREN_CITE = /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/;
+
+/** Classify one run of dropped lines: quoted beats cited beats not-prose. */
+function classifyRun(body: string, runStart: number, runEnd: number): DroppedRegion {
+ const trimmed = body.slice(runStart, runEnd).split('\n').map((l) => l.trim());
+ const any = (re: RegExp): boolean => trimmed.some((t) => re.test(t));
+ const why: DroppedRegion['why'] = trimmed.every((t) => t.startsWith('>'))
+  ? 'quoted'
+  : any(IMAGE_LINE) || any(LINK_ONLY_LINE) || any(BARE_URL_LINE) || any(RAW_HTML_LINE) || any(SHORTCODE)
+   ? 'not-prose'
+   : any(SHORTCODE) || any(INLINE_CITE) || any(PAREN_CITE)
+    ? 'cited'
+    : 'not-prose';
+ return { at: runStart, length: runEnd - runStart, why };
+}
+
+/**
+ * The regions of a source body that preparation dropped. A line survives
+ * iff its trailing-whitespace-stripped text is empty (blank lines are
+ * separators, never marks) or appears in the prepared prose; consecutive
+ * non-surviving lines form one mark.
+ */
+function droppedRegions(body: string, prepared: string): DroppedRegion[] {
+ const preparedLines = new Set(prepared.split('\n').map((l) => l.trimEnd()));
+ const survives = (line: string): boolean => {
+  const t = line.trimEnd();
+  return t === '' || preparedLines.has(t);
+ };
+ const marks: DroppedRegion[] = [];
+ let runStart = -1;
+ let runEnd = 0;
+ let at = 0;
+ for (const line of body.split('\n')) {
+  if (survives(line)) {
+   if (runStart !== -1) marks.push(classifyRun(body, runStart, runEnd));
+   runStart = -1;
+  } else if (runStart === -1) {
+   runStart = at;
+   runEnd = at + line.length;
+  } else {
+   runEnd = at + line.length;
+  }
+  at += line.length + 1;
+ }
+ if (runStart !== -1) marks.push(classifyRun(body, runStart, runEnd));
+ return marks;
+}
+
 // ── Create app ──
 
 export async function createApp(deps: ServerDeps): Promise<Hono> {
@@ -1165,6 +1235,163 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    ...(body.channel !== undefined ? { unpromptedChannel: body.channel } : {}),
   });
   return c.json({ status: 'harvesting', sessionId });
+ });
+
+ // ── The four T9 routes: scan a folder, hand the next piece to read, take
+ // decisions on it, or take the reason for refusing it whole. No fifth route
+ // writes without a review behind it. The folder path is read from the
+ // request and off local disk by design (Q-57), so the /api/* auth lock is
+ // the control — there is no traversal check to write.
+
+ // POST /api/import/scan {folder} → {pending, skipped, adopted, refused}
+ // The folder becomes staging records, and nothing else: extraction runs in
+ // the docket behind this response (T6) and the corpus is written only by a
+ // review decision.
+ app.post('/api/import/scan', async (c) => {
+  const body = await c.req.json<{ folder?: string }>();
+  const folder = typeof body.folder === 'string' ? body.folder.trim() : '';
+  if (folder.length === 0) {
+   return c.json({ error: 'folder is required' }, 400);
+  }
+  // Adoption FIRST, and with this folder: the path arrives here or nowhere
+  // (T8), and adoption is idempotent so a re-scan can never skip it. A bad
+  // folder path throws — answer 400 with what it said.
+  let adopted: AdoptResult;
+  let scanned: ScanResult;
+  try {
+   adopted = adoptPriorIngest({
+    store: importStore,
+    vaultRoot: deps.vaultRoot,
+    folder,
+    log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+   });
+   scanned = scanFolder(folder);
+  } catch (err) {
+   return c.json({ error: String(err) }, 400);
+  }
+  const { added, skipped, refused } = importStore.admit(scanned.items);
+  startDocket('import');
+  // Two refusal sources, one list: scanFolder refuses on the file alone;
+  // admit refuses on what the store knows (Q-59's no-lastmod). To the
+  // reader they are one thing — a file that did not come in, and why.
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'import-scanned',
+   'files=' + (scanned.items.length + scanned.refused.length) +
+    ' toImport=' + added.length +
+    ' refused=' + (scanned.refused.length + refused.length),
+  );
+  return c.json({
+   pending: added.length,
+   skipped: skipped.length,
+   adopted: adopted.accepted + adopted.excluded,
+   refused: [...scanned.refused, ...refused].map((r) => ({ file: basename(r.sourcePath), reason: r.reason })),
+  });
+ });
+
+ // GET /api/import/next → the oldest extracted piece, whole, or `waiting`.
+ // Registered for GET and POST: the web client's api() helper POSTs any path
+ // outside its GET_PREFIXES list and the review surface calls through it.
+ // Read-only under both methods — nothing here reads a body or writes.
+ const importNext = async (c: Context): Promise<Response> => {
+  const record = importStore.nextExtracted();
+  if (record === null) {
+   return c.json({ item: null, waiting: 'no pieces are ready to read yet' });
+  }
+  // Re-read the source and re-hash: a file that changed since extraction
+  // would show cuts that cannot commit — the new body is a NEW item
+  // (Q-59), so the review answers waiting instead of showing a ghost.
+  let body: string;
+  try {
+   body = matter(readFileSync(record.sourcePath, 'utf-8')).content;
+  } catch {
+   return c.json({ item: null, waiting: 'a piece changed on disk since it was read — scan the folder again' });
+  }
+  if (bodyHash(body) !== record.hash) {
+   return c.json({ item: null, waiting: 'a piece changed on disk since it was read — scan the folder again' });
+  }
+  // The piece renders whole, with the regions preparation dropped marked
+  // and named, so the reader sees why a paragraph carries no cuts.
+  return c.json({
+   item: {
+    hash: record.hash,
+    file: basename(record.sourcePath),
+    ...(record.title !== undefined ? { title: record.title } : {}),
+    date: record.date,
+    source: body,
+    cuts: record.cuts ?? [],
+    marks: droppedRegions(body, importStore.prepared(record.hash)),
+    remaining: Math.max(0, importStore.list('extracted').length - 1),
+   },
+  });
+ };
+ app.get('/api/import/next', importNext);
+ app.post('/api/import/next', importNext);
+
+ // POST /api/import/:hash/decisions {decisions} → {sessionId, snippets}
+ // One decision per proposed cut, validated like the harvest route's
+ // (ticket 024). Everything else is commitImport's gate: a stale or
+ // unverifiable item is refused whole and nothing is written.
+ app.post('/api/import/:hash/decisions', async (c) => {
+  const hash = c.req.param('hash');
+  const body = await c.req.json<{ decisions?: ImportDecision[] }>();
+  if (!Array.isArray(body.decisions)) {
+   return c.json({ error: 'decisions must be an array' }, 400);
+  }
+  const record = importStore.get(hash);
+  if (record === null) return c.json({ error: 'not found' }, 404);
+  if (record.status !== 'extracted') {
+   return c.json({ error: 'this piece has not been extracted yet', reason: 'not-extracted' }, 409);
+  }
+  const VALID_ACTIONS = ['approve', 'trim', 'discard'] as const;
+  const cuts = record.cuts ?? [];
+  for (const d of body.decisions) {
+   if (!(VALID_ACTIONS as readonly string[]).includes(d.action)) {
+    return c.json(
+     { error: `invalid action "${String(d.action)}" in decision`, entry: d },
+     400,
+    );
+   }
+   if (typeof d.cut !== 'number' || !Number.isInteger(d.cut) || d.cut < 0 || d.cut >= cuts.length) {
+    return c.json(
+     { error: `invalid cut index ${String(d.cut)} (have ${cuts.length} cuts)`, entry: d },
+     400,
+    );
+   }
+  }
+  const result = commitImport(
+   {
+    vault: deps.vault,
+    store: importStore,
+    readSource: (p) => readFileSync(p, 'utf-8'),
+    log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+   },
+   hash,
+   body.decisions,
+  );
+  if (result.ok) return c.json({ sessionId: result.sessionId, snippets: result.snippets });
+  return c.json({ error: result.detail, reason: result.reason }, 409);
+ });
+
+ // POST /api/import/:hash/exclude {reason} → {ok: true}
+ // Refuse the piece whole. The reason lives on the record (Q-51), never in
+ // the log line — the log names the file and the act, not the words.
+ app.post('/api/import/:hash/exclude', async (c) => {
+  const hash = c.req.param('hash');
+  const body = await c.req.json<{ reason?: string }>();
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (reason.length === 0) {
+   return c.json({ error: 'reason is required' }, 400);
+  }
+  const record = importStore.get(hash);
+  if (record === null) return c.json({ error: 'not found' }, 404);
+  if (record.status !== 'extracted') {
+   return c.json({ error: 'this piece has not been extracted yet', reason: 'not-extracted' }, 409);
+  }
+  importStore.put({ ...record, status: 'excluded', excludeReason: reason }, importStore.prepared(hash));
+  serverEmit(deps.vaultRoot, 'elicitor', 'import-excluded', 'path=' + record.sourcePath);
+  return c.json({ ok: true });
  });
 
  // GET /api/queue → {pending, open}

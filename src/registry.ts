@@ -84,11 +84,17 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeStillTrue', status: 'live' },
  { module: 'src/clerk/composed', name: 'isExpeditionCandidate', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeExpedition', status: 'live' },
+ { module: 'src/clerk/composed', name: 'composeDiscriminatingQuestion', status: 'live' },
+ { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
 
  // ── src/clerk/contradiction.ts ──
  { module: 'src/clerk/contradiction', name: 'judgeOpposition', status: 'live' },
  { module: 'src/clerk/contradiction', name: 'composeRemeasure', status: 'live' },
  { module: 'src/clerk/contradiction', name: 'judgeConfirmation', status: 'live' },
+
+ // ── src/clerk/clause.ts ──
+ { module: 'src/clerk/clause', name: 'isCompleteClause', status: 'live' },
+ { module: 'src/clerk/clause', name: 'widenToClause', status: 'live' },
 
  // ── src/clerk/docket.ts ──
  { module: 'src/clerk/docket', name: 'runDocket', status: 'live' },
@@ -284,8 +290,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/import/scan',
   name: 'scanFolder',
-  status: 'unwired',
-  reason: 'no production caller yet — tests only; the import route layer lands in a later wave',
+  status: 'live',
+  reason: 'called by the scan route (src/server.ts, T9) — the folder door (Q-57)',
  },
 
  // ── src/import/store.ts ──
@@ -308,8 +314,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/import/commit',
   name: 'commitImport',
-  status: 'unwired',
-  reason: 'no production caller yet — the decisions route (T9) calls it in a later wave; tests do not count',
+  status: 'live',
+  reason: 'called by the decisions route (src/server.ts, T9) — the only path into the corpus',
  },
 
  // ── src/llm.ts ──
@@ -335,10 +341,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/log/format', name: 'formatEvent', status: 'live' },
  { module: 'src/log/format', name: 'relativeTime', status: 'live' },
 
-// ── src/log/surfaced.ts ──
-{ module: 'src/log/surfaced', name: 'surfaced', status: 'live' },
+ // ── src/log/surfaced.ts ──
+ { module: 'src/log/surfaced', name: 'surfaced', status: 'live' },
 
-// ── src/memory/cover.ts ──
+ // ── src/memory/cover.ts ──
  {
   module: 'src/memory/cover',
   name: 'cover',
@@ -562,7 +568,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/import/adopt',
   name: 'adoptPriorIngest',
-  status: 'unwired',
-  reason: 'no production caller yet — the scan route (T9) calls it before admit in a later wave; tests and scripts do not count',
+  status: 'live',
+  reason: 'called by the scan route (src/server.ts, T9) before admission — the one-off keeps and refusals',
  },
 ];
