@@ -12,6 +12,7 @@ import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, type HarvestDiagnostics } from './harvester/harvester.js';
 import { createQueueStore } from './queue/queue.js';
 import { buildIndex, resonate } from './index/lexical.js';
+import { readCadence, cadenceSentence } from './log/cadence.js';
 import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
@@ -647,6 +648,17 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
       (e) => e.status === 'pending' && (e.horizon === 'days' || e.horizon === 'session'),
     );
     return c.json({ pending, open });
+  });
+
+  // GET /api/cadence → the record, as a sentence (ticket 056)
+  //
+  // Zero outbound contact stays (Q-22); this is a line the person may read on
+  // a surface they chose to open, never a signal that reaches out. The wording
+  // lives server-side so it is testable — see `src/log/cadence.ts` for why
+  // every phrase in it is the phrase it is (Q-24: dormancy is signal, not debt).
+  app.get('/api/cadence', (c) => {
+    const cadence = readCadence(deps.vaultRoot);
+    return c.json({ cadence, sentence: cadenceSentence(cadence) });
   });
 
   // GET /api/activity[?since=ISO] → SSE stream or JSON snapshot

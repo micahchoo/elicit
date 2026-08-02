@@ -128,7 +128,7 @@ class ApiError extends Error {
 }
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') || path.startsWith('/api/stt/status') ? 'GET' : 'POST';
+  const method = path.startsWith('/api/queue') || path.startsWith('/api/activity') || path.startsWith('/api/stt/status') || path.startsWith('/api/cadence') ? 'GET' : 'POST';
   const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { 'content-type': 'application/json' };
@@ -1181,9 +1181,19 @@ function renderWaiting() {
     }
   }
 
-  // Append in order: expeditions, questions, activity
+  // Cadence — one sentence, at the top, above the sections (ticket 056).
+  // The document rule: a line of text on a page, not a widget. It carries no
+  // control, no colour and no comparison; a long gap reads exactly like a
+  // short one, because dormancy is signal and never debt (Q-24). The wording
+  // is composed server-side so it is testable — see src/log/cadence.ts.
+  const cadenceLine = el('p', { class: 'cadence-line' }, '');
+  api<{ sentence: string }>('/api/cadence')
+    .then((r) => { cadenceLine.textContent = r.sentence; })
+    .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
+
+  // Append in order: cadence, expeditions, questions, activity
   // Activity appended last so the layout flows correctly
-  div.append(backRow, expSection, queueSection, activitySection);
+  div.append(backRow, cadenceLine, expSection, queueSection, activitySection);
   main.append(div);
 
   // Age helper: compact relative-time display (e.g. "2d ago", "just now")

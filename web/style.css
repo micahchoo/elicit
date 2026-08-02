@@ -853,3 +853,15 @@ main {
   line-height: 1.4;
  }
 }
+
+/* The cadence line (ticket 056) — a sentence, not a widget. Dimmed to the
+   weight of a margin note: it is the record, offered, and nothing acts on it.
+   No colour states, because a long gap must not look like a warning (Q-24). */
+.cadence-line {
+  margin: 0 0 1.75rem;
+  font-size: 0.9rem;
+  opacity: 0.55;
+}
+.cadence-line:empty {
+  display: none;
+}
