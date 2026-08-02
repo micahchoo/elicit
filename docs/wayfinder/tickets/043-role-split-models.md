@@ -2,9 +2,15 @@
 title: "Build: split models by role — fast elicitor, careful clerk"
 labels: [wayfinder:task]
 status: open
-assignee: 
-blocked_by: [047-async-docket]
+assignee: claude (in flight)
+blocked_by: []
 ---
+
+> UNBLOCKED 2026-08-02: 047 landed, and it is the reason this is now worth
+> doing rather than merely locked. With the docket off the response path, the
+> two roles no longer contend for one endpoint: measured in
+> `scripts/accept-044-047.ts`, one docket run spent 127s minting three
+> composed openers on the same model that answers the user mid-sitting.
 
 ## Question
 

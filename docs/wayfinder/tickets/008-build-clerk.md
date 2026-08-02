@@ -3,7 +3,7 @@ title: "Plan and build: the Clerk slice"
 labels: [wayfinder:task]
 status: open
 assignee: 
-blocked_by: [051-grill-cite-independence, 052-grill-polarity-channel]
+blocked_by: [051-grill-cite-independence]
 ---
 
 > UNBLOCKED 2026-08-02: 006-grill-clerk closed.
@@ -14,6 +14,15 @@ blocked_by: [051-grill-cite-independence, 052-grill-polarity-channel]
 > Q-49 resolved the one escalated conflict (opposition gate ships live).
 > Sequencing: land 044 (harvest admissibility — the Clerk mints FROM
 > readings) and 047 (async docket — the wiki jobs share that path) first.
+
+> BLOCKERS RE-CUT 2026-08-02. 053 dropped by Micah's ruling — the Clerk goes
+> first. 052 (polarity) dropped as a blocker for a structural reason: every
+> mechanism in the plan ships shadow-first (Q-35), so the contradiction
+> channels compute and log without opening anything. Polarity must be settled
+> before the threshold GRADUATES, not before the slice lands.
+> 051 stays. It is a ten-minute decision that changes what the Clerk writes on
+> its very first run, and `evidenced` is not a status you can retrofit across
+> a claim graph.
 
 ## Question
 

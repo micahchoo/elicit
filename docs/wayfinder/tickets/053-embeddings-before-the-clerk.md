@@ -6,6 +6,11 @@ assignee:
 blocked_by: []
 ---
 
+> RULED 2026-08-02 (Micah): the Clerk lands BEFORE this. Not blocking 008.
+> The finding stands and the ticket stays open — `resonate()` is still a
+> trigram index after the Clerk ships, and 0/8 paraphrase recall is still the
+> measured number. What changed is the order, not the diagnosis.
+
 ## Question
 
 From the 2026-08-02 HANDOFF review, sharpened by reading T18.
