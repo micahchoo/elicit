@@ -587,6 +587,43 @@ main {
  text-transform: lowercase;
 }
 
+/* expedition — quiet group above the queue */
+.expedition-section {
+ padding-bottom: 1.5rem;
+ border-bottom: 2px solid var(--border);
+ margin-bottom: 0.5rem;
+}
+
+.expedition-list {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+}
+
+.expedition-entry {
+ display: flex;
+ flex-direction: column;
+ gap: 0.15rem;
+ padding: 0.4rem 0;
+ border-bottom: 1px solid var(--border);
+}
+
+.expedition-entry:last-child {
+ border-bottom: none;
+}
+
+.expedition-question {
+ font-size: 0.95rem;
+ color: var(--fg);
+ line-height: 1.45;
+}
+
+.expedition-age {
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ color: var(--dim);
+}
+
 /* activity — marginalia style */
 .activity-list {
  display: flex;

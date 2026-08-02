@@ -4,7 +4,9 @@ import type {
  RedLight,
  ResonanceHit,
  Snippet,
+ Reading,
  QueueDraft,
+ QueueEntry,
  QuestionForm,
 } from '../types.js';
 
@@ -383,4 +385,118 @@ function tryBuildStillTrue(
  }
 
  return buildOpenerDraft(snippet, question, fragment, 'still-true', 'session');
+}
+
+// ---------------------------------------------------------------------------
+// composeExpedition
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure license function: is this snippet a candidate for an Expedition?
+ *
+ * A snippet is eligible when its region is well-cited but shallow —
+ * the wiki knows it matters but cannot deepen it from self-report alone.
+ *
+ * Heuristic (025):
+ * - Snippet reading facet is 'fact' or 'construct'
+ * - Cited by ≥2 queue-asked questions
+ * - No episode-facet sibling (other snippet in same session with an
+ *   episode-facet reading — episode evidence means the region is not shallow)
+ */
+export function isExpeditionCandidate(
+ snippet: Snippet,
+ readings: Record<string, Reading>,
+ queueEntries: QueueEntry[],
+ allSnippets: Snippet[],
+): boolean {
+ const citeStr = `${snippet.id}@${snippet.version}`;
+
+ // Facet gate: at least one reading must have facet 'fact' | 'construct'
+ const snippetReadings = Object.values(readings).filter((r) =>
+  (r.cites ?? []).includes(citeStr),
+ );
+ const hasTargetFacet = snippetReadings.some(
+  (r) => r.facet === 'fact' || r.facet === 'construct',
+ );
+ if (!hasTargetFacet) return false;
+
+ // Cited by ≥2 queue-asked questions
+ const citedCount = queueEntries.filter(
+  (e) => e.status === 'asked' && (e.cites ?? []).includes(citeStr),
+ ).length;
+ if (citedCount < 2) return false;
+
+ // No episode-facet sibling in same session
+ const sessionId = snippet.provenance.session;
+ for (const other of allSnippets) {
+  if (other.id === snippet.id) continue;
+  if (other.provenance.session !== sessionId) continue;
+  const otherCiteStr = `${other.id}@${other.version}`;
+  const otherReadings = Object.values(readings).filter((r) =>
+   (r.cites ?? []).includes(otherCiteStr),
+  );
+  if (otherReadings.some((r) => r.facet === 'episode')) {
+   return false;
+  }
+ }
+
+ return true;
+}
+
+/**
+ * Compose an expedition question for a licensed snippet.
+ *
+ * The question has two parts:
+ * 1. A send-out — ask the user to go read, research, or observe
+ * 2. The reflection ask — "what surprised you, and what does it change?"
+ *
+ * Only the reflective turn is person-bearing (CONTEXT.md: Expedition).
+ * Q-12 enforced: the question MUST contain a verbatim quote of the snippet.
+ * Horizon: 'days'. Prompt uses user-role messages only (llama.cpp compat).
+ */
+export async function composeExpedition(
+ snippet: Snippet,
+ complete: Complete,
+): Promise<QueueDraft | null> {
+ const prompt = `You are a clerk for Elicit. Given a snippet the user wrote, compose a question that sends them out to investigate — read, research, observe — then return to reflect.
+
+Your question must have two parts: (1) a send-out — ask them to go learn something specific this snippet touches but does not answer, and (2) the reflection ask — "What surprised you, and what does it change?"
+
+Snippet: "${snippet.prose}"
+Snippet date: ${snippet.captured}
+
+Return only the question text. No markdown, no commentary.`;
+
+ const raw = await complete(
+  '',
+  [{ role: 'user', text: prompt, at: '' }],
+  { temperature: 0.4 },
+ );
+ let question = stripFences(raw).trim();
+
+ let fragment = findQuotedFragment(snippet.prose, question);
+
+ if (fragment) {
+  return buildOpenerDraft(snippet, question, fragment, 'composed', 'days');
+ }
+
+ // One retry
+ console.warn('Composed: expedition quotes no snippet fragment, retrying');
+ const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected because it did not quote the snippet verbatim. Your question MUST contain an exact phrase from this snippet: "${snippet.prose}".`;
+ const retryRaw = await complete(
+  '',
+  [{ role: 'user', text: retryPrompt, at: '' }],
+  { temperature: 0.4 },
+ );
+ question = stripFences(retryRaw).trim();
+ fragment = findQuotedFragment(snippet.prose, question);
+
+ if (fragment) {
+  return buildOpenerDraft(snippet, question, fragment, 'composed', 'days');
+ }
+
+ console.warn(
+  'Composed: expedition retry also missing snippet quote — returning null',
+ );
+ return null;
 }

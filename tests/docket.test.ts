@@ -20,6 +20,7 @@ type DocketDeps = {
   buildIndex: (snippets: Snippet[]) => LexicalIndex;
   composeOpener: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
   composeStillTrue: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
+  composeExpedition?: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
   log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
   nextConsolidation?: (sessions: SessionRef[], summaries: RangeSummary[]) => string[] | null;
   saveSummary?: (root: string, s: RangeSummary) => void;

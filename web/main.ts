@@ -1017,7 +1017,13 @@ function renderWaiting() {
   backRow.append(backBtn);
   div.append(backRow);
 
-  // Queue section
+  // Expedition section — entries with horizon 'days' waiting to go out
+  const expSection = el('div', { class: 'waiting-section expedition-section' });
+  const expHeading = el('h2', { class: 'waiting-heading' }, 'out in the world');
+  const expList = el('div', { class: 'expedition-list' });
+  expSection.append(expHeading, expList);
+
+  // Queue section — entries with horizon 'session' waiting to be drawn
   const queueSection = el('div', { class: 'waiting-section' });
   const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
   const queueList = el('div', { class: 'queue-list' });
@@ -1045,24 +1051,53 @@ function renderWaiting() {
     }
   }
 
-  div.append(queueSection, activitySection);
+  // Append in order: expeditions, questions, activity
+  // Activity appended last so the layout flows correctly
+  div.append(backRow, expSection, queueSection, activitySection);
   main.append(div);
+
+  // Age helper: compact relative-time display (e.g. "2d ago", "just now")
+  function ageString(created: string): string {
+    const ms = Date.now() - new Date(created).getTime();
+    const mins = Math.floor(ms / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
 
   // Load queue
   (async () => {
     try {
       const data = await api<QueueData>('/api/queue');
       queueList.innerHTML = '';
-      if (data.open.length === 0) {
-        queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
-        return;
+      expList.innerHTML = '';
+
+      const expeditions = data.open.filter((e) => e.horizon === 'days');
+      const pending = data.open.filter((e) => e.horizon !== 'days');
+
+      if (expeditions.length > 0) {
+        for (const entry of expeditions) {
+          const row = el('div', { class: 'expedition-entry' });
+          const question = el('span', { class: 'expedition-question' }, entry.question);
+          const age = el('span', { class: 'expedition-age' }, ageString(entry.created));
+          row.append(question, age);
+          expList.append(row);
+        }
       }
-      for (const entry of data.open) {
-        const row = el('div', { class: 'queue-entry' });
-        const question = el('span', { class: 'queue-question' }, entry.question);
-        const meta = el('span', { class: 'queue-meta' }, `${entry.source} \u00b7 ${entry.horizon}`);
-        row.append(question, meta);
-        queueList.append(row);
+
+      if (pending.length === 0) {
+        queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
+      } else {
+        for (const entry of pending) {
+          const row = el('div', { class: 'queue-entry' });
+          const question = el('span', { class: 'queue-question' }, entry.question);
+          const meta = el('span', { class: 'queue-meta' }, `${entry.source} \u00b7 ${entry.horizon}`);
+          row.append(question, meta);
+          queueList.append(row);
+        }
       }
     } catch {
       queueList.append(el('p', { class: 'empty-msg' }, 'could not load queue'));

@@ -8,6 +8,7 @@ import type {
   Complete,
   QueueEntry,
 } from '../types.js';
+import { isExpeditionCandidate } from './composed.js';
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -24,6 +25,7 @@ export async function runDocket(deps: {
   buildIndex: (snippets: Snippet[]) => LexicalIndex;
   composeOpener: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
   composeStillTrue: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
+  composeExpedition?: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
   log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
   nextConsolidation?: (sessions: SessionRef[], summaries: RangeSummary[]) => string[] | null;
   saveSummary?: (root: string, s: RangeSummary) => void;
@@ -49,8 +51,10 @@ export async function runDocket(deps: {
     // ── Log: run started ──
     deps.log({ at: ts(), actor: 'clerk', kind: 'run-started', detail: 'docket run started' });
 
-    // ── 1. Rebuild lexical index from ALL snippets ──
-    const allSnippets = Object.values(deps.vault.rebuildIndex().snippets);
+    // ── 1. Rebuild index from ALL snippets ──
+    const rebuildResult = deps.vault.rebuildIndex();
+    const allSnippets = Object.values(rebuildResult.snippets);
+    const allReadings = rebuildResult.readings;
     const index = deps.buildIndex(allSnippets);
     deps.log({ at: ts(), actor: 'clerk', kind: 'index-rebuilt', detail: `rebuilt index from ${allSnippets.length} snippets` });
 
@@ -154,6 +158,33 @@ export async function runDocket(deps: {
         }
       } catch (err) {
         deps.log({ at: ts(), actor: 'clerk', kind: 'consolidation-failed', detail: String(err) });
+      }
+    }
+
+    // ── 6. Expedition minting: at most ONE per run ──
+    if (deps.composeExpedition) {
+      try {
+        const allEntries = deps.queue.list();
+        for (const s of allSnippets) {
+          if (isExpeditionCandidate(s, allReadings, allEntries, allSnippets)) {
+            const draft = await deps.composeExpedition(s, deps.complete);
+            if (draft) {
+              const entry = deps.queue.add(draft);
+              minted.push(entry);
+              const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
+                at: ts(),
+                actor: 'clerk',
+                kind: 'expedition-minted',
+                detail: `minted expedition from snippet ${s.id}`,
+              };
+              if (draft.cites) logEvt.refs = draft.cites;
+              deps.log(logEvt);
+            }
+            break; // At most ONE expedition per run
+          }
+        }
+      } catch (err) {
+        deps.log({ at: ts(), actor: 'clerk', kind: 'expedition-failed', detail: String(err) });
       }
     }
 
