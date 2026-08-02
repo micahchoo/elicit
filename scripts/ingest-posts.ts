@@ -300,12 +300,58 @@ function dropCitedParagraphs(text: string): { kept: string; dropped: number } {
   const paras = text.split(/\n\s*\n/);
   let dropped = 0;
   const kept = paras.filter((p) => {
+    // This regex requires the year to sit immediately before the closing
+    // paren, so a citation carrying a page number escapes it: `[(Mol 2008, p.
+    // 83)]` does not match because `, p. 83` follows `2008`. That is a real
+    // hole — six paragraphs slipped through the 2026-08-02 dry run and four
+    // Mol sentences reached the review as Micah's prose.
+    //
+    // It is left narrow ON PURPOSE. Widening it to `\d{4}[^)]*\)` was tried
+    // and measured: it closes the hole, and it also drops seven more
+    // paragraphs of which five are Micah's own prose — including "Juxtaposition
+    // is a method I am borrowing from Jenna Grant" and "I believe technology
+    // can play a big role in this practice". Narrowing it instead to
+    // cited-AND-contains-a-quote-mark fails the same way, because he quotes a
+    // word inside his own argument.
+    //
+    // Paragraph-level citation filtering cannot separate "he is reproducing
+    // someone" from "he is citing someone while making his own point". The
+    // separation happens at CUT level in `isQuotedFromSource` below, which is
+    // exact — 7 of 295 on the dry run, zero false positives — and which makes
+    // widening this one a pure loss. Unmarked quotations, which neither rule
+    // can see, stay the manifest's job (`dropSections`, `ORPHAN_QUOTES`);
+    // Q-51 says that judgement is not automatable, and this is where that bites.
     const cited = /\[\([A-Z][^)]*\d{4}\)\]\(#/.test(p) || /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/.test(p);
     const orphan = ORPHAN_QUOTES.some((q) => p.includes(q));
     if (cited || orphan) { dropped++; return false; }
     return true;
   }).join('\n\n');
   return { kept, dropped };
+}
+
+/**
+ * Quotations set inside an otherwise-authored paragraph (Q-51 at cut level).
+ *
+ * `dropCitedParagraphs` works on whole paragraphs and therefore CANNOT reach
+ * these: dropping the paragraph would throw away the user's own prose wrapped
+ * around the quote. Q-51 rules that quoted passages are excluded at cut level
+ * rather than item level, and this is that rule.
+ *
+ * A span is a quotation when it opens and closes with curly quotes, nests no
+ * further quote mark, and does not cross a paragraph break. Measured against
+ * the 2026-08-02 dry run this predicate finds exactly the seven inadmissible
+ * cuts out of 295 and nothing else — no false positives on Micah's own prose.
+ */
+function quotedSpans(source: string): string[] {
+  return [...source.matchAll(/“([^“”]{20,3000})”/g)]
+    .map((m) => m[1] as string)
+    .filter((s) => !/\n\s*\n/.test(s))
+    .map((s) => s.trim());
+}
+
+function isQuotedFromSource(cutText: string, spans: string[]): boolean {
+  const bare = cutText.replace(/^[“”"]+/, '').replace(/[“”"]+$/, '').trim();
+  return bare.length > 0 && spans.some((s) => s.includes(bare));
 }
 
 /** Body between the named heading boundaries. */
@@ -382,7 +428,7 @@ const lines: string[] = [
   '',
 ];
 
-let totalCuts = 0, totalBuds = 0, totalTurns = 0;
+let totalCuts = 0, totalBuds = 0, totalTurns = 0, totalQuotedOut = 0;
 const t0 = Date.now();
 
 for (const post of MANIFEST) {
@@ -420,16 +466,33 @@ for (const post of MANIFEST) {
   // and never mints a second sitting for the same post.
   const session = `post-${post.slug.replace(/\//g, '-')}`;
   const result = await propose(session, turns, complete);
-  totalCuts += result.proposals.length;
+
+  // Q-51 at cut level. Read against the RAW file, not the selected text: a
+  // quotation's opening mark can sit in a paragraph that selection dropped,
+  // and a cut lifted from inside it would then look unquoted.
+  const spans = quotedSpans(raw);
+  const admissible = result.proposals.filter((p) => !isQuotedFromSource(p.text, spans));
+  const quotedOut = result.proposals.length - admissible.length;
+  if (quotedOut > 0) {
+    for (const p of result.proposals) {
+      if (isQuotedFromSource(p.text, spans)) {
+        process.stderr.write(`\n  Q-51 cut-level: dropped quoted — "${p.text.slice(0, 70)}"`);
+      }
+    }
+  }
+
+  totalCuts += admissible.length;
+  totalQuotedOut += quotedOut;
   totalBuds += result.buds.length;
-  process.stderr.write(`${result.proposals.length} cuts, ${result.buds.length} buds\n`);
+  process.stderr.write(`${admissible.length} cuts${quotedOut ? ` (${quotedOut} quoted, dropped)` : ''}, ${result.buds.length} buds\n`);
 
   lines.push(`## ${post.slug}`, '');
   lines.push(`- **sitting:** ${post.sitting}${post.dateNote ? ` — ${post.dateNote}` : ''}`);
   lines.push(`- **selection:** ${post.select.kind}${citedDropped ? `, ${citedDropped} cited paragraphs dropped` : ''}`);
   lines.push(`- **why kept:** ${post.why}`, '');
-  lines.push(`### proposed cuts (${result.proposals.length})`, '');
-  for (const [i, p] of result.proposals.entries()) {
+  lines.push(`- **cut-level Q-51:** ${quotedOut} quoted cut${quotedOut === 1 ? '' : 's'} dropped`);
+  lines.push(`### proposed cuts (${admissible.length})`, '');
+  for (const [i, p] of admissible.entries()) {
     lines.push(`${i + 1}. ${p.text}`);
   }
   if (result.buds.length > 0) {
@@ -445,6 +508,7 @@ lines.push('');
 lines.push(`## Totals`, '');
 lines.push(`- ${MANIFEST.length} posts kept, ${EXCLUDED.length} exclusion groups`);
 lines.push(`- ${totalTurns} turns, ${totalCuts} proposed cuts, ${totalBuds} buds`);
+lines.push(`- ${totalQuotedOut} cuts dropped at cut level as quotations (Q-51)`);
 lines.push(`- ${Math.round((Date.now() - t0) / 1000)}s of model time`);
 
 if (!existsSync('docs')) mkdirSync('docs', { recursive: true });
