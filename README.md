@@ -53,7 +53,7 @@ More screens, including the phone-width layout, are in
 Requires Node ≥ 20. No model needed:
 
 ```bash
-git clone <this-repo> elicit && cd elicit
+git clone https://github.com/micahchoo/elicit.git && cd elicit
 npm install
 npm run dev
 # open http://127.0.0.1:4517 — scripted interviewer, real everything else
