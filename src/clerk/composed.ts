@@ -698,6 +698,88 @@ Return only the question text. No markdown, no commentary.`;
 }
 
 // ---------------------------------------------------------------------------
+// composeOtherMindsExpedition (ticket 113)
+// ---------------------------------------------------------------------------
+
+/**
+ * License function: is this snippet a candidate for an other-minds expedition?
+ *
+ * A snippet is eligible when it names someone the person knows (gazetteer
+ * person entity with ≥1 mention), and has the same expedition eligibility
+ * facet gates (isExpeditionCandidate).
+ */
+export function isOtherMindsCandidate(
+ snippet: Snippet,
+ readings: Record<string, Reading>,
+ queueEntries: QueueEntry[],
+ allSnippets: Snippet[],
+ gazetteerStore: { byMentionCount(threshold: number): { name: string; kind: string }[] },
+): { eligible: boolean; person?: string } {
+ // Must pass regular expedition candidate check first
+ if (!isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)) {
+  return { eligible: false };
+ }
+ // Must have at least one person in the gazetteer with ≥1 mention
+ const people = gazetteerStore.byMentionCount(1).filter(p => p.kind === 'person');
+ if (people.length === 0) return { eligible: false };
+ // Return the first person found (the most-mentioned one)
+ return { eligible: true, person: people[0]!.name };
+}
+
+/**
+ * Compose an other-minds expedition question.
+ *
+ * Same structure as composeExpedition but the errand names a specific person
+ * to ask. The question still has two parts: (1) send-out naming the person,
+ * (2) reflection ask. Q-12 enforced. Horizon: 'days'.
+ */
+export async function composeOtherMindsExpedition(
+ snippet: Snippet,
+ personName: string,
+ complete: Complete,
+ sitting?: SittingContext,
+): Promise<QueueDraft | null> {
+ const prompt = `You are a clerk for Elicit. Given a snippet the user wrote and a person they know, compose a question that sends them to ask that person something — then return to reflect.
+
+Your question must have two parts: (1) a send-out naming the person — ask them to go ask ${personName} something specific, and (2) the reflection ask — "What surprised you, and what does it change?"
+
+It must also set off an exact phrase from the snippet inside quotation marks.
+
+Snippet: "${snippet.prose}"
+Snippet date: ${snippet.captured}
+
+${FRAMING_RULE}
+
+Return only the question text. No markdown, no commentary.`;
+
+ const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
+
+ const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
+ let question = stripFences(raw).trim();
+ let check = checkQuotesSource(question, snippet.prose);
+ if (check.ok) {
+  const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
+  draft.errandKind = 'other-minds';
+  draft.errandPerson = personName;
+  return draft;
+ }
+ // One retry
+ console.warn(`Composed: other-minds expedition rejected (${check.rejection}), retrying`);
+ const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
+ const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
+ question = stripFences(retryRaw).trim();
+ check = checkQuotesSource(question, snippet.prose);
+ if (check.ok) {
+  const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
+  draft.errandKind = 'other-minds';
+  draft.errandPerson = personName;
+  return draft;
+ }
+ console.warn(`Composed: other-minds expedition retry also rejected (${check.rejection}) — returning null`);
+ return null;
+}
+
+// ---------------------------------------------------------------------------
 // composeDiscriminatingQuestion (ticket 060)
 // ---------------------------------------------------------------------------
 

@@ -11,7 +11,7 @@ import type {
  QueueEntry,
 } from '../types.js';
 import type { SittingContext } from './composed.js';
-import { isExpeditionCandidate, composeOutcomeQuestion } from './composed.js';
+import { isExpeditionCandidate, isOtherMindsCandidate, composeOutcomeQuestion } from './composed.js';
 import { readSitting, sittingCache } from './sitting.js';
 import { stalePins } from '../piece/stale.js';
 import { isDormant } from '../piece/dormancy.js';
@@ -517,6 +517,18 @@ export async function runDocket(deps: {
  composeOpener: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeStillTrue: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeExpedition?: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
+ composeOtherMindsExpedition?: (
+  s: Snippet,
+  c: Complete,
+  personName: string,
+  sitting?: SittingContext,
+ ) => Promise<QueueDraft | null>;
+ /**
+  * The gazetteer person index (ticket 113). Optional: the other-minds
+  * expedition loop runs only when a store is injected — the server wires
+  * its live store, tests inject a stub.
+  */
+ gazetteerStore?: { byMentionCount(threshold: number): { name: string; kind: string }[] };
  /**
   * The sitting a snippet's session declared (045). Injected for tests; the
   * default reads the session's transcript frontmatter.
@@ -895,6 +907,7 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
   }
 
   // ── 6. Expedition minting: at most ONE per run ──
+  let expeditionMinted = false;
   if (deps.composeExpedition) {
    try {
     const allEntries = deps.queue.list();
@@ -909,6 +922,42 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
         actor: 'clerk',
         kind: 'expedition-minted',
         detail: `minted expedition from snippet ${s.id}`,
+       };
+       if (draft.cites) logEvt.refs = draft.cites;
+       deps.log(logEvt);
+       expeditionMinted = true;
+      }
+      break; // At most ONE expedition per run
+     }
+    }
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'expedition-failed', detail: String(err) });
+   }
+  }
+
+  // Other-minds fallback (ticket 113): the errand names a person to ask, but
+  // it still spends the run's single expedition budget — tried only when the
+  // regular expedition found nothing to mint.
+  if (!expeditionMinted && deps.composeOtherMindsExpedition && deps.gazetteerStore) {
+   try {
+    const allEntries = deps.queue.list();
+    for (const s of allSnippets) {
+     const candidate = isOtherMindsCandidate(s, allReadings, allEntries, allSnippets, deps.gazetteerStore);
+     if (candidate.eligible && candidate.person) {
+      const draft = await deps.composeOtherMindsExpedition(
+       s,
+       deps.complete,
+       candidate.person,
+       sittingFor(s.provenance.session),
+      );
+      if (draft) {
+       const entry = deps.queue.add(draft);
+       minted.push(entry);
+       const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
+        at: ts(),
+        actor: 'clerk',
+        kind: 'expedition-minted',
+        detail: `minted other-minds expedition from snippet ${s.id}`,
        };
        if (draft.cites) logEvt.refs = draft.cites;
        deps.log(logEvt);
