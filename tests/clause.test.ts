@@ -139,7 +139,7 @@ describe('hasConstructPole', () => {
  it('rejects impersonal method-talk that only names a figure', () => {
   expect(
    hasConstructPole(
-    'One way to learn the trade is to feel the pull of the current while you are still in the boat.'
+    'One way to learn the trade is to watch the pull of the current while they are still in the boat.'
    )
   ).toBe(false);
  });
