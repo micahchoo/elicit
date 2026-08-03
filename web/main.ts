@@ -1012,6 +1012,12 @@ async function pressGate(choice: 'continue' | 'park' | 'another-day') {
   wait.done();
   if (res.kind === 'probe') {
    applyProbe(res);
+   // A gate-route probe is the checkpoint's release: 'continue' was the one
+   // real choice at the block, and this response is the rung it unblocked.
+   // The response's own sounding still reports checkpoint (the interrupted
+   // rung is not recorded until the next answer), so re-locking on it would
+   // deadlock the exchange — the block lifts here and only here.
+   if (checkpointActive) renderGate(false);
    // The checkpoint handed focus to the gate; the next rung hands it back
    // (focus-management-across-boundaries).
    textarea.focus();
