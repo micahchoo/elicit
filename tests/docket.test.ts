@@ -54,6 +54,7 @@ type DocketDeps = {
  stalePinSweep?: () => Promise<number>;
  dormancySweep?: () => Promise<number>;
  referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
+ gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
  stillTrueCursor?: { read: () => number; write: (offset: number) => void };
 };
 
@@ -1437,5 +1438,47 @@ describe('runReferentAnnotations', () => {
   });
   expect(referentAnnotations).toHaveBeenCalledTimes(1);
   expect(report.annotations).toEqual({ annotated: 2, silent: 1, failed: 0 });
+ });
+
+ it('runDocket calls an injected gapFillSweep thunk and reports its counts', async () => {
+  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+  const gapFillSweep = vi.fn().mockResolvedValue({ minted: 3, budQuestions: 2, constructQuestions: 1 });
+  const report = await runDocket({
+   vault: fakeVault([sn]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn(),
+   composeStillTrue: vi.fn(),
+   log: vi.fn(),
+   listSessions: vi.fn().mockReturnValue([]),
+   gapFillSweep,
+   vaultRoot: '/tmp/fake',
+  });
+  expect(gapFillSweep).toHaveBeenCalledTimes(1);
+  expect(report.gapFill).toEqual({ minted: 3, budQuestions: 2, constructQuestions: 1 });
+ });
+
+ it('a throwing gapFillSweep thunk logs gap-fill-failed and does not fail the run', async () => {
+  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+  const log = vi.fn();
+  const report = await runDocket({
+   vault: fakeVault([sn]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn(),
+   composeStillTrue: vi.fn(),
+   log,
+   listSessions: vi.fn().mockReturnValue([]),
+   gapFillSweep: vi.fn().mockRejectedValue(new Error('boom')),
+   vaultRoot: '/tmp/fake',
+  });
+  const events = log.mock.calls.map((call) => call[0] as { kind: string; detail: string });
+  const failed = events.find((e) => e.kind === 'gap-fill-failed');
+  expect(failed).toBeTruthy();
+  if (failed !== undefined) expect(failed.detail).toContain('boom');
+  expect(report).toBeTruthy();
+  expect(report.gapFill).toBeUndefined();
  });
 });

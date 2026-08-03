@@ -37,10 +37,12 @@ import type { LintFinding } from '../wiki/contract.js';
  * announces itself as one is the verification Q-15 forbids — so they read as
  * the ordinary question `composed` is. Only `user-declared` and its sibling
  * `gap-declared` differ, because the person parked those themselves and
- * knows it. `gap-fill` reads like the rest: a model-marked gap's question
- * quotes an adjacent paragraph verbatim, so the words ARE the person's own.
- * Q-15 governs all of it — nothing may accuse, and neither gap source may
- * announce itself as a gap.
+ * knows it. `gap-fill` reads like the rest: a Bud question quotes the
+ * held fragment verbatim, a half-Construct question quotes the pole, and
+ * a model-marked gap's question quotes an adjacent paragraph verbatim —
+ * in every case the words ARE the person's own (ticket 027).
+ * Q-15 governs all of it — nothing may accuse, and no gap-fill question
+ * announces itself as one.
  */
 const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  composed: 'from your own words',

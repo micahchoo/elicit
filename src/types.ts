@@ -324,6 +324,26 @@ source:
   */
  gap?: string;
  /**
+  * The Bud this entry was minted for, and the recorded failure it asks
+  * about. Optional, because only gap-fill entries minted by the Bud sweep
+  * carry them — and load-bearing, because "one question per recorded
+  * failure" (ticket 027) is not expressible without the pair as the dedupe
+  * key: the Bud id alone would let two failures of one Bud suppress each
+  * other's question. Same shape as `claim` and `gap`, which exist for the
+  * same reason (Q-31, Q-39).
+  */
+ bud?: string;
+ failure?: string;
+ /**
+  * The snippet a half-Construct question is about. Optional, because only
+  * gap-fill entries minted by the construct sweep carry one — and
+  * load-bearing, because "one contrast question per half-Construct" is not
+  * expressible without it: a construct-facet reading cites a version, and
+  * deduping through the cite would let two readings of one snippet mint
+  * two questions about the same pole (ticket 027).
+  */
+ snippet?: string;
+ /**
   * The two Claims an `undiscriminated-range` question stands between
   * (ticket 060). Optional, because only `lint-undiscriminated-range` entries
   * carry one — and load-bearing, because the sorted pair is the dedupe key
@@ -424,6 +444,13 @@ export type DocketReport = {
   * `src/clerk/`, so the field names the minimum the docket report renders.
   */
  annotations?: { annotated: number; silent: number; failed: number };
+/**
+ * What the gap-fill sweep did on this run, absent when a run did none.
+ *
+ * Structural rather than imported: this file must not depend on
+ * `src/clerk/`, so the field names the minimum the docket report renders.
+ */
+gapFill?: { minted: number; budQuestions: number; constructQuestions: number };
 };
 
 export type SessionState = {

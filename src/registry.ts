@@ -124,6 +124,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  },
  { module: 'src/clerk/docket', name: 'runReferentAnnotations', status: 'live' },
 
+ // ── src/clerk/gap-fill.ts ──
+ {
+  module: 'src/clerk/gap-fill',
+  name: 'runGapFillSweep',
+  status: 'live',
+  reason: 'wired by 027: runDocketNow\'s thunk runs it as the docket\'s gap-fill job',
+ },
+
  // ── src/clerk/mint.ts ──
  { module: 'src/clerk/mint', name: 'proposeOps', status: 'live' },
 

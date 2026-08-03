@@ -265,6 +265,15 @@ export async function runDocket(deps: {
  */
 referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
 /**
+ * The gap-fill sweep (ticket 027), as the docket's ninth job of a run —
+ * before the wiki jobs, because it is the dead-letter box (Buds and
+ * half-Constructs) and the wiki work is the slowest thing in the run.
+ * Absent means no sweep this run, and every caller predating the field
+ * behaves exactly as before. Zero-LLM: the thunk never receives the
+ * Complete — the sweep is pure vault-and-queue work.
+ */
+gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
+/**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
@@ -510,7 +519,22 @@ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed:
   }
   // end piece jobs
 
-  // ── 9. The wiki jobs, last and guarded (ticket 023 item 2) ──
+  // ── 9. The gap-fill sweep (ticket 027) ──
+  // Guarded like the wiki jobs: a failure is one job's failure, and the
+  // index, the minted questions, the expiry and the consolidation are
+  // already on disk by the time this runs. Zero-LLM by contract (Q-12,
+  // Q-72): the thunk never receives the Complete — the sweep is pure
+  // vault-and-queue work and cannot touch the model.
+  let gapFill: DocketReport['gapFill'];
+  if (deps.gapFillSweep) {
+   try {
+    gapFill = await deps.gapFillSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'gap-fill-failed', detail: String(err) });
+   }
+  }
+
+  // ── 10. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
   // job's failure. The index, the minted questions, the expiry and the
@@ -525,7 +549,7 @@ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed:
    }
   }
 
-  // ── 10. The import extraction, last and guarded (T6) ──
+  // ── 11. The import extraction, last and guarded (T6) ──
   // Last because it is the slowest thing in the run and no other job may
   // wait on it — the cost is paid before the person sits down (Q-58), and
   // nothing the docket owns must be pushed later than it already is.
@@ -549,6 +573,7 @@ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed:
    ...(wiki ? { wiki } : {}),
    ...(imports ? { imports } : {}),
    ...(annotations ? { annotations } : {}),
+   ...(gapFill ? { gapFill } : {}),
   };
  } finally {
   running = false;

@@ -49,7 +49,10 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'referent-annotated', detail: 'annotated=3 silent=2 failed=1', reads: 'annotated 3 referents, 2 stayed silent, 1 failure' },
  { kind: 'referent-annotation-failed', detail: `annotateReferent for snippet ${ULID} failed: boom`, reads: 'could not annotate a referent' },
  { kind: 'referent-annotations-failed', detail: 'boom', reads: 'could not run the referent annotation job' },
- {
+ { kind: 'gap-fill-minted', detail: 'minted=3 budQuestions=2 constructQuestions=1', reads: 'minted 3 gap-fill questions into the queue' },
+ { kind: 'gap-fill-clipped', detail: 'cap=3 clipped=2', reads: 'enforced the gap-fill cap at 3 and clipped: 2' },
+ { kind: 'gap-fill-failed', detail: 'boom', reads: 'could not run the gap-fill sweep' },
+{
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',
   reads: 'started a 25-minute sitting at high energy using the ladder protocol',

@@ -28,6 +28,7 @@ import {
 } from './index/semantic.js';
 import { readCadence, cadenceSentence } from './log/cadence.js';
 import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations } from './clerk/docket.js';
+import { runGapFillSweep } from './clerk/gap-fill.js';
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
@@ -639,6 +640,13 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       }),
      }
      : {}),
+    // Ticket 027: the gap-fill sweep — zero-LLM, the ONE production wiring
+    // point. Unconditional: the module is always available.
+    gapFillSweep: () => runGapFillSweep({
+     vault: deps.vault,
+     queue: deps.queue,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
     runImportJobs: runImportJobsNow,
     stillTrueCursor,
     vaultRoot: deps.vaultRoot,

@@ -210,6 +210,14 @@ class QueueStoreImpl implements QueueStore {
    // The Gap this entry was minted to fill. Read back because the gap link
    // has to survive a restart: the mint wrote it, the draw read it (Q-39).
    ...(data.gap ? { gap: data.gap as string } : {}),
+   // The Bud and the recorded failure this gap-fill entry asks about.
+   // Read back because the per-failure dedupe keys on the pair across
+   // restarts (ticket 027).
+   ...(data.bud ? { bud: data.bud as string } : {}),
+   ...(data.failure ? { failure: data.failure as string } : {}),
+   // The snippet a half-Construct question is about. Read back because
+   // the construct dedupe keys on it across restarts (ticket 027).
+   ...(data.snippet ? { snippet: data.snippet as string } : {}),
    // The pair an undiscriminated-range question stands between (ticket
    // 060). Read back because the pair is the dedupe key and the answer's
    // routing address, across restarts.
@@ -257,6 +265,9 @@ class QueueStoreImpl implements QueueStore {
   if (entry.answeredAt) fm.answeredAt = entry.answeredAt;
   if (entry.claim) fm.claim = entry.claim;
   if (entry.gap) fm.gap = entry.gap;
+  if (entry.bud) fm.bud = entry.bud;
+  if (entry.failure) fm.failure = entry.failure;
+  if (entry.snippet) fm.snippet = entry.snippet;
   if (entry.claims) fm.claims = entry.claims;
   if (entry.cites) fm.cites = entry.cites;
   if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;

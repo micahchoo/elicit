@@ -1388,12 +1388,17 @@ function seedSitting(
   question,
   questionForm: 'deliberative',
  });
- const reading = vault.saveReading({
-  facet: 'construct',
+// facet 'fact', deliberately not 'construct': a construct-facet reading is a
+// half-Construct, and the ticket-027 sweep mints its contrast question into
+// the queue — which this scripted router cannot absorb and the sitting would
+// draw instead of the re-measure. The pipeline under test (claim → candidate
+// → re-measure → confirmation) does not care what facet the seed carries.
+const reading = vault.saveReading({
+  facet: 'fact',
   stance: 'avowal',
   reading: readingText,
   cites: [`${snippet.id}@1`],
- });
+});
  return { snippetId: snippet.id, readingId: reading.id };
 }
 
