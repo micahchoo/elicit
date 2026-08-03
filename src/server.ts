@@ -32,7 +32,7 @@ import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { composeFromCompacted, composeRung } from './clerk/sounding-rung.js';
-import { loadLadderSummary } from './clerk/sounding-summary.js';
+import { loadLadderSummary, runLadderSummaries } from './clerk/sounding-summary.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { proposeArrangements } from './clerk/arrangements.js';
 import { createImportStore } from './import/store.js';
@@ -605,6 +605,11 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
     saveSummary,
     loadSummaries,
     readTranscript,
+    // The ladder summaries (012 T11): the docket calls the job with its own
+    // vaultRoot/complete/modelName/log, so the server only hands the
+    // function across. Guarded inside runDocket — a throw is one job's
+    // failure and does not fail the run.
+    runLadderSummaries,
     // Cover summaries are written by the clerk model, so they say so (Q-34).
     ...(clerkModelName ? { modelName: clerkModelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
