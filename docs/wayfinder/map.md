@@ -501,6 +501,14 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Fix: claim quality at the mint prompt and lint](tickets/087-mint-prompt-claim-quality.md)
+  — four prompt clauses from the 085 taxonomy; two lints in shadow
+  (occasionless-range, weak-evidence on 074's danglers), dimmed notes never
+  rejections. Measured on qwen over 151 readings: subject drift 59/28/2 →
+  147/147 "The user". Honest miss: contentless ranges did not improve by
+  prompt (19/147) — the lint carries that corrective. 91/147 single-dangler
+  claims: 085 mode 1 is structural, not a corner case.
+
 - [Fix: the harvester reads each turn bare](tickets/091-reading-payload-blind-to-lineage.md)
   — the payloads that interpret prose now carry the stored
   `provenance.question`/`context`, typed-marked; lineage stays uncitable by

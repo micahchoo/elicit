@@ -2,7 +2,7 @@
 title: "Fix: lint.godNodeFanout measures corpus size, not fan-out"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp wave 7)
 blocked_by: []
 ---
 
