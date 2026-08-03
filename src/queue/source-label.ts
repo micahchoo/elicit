@@ -58,6 +58,7 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'claim-challenged': 'you pushed back on the wiki',
 'import-repair': 'from your own words',
  'quest-reflection': 'from your own words',
+ 'territory-gap-fill': 'from your own words',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {
