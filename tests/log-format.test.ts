@@ -585,6 +585,20 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `sounding=${SECOND_ULID} rungs=4 endedBy=cap`,
   reads: 'the descent closed: cap',
 },
+// The ladder summary (plan Task 11): written once per finished descent by
+// the clerk model; the failure kind guards the docket job. Neither line
+// names the descent, the model, or an identifier — the summary is
+// Marginalia, and the reader hears the act.
+{
+  kind: 'sounding-summarized',
+  detail: `sounding=${SECOND_ULID} model=qwen3.6:35b`,
+  reads: 'wrote one line about a descent',
+},
+{
+  kind: 'soundings-summary-failed',
+  detail: 'model returned nothing',
+  reads: 'could not summarize a ladder',
+},
 ];
 
 describe('formatEvent', () => {

@@ -660,4 +660,15 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/sounding/compaction.ts (012 Task 10 — the resume's short view) ──
 { module: 'src/sounding/compaction', name: 'compactLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding composes from it' },
+
+// ── src/clerk/sounding-summary.ts (012 Task 11 — the ladder's one line, clerk model, marginalia) ──
+{ module: 'src/clerk/sounding-summary', name: 'summarizeLadder', status: 'live' },
+{ module: 'src/clerk/sounding-summary', name: 'saveLadderSummary', status: 'live' },
+{
+ module: 'src/clerk/sounding-summary',
+ name: 'loadLadderSummary',
+ status: 'unwired',
+ reason: 'wired by 012 T12: resumeSounding reads the line for compactLadder',
+},
+{ module: 'src/clerk/sounding-summary', name: 'runLadderSummaries', status: 'live' },
 ];

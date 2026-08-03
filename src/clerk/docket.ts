@@ -216,6 +216,24 @@ export async function runDocket(deps: {
  readTranscript?: (root: string, session: string) => string;
  modelName?: string;
  vaultRoot: string;
+/**
+ * The ladder summaries (011 T11), as the docket's sixth job of a run.
+ *
+ * Structural and optional on purpose. This file must not import
+ * `sounding-summary.ts` — the docket is the older, smaller thing and the
+ * sounding layer depends on it, not the other way round — so the server
+ * injects a thunk that has already been given its own collaborators,
+ * including its own Activity Log sink. The thunk receives the docket's own
+ * vault root, the Complete, the clerk model name and the log. Absent means
+ * no summary work this run, and every caller that predates the field
+ * behaves exactly as it did.
+ */
+ runLadderSummaries?: (args: {
+  root: string;
+  complete: Complete;
+  model: string | undefined;
+  log: (e: { at: string; actor: string; kind: string; detail: string }) => void;
+ }) => Promise<{ summarized: number }>;
  /**
   * The Clerk's wiki work (T12), as the last job of a run.
   *
@@ -411,6 +429,23 @@ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed:
     }
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'consolidation-failed', detail: String(err) });
+   }
+  }
+
+  // ── 5b. Ladder summaries (011 T11): one line for the rungs a compaction drops ──
+  // Guarded like the wiki jobs: a throw is one job's failure, and the
+  // index, the minted questions, the expiry and the consolidation are
+  // already on disk by the time this runs.
+  if (deps.runLadderSummaries) {
+   try {
+    await deps.runLadderSummaries({
+     root: deps.vaultRoot,
+     complete: deps.complete,
+     model: deps.modelName,
+     log: deps.log,
+    });
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'soundings-summary-failed', detail: String(err) });
    }
   }
 

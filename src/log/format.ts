@@ -693,6 +693,14 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'sounding-gate': (f) => `the gate word ${f.choice ?? '?'} was pressed at rung ${num(f, 'rung')}`,
  'sounding-parked': (f) => `parked a descent with ${count(num(f, 'rungs'), 'rung')} kept`,
  'sounding-ended': (f) => `the descent closed: ${f.endedBy ?? 'a gate word'}`,
+// The ladder summary (plan Task 11): one line standing for the rungs a
+// compaction drops (T10), written in the background by the clerk model —
+// nobody waits on it (Q-48) — and filed in marginalia, never a Snippet
+// (Q-8, Q-20, Q-45). The failure kind guards the docket job: a throw is
+// one job's failure, and the rest of the run is already on disk. Both
+// render the act, never the person.
+ 'sounding-summarized': () => 'wrote one line about a descent',
+ 'soundings-summary-failed': () => 'could not summarize a ladder',
 };
 
 /**
