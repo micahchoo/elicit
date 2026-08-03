@@ -462,8 +462,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/log/format',
   name: 'hasSentence',
-  status: 'unwired',
-  reason: 'no production caller — tests only; the feed renders via formatEvent keying SENTENCES directly',
+  status: 'live',
+  reason: 'wired by ticket 065: EventKind is keyof SENTENCES, so formatEvent guards its index through hasSentence',
  },
  { module: 'src/log/format', name: 'formatEvent', status: 'live' },
  { module: 'src/log/format', name: 'relativeTime', status: 'live' },

@@ -29,9 +29,9 @@ describe('Activity Log', () => {
   });
 
   it('read with since filters correctly', () => {
-    const early: ActivityEvent = { at: '2026-08-01T09:00:00Z', actor: 'system', kind: 'boot', detail: 'boot' };
+    const early: ActivityEvent = { at: '2026-08-01T09:00:00Z', actor: 'system', kind: 'run-started', detail: 'boot' };
     const threshold: ActivityEvent = { at: '2026-08-01T10:00:00Z', actor: 'elicitor', kind: 'question-asked', detail: 'on-threshold' };
-    const later: ActivityEvent = { at: '2026-08-01T11:00:00Z', actor: 'harvester', kind: 'harvest', detail: 'post' };
+    const later: ActivityEvent = { at: '2026-08-01T11:00:00Z', actor: 'harvester', kind: 'harvest-proposed', detail: 'post' };
 
     appendEvent(root, early);
     appendEvent(root, threshold);
@@ -44,8 +44,8 @@ describe('Activity Log', () => {
   });
 
   it('events span day files and read chronologically', () => {
-    const d1: ActivityEvent = { at: '2026-08-01T23:00:00Z', actor: 'system', kind: 'late-night', detail: 'd1' };
-    const d2: ActivityEvent = { at: '2026-08-02T01:00:00Z', actor: 'system', kind: 'early-morning', detail: 'd2' };
+    const d1: ActivityEvent = { at: '2026-08-01T23:00:00Z', actor: 'system', kind: 'docket-run', detail: 'd1' };
+    const d2: ActivityEvent = { at: '2026-08-02T01:00:00Z', actor: 'system', kind: 'opener-minted', detail: 'd2' };
 
     appendEvent(root, d1);
     appendEvent(root, d2);
@@ -71,7 +71,7 @@ describe('Activity Log', () => {
   });
 
   it('malformed line skipped without error', () => {
-    const e1: ActivityEvent = { at: '2026-08-01T10:00:00Z', actor: 'system', kind: 'good', detail: 'keep-me' };
+    const e1: ActivityEvent = { at: '2026-08-01T10:00:00Z', actor: 'system', kind: 'index-rebuilt', detail: 'keep-me' };
 
     appendEvent(root, e1);
 

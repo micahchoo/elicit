@@ -304,7 +304,7 @@ const COMMIT_REFUSED: Record<string, string> = {
 };
 
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
-const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
+const SENTENCES = {
  'run-started': () => 'started a docket run',
  'index-rebuilt': (_f, d) => `rebuilt the index from ${count(nth(d, 0), 'snippet')}`,
  'docket-run': (_f, d) => `ran the docket: minted ${count(nth(d, 0), 'question')}, expired ${nth(d, 1)}`,
@@ -801,7 +801,17 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 // render the act, never the person.
  'sounding-summarized': () => 'wrote one line about a descent',
  'soundings-summary-failed': () => 'could not summarize a ladder',
-};
+} satisfies Record<string, (f: Fields, detail: string) => string>;
+
+/**
+ * Every kind the Activity Log can carry, DERIVED from the SENTENCES table so
+ * the union and the table cannot drift: a kind added to the table is a union
+ * member, and a kind removed from it stops compiling at its emitters. The
+ * sweep in tests/emitted-kinds.ts stays as the OTHER half of the check — a
+ * kind somebody emits without declaring a sentence is still a test failure,
+ * because a union cannot notice a kind nobody declared.
+ */
+export type EventKind = keyof typeof SENTENCES;
 
 /**
  * Whether this file has a sentence for `kind`, or will fall back to reading the
@@ -830,7 +840,7 @@ function fallback(kind: string, detail: string): string {
 export function formatEvent(e: FormattableEvent): string {
  const kind = typeof e.kind === 'string' ? e.kind : '';
  const detail = typeof e.detail === 'string' ? e.detail : '';
- const sentence = SENTENCES[kind];
+ const sentence = hasSentence(kind) ? SENTENCES[kind as EventKind] : undefined;
  return scrubIds(sentence ? sentence(fields(detail), detail) : fallback(kind, detail));
 }
 

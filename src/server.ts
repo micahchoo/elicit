@@ -83,6 +83,7 @@ import { FACETS } from './queue/facet-balance.js';
 import type { Claim, ClaimGraph, LintFinding, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
+import type { EventKind } from './log/format.js';
 import { surfaced } from './log/surfaced.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
@@ -246,7 +247,7 @@ function getRemoteAddr(env: unknown): string | undefined {
 function serverEmit(
  root: string,
  actor: ActivityEvent['actor'],
- kind: string,
+ kind: EventKind,
  detail: string,
  refs?: string[],
 ): void {

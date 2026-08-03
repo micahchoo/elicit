@@ -302,7 +302,7 @@ describe('license', () => {
 
   it('calls it a dry spell when nothing has been answered since the drought began', () => {
     const events = [
-      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started', detail: '' },
+      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started' as const, detail: '' },
     ];
 
     const v = licenseForDraw({ entries: [], events, now: NOW, thresholds: t });
@@ -314,7 +314,7 @@ describe('license', () => {
 
   it('does not call a fresh answer a dry spell', () => {
     const events = [
-      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started', detail: '' },
+      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started' as const, detail: '' },
     ];
     const entries = [entry({ answeredAt: daysAgo(1), targetFacet: 'episode' })];
 
@@ -325,7 +325,7 @@ describe('license', () => {
 
   it('calls it a stale region when one answered Facet has gone untouched', () => {
     const events = [
-      { at: daysAgo(400), actor: 'elicitor' as const, kind: 'session-started', detail: '' },
+      { at: daysAgo(400), actor: 'elicitor' as const, kind: 'session-started' as const, detail: '' },
     ];
     const entries = [
       entry({ id: 'a', answeredAt: daysAgo(1), targetFacet: 'episode' }),
@@ -341,7 +341,7 @@ describe('license', () => {
 
   it('claims no stale region when every answered Facet is fresh', () => {
     const events = [
-      { at: daysAgo(400), actor: 'elicitor' as const, kind: 'session-started', detail: '' },
+      { at: daysAgo(400), actor: 'elicitor' as const, kind: 'session-started' as const, detail: '' },
     ];
     const entries = [
       entry({ id: 'a', answeredAt: daysAgo(1), targetFacet: 'episode' }),
@@ -356,7 +356,7 @@ describe('license', () => {
 
   it('reads coverage, never mood: an unanswered pending entry is not evidence of an answer', () => {
     const events = [
-      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started', detail: '' },
+      { at: daysAgo(30), actor: 'elicitor' as const, kind: 'session-started' as const, detail: '' },
     ];
     const entries = [entry({ status: 'pending', created: daysAgo(1) })];
 

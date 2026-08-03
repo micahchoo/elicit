@@ -4,6 +4,7 @@ import { ulid } from 'ulid';
 import matter from 'gray-matter';
 import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.js';
 import { appendEvent } from '../log/activity.js';
+import type { EventKind } from '../log/format.js';
 import {
  applyFacetBalance,
  facetBalanceIsLive,
@@ -448,7 +449,7 @@ class QueueStoreImpl implements QueueStore {
  }
 
  /** The log is evidence, not a dependency — a draw never fails on it. */
- #append(e: { kind: string; detail: string; refs: string[] }): void {
+ #append(e: { kind: EventKind; detail: string; refs: string[] }): void {
   try {
    appendEvent(this.#root, {
     at: new Date().toISOString(),

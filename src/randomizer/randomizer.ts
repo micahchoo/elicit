@@ -28,6 +28,7 @@
  */
 
 import { readEvents, appendEvent } from '../log/activity.js';
+import type { EventKind } from '../log/format.js';
 import {
   applyFacetBalance,
   facetBalanceIsLive,
@@ -140,7 +141,7 @@ function recentlyDrawn(root: string, now: Date, t: RandomizerThresholds): Set<st
 }
 
 /** Every act is logged (Q-23). A draw never fails on its own log line. */
-function log(root: string, kind: string, detail: string, refs: string[], now: Date): void {
+function log(root: string, kind: EventKind, detail: string, refs: string[], now: Date): void {
   try {
     appendEvent(root, {
       at: now.toISOString(),

@@ -260,7 +260,7 @@ describe('defer verb', () => {
   expect(deferrals[0]!.detail).toContain('needs=energy');
   expect(deferrals[1]!.detail).toContain('needs=time');
   expect(deferrals[2]!.detail).toContain('needs=none');
-  expect(events.some((e) => e.kind === 'question-skipped')).toBe(false);
+  expect(events.some((e) => (e.kind as string) === 'question-skipped')).toBe(false);
  });
 
  it('rejects a need it does not know', async () => {
