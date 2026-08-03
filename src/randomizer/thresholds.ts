@@ -74,7 +74,7 @@ export const RANDOMIZER_THRESHOLDS = {
     value: 1825,
     live: true,
     graduatesWhen:
-      'Live by decision, same reasoning as randomizer.recentDays. Five years is where the imported corpus actually parts: 2017-2021 writing against 2022-2026 writing, measured 2026-08-02 in the real vault. It is a description of this corpus and it is revisited whenever the corpus stops looking like that.',
+      'Live by decision, same reasoning as randomizer.recentDays. Five years is where the measured corpus actually parted: its early years of writing against its recent years, measured 2026-08-02 on a real vault. It is a description of that corpus and it is revisited whenever the corpus stops looking like that.',
   },
 } satisfies Record<string, RandomizerThreshold>;
 

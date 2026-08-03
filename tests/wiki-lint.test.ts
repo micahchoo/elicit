@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
@@ -703,13 +703,15 @@ describe('weak-evidence (ticket 087, Q-35: shadowed)', () => {
   });
 });
 
-describe('the 074 dangler set the weak-evidence finding keys on (conformance)', () => {
+// The label record lives with the corpus, outside the repo — the conformance
+// check runs only where it exists (the authoring machine), skips on a clone.
+const DANGLER_DOC = join(root, 'docs/dangler-labels-2026-08-02.md');
+describe.runIf(existsSync(DANGLER_DOC))('the 074 dangler set the weak-evidence finding keys on (conformance)', () => {
   // The code-side set is private; the conformance check runs the MECHANISM.
   // A claim whose only cite is a doc-labelled dangler is flagged once the
   // register flips live, and a claim citing a doc-"no" snippet is not. The
-  // doc table (docs/dangler-labels-2026-08-02.md) is the labelled ground
-  // truth: 96 yes rows, 43 no rows, 139 snippets.
-  const doc = readFileSync(join(root, 'docs/dangler-labels-2026-08-02.md'), 'utf-8');
+  // doc table is the labelled ground truth: 96 yes rows, 43 no, 139 snippets.
+  const doc = existsSync(DANGLER_DOC) ? readFileSync(DANGLER_DOC, 'utf-8') : '';
   const rows = doc
     .split('\n')
     .filter((l) => l.trimStart().startsWith('|'))

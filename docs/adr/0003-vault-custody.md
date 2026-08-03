@@ -12,7 +12,7 @@ beyond localhost (ELICIT_HOST) must not precede the password gate.
 
 ## Considered Options
 
-- Vault as private git repo pushed to self-hosted Forgejo (rejected by user:
+- Vault as private git repo pushed to a self-hosted git remote (rejected by user:
   personal folders stay out of git entirely)
 - Encryption at rest (rejected for now: key-management risk exceeds threat;
   revisit if the vault ever syncs off-premises)

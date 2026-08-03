@@ -118,7 +118,7 @@ counts. Install the model files:
 
 ```bash
 huggingface-cli download csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
-  --local-dir ~/.omp/agent/cache/tiny-models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+  --local-dir ~/.cache/elicit/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
 ```
 
 Or set `ELICIT_STT_MODEL_DIR` to any directory containing

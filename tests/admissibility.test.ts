@@ -230,7 +230,7 @@ describe('Q-51 at cut level — a quoted passage is not the person', () => {
   const SOURCE = [
     'Slow practice shifts the ground under all of this, and the handbook puts it better than I can:',
     '',
-    '“A routine as I describe it here is not something to fix in place or carve in stone. Not at all! It is fluid and adaptable.”',
+    '“A schedule as I teach it here is not a cage to be welded shut. Far from it! It bends to the day that actually arrives.”',
     '',
     'I think that is right, and I think it is also why the routines keep working.',
   ].join('\n');
@@ -239,11 +239,11 @@ describe('Q-51 at cut level — a quoted passage is not the person', () => {
 
   it('finds the quotation as one span', () => {
     expect(spans).toHaveLength(1);
-    expect(spans[0]).toContain('not something to fix in place or carve in stone');
+    expect(spans[0]).toContain('not a cage to be welded shut');
   });
 
   it('excludes a cut lifted from inside it', () => {
-    const cut = 'A routine as I describe it here is not something to fix in place or carve in stone.';
+    const cut = 'A schedule as I teach it here is not a cage to be welded shut.';
     expect(isQuotedFromSource(cut, spans)).toBe(true);
     expect(admissible(cut, { source: SOURCE })).toEqual({ ok: false, reason: 'quoted' });
   });
@@ -255,12 +255,12 @@ describe('Q-51 at cut level — a quoted passage is not the person', () => {
   });
 
   it('admits the same words when nobody is being quoted', () => {
-    const plain = 'My practice is not something to fix in place or carve in stone.';
+    const plain = 'My practice is not a cage to be welded shut.';
     expect(admissible(plain, { source: plain })).toEqual({ ok: true });
   });
 
   it('does not run without a source, because a quotation is invisible alone', () => {
-    const cut = 'A routine as I describe it here is not something to fix in place or carve in stone.';
+    const cut = 'A schedule as I teach it here is not a cage to be welded shut.';
     expect(admissible(cut)).toEqual({ ok: true });
   });
 

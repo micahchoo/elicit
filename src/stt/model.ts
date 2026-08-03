@@ -14,7 +14,7 @@ const REQUIRED_FILES = [
 export function resolveCacheDir(): string {
  return join(
   homedir(),
-  '.omp/agent/cache/tiny-models/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
+  '.cache/elicit/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
  );
 }
 

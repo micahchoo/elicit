@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { THRESHOLDS, shadowDecision } from '../src/wiki/thresholds.js';
 
@@ -131,14 +131,14 @@ describe('the register itself', () => {
   });
 });
 
-describe('conformance with the plan that specified the table', () => {
+// The plan lives with the corpus, outside the repo — the conformance check
+// runs only where it exists (the authoring machine) and skips on a clone.
+const PLAN_PATH = join(root, 'docs/superpowers/plans/2026-08-02-the-clerk.md');
+describe.runIf(existsSync(PLAN_PATH))('conformance with the plan that specified the table', () => {
   // The plan's threshold table is the only place the whole table is specified.
   // Reading it here means a value edited in code without a decision behind it
   // fails, and a decision recorded without the code following it fails too.
-  const plan = readFileSync(
-    join(root, 'docs/superpowers/plans/2026-08-02-the-clerk.md'),
-    'utf-8',
-  );
+  const plan = existsSync(PLAN_PATH) ? readFileSync(PLAN_PATH, 'utf-8') : '';
 
   const HEADER = '| name | start value | live? | graduates when |';
 

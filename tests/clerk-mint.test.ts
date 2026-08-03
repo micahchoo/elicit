@@ -206,8 +206,8 @@ describe('proposeOps — ticket 087: the claim-quality correctives', () => {
     const system = calls[0]!.system;
     expect(system).toContain('"ma\'am" stays "ma\'am"');
     expect(system).toContain('never "their mother"');
-    expect(system).toContain('"Clement Valla\'s Binder"');
-    expect(system).toContain('never "a binder"');
+    expect(system).toContain('"Anse Brek\'s Ledger"');
+    expect(system).toContain('never "a ledger"');
   });
 
   it('binds modality to the prose: completed work is never filed as facet "intention"', async () => {

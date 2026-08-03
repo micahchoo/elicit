@@ -703,8 +703,8 @@ function namesOccasion(range: string): boolean {
 }
 
 /**
- * The labelled dangler set, ticket 074 (docs/dangler-labels-2026-08-02.md):
- * 96 of 139 vault snippets dangle, measured 2026-08-02. A snippet id here
+ * The labelled dangler set, ticket 074 (label record kept with the corpus,
+ * outside the repo): 96 of 139 measured snippets dangled, 2026-08-02. A snippet id here
  * carries a pronoun, demonstrative or definite description whose referent
  * is not identifiable from the snippet text alone — the 085 review met
  * the consequence when a claim minted from "those four parts" came out

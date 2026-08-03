@@ -30,7 +30,7 @@ const quotedHash = hashOf('quoted.md');
 /** quoted.md paragraph 4's tail: the opening “ sat on a blockquote line that
  * `clean` removes from INSIDE the paragraph, so the prepared turn keeps a
  * closing mark with no opening one (the raw-source Q-51 case). */
-const ORPHANED_TAIL = 'and the places that count as chartable are chosen, not found.';
+const ORPHANED_TAIL = 'and the trees that count as keepers are chosen, not found.';
 
 const FIRST_SITTING_SENTENCE = 'I keep coming back to this piece when I want to remember why I started.';
 const NEW_SENTENCE = 'I have been rereading it with the years behind me, and the argument holds.';

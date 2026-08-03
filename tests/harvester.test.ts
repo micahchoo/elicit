@@ -1031,7 +1031,7 @@ describe('episode blindness is counted, not argued about', () => {
 
 describe('Q-51 reaches the harvester, not only the importer', () => {
   const turn = oneTurn(
-    'Shreyas put it best when I asked him about it. “It isn’t an obstacle that stops you rather, it is a point of divergence.” I have carried that around ever since, though I am not sure I believe it.',
+    'An old teacher put it best when I asked about it. “It isn’t a wall that stops you rather, it is a fork you did not order.” I have carried that around ever since, though I am not sure I believe it.',
   );
 
   it('drops a cut lifted from inside a quotation in the same turn', async () => {
@@ -1039,7 +1039,7 @@ describe('Q-51 reaches the harvester, not only the importer', () => {
       'sess-1',
       turn,
       async () => cutsJson([
-        { text: 'It isn’t an obstacle that stops you rather, it is a point of divergence.' },
+        { text: 'It isn’t a wall that stops you rather, it is a fork you did not order.' },
         { text: 'I have carried that around ever since, though I am not sure I believe it.' },
       ]),
     );
@@ -1056,7 +1056,7 @@ describe('Q-51 reaches the harvester, not only the importer', () => {
     const { proposals, diagnostics } = await propose(
       'sess-1',
       turn,
-      async () => cutsJson([{ text: 'a point of divergence that I never took' }]),
+      async () => cutsJson([{ text: 'a fork in the road that I never took' }]),
     );
 
     expect(proposals).toHaveLength(0);

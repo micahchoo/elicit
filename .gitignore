@@ -36,3 +36,5 @@ local:/
 /data/prior-ingest.local.json
 /scripts/eval-007-embeddings.ts
 /scripts/eval-007-lexical-overlap.ts
+/scripts/eval-007-analyze.ts
+/scripts/export-leaflet.ts
