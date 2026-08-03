@@ -655,7 +655,7 @@ Output is six written answers appended to this plan's *Shape Changes* section as
 - **Hands the finished ladder to the route via `s.finishedSounding` (T1's type).** `closeDescent` clears `s.sounding`, so this field is the only way the ladder survives the call. This task sets it and never clears it; T8 reads it, writes the ladder, and clears it. A T6 that closes a descent without setting it produces a cap-ended descent that leaves nothing on disk — which is precisely the failure the answer-path end check was added to prevent, arriving one layer down.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 The second test is the load-bearing one. It passes only under the backwards-chain semantics and fails under the same-call reading.
 
@@ -717,12 +717,12 @@ test('park and another-day end the descent whatever the counter says', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-ladder.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/ladder.js`.
 
-- [ ] **Step 3: Write `ladder.ts`**
+- [x] **Step 3: Write `ladder.ts`**
 
 Pure functions over `SoundingState`, returning new states. No disk, no `complete`, no clock — `at` is passed in, as `Rung.at`. The backwards check is four lines:
 
@@ -733,12 +733,12 @@ if (!precedingAnswer.includes(foothold)) {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-ladder.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Write `src/clerk/sounding-rung.ts`**
+- [x] **Step 5: Write `src/clerk/sounding-rung.ts`**
 
 `composeRung` only, to the signature in the contracts block. It is the existing priority-2 body (`elicitor.ts:341-357`) lifted into a function, plus the foothold returned alongside the question. Add `tests/sounding-rung.test.ts` with two cases:
 
@@ -756,7 +756,7 @@ test('an answer whose every light the guard rejects composes nothing', async () 
 Run: `npx vitest run tests/sounding-rung.test.ts`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 6: Wire the descent branch into `userTurn`**
+- [x] **Step 6: Wire the descent branch into `userTurn`**
 
 ```ts
 if (s.sounding) {
@@ -799,12 +799,12 @@ Note the budget: rungs go through `emitProbe`, which increments `questionCount` 
 
 **One deliberate asymmetry, so nobody "fixes" it later.** A composer returning `null` here closes the descent as `'convergence'` (the sketch above), while the same failure in T12's resume route is a 503. Both are correct and they are different situations: mid-descent there are rungs on the ladder and a close is a real, recorded outcome the person can pick back up, so the descent ends cleanly; at resume there is no new rung yet, nothing has happened, and closing would silently consume a parked ladder the person just asked to reopen. A failed call the client can retry is the honest answer there. Do not unify them.
 
-- [ ] **Step 7: Run the elicitor suite**
+- [x] **Step 7: Run the elicitor suite**
 
 Run: `npx vitest run tests/elicitor.test.ts tests/sounding-ladder.test.ts tests/sounding-rung.test.ts && npx tsc --noEmit -p tsconfig.json`
 Expected: PASS. Every existing elicitor test passes unchanged, because `s.sounding` is absent in all of them and the branch is skipped. `tsc` may flag the turn route's un-handled `'checkpoint'` variant — that is T8's fix, in this same wave; if it does, land T6 and T8 back to back.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/sounding/ladder.ts src/clerk/sounding-rung.ts src/elicitor/elicitor.ts tests/sounding-ladder.test.ts tests/sounding-rung.test.ts
@@ -841,7 +841,7 @@ git commit -m "sounding: the ladder — a chain that quotes backwards, and a sto
 - `FilterName` gains `'sounding'`. Everything that switches on `FilterName` — the floor log at `queue.ts:386-403` — must still compile.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test('a parked ladder round-trips through markdown, awkward prose included', () => {
@@ -880,28 +880,28 @@ test('a parked sounding does not shadow a real question', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-park.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/park.js`.
 
-- [ ] **Step 3: Write `park.ts`**
+- [x] **Step 3: Write `park.ts`**
 
 `matter.stringify('', fm)` with an empty body, matching `queue.ts:239`. Every optional field written under a guard, never as a key holding `undefined` — `matter.stringify` throws on that and the whole write is lost (`queue.ts:227-229` records this the hard way).
 
-- [ ] **Step 4: Add the queue filter**
+- [x] **Step 4: Add the queue filter**
 
 One entry in `drawFilters` and one name in `FilterName`. Change nothing else in that file.
 
 Run: `npx vitest run tests/queue.test.ts tests/queue-source-label.test.ts tests/facet-balance.test.ts`
 Expected: PASS — no existing entry has `source: 'parked-sounding'`, so the filter is a no-op on every existing case.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-park.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/sounding/park.ts src/queue/queue.ts tests/sounding-park.test.ts
@@ -956,7 +956,7 @@ git commit -m "sounding: park writes the whole ladder and queues a pointer the d
 - Behavioral invariant: on the gate route, `continue` at the checkpoint composes the next rung from `state.sounding.rungs.at(-1)!.answer` — the answer to the rung the checkpoint interrupted. Not from the licensing answer, and not from any text on the gate request, which carries only a choice word. The gate is a control, not a turn: no user prose arrives with it, so the foothold must come from the ladder. Getting this wrong makes `addRung`'s backwards check throw on the rung after every checkpoint.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Follow `tests/e2e.test.ts`'s app-construction pattern with a scripted `Complete`.
 
@@ -1032,23 +1032,23 @@ test('no sounding line says anything about how it went', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-routes.test.ts`
 Expected: FAIL — 404 on `/api/session/:id/sounding`.
 
-- [ ] **Step 3: Write the routes AND the eight format cases, together**
+- [x] **Step 3: Write the routes AND the eight format cases, together**
 
 Follow the defer route's shape (`src/server.ts:682-726`): look the state up in `sessions`, validate the body against a closed set and 400 on anything else, act, `serverEmit`, respond. Every `serverEmit` this task adds gets its `case` in `src/log/format.ts` **in this same commit** — see the table in *Activity Log kinds*. Splitting them across two commits fails `tests/log-format.test.ts` in whichever order they land.
 
 Write the `state.finishedSounding` block from the contract **once**, as a helper both the turn route and the gate route call. Two copies is how the cap path and the park path drift into writing the ladder differently, and the cap path is the one with no manual step to notice it.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-routes.test.ts tests/log-format.test.ts tests/e2e.test.ts && npx tsc --noEmit -p tsconfig.json`
 Expected: PASS, including the emitted-kind sweep `tests/emitted-kinds.ts` derives from source, and no un-handled `'checkpoint'` variant left in the turn route.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server.ts src/log/format.ts tests/sounding-routes.test.ts tests/log-format.test.ts
@@ -1080,32 +1080,32 @@ git commit -m "sounding: routes for the one offer, the always-present gate, and 
 - `{ accept: boolean }` and `{ choice: GateChoice }`
 </contracts>
 
-- [ ] **Step 1: Add the offer control**
+- [x] **Step 1: Add the offer control**
 
 Below the question block, in the margin: the sentence from `soundingOffer.sentence`, and two words — one to accept, one to decline. Both are one click. Declining costs one word, which is the whole design (Q-43); it must not open a confirmation, ask why, or dim.
 
-- [ ] **Step 2: Add the gate row**
+- [x] **Step 2: Add the gate row**
 
 A `gate-row` appended to `answerArea` alongside `deferRow`, rendered whenever `state.sounding` is set. It carries all three words on every rung. Per the decision in *The gate is a control*: on an ordinary rung (`checkpoint === false`), `continue` renders as the reading `continuing · rung N of M` — text, not a control — while `park, depth kept` and `another day` are live buttons. Quiet weight, matching the existing `.defer-need` words in `style.css`, not buttons that compete with the textarea.
 
-- [ ] **Step 3: Add the checkpoint state**
+- [x] **Step 3: Add the checkpoint state**
 
 On `{ kind: 'checkpoint' }`: the gate row moves above the textarea, all three words become controls, and the textarea is disabled until one is pressed — no next question exists yet. One line of plain text offers the same three words. **No new words, no different words**, and nothing that says or implies anything about how the person is doing. It is a counter reaching a number. After `continue` returns a probe, focus goes back to the textarea.
 
-- [ ] **Step 4: Join `setControlsBusy`**
+- [x] **Step 4: Join `setControlsBusy`**
 
 Every gate control disables with the others while a call is in flight (`web/main.ts:798-804`), or a double-press parks a ladder twice.
 
-- [ ] **Step 5: Handle the close, from both directions**
+- [x] **Step 5: Handle the close, from both directions**
 
 A `{ kind: 'descent-closed' }` response **and** an ordinary probe carrying `descentClosed` both remove the gate row, restore the ordinary controls, and put the door question in the question block. The second path is the one that matters most: `endedBy: 'cap'` and `'convergence'` arrive unprompted on an ordinary answer, with no gate press anywhere, and a UI that only handles the gate-press path leaves a dead gate row on screen for the rest of the sitting. The wording announces the descent closing and never the person stopping (Q-46).
 
-- [ ] **Step 6: Verify by hand**
+- [x] **Step 6: Verify by hand**
 
 Run: `npm run dev` then drive a sitting to the offer with `ELICIT_LLM=fake`.
 Expected: the offer appears once with a number in it; declining removes it for good; accepting shows the three words under every rung with `park` and `another day` pressable throughout; rung `ceil(allowance/2)` moves them above the textarea and withholds the next question; answering past the cap closes the descent with the door question and no gate press.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/main.ts web/style.css
@@ -1598,3 +1598,4 @@ Stated plainly, because they were true at read time on 2026-08-02 and build agen
 | 2026-08-02 | author | Blocking Question 4 resolved by deduction | The gate-blocking question is ruled and the plan's design stands: ordinary rungs do not block, `continue` renders as a reading, the halfway checkpoint blocks. Recorded as a **deduction from Q-44** rather than as a preference, with the argument written out in *The gate is a control* — Q-44's "**plus** a mechanical checkpoint" makes the checkpoint an addition that must differ from the margin words; its "**breaks answering-momentum**" requires momentum to exist at ordinary rungs; its "**always-available** … stopping never requires being noticed" is a claim about availability, not compulsion. Press-to-advance voids all three and produces the endurance test Q-47's rationale names. **No `Q-N` minted** — applying Q-44 is not making a new decision. One correction to the reasoning as it was handed to me: the phrase "stops being three quiet words in the margin and becomes the thing on the screen" is this plan's own gloss, not Q-44's text, so the written deduction rests only on Q-44's actual wording; a plan quoted back at itself is not a warrant. Blocking Open Questions now reads "None remain"; T14 step 4 is re-aimed from deciding the mechanism to testing the margin words' wording and weight. |
 | 2026-08-02 | author | Review round 2, two issues | (1) `soundingId?: string` added to the turn response's declared fields — it is the cap-and-convergence path, where no gate is pressed and the response is the only thing that can say which ladder closed; T13's Test A could not otherwise read what it caused to be written. (2) The finished ladder now has a named carrier: **`SessionState.finishedSounding?: ParkedLadder`**, chosen over "closeDescent returns the ladder beside the probe" because `elicitor.ts` already uses exactly this handoff shape for `openQueueEntryId` (set by the elicitor, consumed downstream, `delete`d — `elicitor.ts:276-279`), and because a whole `ParkedLadder` on `Probe` would fatten a lean type. T1 declares it, T6's `closeDescent` is now written out in full with its four steps ordered so the handoff happens *before* `s.sounding` is cleared, and T8 reads, persists, emits, and clears it in one shared helper both the turn route and the gate route call. **Deliberate deviation:** taking that option made `Probe.descentClosed` redundant — the route reads `endedBy` off the ladder it already holds — so it is dropped, T1 no longer touches `elicitor.ts`, and T6 is that file's sole owner. The client-facing `descentClosed` field is unchanged and is built by the route. Advisories: the stale `Probe` line reference is gone with the edit that needed it; T8's gate contract now says the checkpoint-continue probe composes from `state.sounding.rungs.at(-1)!.answer` (the gate carries a choice word, never prose, so the foothold must come off the ladder); and T6 now marks the T12-503-vs-T6-convergence difference as deliberate, with the reason each is right where it is. |
 | 2026-08-02 | author (T5 spike) | Six seams re-verified, plan-time anchors re-resolved | (1) `renderExchange` controls unchanged: harvestBtn/skipBtn/laterBtn at web/main.ts:794-796, deferRow 799-804, `answerArea.append` 807 — T9 gate row lands after deferRow. (2) `setControlsBusy` exists at web/main.ts:928-934, disables all five controls — gate controls join it or they race. (3) `sessions` Map at src/server.ts:763; ServerDeps 94-150; turn route at 953. (4) turn response `{kind, text, questionForm, phase, juxtaposition?}` at 1021-1027; `userTurn` has ONE caller (994) and ONE kind-switch (the saturated if at 1005) — T6's `checkpoint` widening requires the route touch, which is T8's, landed back to back. (5) log-kind drift enforced three ways at tests/log-format.test.ts:710-789 (unrendered emit, unsampled emit, stale sample), set derived from src/ at test time via tests/emitted-kinds.ts; both format.ts and the test were committed post-plan (82d662c, eebb5cc). (6) `userTurn` order intact at 299-466 (bookmark 325-337, door 340-343, budget 346-351, pivot 354-358, juxtaposition 363-394, red-light 397-413, generic 416-465); the descent branch slots between lines 351 and 353. Baseline green: 83 files / 1689 passed / 3 skipped, tsc clean. One transient red during the wave (registry.ts mid-append) cleared on re-run. |
+| 2026-08-02 | exec | Wave 2 gate: hand walk under ELICIT_LLM=fake | Three sittings driven in a real browser (scratch instance, temp vault): (1) decline costs one word and is never re-offered over three further turns; (2) accept shows the three words under every rung with continue rendered as the reading and park/another-day live; the checkpoint at rung 4 of 8 blocks (textarea disabled, no next question, all three words controls); park writes the ladder to soundings/<id>.md with endedBy: park and every foothold a verbatim substring of the preceding answer, mints the parked-sounding queue pointer, and the sitting closes door-then-bookmark; (3) a descent answers to its cap with no exit gate word ever pressed — the checkpoint continue is the only press — and closes with endedBy: cap and the door question. The walk caught and fixed two real seams: the queue store dropped `soundingId` on disk (T7's pointer was a dead entry after any list() re-read — persisted in src/queue/queue.ts with round-trip tests); and the gate-route continue response still reports checkpoint=true (the interrupted rung is not yet recorded), which re-locked the textarea and deadlocked the exchange — pressGate now lifts the block on any gate-route probe. The fake responder gained the descent (whole-answer phrases, eight second-person frames, last-half on re-composition) because the plan's Step-6 drive requires it and the stock fake returned empty red lights; the near-duplicate guard was the constraint that shaped it. |
