@@ -38,6 +38,7 @@ export function makeFakeComplete(): RecordingFakeComplete {
  ];
  let probeIdx = 0;
 let followUpIdx = 0;
+const composedCount = new Map<string, number>();
  const calls: FakeCall[] = [];
 
  const respond = async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
@@ -47,12 +48,27 @@ let followUpIdx = 0;
   if (s.includes('red light')) {
    // The Soundings descent runs on this responder (plan T9 step 6): a rung
    // needs a red light whose phrase is a verbatim substring of the turn, or
-   // composeRung can never build rung 0. First three words of the turn keep
-   // the phrase deterministic; an empty turn gets no lights (the elicitor's
+   // composeRung can never build rung 0. The phrase is the WHOLE answer: it
+   // is trivially a substring, and the near-duplicate guard (word-set
+   // Jaccard >= 0.5 against every prior question) then measures mostly the
+   // answer's own words — a short fixed phrase like the first three words
+   // repeats its frame and closes the descent as convergence within two
+   // rungs on a shared-thread sitting. An empty turn gets no lights (the
    // content-free pivot never reaches redLights with one, but stay honest).
-   const words = (turns.at(-1)?.text ?? '').trim().split(/\s+/);
-   const phrase = words.slice(0, 3).join(' ');
-   if (!phrase) return '{"lights": []}';
+   const text = (turns.at(-1)?.text ?? '').trim();
+   if (!text) return '{"lights": []}';
+   // Quote the WHOLE answer: the phrase then dominates the question's word
+   // set, which is what keeps the near-duplicate guard (Jaccard >= 0.5)
+   // from firing when a frame repeats on a shared-thread sitting. One
+   // exception: the licensing turn and the accept that follows it compose
+   // from the SAME text, and two questions quoting all of it are
+   // near-duplicates however their frames differ — a real composer picks a
+   // different foothold the second time, so this one quotes the last half.
+   const seen = (composedCount.get(text) ?? 0) + 1;
+   composedCount.set(text, seen);
+   const words = text.split(/\s+/);
+   const phrase =
+    seen === 1 ? text : words.slice(Math.floor(words.length / 2)).join(' ') || text;
    return JSON.stringify({ lights: [{ kind: 'unexplored-referent', phrase }] });
   }
 
@@ -71,12 +87,20 @@ let followUpIdx = 0;
    // eight 'What did you mean by "…"?' rungs would close itself as
    // convergence after the second rung. Every frame quotes the phrase
    // verbatim inside quotation marks and asks in the second person.
+   // Eight frames, all second person (the first-person guard rejects
+   // anything outside the quotes that says I/my/me), each adding its own
+   // words so two frames share at most a few — the phrase carries the
+   // question's identity, and the scaffold must not push two questions of
+   // the same thread over the near-duplicate Jaccard.
    const frames = [
-    (p: string) => `What did you mean by "${p}"?`,
-    (p: string) => `Can you say more about "${p}"?`,
-    (p: string) => `When did "${p}" first show up for you?`,
-    (p: string) => `What makes "${p}" important to you?`,
+    (p: string) => `You said "${p}" — what did that mean for you then?`,
+    (p: string) => `Hearing "${p}", what comes up for you?`,
     (p: string) => `How does "${p}" sit with you now?`,
+    (p: string) => `What is underneath "${p}" for you?`,
+    (p: string) => `When did "${p}" first appear?`,
+    (p: string) => `What would "${p}" want to say to you?`,
+    (p: string) => `Where does "${p}" live in your days?`,
+    (p: string) => `What does "${p}" ask of you?`,
    ];
    return frames[followUpIdx++ % frames.length]!(phrase);
   }
