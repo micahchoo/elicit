@@ -894,4 +894,5 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/patterns/select', name: 'selectPattern', status: 'live', reason: 'caller-side shadow gate via threshold — the selection mechanism is shadow-first, the function ships live (111 T2)' },
 { module: 'src/patterns/select', name: 'selectCheapPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
 { module: 'src/patterns/select', name: 'selectDeepPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
+{ module: 'src/patterns/decompose', name: 'decomposeDerived', status: 'live', reason: 'pure predicate with no I/O — the Q-81 boundary guard; callers outside tests do not yet exist (111 T4)' },
 ];
