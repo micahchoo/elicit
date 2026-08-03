@@ -132,14 +132,14 @@ describe('hasConstructPole', () => {
  });
 
  it('rejects verse, even when every line is a complete clause', () => {
-  expect(hasConstructPole('My head has been here on this pillow, / For eons.')).toBe(false);
-  expect(hasConstructPole('My head has been here on this pillow,\nFor eons.')).toBe(false);
+  expect(hasConstructPole('The kettle sings its one note, / All morning long.')).toBe(false);
+  expect(hasConstructPole('The kettle sings its one note,\nAll morning long.')).toBe(false);
  });
 
  it('rejects impersonal method-talk that only names a figure', () => {
   expect(
    hasConstructPole(
-    'A much harder but effective way is to experience a taste of the iceberg while they are in the water.'
+    'A slower but surer way is to feel the pull of the current while you are still in the boat.'
    )
   ).toBe(false);
  });

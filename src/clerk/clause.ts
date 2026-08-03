@@ -468,8 +468,9 @@ export function hasConstructPole(prose: string): boolean {
  if (t.length === 0) return false;
  if (!isCompleteClause(t)) return false;
  // Verse: real line breaks, or the in-line slash that marks a line break
- // in a one-line quote ("…pillow, / For eons."). Rhyme is not checked
- // mechanically — line breaks are the fixture the over-labeling produces.
+ // in a one-line quote ("…one note, / All morning long."). Rhyme is not
+ // checked mechanically — line breaks are the shape the over-labeling
+ // produces.
  if (t.includes('\n') || /\s\/\s/.test(t)) return false;
  return hasEvaluativeStance(t);
 }
