@@ -76,7 +76,7 @@ function closesSpan(text: string, i: number): boolean {
 }
 
 /** The inner material of every quotation mark pair, delimiters excluded. */
-function quotedSpans(text: string): Span[] {
+export function quotedSpans(text: string): Span[] {
  const spans: Span[] = [];
  for (let i = 0; i < text.length; i++) {
   const pair = QUOTE_PAIRS.find(([open]) => open === text[i]);
@@ -244,16 +244,31 @@ function normalizeQuestion(text: string): string {
 }
 
 /**
+ * Replace every quoted span with blanks, leaving only the agent-authored
+ * frame words. Own-line spans need a known fragment, which duplicate
+ * checking does not have, so only quotation-mark spans are masked.
+ */
+function maskQuoted(text: string): string {
+ let masked = text;
+ for (const span of quotedSpans(text)) {
+  masked = blank(masked, span.start, span.end);
+ }
+ return masked;
+}
+
+/**
  * Near-duplicate guard: rejects a question too similar to one already asked.
- * Uses word-set Jaccard similarity after normalization.
+ * Uses word-set Jaccard similarity after normalization. Quoted material is
+ * masked first (ticket 111): re-quoting the same Episode with a different
+ * frame is a fresh question, not a duplicate.
  */
 export function isNearDuplicate(question: string, asked: string[]): boolean {
- const normQ = normalizeQuestion(question);
+ const normQ = normalizeQuestion(maskQuoted(question));
  const qWords = new Set(normQ.split(' ').filter((w) => w.length > 1));
  if (qWords.size < 2) return false;
 
  for (const prior of asked) {
-  const normA = normalizeQuestion(prior);
+  const normA = normalizeQuestion(maskQuoted(prior));
   const aWords = new Set(normA.split(' ').filter((w) => w.length > 1));
   if (aWords.size < 2) continue;
 
