@@ -170,6 +170,26 @@ describe('applyOps — role-taking stance (Q-84)', () => {
     expect(store.loadSlice().claims).toHaveLength(0);
   });
 
+  it('REJECTS a MINT whose body attributes a trait to the named other (possessive subject)', () => {
+    const result = run(
+      [
+        {
+          op: 'MINT',
+          reading: READING,
+          body: "The user's sister Alice is deeply competitive.",
+          range: 'when she is playing a game',
+          cites: [`${SNIP}@1`],
+          facet: 'fact',
+        },
+      ],
+      [READING],
+    );
+    expect(result.applied).toHaveLength(0);
+    expect(result.rejected[0]?.reason).toBe('role-taking-cannot-evidence-the-other');
+    expect(result.rejected[0]?.reading).toBe(READING);
+    expect(store.loadSlice().claims).toHaveLength(0);
+  });
+
   it('ACCEPTS a MINT whose body names the model, not the other', () => {
     const result = run(
       [

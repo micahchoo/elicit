@@ -272,9 +272,19 @@ function validate(
       // a reading, which is exactly what it is not for.
       const reading = graph.readings[readingId];
       if (!reading) return reject(`reading-not-in-graph:${readingId}`, readingId);
-      // Q-84: role-taking snippets never evidence claims about the named other.
+      // Q-84: role-taking snippets never evidence claims about the named
+      // other — the imagined other's words are the person's model of them,
+      // never evidence of them. All claims are "The user…"-subject (087), so
+      // an other-directed claim wears the possessive: "The user's sister is
+      // critical". A direct self-trait from the imagined other's mouth is
+      // rejected too — role-play is not trait evidence in either direction;
+      // what a role-taking reading may ground is the model itself ("The user
+      // believes/imagines/models…").
       if (reading.stance === 'role-taking') {
         const body = (rec['body'] as string).trim();
+        if (/^The user['’]s\s+\S+.{0,40}?\b(is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
+          return reject('role-taking-cannot-evidence-the-other', readingId);
+        }
         if (/^The user (is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
           return reject('role-taking-cannot-evidence-self-trait', readingId);
         }
@@ -375,9 +385,19 @@ function validate(
       if (bad) return reject(`cite-does-not-resolve:${bad}`, readingId);
       const reading = graph.readings[readingId];
       if (!reading) return reject(`reading-not-in-graph:${readingId}`, readingId);
-      // Q-84: role-taking snippets never evidence claims about the named other.
+      // Q-84: role-taking snippets never evidence claims about the named
+      // other — the imagined other's words are the person's model of them,
+      // never evidence of them. All claims are "The user…"-subject (087), so
+      // an other-directed claim wears the possessive: "The user's sister is
+      // critical". A direct self-trait from the imagined other's mouth is
+      // rejected too — role-play is not trait evidence in either direction;
+      // what a role-taking reading may ground is the model itself ("The user
+      // believes/imagines/models…").
       if (reading.stance === 'role-taking') {
         const body = (rec['body'] as string).trim();
+        if (/^The user['’]s\s+\S+.{0,40}?\b(is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
+          return reject('role-taking-cannot-evidence-the-other', readingId);
+        }
         if (/^The user (is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
           return reject('role-taking-cannot-evidence-self-trait', readingId);
         }
