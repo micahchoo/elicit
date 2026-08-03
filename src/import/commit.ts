@@ -42,7 +42,7 @@
 import matter from 'gray-matter';
 
 import { toTurns } from './body.js';
-import type { ImportDecision } from './contract.js';
+import type { ImportDecision, RegionRecord } from './contract.js';
 import type { ImportStore } from './store.js';
 import { bodyHash } from './scan.js';
 import { isQuotedFromSource, quotedSpans } from '../harvester/admissibility.js';
@@ -54,6 +54,13 @@ export type CommitDeps = {
   store: ImportStore;
   readSource: (p: string) => string;
   log: LogFn;
+  /** Injected, not imported: the region store, so a test hands one region.
+   *  Injection site: the commitImport deps literal in POST
+   *  /api/import/:hash/decisions (src/server.ts, seeding Task 12 Step 3).
+   *  Without that step every imported snippet ships with no `authorship`
+   *  key and Tasks 1, 2, 7 and 13 amount to a form the vault never hears
+   *  about. */
+  regionFor?: (sourcePath: string) => RegionRecord | null;
 };
 
 export type CommitRefusal = 'stale' | 'not-extracted' | 'unverifiable';
@@ -118,6 +125,10 @@ export function commitImport(
       `hash=${hash} status=${status}`,
     );
   }
+
+  // One region lookup, once, before any write: every snippet of this
+  // sitting is stamped with the same authorship, or none at all.
+  const region = deps.regionFor?.(record.sourcePath) ?? null;
 
   // 2. Re-read the source and re-hash the body. A changed body is a NEW item
   //    (Q-59): the next scan admits it under its own hash, dated to `lastmod`
@@ -217,6 +228,16 @@ export function commitImport(
       question: '',
       questionForm: 'deliberative' as const,
       channel: 'pasted' as const,
+      // Task 9 (authorship reaches the snippet): the region's declared
+      // authorship is a STAMP on every snippet of the sitting. Conditional
+      // spread — never `authorship: undefined`: a present key holding
+      // undefined throws in matter.stringify and loses the whole snippet
+      // write (048, documented at src/import/store.ts:72-74). A record with
+      // no region writes NO authorship key at all — the 19 adopted posts
+      // stay exactly as they are; absent means never asked, nothing
+      // backfills. The stamp never gates: it cannot refuse an item, and the
+      // all-or-nothing commit rule is untouched.
+      ...(region ? { authorship: region.authorship } : {}),
       // 048: conditional spread — a PRESENT key holding undefined throws in
       // matter.stringify and loses the entire snippet write.
       ...(context !== undefined ? { context } : {}),

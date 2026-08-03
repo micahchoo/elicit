@@ -11,6 +11,7 @@ import { commitImport, type CommitDeps, type CommitResult } from '../src/import/
 import { createVault } from '../src/vault/vault.js';
 import { makeScriptedComplete } from './fakes.js';
 import type { Complete, Provenance, Vault } from '../src/types.js';
+import type { RegionRecord } from '../src/import/contract.js';
 
 /**
  * The committed fixture. These tests NEVER mutate it — every record points at
@@ -68,6 +69,8 @@ const datedResponses = (): string[] => [
   cut('The last paragraph ties the first three together, and I have left it here.'),
  ),
 ];
+
+const otherRegion: RegionRecord = { slug: 'journals-abc123', root: '/c/journals', dating: { kind: 'filename', pattern: 'YYYY-MM-DD' }, authorship: 'other', declared: '2026-08-02T00:00:00.000Z' };
 
 let root: string;
 let vault: Vault;
@@ -280,5 +283,58 @@ describe('import commit — one accepted piece becomes one dated sitting', () =>
   expect(snippetVersions(firstSnippetId)).toEqual([1]); // untouched forever
   expect(store.get(hashV2)!.cuts!.map((c) => c.text)).not.toContain(store.get(hashV1)!.kept![0]);
   expect(store.get(hashV2)!.kept).toEqual([NEW_SENTENCE]);
+ });
+
+ it('stamps the region authorship on every snippet of the sitting', async () => {
+  const { hash } = await preparedDatedEssay();
+  mustCommit(commitImport({ ...commitDeps(), regionFor: () => otherRegion }, hash, [{ cut: 0, action: 'approve' }]));
+  for (const s of snippetsOnDisk()) expect(s.provenance.authorship).toBe('other');
+ });
+
+ it('writes no authorship key at all for an item with no region', async () => {
+  const { hash } = await preparedDatedEssay();
+  mustCommit(commitImport(commitDeps(), hash, [{ cut: 0, action: 'approve' }]));
+  for (const s of snippetsOnDisk()) expect('authorship' in s.provenance).toBe(false);
+ });
+
+ it('no snippet from a non-authored region carries stance avowal — read off disk', async () => {
+  // A one-response complete whose kept cut is P1 with stance 'avowal' (P1 is
+  // a verbatim substring of dated-essay.md's body). The region is declared
+  // 'other', so extraction coerces the stance (Task 7) and commit stamps the
+  // authorship (Task 9); the markdown on disk is the truth (Q-3).
+  const src = raw('dated-essay.md');
+  const body = bodyOf('dated-essay.md');
+  const hash = bodyHash(body);
+  const sourcePath = join(root, 'sources', 'dated-essay.md');
+  mkdirSync(join(root, 'sources'), { recursive: true });
+  writeFileSync(sourcePath, src);
+  store.admit([
+   { hash, sourcePath, date: '2018-09-01', lastmod: '2018-09-01', title: 'A dated essay', body },
+  ]);
+  await runImportExtraction({
+   store,
+   complete: makeScriptedComplete([response({ ...cut(P1), stance: 'avowal' })]),
+   readSource,
+   regionFor: () => otherRegion,
+   log: (e) => {
+    logs.push({ kind: e.kind, detail: e.detail });
+   },
+  });
+  mustCommit(
+   commitImport({ ...commitDeps(), regionFor: () => otherRegion }, hash, [{ cut: 0, action: 'approve' }]),
+  );
+
+  // The readings and snippets on disk — the markdown is the truth.
+  const readings = readdirSync(join(root, 'wiki', 'readings')).map((f) =>
+   matter.read(join(root, 'wiki', 'readings', f)).data,
+  ) as { facet: string; stance: string; reading: string; cites: string[] }[];
+  expect(readings.length).toBeGreaterThan(0);
+  const provenanceById = new Map(snippetsOnDisk().map((s) => [s.id, s.provenance]));
+  for (const reading of readings) {
+   const cited = provenanceById.get(reading.cites[0]!.split('@')[0]!);
+   if (cited?.authorship !== undefined && cited.authorship !== 'authored') {
+    expect(reading.stance).not.toBe('avowal');
+   }
+  }
  });
 });
