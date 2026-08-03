@@ -19,8 +19,9 @@ const SOURCES: QueueEntry['source'][] = [
  'gap-declared',
  'gap-fill',
  'contradiction-remeasure',
- 'lint-still-true',
- 'lint-undiscriminated-range',
+'lint-still-true',
+'lint-undiscriminated-range',
+'import-repair',
 ];
 
 const LINT_KINDS: LintFinding['kind'][] = [
@@ -69,6 +70,11 @@ describe('sourceLabel', () => {
   expect(sourceLabel('contradiction-remeasure')).toBe(sourceLabel('composed'));
   expect(sourceLabel('lint-still-true')).toBe(sourceLabel('composed'));
   expect(sourceLabel('lint-undiscriminated-range')).toBe(sourceLabel('composed'));
+ });
+
+ /** Q-15: a repair question reads as the ordinary question `composed` is. */
+ it('reads a repair question as the words composed gets — Q-15', () => {
+  expect(sourceLabel('import-repair')).toBe(sourceLabel('composed'));
  });
 
  it('is exhaustive by type — a missing member does not compile', () => {

@@ -215,6 +215,13 @@ export type Provenance = {
   * sees it. It exists so a later decision has something true to read.
   */
  channel?: CaptureChannel;
+/**
+ * Who wrote it, DECLARED (Q-70). Absent means never asked — every snippet
+ * written before this field existed, and every snippet from a live sitting.
+ * Absent must never be read as 'authored'; a consumer that treats missing as
+ * authored has reintroduced the bug ticket 046 is about.
+ */
+authorship?: 'authored' | 'other' | 'machine-assisted';
 };
 
 export type Snippet = {
@@ -301,7 +308,8 @@ source:
  | 'lint-still-true'
  | 'lint-undiscriminated-range'
  | 'parked-sounding'
- | 'claim-challenged';
+ | 'claim-challenged'
+ | 'import-repair';
  license: string;
  question: string;
  questionForm: QuestionForm;

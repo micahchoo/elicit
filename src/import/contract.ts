@@ -32,7 +32,9 @@ export type RefusalReason =
   * is what is refused, and a reader told "no date in its frontmatter" would
   * go looking for a field that is sitting right there.
   */
- | 'no-lastmod';
+ | 'no-lastmod'
+ /** The declared filename pattern does not match this name (Q-67). */
+ | 'no-date-in-name';
 
 export type ImportCut = {
  text: string;
@@ -56,6 +58,13 @@ export type ImportRecord = {
   */
  hash: string;
  sourcePath: string;
+ /**
+  * The region this item was admitted under (Q-68). Absent on the 19 records
+  * adopted from the one-off run and on anything admitted before Seeding —
+  * absent means "no region", never "the default region", and an absent value
+  * must never match a region filter.
+  */
+ region?: string;
  /**
   * The sitting date, ISO day, decided once at admit time and never
   * recomputed: frontmatter `date` for a source path seen for the first time,
@@ -95,9 +104,41 @@ export type ImportRecord = {
  * check that can be relaxed; the type has no such member.
  */
 export type ImportDecision = {
- /** Index into the record's `cuts`. */
- cut: number;
- action: 'approve' | 'trim' | 'discard';
- /** Required for 'trim'; must be a substring of the cut's text. */
- text?: string;
+/** Index into the record's `cuts`. */
+cut: number;
+action: 'approve' | 'trim' | 'discard';
+/** Required for 'trim'; must be a substring of the cut's text. */
+text?: string;
+};
+
+/**
+ * Who wrote the prose in a region, DECLARED by the person at Reach time and
+ * never detected (Q-70; detection is banned permanently by 046).
+ *
+ * `authored` is the only value that may carry `stance: 'avowal'`. A vault holds
+ * pasted model output and clipped quotes at scale, and a sentence the person
+ * kept but did not write evidences the KEEPING, not the holding.
+ */
+export type Authorship = 'authored' | 'other' | 'machine-assisted';
+
+/**
+ * The one mechanical rule that dates every file in a region (Q-67, amending
+ * Q-57 for undated corpora). Declared once, at Reach. What Q-57 bans is the
+ * GUESS — mtime above all, a lie for anything ever copied. A date typed into a
+ * filename is a declaration the person made at the time, the same epistemic
+ * class as frontmatter.
+ */
+export type DatingRule =
+ | { kind: 'frontmatter'; key: string }
+ /** A template over `YYYY`, `MM`, `DD`; every other character is literal. */
+ | { kind: 'filename'; pattern: string };
+
+export type RegionRecord = {
+ /** Derived from the path; stable across restarts. See `region.ts#slugFor`. */
+ slug: string;
+ /** Absolute path to the subtree root. A region IS a folder subtree (Q-68). */
+ root: string;
+ dating: DatingRule;
+ authorship: Authorship;
+ declared: string;
 };
