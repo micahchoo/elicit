@@ -16,6 +16,7 @@ import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
 import { renderImportEntry } from './import-entry.js';
 import { declinePath, offerSentence, reachItNav, type ReachOfferLine } from './reach-line.js';
+import { renderCoachPage } from './coach.js';
 import { ulid } from 'ulid';
 
 /* ─── API types ─── */
@@ -168,7 +169,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece';
+type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece' | 'coach';
 
 interface AppState {
  screen: Screen;
@@ -194,6 +195,8 @@ interface AppState {
  sounding: GateReading | null;
  /** The one-shot offer (012 T9): set once, cleared by either word. */
  soundingOffer: { construct: string; allowance: number; sentence: string } | null;
+/** The Coach page's slug (090 T11): set by navTo('coach', { slug }). */
+ coachSlug: string | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -213,6 +216,7 @@ const state: AppState = {
  pendingReviewSession: null,
  sounding: null,
  soundingOffer: null,
+ coachSlug: null,
 };
 
 const main = $('main')!;
@@ -222,10 +226,11 @@ main.append(surface);
 
 /* ─── Navigation ─── */
 
-function navTo(screen: Screen, opts?: { focus?: string; folder?: string }) {
+function navTo(screen: Screen, opts?: { focus?: string; folder?: string; slug?: string }) {
  const target = '#/' + screen;
  if (location.hash !== target) location.hash = target;
  state.screen = screen;
+ if (screen === 'coach' && opts?.slug !== undefined) state.coachSlug = opts.slug;
  switch (screen) {
   case 'mode':
   case 'home': renderMode(); break;
@@ -261,6 +266,17 @@ function navTo(screen: Screen, opts?: { focus?: string; folder?: string }) {
   case 'setup': renderSetup(); break;
   case 'material':
   case 'library': renderMaterial(); break;
+  case 'coach':
+   // The page needs a slug to fetch; a bare hash cannot fake one.
+   if (state.coachSlug === null) { navTo('waiting'); break; }
+   renderShell();
+   renderCoachPage({
+    main: surface,
+    el,
+    api,
+    navTo: (s: string) => navTo(s as Screen),
+   }, state.coachSlug);
+   break;
   case 'piece': renderPiece(); break;
  }
 }
@@ -271,7 +287,7 @@ function navTo(screen: Screen, opts?: { focus?: string; folder?: string }) {
 const SCREENS: readonly Screen[] = [
  'mode', 'home', 'exchange', 'harvest', 'done', 'waiting', 'login',
  'setup', 'unprompted', 'wiki', 'reviews', 'inbox', 'import',
- 'material', 'library', 'piece',
+ 'material', 'library', 'piece', 'coach',
 ];
 
 /** The screen a hash names, or null when it names nothing routable. */
@@ -334,7 +350,13 @@ function isReadPath(path: string): boolean {
  return path === '/api/wiki' || path.startsWith('/api/wiki?')
   || path === '/api/reach' || path.startsWith('/api/reach?')
   || /^\/api\/piece\/[^/]+$/.test(path)
-  || /^\/api\/piece\/[^/]+\/export$/.test(path);
+  || /^\/api\/piece\/[^/]+\/export$/.test(path)
+  // Coach reads: the waiting evaluation, and the page GET. Every other
+  // /api/coach/* path is a write. 'waiting', 'direction' and 'quest' are
+  // reserved in directionSlugFor (src/coach/contract.ts, T2), so a
+  // one-segment path that is none of them can only be a page slug.
+  || path === '/api/coach/waiting'
+  || /^\/api\/coach\/(?!direction$|quest$|waiting$)[^/]+$/.test(path);
 }
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
@@ -1974,7 +1996,42 @@ function renderWaiting() {
    /* the offer is not load-bearing; a failed read shows nothing */
   });
 
- // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
+// The Coach surface (090 T11): at most one dimmed offer line, and one
+// quiet line per coached Direction with something new (Q-37, Q-76).
+// `offer: null` and an empty lines list render nothing at all; the offer's
+// accept word posts /direction — the ONLY door (Q-73) — then lands on the
+// page; its decline word records the decline, and silence does nothing.
+const coachLine = el('div', { class: 'coach-waiting' }, '');
+div.append(coachLine);
+api<{ offer: { slug: string; name: string; sentence: string } | null; lines: { slug: string; sentence: string }[] }>('/api/coach/waiting')
+ .then((r) => {
+  if (r.offer !== null) {
+   const offer = el('p', { class: 'coach-offer-line' }, r.offer.sentence);
+   const accept = el('button', { class: 'coach-word', type: 'button' }, 'take up');
+   const decline = el('button', { class: 'coach-word', type: 'button' }, 'not this');
+   accept.addEventListener('click', () => {
+    api<{ direction: { slug: string } }>('/api/coach/direction', { name: r.offer!.name })
+     .then(() => navTo('coach', { slug: r.offer!.slug }))
+     .catch(() => { /* a failed declaration shows nothing */ });
+   });
+   decline.addEventListener('click', () => {
+    api(`/api/coach/direction/${r.offer!.slug}/decline-offer`).catch(() => { /* record, not load-bearing */ });
+    offer.replaceChildren(); // gone for this render — :empty hides it
+   });
+   offer.append(' ', accept, ' · ', decline);
+   coachLine.append(offer);
+  }
+  for (const line of r.lines) {
+   const p = el('p', { class: 'coach-quiet-line' }, line.sentence);
+   const open = el('button', { class: 'coach-word', type: 'button' }, 'open');
+   open.addEventListener('click', () => navTo('coach', { slug: line.slug }));
+   p.append(' ', open);
+   coachLine.append(p);
+  }
+ })
+ .catch(() => { /* the offer is not load-bearing; a failed read shows nothing */ });
+
+// Parked section — parked-sounding pointers waiting to be picked up (012 T12).
  // Dormancy is signal, never debt (Q-24): each row shows the last rung's
  // question and how many rungs are kept, with no age colouring and nothing
  // that reads as owed work. The section stays hidden when nothing is parked.

@@ -107,6 +107,10 @@ describe('buildCoachPage (090 T8)', () => {
   expect(ret.quote).toBe(prose);
   // The log sentence itself stays agent-plane; the quote carries the words.
   expect(ret.sentence).toBe('you came back with something for a quest');
+  // Quest-kind entries carry the quest id on the wire (T11's return box and
+  // retire word need it) — never in the sentence.
+  expect(ret.questId).toBe('q1');
+  expect(ret.sentence).not.toContain('q1');
  });
 
  it('a return sitting whose review has not landed logs without a quote', () => {

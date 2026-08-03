@@ -2222,3 +2222,136 @@ main {
  text-decoration: underline;
  cursor: pointer;
 }
+
+/* ── Coach (ticket 090 T11) ──
+   One page per coached Direction: a log half in the person's ink and a
+   dimmed advice margin. The document rule — a page of text, no cards, no
+   chips, no counts (Q-76); agent prose stays agent-plane (dimmed). */
+.coach-page {
+ max-width: 34rem;
+ margin: 0 auto;
+ padding: 1rem 1.25rem 3rem;
+}
+
+.coach-heading {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ font-weight: 500;
+ color: var(--dim);
+ text-transform: uppercase;
+ letter-spacing: 0.08em;
+ margin: 0 0 1rem;
+}
+
+.coach-opening {
+ font-family: var(--font-serif);
+ font-style: italic;
+ color: var(--dim);
+ margin: 0;
+}
+
+.coach-log-line {
+ font-family: var(--font-serif);
+ line-height: var(--line);
+ margin: 0 0 1rem;
+}
+
+/* the person's own words: dark-serif ink, beside the agent sentence */
+.coach-quote {
+ display: block;
+ margin-top: 0.25rem;
+ color: var(--fg);
+ font-style: italic;
+}
+
+/* the advice margin: agent plane, dimmed */
+.coach-margin {
+ margin: 2rem 0 0;
+ padding-left: 0.75rem;
+ border-left: 2px solid var(--border);
+}
+
+.coach-margin-label {
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ font-weight: 500;
+ color: var(--dim);
+ text-transform: lowercase;
+ letter-spacing: 0.06em;
+ margin: 0 0 0.5rem;
+}
+
+.coach-option {
+ margin-bottom: 1rem;
+}
+
+.coach-option-text {
+ font-family: var(--font-ui);
+ font-size: 0.85rem;
+ color: var(--dim);
+ line-height: 1.45;
+ margin: 0 0 0.25rem;
+}
+
+.coach-word {
+ background: none;
+ border: none;
+ padding: 0;
+ margin-right: 0.75rem;
+ font: inherit;
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ text-decoration: underline;
+ cursor: pointer;
+}
+
+.coach-return-box {
+ margin: 0.5rem 0 0;
+}
+
+.coach-return-input {
+ display: block;
+ width: 100%;
+ font-family: var(--font-serif);
+ font-size: 0.85rem;
+ color: var(--fg);
+ background: none;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 0.35rem;
+ resize: vertical;
+}
+
+.coach-artifact-form {
+ margin: 2.5rem 0 0;
+ padding-top: 1rem;
+ border-top: 1px solid var(--border);
+}
+
+.coach-artifact-field {
+ display: block;
+ width: 100%;
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 0.5rem;
+ padding: 0.15rem 0;
+}
+
+/* the waiting surface's coach lines: the cadence line's idiom — one dimmed
+   line; silence renders nothing and :empty hides the container */
+.coach-waiting:empty {
+ display: none;
+}
+
+.coach-offer-line,
+.coach-quiet-line {
+ margin: 0 0 0.75rem;
+ font-size: 0.9rem;
+ opacity: 0.55;
+ font-family: var(--font-ui);
+}

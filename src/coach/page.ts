@@ -20,6 +20,13 @@ export type CoachLogEntry = {
  sentence: string;
  /** The person's own words, quoted (dark-serif ink on the page): the quest's return prose. */
  quote?: string;
+ /**
+  * The quest id, carried ONLY on quest-kind entries (T11: the return box
+  * and the retire word post to /api/coach/quest/:id/…). Never rendered —
+  * the sentence stays identifier-free (Q-15); this rides the wire so the
+  * page's own affordances can reach the quest they belong to.
+  */
+ questId?: string;
 };
 
 export type CoachPage = {
@@ -46,9 +53,19 @@ export function buildCoachPage(facts: CoachFacts, snippets: Snippet[], slug: str
 
  const entries: CoachLogEntry[] = [];
  for (const q of facts.quests.filter((q) => q.direction === slug)) {
-  entries.push({ at: q.adoptedAt, kind: 'quest-adopted', sentence: scrub(`you took up a quest — ${q.act}`) });
+  entries.push({
+   at: q.adoptedAt,
+   kind: 'quest-adopted',
+   sentence: scrub(`you took up a quest — ${q.act}`),
+   questId: q.id,
+  });
   if (q.retiredAt !== undefined) {
-   entries.push({ at: q.retiredAt, kind: 'quest-retired', sentence: scrub(`you retired a quest — ${q.act}`) });
+   entries.push({
+    at: q.retiredAt,
+    kind: 'quest-retired',
+    sentence: scrub(`you retired a quest — ${q.act}`),
+    questId: q.id,
+   });
   }
  }
  for (const a of facts.artifacts.filter((a) => a.direction === slug)) {
@@ -66,6 +83,7 @@ export function buildCoachPage(facts: CoachFacts, snippets: Snippet[], slug: str
     at: t.started,
     kind: 'quest-return',
     sentence: 'you came back with something for a quest',
+    questId: t.quest,
     ...(prose.length > 0 ? { quote: prose.join('\n\n') } : {}),
    });
   } else {
