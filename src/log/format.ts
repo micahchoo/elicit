@@ -669,6 +669,37 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 'repair-question-capped': (f) =>
  `deferred ${count(num(f, 'deferred'), 'repair question')} — the live cap is full`,
 
+// ── The reach licence (seeding Task 11): one offer, every evaluation logged ──
+
+// Emitted by reachOffer on EVERY run (Q-62: silence with a record is the
+// difference between 'nothing reached' and 'the mechanism is broken'). The
+// detail carries the counts, the winner and the overlap — the record a real
+// vault re-tunes the threshold from. The sentence shows the region's own
+// name, never the path.
+'reach-evaluated': (f) => {
+ const candidates = num(f, 'candidates');
+ const head = `weighed ${count(num(f, 'nodes'), 'region')} against the live questions: ` +
+  `${count(candidates, 'region')} cleared the name bar`;
+ if (f.offered === 'true') {
+  const best = (f.best ?? '').split('/').pop() || 'one';
+  return `${head}, and offered ${best} (${num(f, 'overlap')} shared terms)`;
+ }
+ return `${head}, so nothing was offered`;
+},
+// Emitted when an offer is produced: the region, its unread count and the
+// terms that earned it — the licence in the person's own folder names.
+'reach-offered': (f) => {
+ const name = (f.path ?? '').split('/').pop() || 'a region';
+ const terms = (f.terms ?? 'its own names').split(',').join(', ');
+ return `offered ${name} (${count(num(f, 'unread'), 'unread note')}), matched by ${terms}`;
+},
+// Emitted by appendReachDecline: a decline reorders, never suppresses
+// (Q-22) — the region falls behind every region not declined more recently.
+'reach-declined': (f) => {
+ const name = (f.path ?? '').split('/').pop() || 'a region';
+ return `set ${name} aside — it falls behind every region not declined more recently`;
+},
+
 // ── The surfaced usage stamp (015) ──
 
 // One line per surfacing act: a claim or snippet reached the person on a

@@ -154,6 +154,13 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Already live: a cap on how many gaps one model-proposed Arrangement may mark is a bound, and Q-56 puts bounds in force from birth — a shadowed cap writes "I would have stopped at 3" while the model marks without limit, which is worse than no cap because the mechanism is what generated the work. Every clip emits threshold-clipped, so the value stays honest. It is re-tuned from that record, never from argument.',
  },
+ 'reach.nameOverlapMinTerms': {
+  name: 'reach.nameOverlapMinTerms',
+  value: 2,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-62 — the mechanism only OFFERS, nothing happens on silence, and every evaluation is logged. Re-tune from the reach-evaluated record once a real vault shows how often two-term overlap names a region the person actually wanted.',
+ },
  'repair.liveCap': {
   name: 'repair.liveCap',
   value: 2,

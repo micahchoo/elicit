@@ -640,6 +640,30 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'model returned nothing',
   reads: 'could not summarize a ladder',
 },
+// The reach licence (seeding Task 11): one offer per evaluation, and every
+// evaluation logged (Q-62). The evaluation carries the counts and the
+// winner; the offer names the region, its unread count and the terms that
+// earned it. The surface shows the region's own name, never the path.
+{
+  kind: 'reach-evaluated',
+  detail: 'nodes=3 candidates=1 best=journal/therapy-sessions offered=true overlap=2',
+  reads: 'weighed 3 regions against the live questions: 1 region cleared the name bar, and offered therapy-sessions (2 shared terms)',
+},
+{
+  kind: 'reach-evaluated',
+  detail: 'nodes=0 candidates=0 best=none offered=false overlap=0',
+  reads: 'weighed 0 regions against the live questions: 0 regions cleared the name bar, so nothing was offered',
+},
+{
+  kind: 'reach-offered',
+  detail: 'path=journal/therapy-sessions unread=1 terms=therapy,sessions',
+  reads: 'offered therapy-sessions (1 unread note), matched by therapy, sessions',
+},
+{
+  kind: 'reach-declined',
+  detail: 'path=journal/therapy-sessions',
+  reads: 'set therapy-sessions aside — it falls behind every region not declined more recently',
+},
 ];
 
 describe('formatEvent', () => {

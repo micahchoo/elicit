@@ -411,6 +411,32 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'called by GET /api/reach (Task 12) — Reach reads the snapshot, never the folder',
 },
 
+// ── src/import/reach.ts ──
+{
+ module: 'src/import/reach',
+ name: 'termsOf',
+ status: 'live',
+ reason: 'called by reachOffer in the same module — one normaliser for both sides of every comparison',
+},
+{
+ module: 'src/import/reach',
+ name: 'reachOffer',
+ status: 'unwired',
+ reason: "nothing calls it until Task 12's GET /api/reach route — the licence is offered through that door",
+},
+{
+ module: 'src/import/reach',
+ name: 'appendReachDecline',
+ status: 'unwired',
+ reason: "nothing calls it until Task 12's POST /api/reach/decline route",
+},
+{
+ module: 'src/import/reach',
+ name: 'reachDeclines',
+ status: 'unwired',
+ reason: 'read by GET /api/reach (Task 12) — the decline ledger ranks offers; re-read every call, never cached',
+},
+
 // ── src/import/repair.ts ──
 {
  module: 'src/import/repair',
