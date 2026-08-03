@@ -344,7 +344,7 @@ class ApiError extends Error {
  * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
  * the same path and is the one write the wiki surface makes.
  */
-const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces'];
+const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary'];
 
 function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
@@ -2222,6 +2222,38 @@ api<{ offer: { slug: string; name: string; sentence: string } | null; lines: { s
  })
  .catch(() => { /* the offer is not load-bearing; a failed read shows nothing */ });
 
+
+// ── The on-this-day card (ticket 115): one draw per page load ──
+// An offer under Q-62: the card renders only when the anniversary endpoint
+const anniversaryCard = el('div', { class: 'anniversary-card' });
+div.append(anniversaryCard);
+api<{ question: string; snippetQuestion?: string; context?: string; draw: { kind: string; wroteAt: string; snippetId: string } } | null>('/api/anniversary')
+ .then((draw) => {
+  if (!draw) return;
+  // Parse the question: "${date} (${ago}):\n\n"${prose}""
+  const nl = draw.question.indexOf('\n\n');
+  const dateLine = nl >= 0 ? draw.question.slice(0, nl) : draw.question;
+  const prose = nl >= 0 ? draw.question.slice(nl + 3).replace(/^"|"$/g, '') : '';
+
+  // Lineage: the eliciting question and context, dimmed
+  const lineage = lineageBlock(draw.snippetQuestion, draw.context);
+  if (lineage) anniversaryCard.append(lineage);
+
+  const dateEl = el('p', { class: 'anniversary-date' }, dateLine);
+  anniversaryCard.append(dateEl);
+
+  const quoteEl = el('blockquote', { class: 'anniversary-quote' }, prose);
+  anniversaryCard.append(quoteEl);
+
+  const actions = el('div', { class: 'anniversary-actions' });
+  const readWord = el('button', { class: 'nav-link', type: 'button' }, 'read');
+  const notNow = el('button', { class: 'nav-link', type: 'button' }, 'not now');
+  readWord.addEventListener('click', () => navTo('mode'));
+  notNow.addEventListener('click', () => anniversaryCard.replaceChildren());
+  actions.append(readWord, ' \u00b7 ', notNow);
+  anniversaryCard.append(actions);
+ })
+ .catch(() => { /* the card is not load-bearing; a failed read shows nothing */ });
 // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
  // Dormancy is signal, never debt (Q-24): each row shows the last rung's
  // question and how many rungs are kept, with no age colouring and nothing
