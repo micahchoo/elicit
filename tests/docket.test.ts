@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import matter from 'gray-matter';
 import { ulid } from 'ulid';
 import { createPieceStore } from '../src/piece/store.js';
+import { createAnnotationStore } from '../src/clerk/annotation-store.js';
+import type { AnnotationStore } from '../src/clerk/annotation-store.js';
 import type { PieceStore } from '../src/piece/contract.js';
 
 import { createApp } from '../src/server.js';
@@ -26,6 +28,7 @@ import type {
  LexicalIndex,
  DocketReport,
  Complete,
+ Turn,
 } from '../src/types.js';
 
 type SessionRef = { session: string; started: string; turnCount: number; chars: number };
@@ -50,6 +53,7 @@ type DocketDeps = {
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
  stalePinSweep?: () => Promise<number>;
  dormancySweep?: () => Promise<number>;
+ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
  stillTrueCursor?: { read: () => number; write: (offset: number) => void };
 };
 
@@ -136,6 +140,15 @@ type PieceSweepDeps = {
 };
 let runStalePinSweep: (deps: PieceSweepDeps) => Promise<number>;
 let runDormancySweep: (deps: PieceSweepDeps) => Promise<number>;
+type AnnotationJobDeps = {
+ snippets: () => Record<string, Snippet>;
+ annotations: AnnotationStore;
+ complete: Complete;
+ modelName: string;
+ log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+ cap?: number;
+};
+let runReferentAnnotations: (deps: AnnotationJobDeps) => Promise<{ annotated: number; silent: number; failed: number }>;
 
 beforeEach(async () => {
  vi.resetModules();
@@ -143,6 +156,7 @@ beforeEach(async () => {
  runDocket = mod.runDocket;
  runStalePinSweep = mod.runStalePinSweep;
  runDormancySweep = mod.runDormancySweep;
+ runReferentAnnotations = mod.runReferentAnnotations;
 });
 
 describe('runDocket', () => {
@@ -1211,5 +1225,217 @@ describe('the piece jobs on a real vault (010 T10)', () => {
   // Neither job received the Complete; both ran to completion.
   expect(stalePinSweep).toHaveBeenCalledTimes(1);
   expect(dormancySweep).toHaveBeenCalledTimes(1);
+ });
+});
+
+// ===========================================================================
+// The referent annotation job (ticket 074)
+
+describe('runReferentAnnotations', () => {
+ const MODEL = 'fake-model';
+ const IDX: LexicalIndex = { _brand: 'LexicalIndex' } as LexicalIndex;
+ const ANNOTATE_JSON = JSON.stringify({ annotate: true, expression: 'that', referent: 'the thing it points at' });
+ const SILENCE_JSON = JSON.stringify({ annotate: false });
+
+ type Call = { system: string; turns: Turn[]; opts: { temperature?: number } | undefined };
+
+ /** A completer that records every call and answers from a script, in order. */
+ function recorder(responses: string[]): { complete: Complete; calls: Call[] } {
+  const calls: Call[] = [];
+  let i = 0;
+  const complete: Complete = async (system, turns, opts) => {
+   calls.push({ system, turns, opts });
+   const next = responses[i++];
+   if (next === undefined) throw new Error(`scripted completer exhausted after ${responses.length}`);
+   return next;
+  };
+  return { complete, calls };
+ }
+
+ let root: string;
+ beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'docket-annotate-'));
+ });
+ afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+ });
+
+ it('annotates a missing snippet and persists the annotation record with the stamp from the result', async () => {
+  const s = makeSnippet(ulid(), { prose: 'I would leave a job that took my direction away.' });
+  const { complete, calls } = recorder([ANNOTATE_JSON]);
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [s.id]: s }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+  });
+  expect(res).toEqual({ annotated: 1, silent: 0, failed: 0 });
+  expect(calls).toHaveLength(1);
+  const rec = annotations.get(s.id);
+  expect(rec).not.toBeNull();
+  if (rec !== null && rec.kind === 'annotation') {
+   expect(rec.snippetId).toBe(s.id);
+   expect(rec.version).toBe(s.version);
+   expect(rec.expression).toBe('that');
+   expect(rec.referent).toBe('the thing it points at');
+   // The stamp (model + modelAt) comes FROM annotateReferent's result —
+   // the job never re-stamps (Q-34).
+   expect(rec.model).toBe(MODEL);
+   expect(typeof rec.modelAt).toBe('string');
+  } else {
+   throw new Error('expected an annotation record');
+  }
+ });
+
+ it('persists a silence record so a judged snippet is never re-asked', async () => {
+  const s = makeSnippet(ulid(), { prose: 'Some prose with a dangling it.' });
+  const { complete, calls } = recorder([SILENCE_JSON]);
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [s.id]: s }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+  });
+  expect(res).toEqual({ annotated: 0, silent: 1, failed: 0 });
+  expect(calls).toHaveLength(1);
+  expect(annotations.get(s.id)).toEqual({
+   kind: 'silence',
+   snippetId: s.id,
+   version: s.version,
+   model: MODEL,
+   modelAt: expect.any(String),
+  });
+ });
+
+ it('skips a snippet whose record is current', async () => {
+  const s = makeSnippet(ulid(), { prose: 'Already annotated.' });
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  annotations.put({ kind: 'annotation', snippetId: s.id, version: s.version, expression: 'it', referent: 'the old referent', model: MODEL, modelAt: new Date().toISOString() });
+  const { complete, calls } = recorder([ANNOTATE_JSON]);
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [s.id]: s }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+  });
+  expect(res).toEqual({ annotated: 0, silent: 0, failed: 0 });
+  expect(calls).toHaveLength(0);
+  const rec = annotations.get(s.id);
+  if (rec !== null && rec.kind === 'annotation') {
+   expect(rec.referent).toBe('the old referent');
+  } else {
+   throw new Error('expected the untouched annotation record');
+  }
+ });
+
+ it('re-annotates a snippet whose version moved on (new text, new read)', async () => {
+  const s = makeSnippet(ulid(), { prose: 'Second version of the prose.' });
+  s.version = 2;
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  annotations.put({ kind: 'annotation', snippetId: s.id, version: 1, expression: 'it', referent: 'the old referent', model: MODEL, modelAt: new Date().toISOString() });
+  const { complete } = recorder([ANNOTATE_JSON]);
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [s.id]: s }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+  });
+  expect(res).toEqual({ annotated: 1, silent: 0, failed: 0 });
+  const rec = annotations.get(s.id);
+  if (rec !== null && rec.kind === 'annotation') {
+   expect(rec.version).toBe(2);
+   expect(rec.referent).toBe('the thing it points at');
+  } else {
+   throw new Error('expected a fresh annotation record');
+  }
+ });
+
+ it('processes at most cap candidates (the cap bounds model calls)', async () => {
+  const snips = Array.from({ length: 7 }, () => makeSnippet(ulid()));
+  const { complete, calls } = recorder(Array.from({ length: 7 }, () => ANNOTATE_JSON));
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  const res = await runReferentAnnotations({
+   snippets: () => Object.fromEntries(snips.map((x) => [x.id, x])),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+   cap: 3,
+  });
+  expect(res).toEqual({ annotated: 3, silent: 0, failed: 0 });
+  expect(calls).toHaveLength(3);
+ });
+
+ it('counts a model failure and logs referent-annotation-failed', async () => {
+  const s = makeSnippet(ulid(), { prose: 'Prose that makes the model explode.' });
+  // Empty script: the first call throws, and a throw is a counted failure,
+  // never a silence.
+  const { complete } = recorder([]);
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  const log = vi.fn();
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [s.id]: s }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log,
+  });
+  expect(res).toEqual({ annotated: 0, silent: 0, failed: 1 });
+  const events = log.mock.calls.map((call) => call[0] as { kind: string; detail: string });
+  const failed = events.find((e) => e.kind === 'referent-annotation-failed');
+  expect(failed).toBeTruthy();
+  if (failed !== undefined) {
+   expect(failed.detail).toContain(s.id);
+   expect(failed.detail).toContain('scripted completer exhausted');
+  }
+  // The summary line logs even when everything failed.
+  const summary = events.find((e) => e.kind === 'referent-annotated');
+  expect(summary).toBeTruthy();
+  if (summary !== undefined) expect(summary.detail).toBe('annotated=0 silent=0 failed=1');
+ });
+
+ it('processes candidates newest-first', async () => {
+  const old = makeSnippet(ulid(), { captured: daysAgo(2), prose: 'oldest prose' });
+  const mid = makeSnippet(ulid(), { captured: daysAgo(1), prose: 'middle prose' });
+  const fresh = makeSnippet(ulid(), { captured: daysAgo(0), prose: 'newest prose' });
+  const { complete, calls } = recorder([ANNOTATE_JSON, ANNOTATE_JSON, ANNOTATE_JSON]);
+  const annotations = createAnnotationStore(join(root, 'annotations'));
+  const res = await runReferentAnnotations({
+   snippets: () => ({ [old.id]: old, [mid.id]: mid, [fresh.id]: fresh }),
+   annotations,
+   complete,
+   modelName: MODEL,
+   log: vi.fn(),
+  });
+  expect(res).toEqual({ annotated: 3, silent: 0, failed: 0 });
+  const texts = calls.map((call) => call.turns[0]!.text);
+  expect(texts[0]).toContain('newest prose');
+  expect(texts[1]).toContain('middle prose');
+  expect(texts[2]).toContain('oldest prose');
+ });
+
+ it('runDocket calls an injected referentAnnotations thunk and reports its counts', async () => {
+  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+  const referentAnnotations = vi.fn().mockResolvedValue({ annotated: 2, silent: 1, failed: 0 });
+  const report = await runDocket({
+   vault: fakeVault([sn]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn(),
+   composeStillTrue: vi.fn(),
+   log: vi.fn(),
+   listSessions: vi.fn().mockReturnValue([]),
+   referentAnnotations,
+   vaultRoot: '/tmp/fake',
+  });
+  expect(referentAnnotations).toHaveBeenCalledTimes(1);
+  expect(report.annotations).toEqual({ annotated: 2, silent: 1, failed: 0 });
  });
 });

@@ -25,7 +25,8 @@ import {
  type SemanticIndex,
 } from './index/semantic.js';
 import { readCadence, cadenceSentence } from './log/cadence.js';
-import { runDocket, runDormancySweep, runStalePinSweep } from './clerk/docket.js';
+import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations } from './clerk/docket.js';
+import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
@@ -140,6 +141,12 @@ export interface ServerDeps {
   * an embedder has to know that a run finished.
   */
  onDocketSettled?: () => void;
+ /**
+  * The resolved-referent annotation store (ticket 074). Absent means the
+  * /api/snippets route enriches nothing and the docket runs no annotation
+  * job — exactly the pre-ticket behavior, which the tests keep.
+  */
+ annotations?: AnnotationStore;
 }
 
 // ── MIME map for static serving ──
@@ -570,6 +577,9 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   // The import job's counts, seen in the finally for the re-trigger. Hoisted
   // because the finally runs whether the run succeeded or failed.
   let importReport: { extracted: number; remaining: number; failed: number } | undefined;
+  // Captured as a const so the closure below narrows it: a property access
+  // (deps.annotations) does not keep its narrowing inside an arrow function.
+  const annotations = deps.annotations;
   try {
    const report = await runDocket({
     vault: deps.vault,
@@ -598,6 +608,21 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      snippets: () => deps.vault.rebuildIndex().snippets,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     }),
+    // Ticket 074: resolved-referent annotation, one model call per
+    // candidate (the cap bounds model calls, not successes). Injected
+    // only when the server carries the store, so an absent store means
+    // no annotation job at all — the pre-ticket docket.
+    ...(annotations
+     ? {
+      referentAnnotations: () => runReferentAnnotations({
+       snippets: () => deps.vault.rebuildIndex().snippets,
+       annotations,
+       complete: clerkComplete,
+       modelName: clerkModelName ?? DEFAULT_CLERK_MODEL,
+       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      }),
+     }
+     : {}),
     runImportJobs: runImportJobsNow,
     stillTrueCursor,
     vaultRoot: deps.vaultRoot,
@@ -1514,10 +1539,25 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   });
  });
 
+ // The resolved-referent annotation store, when the server carries one
+ // (ticket 074). Absent preserves the pre-ticket /api/snippets exactly.
+ const annotations = deps.annotations;
+
  // GET /api/snippets
  app.get('/api/snippets', (c) => {
   const index = deps.vault.rebuildIndex();
-  return c.json({ snippets: Object.values(index.snippets) });
+  const all = Object.values(index.snippets);
+  // Ticket 074: the resolved-referent annotation is agent prose SEPARATE
+  // from the snippet, so it rides the response only when the store is
+  // injected and only for snippets the model has annotated. Silence and
+  // absence both omit the key — the renderer shows nothing for them.
+  const snippets = annotations
+   ? all.map((s) => {
+    const rec = annotations.get(s.id);
+    return rec !== null && rec.kind === 'annotation' ? { ...s, annotation: rec } : s;
+   })
+   : all;
+  return c.json({ snippets });
  });
 
  // ── The wiki, as a page (Q-21, Q-23, Q-25) ──
@@ -2314,6 +2354,10 @@ if (isDirect) {
   ...(semanticIndex ? { semanticIndex } : {}),
   vaultRoot,
   authStore,
+  // Ticket 074: resolved-referent annotations live OUTSIDE the vault,
+  // under the project data dir — the reading plane keeps its agent-prose
+  // stores in the vault, and the ticket forbids vault writes.
+  annotations: createAnnotationStore(join(process.cwd(), 'data', 'annotations')),
   ...(modelName ? { modelName } : {}),
  });
  await serveApp(app, port);

@@ -86,6 +86,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeExpedition', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeDiscriminatingQuestion', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
+ // ── src/clerk/annotate.ts ──
+ { module: 'src/clerk/annotate', name: 'annotateReferent', status: 'live' },
+ // ── src/clerk/annotation-store.ts ──
+ { module: 'src/clerk/annotation-store', name: 'createAnnotationStore', status: 'live' },
 
  // ── src/clerk/contradiction.ts ──
  { module: 'src/clerk/contradiction', name: 'judgeOpposition', status: 'live' },
@@ -118,6 +122,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
   reason: 'wired by 010 T10: runDocketNow\'s thunk runs it as the docket\'s second piece job',
  },
+ { module: 'src/clerk/docket', name: 'runReferentAnnotations', status: 'live' },
 
  // ── src/clerk/mint.ts ──
  { module: 'src/clerk/mint', name: 'proposeOps', status: 'live' },

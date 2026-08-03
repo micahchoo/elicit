@@ -9,6 +9,7 @@ import type {
  QueueEntry,
 } from '../src/types.ts';
 import type { Claim, Contradiction } from '../src/wiki/contract.ts';
+import type { AnnotationRecord } from '../src/clerk/annotation-store.js';
 import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
 import { renderImportEntry } from './import-entry.js';
@@ -33,6 +34,13 @@ interface TurnData {
  phase?: string;
  juxtaposition?: { snippetText: string; snippetDate: string };
 }
+
+/**
+ * The /api/snippets wire view: a Snippet that may carry a resolved-referent
+ * annotation (ticket 074) — agent prose riding beside, never inside, the
+ * person's words. The shared Snippet type stays annotation-free.
+ */
+type WikiSnippet = Snippet & { annotation?: AnnotationRecord };
 
 interface EndResponse {
  status: string;
@@ -1787,6 +1795,7 @@ function quoteBlock(
  prose: string,
  iso?: string,
  prov?: { question?: string; context?: string },
+ ann?: { expression: string; referent: string },
 ): HTMLElement {
  const q = el('blockquote', { class: 'claim-quote' }, prose);
  // The lineage that produced these words, dimmed above them — as on the
@@ -1797,6 +1806,10 @@ function quoteBlock(
  }
  const when = iso ? readableDate(iso) : '';
  if (when) q.append(el('span', { class: 'claim-quote-date' }, when));
+ // The resolved referent (ticket 074): agent prose in the margin, after
+ // the date, never inside the person's words. Only the annotation kind
+ // renders — silence means the model judged nothing to resolve.
+ if (ann) q.append(marginNote(`“${ann.expression}” → ${ann.referent}`));
  return q;
 }
 
@@ -1858,10 +1871,10 @@ function renderWiki(all = false) {
  })();
 }
 
-function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: Snippet[]) {
+function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[]) {
  page.innerHTML = '';
 
- const byId = new Map<string, Snippet>();
+ const byId = new Map<string, WikiSnippet>();
  for (const s of snippets) byId.set(s.id, s);
 
  // Lint notes, filed by what they are about. `subject` itself never renders.
@@ -1915,7 +1928,7 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: Snippet[]) {
     // margin above when it has read the page.
     const snippetId = cite.split('@')[0] ?? '';
     const s = byId.get(snippetId);
-    if (s) block.append(quoteBlock(s.prose, s.captured, s.provenance));
+    if (s) block.append(quoteBlock(s.prose, s.captured, s.provenance, s.annotation?.kind === 'annotation' ? s.annotation : undefined));
    }
    section.append(block);
   }
@@ -1940,13 +1953,15 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: Snippet[]) {
      // snippet's prose does it carry that snippet's provenance. A partial
      // quote matches nothing and renders without lineage.
      let prov: { question?: string; context?: string } | undefined;
+     let ann: { expression: string; referent: string } | undefined;
      for (const s of byId.values()) {
       if (s.prose === quoteText) {
        prov = s.provenance;
+       ann = s.annotation?.kind === 'annotation' ? s.annotation : undefined;
        break;
       }
      }
-     exhibit.append(quoteBlock(quoteText, undefined, prov));
+     exhibit.append(quoteBlock(quoteText, undefined, prov, ann));
     } else exhibit.append(el('p', { class: 'exhibit-pole' }, text));
    }
    section.append(exhibit);

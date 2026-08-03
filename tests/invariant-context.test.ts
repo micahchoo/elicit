@@ -47,6 +47,7 @@ describe('context invariant — lineage, not corpus', () => {
   const ALLOWED_PATHS = [
     'src/types.ts',
     'src/harvester/harvester.ts',
+    'src/clerk/annotate.ts',
     'src/clerk/mint.ts',
     'scripts/backfill-context.ts',
   ];
@@ -73,6 +74,34 @@ describe('context invariant — lineage, not corpus', () => {
         throw new Error(
           `src/clerk/mint.ts:${i + 1} reads .context outside the typed-marker line — ${line.trim()}\n` +
             'Lineage must reach the payload only as a <context> block (ticket 091).',
+        );
+      }
+    }
+  });
+
+  it('annotate.ts reads provenance lineage only on the typed-marker lines', () => {
+    // Ticket 074: annotate.ts carries question and context into the
+    // annotation payload as <question>/<context> blocks, exactly as mint.ts
+    // does for the mint payload (ticket 091). That is the whole extent of
+    // the read — a provenance.question or provenance.context access
+    // anywhere else in the file would resolve a referent from lineage
+    // outside the marker contract and must fail here.
+    const content = readFileSync('src/clerk/annotate.ts', 'utf-8');
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      // Skip comment-only lines (prose that mentions the word "context").
+      if (/^\s*(\/\/|\*|\/\*\*)/.test(line)) continue;
+      if (/\.question\b/.test(line) && !line.includes('<question>')) {
+        throw new Error(
+          `src/clerk/annotate.ts:${i + 1} reads .question outside the typed-marker line — ${line.trim()}\n` +
+            'Lineage must reach the payload only as a <question> block (ticket 074).',
+        );
+      }
+      if (/\.context\b/.test(line) && !line.includes('<context>')) {
+        throw new Error(
+          `src/clerk/annotate.ts:${i + 1} reads .context outside the typed-marker line — ${line.trim()}\n` +
+            'Lineage must reach the payload only as a <context> block (ticket 074).',
         );
       }
     }

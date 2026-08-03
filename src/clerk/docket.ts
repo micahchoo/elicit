@@ -15,6 +15,8 @@ import { stalePins } from '../piece/stale.js';
 import { isDormant } from '../piece/dormancy.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
 import type { Piece, PieceStore } from '../piece/contract.js';
+import { annotateReferent } from './annotate.js';
+import type { AnnotationStore } from './annotation-store.js';
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -121,6 +123,78 @@ export async function runDormancySweep(deps: {
  return setDown;
 }
 
+// ── The referent annotation job (ticket 074) ──
+// At most one model call per candidate snippet: annotateReferent names what
+// a dangling referent points at, or stays silent. Annotations are derived
+// agent prose — re-annotation overwrites, never appends — and a new snippet
+// version is new text, so a version-stale record is re-asked. Silence IS
+// persisted — a snippet the model already judged is never re-asked — but
+// the rendering shows nothing for it. The cap bounds model calls per run,
+// not successes.
+
+/** The most snippets one run may ask the model about (ticket 074). */
+const ANNOTATION_RUN_CAP = 5;
+
+/**
+ * The referent annotation job (ticket 074): at most `cap` candidates,
+ * newest captured first, each missing a record or carrying a version-stale
+ * one. The stamp (model + modelAt) comes FROM annotateReferent's result —
+ * the annotation is composed and stamped at the moment the answer is
+ * accepted (Q-34); this job persists it as-is and never re-stamps. A model
+ * failure is a counted failure, never a silence (the annotation module
+ * throws rather than confusing the two, and this job records the throw).
+ */
+export async function runReferentAnnotations(deps: {
+ snippets: () => Record<string, Snippet>;
+ annotations: AnnotationStore;
+ complete: Complete;
+ modelName: string;
+ log: PieceLog;
+ cap?: number;
+}): Promise<{ annotated: number; silent: number; failed: number }> {
+ const cap = deps.cap ?? ANNOTATION_RUN_CAP;
+ const candidates = Object.values(deps.snippets())
+  .sort((a, b) => b.captured.localeCompare(a.captured))
+  .filter((s) => {
+   const rec = deps.annotations.get(s.id);
+   return rec === null || rec.version !== s.version;
+  });
+ let annotated = 0;
+ let silent = 0;
+ let failed = 0;
+ for (const snippet of candidates.slice(0, cap)) {
+  try {
+   const result = await annotateReferent({ snippet, model: deps.modelName }, deps.complete);
+   if (result.kind === 'annotation') {
+    deps.annotations.put({
+     kind: 'annotation',
+     snippetId: result.annotation.snippetId,
+     version: result.annotation.version,
+     expression: result.annotation.expression,
+     referent: result.annotation.referent,
+     model: result.annotation.model,
+     modelAt: result.annotation.modelAt,
+    });
+    annotated++;
+   } else {
+    deps.annotations.put({
+     kind: 'silence',
+     snippetId: snippet.id,
+     version: snippet.version,
+     model: deps.modelName,
+     modelAt: new Date().toISOString(),
+    });
+    silent++;
+   }
+  } catch (err) {
+   failed++;
+   deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'referent-annotation-failed', detail: `annotateReferent for snippet ${snippet.id} failed: ${String(err)}` });
+  }
+ }
+ deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'referent-annotated', detail: `annotated=${annotated} silent=${silent} failed=${failed}` });
+ return { annotated, silent, failed };
+}
+
 export async function runDocket(deps: {
  vault: Vault;
  queue: QueueStore;
@@ -165,6 +239,13 @@ export async function runDocket(deps: {
  * behaves exactly as before. Zero-LLM: it never receives the Complete.
  */
  dormancySweep?: () => Promise<number>;
+/**
+ * The referent annotation job (ticket 074), as the docket's seventh job of
+ * a run. Absent means no annotation work this run, and every caller
+ * predating the field behaves exactly as before. The server injects it
+ * with the annotation store and the Clerk's complete bound.
+ */
+referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
 /**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
@@ -360,7 +441,20 @@ export async function runDocket(deps: {
    }
   }
 
-  // ── 7. Piece work (010 T10): stale-pin sweep, then auto-set-down ──
+  // ── 7. Referent annotations (ticket 074): newest snippets first ──
+  // Guarded like the wiki jobs: a failure is one job's failure, and the
+  // index, the minted questions, the expiry and the consolidation are
+  // already on disk by the time this runs.
+  let annotations: DocketReport['annotations'];
+  if (deps.referentAnnotations) {
+   try {
+    annotations = await deps.referentAnnotations();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'referent-annotations-failed', detail: String(err) });
+   }
+  }
+
+  // ── 8. Piece work (010 T10): stale-pin sweep, then auto-set-down ──
   // piece jobs
   // Each guarded on its own: a failure in one is one job's failure, and the
   // other still runs. Neither job calls a model — zero-LLM by contract
@@ -381,7 +475,7 @@ export async function runDocket(deps: {
   }
   // end piece jobs
 
-  // ── 8. The wiki jobs, last and guarded (ticket 023 item 2) ──
+  // ── 9. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
   // job's failure. The index, the minted questions, the expiry and the
@@ -396,7 +490,7 @@ export async function runDocket(deps: {
    }
   }
 
-  // ── 9. The import extraction, last and guarded (T6) ──
+  // ── 10. The import extraction, last and guarded (T6) ──
   // Last because it is the slowest thing in the run and no other job may
   // wait on it — the cost is paid before the person sits down (Q-58), and
   // nothing the docket owns must be pushed later than it already is.
@@ -419,6 +513,7 @@ export async function runDocket(deps: {
    index,
    ...(wiki ? { wiki } : {}),
    ...(imports ? { imports } : {}),
+   ...(annotations ? { annotations } : {}),
   };
  } finally {
   running = false;

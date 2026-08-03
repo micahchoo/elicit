@@ -1,0 +1,34 @@
+{"id":"01KZ0WPJ53V8WTH0DAACWXKQR0","correct":true}
+{"id":"01KZ0WPJ53Y6AM0WFP7T1VZT1D","correct":true}
+{"id":"01KZ0WPJ2SXJZXVES7Y3V00DNG","correct":false,"note":"false positive on an unresolvable row — annotated 'it' where the label says the referent is beyond the window; referent ('the act of adding to the collective') also misses the label's collective(s)"}
+{"id":"01KZ0WPJ2SZEJV0QRZZ6XH90TT","correct":true}
+{"id":"01KZ0WPJ2PHRH7H1FHV22TYNRB","correct":true,"note":"resolves 'him'→Naveen; the row's other two danglers (groups, activities) go unannotated — partial, but the made annotation is right"}
+{"id":"01KZ0WPJ2P4NG70F0GGRYGT58D","correct":true,"note":"the learning exchange seen from the student's side ('experience with the consistent student') vs the label's potter's side — same event"}
+{"id":"01KZ0WPJ2SX0GRTQANR692Y7Y1","correct":true}
+{"id":"01KZ0WPJ2SC8KSF34TH28DX84J","correct":true}
+{"id":"01KZ0WPJ2S0246WM96Z95CR288","correct":true}
+{"id":"01KZ0WPJ2R85NPX95DWMST5X55","correct":true}
+{"id":"01KZ0WPJ2S9YEGHFRJ3SBAN2GY","correct":true}
+{"id":"01KZ0WPJ2Q2ZRVH42X1YAMC3JH","correct":true,"note":"'what Naveen told me' — identifies the referent (Naveen's statement) but under-specified vs the label's content"}
+{"id":"01KZ0WPJ2RWHM597TH224VMP21","correct":true}
+{"id":"01KZ0WPJ2PACD23D4VYNFZJ50Z","correct":true}
+{"id":"01KZ0WPJ2RGA9YS8BA9TWTSD73","correct":true}
+{"id":"01KZ0WPJ2R2XA1M31VE52VX6T9","correct":true}
+{"id":"01KZ0WPJ2QPD5WR70VEJ9VRY0J","correct":true}
+{"id":"01KZ0WPJ2QP6C13FBJXSQR1VBN","correct":true}
+{"id":"01KZ0WPJ2SGSP8YRH2GHV9HD44","correct":true}
+{"id":"01KZ0WPJ2TTK286235GQZPS6WJ","correct":true,"note":"tautological ('the condition of being a diseased collective') — adds no information but asserts nothing false"}
+{"id":"01KZ0WPJ2QKDKRDQCKYMQ648QG","correct":false,"note":"false positive: annotated 'the scaffolding' whose referent the label places beyond the window, with a guessed generic referent ('educational framework or method being used') that does not identify the participation structure"}
+{"id":"01KZ0WPJ2RFC75N2764ZGA3G2N","correct":true}
+{"id":"01KZ0WPJ4XATS07M5136HXAMYD","correct":true}
+{"id":"01KZ0WPJ5DV9T1T39FDYSYN2EZ","correct":true}
+{"id":"01KZ0WPJ5DH0M1K2GS9HQMMQK5","correct":true}
+{"id":"01KZ0WPJ5DDVEAQB92NYP65VM1","correct":true}
+{"id":"01KZ0WPJ5DGFT0Q0E985XGK1RN","correct":true}
+{"id":"01KZ0WPJ5D5HFB8CPN01WGSWZN","correct":true}
+{"id":"01KZ0WPJ5DVQFHP0HF30H2JV70","correct":true}
+{"id":"01KZ0WPJ4XVJ86K24317EDF4NW","correct":true}
+{"id":"01KZ0WPJ4WSD2FPC64YWG7NBMW","correct":true}
+{"id":"01KZ0WPJ58CF8MJ5VDY43FRSKK","correct":true,"note":"resolves 'the linkages'→hyperlinking on Are.na; the row's other dangler (the root channel) goes unannotated — partial, but right"}
+{"id":"01KZ0WPJ5RME9X5B523GWT2M6Q","correct":true}
+{"id":"01KZ0WPJ5R70487WM6XZAPC9T8","correct":true,"note":"resolves 'it'→the programme; the row's other dangler (the participants) unannotated — partial, but right"}

@@ -46,6 +46,9 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'expired', detail: 'expired 4 entries', reads: 'expired 4 questions' },
  { kind: 'consolidated', detail: 'summarized 4 sessions', reads: 'summarized 4 sittings' },
  { kind: 'consolidation-failed', detail: 'Error: context overflow', reads: 'could not summarize the sittings' },
+ { kind: 'referent-annotated', detail: 'annotated=3 silent=2 failed=1', reads: 'annotated 3 referents, 2 stayed silent, 1 failure' },
+ { kind: 'referent-annotation-failed', detail: `annotateReferent for snippet ${ULID} failed: boom`, reads: 'could not annotate a referent' },
+ { kind: 'referent-annotations-failed', detail: 'boom', reads: 'could not run the referent annotation job' },
  {
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',

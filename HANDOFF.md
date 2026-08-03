@@ -1,6 +1,6 @@
 # HANDOFF — Elicit
 
-Updated: 2026-08-03, after 010 T10/T13 landed (HEAD `1e4a1a3`).
+Updated: 2026-08-03, after 010 T10/T13 landed and 089 shipped uncommitted (HEAD `1e4a1a3`).
 
 ## Right now
 
@@ -42,10 +42,12 @@ Open tickets and their order:
 
 - **074**-annotation half — IN FLIGHT, uncommitted on this tree (a peer
   session's fence, listed under Right now). Never stash or revert it.
-- **089** godNodeFanout — scope the fanout to referents (shadow record is
-  conclusive: facets are a closed vocabulary of eight and the facet counts
-  climb monotonically with the corpus). Ships uncommitted for driver
-  verification when it lands; before/after counts go in the ticket.
+- **089** godNodeFanout scoped to referents — DONE, shipped uncommitted in
+  this tree for driver verification (the whole part-2 file set: lint.ts,
+  contract.ts, source-label.ts, thresholds.ts + ledger, the four migrated
+  tests, scripts/measure-089-godnode.ts, the ticket closed with Resolution).
+  tsc clean, full suite green (77 files / 1641). Verify and commit; the
+  ticket's Resolution holds the before/after measurement with SOURCE lines.
 - **010** composition slice — T14 only (real-model run + RESULTS, human
   remainder); ticket stays OPEN until it lands. **012** Soundings waits on 010
   closing; **014** Seeding after 012 — 014's approved plan:

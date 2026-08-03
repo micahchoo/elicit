@@ -409,6 +409,14 @@ export type DocketReport = {
   * and lets the import layer's own `ExtractionResult` satisfy it.
   */
  imports?: { extracted: number; remaining: number; failed: number };
+ /**
+  * What the referent annotation job did on this run, absent when a run did
+  * none.
+  *
+  * Structural rather than imported: this file must not depend on
+  * `src/clerk/`, so the field names the minimum the docket report renders.
+  */
+ annotations?: { annotated: number; silent: number; failed: number };
 };
 
 export type SessionState = {
