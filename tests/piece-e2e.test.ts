@@ -49,6 +49,8 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import type { Complete, QueueStore, Snippet, Vault } from '../src/types.js';
+import { createPieceStore } from '../src/piece/store.js';
+import { samePinSet } from '../src/piece/contract.js';
 
 // ── The response shapes this suite asserts (the cross-slice contract) ──
 
@@ -426,5 +428,234 @@ describe('pass 1 end to end, with no model reachable (T8)', () => {
     // settle was the only thing that could have reached a Complete, and the
     // counter proves nothing did during the flow.
     expect(modelCalls).toBe(modelCallsAtFlowStart);
+  });
+});
+
+describe('pass 2 end to end: candidate arrangements, choose, stale-pin sweep, auto-set-down (T13)', () => {
+  // ── The scripted model, and every text it has seen ──
+  // The content-routed fake answers the arrangements prompt with the two
+  // scripted candidates and every other call benignly, so the boot docket
+  // and the docket runs behind the import scans all settle. The scripted
+  // gap questions are written to pass the Q-12 gate against the prose
+  // chosen in the flow below: in [c,a,b] the gap after a quotes a's prose,
+  // and in [b,a,c] the gap after b quotes a's prose again — the anchor is
+  // always one of the gap's two neighbours, so the quoted phrase is
+  // adjacent in both orderings.
+  const seenTexts: string[] = [];
+  let flowPins: { a: Snippet; b: Snippet; c: Snippet } | null = null;
+  const contentRoutedFake: Complete = async (system, turns) => {
+    const text = turns[turns.length - 1]?.text ?? system;
+    seenTexts.push(text);
+    if (text.includes('orderings') && flowPins !== null) {
+      const { a, b, c } = flowPins;
+      return JSON.stringify({
+        orderings: [
+          {
+            principle: 'argument',
+            sentence: 'The page moves from the memory to the decision it forced.',
+            order: [c.id, a.id, b.id],
+            roles: {
+              [c.id]: 'states the outcome',
+              [a.id]: 'sets the scene',
+              [b.id]: 'draws the consequence',
+            },
+            gaps: [{ after: a.id, question: 'What changed when you "stopped checking the clock"?' }],
+          },
+          {
+            principle: 'contrast',
+            sentence: 'Two ways of working sit against each other.',
+            order: [b.id, a.id, c.id],
+            roles: {
+              [b.id]: 'names the first way',
+              [a.id]: 'names the second',
+              [c.id]: 'shows the cost',
+            },
+            gaps: [{ after: b.id, question: 'Did the "studio smelled of paint and coffee" every morning?' }],
+          },
+        ],
+      });
+    }
+    if (text.toLowerCase().includes('red light')) return '{"lights": []}';
+    if (text.toLowerCase().includes('harvesting agent')) return '{"cuts": []}';
+    return 'Reflecting on what you wrote, what still feels true today?';
+  };
+
+  beforeAll(async () => {
+    process.env.ELICIT_LLM = 'fake';
+    root = mkdtempSync(join(tmpdir(), 'elicit-piece-e2e-pass2-'));
+    settled = 0;
+    waiting = [];
+    vault = createVault(root);
+    queue = createQueueStore(root);
+    const authStore = createFileAuth(join(root, '.auth.json'));
+    authStore.setup('a password');
+    app = await createApp({
+      vault,
+      complete: contentRoutedFake,
+      queue,
+      index: buildIndex(Object.values(vault.rebuildIndex().snippets)),
+      vaultRoot: root,
+      authStore,
+      onDocketSettled,
+    });
+    // The boot docket settles with the fake answering every call benignly.
+    await waitForSettles(1);
+    const login = await post('/api/login', { password: 'a password' });
+    expect(login.status).toBe(200);
+    cookie = /elicit_session=[^;]+/.exec(login.headers.get('set-cookie') ?? '')?.[0] ?? '';
+    expect(cookie).not.toBe('');
+  });
+
+  afterAll(() => {
+    delete process.env.ELICIT_LLM;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('drives candidate arrangements, a choice, a stale-pin sweep and auto-set-down end to end', async () => {
+    // 1. Three sittings and three harvested paragraphs. The prose is chosen
+    //    so each scripted gap question quotes a pin adjacent to the gap,
+    //    verbatim and set off in quotation marks (Q-12).
+    seedTranscript('s2-2018', '2018-09-01T00:00:00.000Z');
+    seedTranscript('s2-2022', '2022-11-02T00:00:00.000Z');
+    seedTranscript('s2-2026', '2026-05-20T00:00:00.000Z');
+    const a = seedSnippet(
+      'The studio smelled of paint and coffee every morning, until I stopped checking the clock.',
+      's2-2018',
+    );
+    const b = seedSnippet('I learned to trust the quiet hours before anyone else arrived.', 's2-2022');
+    const c = seedSnippet('The best work came after I stopped checking the clock.', 's2-2026');
+    flowPins = { a, b, c };
+
+    // 2. POST /api/piece — three pins at v1, sitting order.
+    const createdRes = await post('/api/piece', { snippets: [c.id, a.id, b.id] });
+    expect(createdRes.status).toBe(200);
+    const piece = (await createdRes.json()) as EnrichedPiece;
+    expect(renderEntries(piece)).toHaveLength(3);
+    expect(renderEntries(piece).sort()).toEqual([a.prose, b.prose, c.prose].map((p) => `pin:${p}`).sort());
+
+    // 3. POST /api/piece/:id/arrangements — two candidates on disk under
+    //    distinct principles, both permutations of the base pin set, each
+    //    carrying one model-marked gap; the QUEUE is untouched, because
+    //    proposing mints nothing (Q-39).
+    const arrRes = await post(`/api/piece/${piece.id}/arrangements`);
+    expect(arrRes.status).toBe(200);
+    const withCandidates = (await arrRes.json()) as EnrichedPiece;
+    expect(queue.list({ source: 'gap-fill' })).toHaveLength(0);
+    const stored = createPieceStore(root).get(piece.id)!;
+    expect(stored.arrangements).toHaveLength(3); // base + argument + contrast
+    const base = stored.arrangements.find((x) => x.principle === 'chronology')!;
+    const argument = stored.arrangements.find((x) => x.principle === 'argument')!;
+    const contrast = stored.arrangements.find((x) => x.principle === 'contrast')!;
+    expect(samePinSet(base.entries, argument.entries)).toBeNull();
+    expect(samePinSet(base.entries, contrast.entries)).toBeNull();
+    // Q-34's model stamp is the route's business, and with ELICIT_LLM=fake
+    // there is no model name to stamp (src/server.ts) — the plan's
+    // model-stamped assertion is dropped, and its absence is pinned instead.
+    expect(argument.model).toBeUndefined();
+    expect(contrast.model).toBeUndefined();
+    const argCand = withCandidates.arrangements.find((x) => x.principle === 'argument')!;
+    const conCand = withCandidates.arrangements.find((x) => x.principle === 'contrast')!;
+    const argGap = argCand.entries.find((e): e is EnrichedGap => e.kind === 'gap')!;
+    const conGap = conCand.entries.find((e): e is EnrichedGap => e.kind === 'gap')!;
+    expect(argGap.pending).toContain('stopped checking the clock');
+    expect(argGap.question).toBeNull();
+    expect(conGap.pending).toContain('studio smelled of paint and coffee');
+    expect(conGap.question).toBeNull();
+    // The entry ids the later steps address, from the CURRENT candidate
+    // (buildEntry mints fresh ids, so the base piece's ids would not match).
+    const cPinEntryId = argument.entries.find((e) => e.kind === 'pin' && e.snippet === c.id)!.id;
+    const aPinEntryId = argument.entries.find((e) => e.kind === 'pin' && e.snippet === a.id)!.id;
+
+    // 4. POST /api/piece/:id/choose — the argument candidate becomes
+    //    current, the contrast candidate stays on disk (Q-38), and EXACTLY
+    //    ONE gap-fill entry appears: the chosen gap's question, minted with
+    //    its pending text and written back onto the arrangement (Q-39).
+    const chosenRes = await post(`/api/piece/${piece.id}/choose`, { arrangement: argCand.id });
+    expect(chosenRes.status).toBe(200);
+    const chosen = (await chosenRes.json()) as EnrichedPiece;
+    expect(chosen.current).toBe(argCand.id);
+    expect(createPieceStore(root).get(piece.id)!.arrangements).toHaveLength(3);
+    const gapFill = queue.list({ source: 'gap-fill' });
+    expect(gapFill).toHaveLength(1);
+    expect(gapFill[0]!.question).toBe(argGap.pending);
+    expect(gapFill[0]!.question).not.toContain('studio smelled');
+    const chosenGap = entriesOf(chosen).find((e): e is EnrichedGap => e.kind === 'gap')!;
+    expect(chosenGap.question).toBe(gapFill[0]!.id);
+
+    // 5. A new version of c makes the c@1 pin stale. A docket run (an empty
+    //    import scan) writes exactly ONE 'stale-pin' Marginalia aimed at the
+    //    c-pin's entry, and the pin's version on disk is untouched: the
+    //    sweep flags, never re-pins (Q-39).
+    const newer = vault.saveVersion(c.id, 'newer prose');
+    expect(newer.version).toBe(2);
+    expect(vault.rebuildIndex().snippets[c.id]!.version).toBe(2);
+    const emptyScan = mkdtempSync(join(tmpdir(), 'elicit-empty-scan-'));
+    const beforeStale = settled;
+    const scanRes = await post('/api/import/scan', { folder: emptyScan });
+    expect(scanRes.status).toBe(200);
+    await waitForSettles(beforeStale + 1);
+    const currentFile = join(root, 'pieces', piece.id, 'arrangements', `${chosen.current}.md`);
+    const staleData = matter.read(currentFile).data as {
+      entries: { id: string; kind: string; snippet?: string; version?: number }[];
+      marginalia: { id: string; on: string | null; note: string; text: string; at: string }[];
+    };
+    const staleFlags = staleData.marginalia.filter((m) => m.note === 'stale-pin');
+    expect(staleFlags).toHaveLength(1);
+    expect(staleFlags[0]!.on).toBe(cPinEntryId);
+    expect(staleFlags[0]!.text).toContain(c.id + '@1');
+    const cPin = staleData.entries.find((e) => e.kind === 'pin' && e.snippet === c.id);
+    expect(cPin?.version).toBe(1);
+
+    // 6. Age every touch the dormancy sweep reads — the piece's created,
+    //    the current arrangement's created, and the latest captured of
+    //    every pinned snippet (v2 for c, v1 for a and b) — past
+    //    piece.dormancyDays (45). The next docket run sets the piece down
+    //    with setDownBy: 'dormancy' (Q-41's second half).
+    const old = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    const age = (p: string, key: string): void => {
+      const parsed = matter.read(p);
+      writeFileSync(p, matter.stringify(parsed.content, { ...parsed.data, [key]: old }), 'utf-8');
+    };
+    age(join(root, 'pieces', piece.id, 'piece.md'), 'created');
+    age(currentFile, 'created');
+    age(join(root, 'snippets', c.id, 'v2.md'), 'captured');
+    age(join(root, 'snippets', a.id, 'v1.md'), 'captured');
+    age(join(root, 'snippets', b.id, 'v1.md'), 'captured');
+    const beforeDormant = settled;
+    const scan2Res = await post('/api/import/scan', { folder: emptyScan });
+    expect(scan2Res.status).toBe(200);
+    await waitForSettles(beforeDormant + 1);
+    const pieceFm = matter.read(join(root, 'pieces', piece.id, 'piece.md')).data as {
+      setDownAt?: string;
+      setDownBy?: string;
+    };
+    expect(pieceFm.setDownAt).toBeDefined();
+    expect(pieceFm.setDownBy).toBe('dormancy');
+
+    // 7. While auto-set-down, a gap inserts and mints NOTHING (Q-41): the
+    //    set-down branch of the gap route skips the question check, the new
+    //    gap carries no question id, and the queue counts stand still.
+    const gapFillBefore = queue.list({ source: 'gap-fill' }).length;
+    const gapDeclaredBefore = queue.list({ source: 'gap-declared' }).length;
+    const autoGapId = ulid();
+    const gapRes = await post(`/api/piece/${piece.id}/gap`, {
+      arrangement: chosen.current,
+      gap: autoGapId,
+      after: aPinEntryId,
+      question: 'must not mint',
+    });
+    expect(gapRes.status).toBe(200);
+    const afterGap = (await gapRes.json()) as EnrichedPiece;
+    expect(afterGap.setDownBy).toBe('dormancy');
+    const insertedGap = entriesOf(afterGap).find(
+      (e): e is EnrichedGap => e.kind === 'gap' && e.id === autoGapId,
+    )!;
+    expect(insertedGap.question).toBeNull();
+    expect(queue.list({ source: 'gap-fill' })).toHaveLength(gapFillBefore);
+    expect(queue.list({ source: 'gap-declared' })).toHaveLength(gapDeclaredBefore);
+
+    // 8. The flow's model calls were exactly the flow's: the arrangements
+    //    POST was the only call that ever saw the 'orderings' prompt.
+    expect(seenTexts.filter((t) => t.includes('orderings'))).toHaveLength(1);
   });
 });
