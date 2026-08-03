@@ -2,7 +2,7 @@
 title: "Plan and build: the Coach slice"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp exec, coach)
 blocked_by: []
 ---
 
