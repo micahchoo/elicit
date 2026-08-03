@@ -7,11 +7,11 @@ import { isNearDuplicate } from '../src/elicitor/guards.js';
 import type { LicensingContext } from '../src/patterns/types.js';
 
 const QR2_FIXTURES = [
-  'You wrote: "I have been trying to honor that full spectrum of states instead of pushing through them" — when you honor that full spectrum of states instead of pushing through them, what does that look like?',
-  'You wrote: "The old one no longer holds my attention" — what new path are you walking toward now that the old one no longer holds your attention?',
-  'You wrote: "I have been in a low place" — how long will you let yourself stay there?',
+  'You wrote: "I try to honor my limits" — when you honor your limits instead of pushing through them, what does that look like?',
+  'You wrote: "The old road is quiet now" — what new road are you taking now that the old one no longer calls to you?',
+  'You wrote: "I have been in a low place" — how long will you let yourself stay stuck there?',
   'You wrote: "I need to hold space for this" — what would it mean to truly welcome that feeling?',
-  'You wrote: "There is an aliveness I have been ignoring" — how might you tend to that aliveness?',
+  'You wrote: "There is a spark I keep ignoring" — how might you tend to that spark?',
 ];
 
 function richCtx(): LicensingContext {
