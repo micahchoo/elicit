@@ -2,7 +2,7 @@
 title: "Plan and build: the composition slice"
 labels: [wayfinder:task]
 status: open
-assignee: claude (planning)
+assignee: claude (omp exec, composition)
 blocked_by: []
 ---
 

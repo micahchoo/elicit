@@ -2,7 +2,7 @@
 title: "Fix: claim quality at the mint prompt and lint — person drift and contentless ranges, never op rejection"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: claude (omp wave 6)
 blocked_by: []
 ---
 
