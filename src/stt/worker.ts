@@ -26,7 +26,14 @@ interface SherpaOfflineStream {
 
 interface SherpaOfflineRecognizer {
  createStream(): SherpaOfflineStream;
- decodeAsync(stream: SherpaOfflineStream): Promise<{ text: string }>;
+ decodeAsync(
+  stream: SherpaOfflineStream,
+ ): Promise<{
+  text: string;
+  tokens: string[];
+  timestamps: number[];
+  durations: number[];
+ }>;
 }
 
 interface SherpaModule {
@@ -64,6 +71,9 @@ interface TranscriptionResp {
  type: 'transcription';
  id: string;
  text: string;
+ tokens: string[];
+ timestamps: number[];
+ durations: number[];
 }
 
 interface ErrorResp {
@@ -111,12 +121,22 @@ async function getRecognizer(): Promise<SherpaOfflineRecognizer> {
 async function transcribe(
  samples: Float32Array,
  sampleRate: number,
-): Promise<string> {
+): Promise<{
+ text: string;
+ tokens: string[];
+ timestamps: number[];
+ durations: number[];
+}> {
  const rec = await getRecognizer();
  const stream = rec.createStream();
  stream.acceptWaveform({ samples, sampleRate });
  const result = await rec.decodeAsync(stream);
- return result.text;
+ return {
+  text: result.text,
+  tokens: result.tokens,
+  timestamps: result.timestamps,
+  durations: result.durations,
+ };
 }
 
 function base64ToFloat32(b64: string): Float32Array {
@@ -133,8 +153,15 @@ async function handle(msg: Inbound): Promise<boolean> {
 
  try {
   const samples = base64ToFloat32(msg.samples);
-  const text = await transcribe(samples, msg.sampleRate);
-  send({ type: 'transcription', id: msg.id, text });
+  const result = await transcribe(samples, msg.sampleRate);
+  send({
+   type: 'transcription',
+   id: msg.id,
+   text: result.text,
+   tokens: result.tokens,
+   timestamps: result.timestamps,
+   durations: result.durations,
+  });
  } catch (err) {
   send({
    type: 'error',

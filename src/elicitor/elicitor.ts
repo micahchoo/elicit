@@ -11,6 +11,7 @@ import type {
  SoundingEnd,
  Target,
  Turn,
+ Prosody,
  Vault,
  QueueStore,
  LexicalIndex,
@@ -324,9 +325,10 @@ export async function userTurn(
  s: SessionState,
  text: string,
  spoken?: boolean,
+ prosody?: Prosody,
 ): Promise<Probe | { kind: 'saturated' } | { kind: 'checkpoint' }> {
  const now = new Date().toISOString();
- const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}) };
+ const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}), ...(prosody ? { prosody } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
  s.turns.push(userTurnRecord);
 

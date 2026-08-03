@@ -17,6 +17,17 @@ interface TranscriptionResp {
  type: 'transcription';
  id: string;
  text: string;
+ tokens: string[];
+ timestamps: number[];
+ durations: number[];
+}
+
+/** Result of a transcription: transcript plus per-token timing from the worker. */
+export interface SttTranscriptionResult {
+ text: string;
+ tokens: string[];
+ timestamps: number[];
+ durations: number[];
 }
 
 interface ErrorResp {
@@ -50,7 +61,10 @@ export interface SttClient {
   * Transcribe 16 kHz mono audio. Spawns the worker on first call.
   * Rejects on worker error or spawn failure.
   */
- transcribe(samples: Float32Array, sampleRate: number): Promise<string>;
+ transcribe(
+  samples: Float32Array,
+  sampleRate: number,
+ ): Promise<SttTranscriptionResult>;
 
  /** Kill the worker process. Safe to call multiple times. */
  dispose(): void;
@@ -74,7 +88,7 @@ export function createSttClient(opts?: SttClientOptions): SttClient {
 
  let child: ChildProcess | null = null;
  let nextId = 0;
- const pending = new Map<string, Deferred<string>>();
+ const pending = new Map<string, Deferred<SttTranscriptionResult>>();
  let leftover = '';
 
  function ensureSpawned(): ChildProcess {
@@ -113,7 +127,12 @@ export function createSttClient(opts?: SttClientOptions): SttClient {
     pending.delete(msg.id);
 
     if (msg.type === 'transcription') {
-     dfd.resolve(msg.text);
+     dfd.resolve({
+      text: msg.text,
+      tokens: msg.tokens,
+      timestamps: msg.timestamps,
+      durations: msg.durations,
+     });
     } else if (msg.type === 'error') {
      dfd.reject(new Error(msg.error));
     }
@@ -148,10 +167,13 @@ export function createSttClient(opts?: SttClientOptions): SttClient {
  }
 
  return {
-  async transcribe(samples: Float32Array, sampleRate: number): Promise<string> {
+  async transcribe(
+   samples: Float32Array,
+   sampleRate: number,
+  ): Promise<SttTranscriptionResult> {
    const proc = ensureSpawned();
    const id = String(nextId++);
-   const dfd = deferred<string>();
+   const dfd = deferred<SttTranscriptionResult>();
    pending.set(id, dfd);
 
    const msg = JSON.stringify({

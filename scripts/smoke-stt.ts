@@ -85,10 +85,9 @@ async function main(): Promise<void> {
   console.log('Transcribing 1s silence...');
   const silenceSamples = 16000; // 1s @ 16kHz
   const silence = new Float32Array(silenceSamples);
-  const silenceText = await client.transcribe(silence, 16000);
-  console.log(`Silence result: "${silenceText}"`);
-
-  if (silenceText.trim().length > 0) {
+  const silenceResult = await client.transcribe(silence, 16000);
+  console.log(`Silence result: "${silenceResult.text}"`);
+  if (silenceResult.text.trim().length > 0) {
    console.log('(non-empty silence transcript is fine — some models emit noise tokens)');
   }
 
@@ -97,8 +96,8 @@ async function main(): Promise<void> {
   if (wavPath) {
    console.log(`\nTranscribing WAV: ${wavPath}`);
    const wav = parseWav(wavPath);
-   const wavText = await client.transcribe(wav.samples, wav.sampleRate);
-   console.log(`Transcript: "${wavText}"`);
+   const wavResult = await client.transcribe(wav.samples, wav.sampleRate);
+   console.log(`Transcript: "${wavResult.text}"`);
   }
 
   console.log('\nSmoke test passed.');

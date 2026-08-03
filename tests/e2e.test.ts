@@ -1021,7 +1021,7 @@ describe('stt transcribe', () => {
 
  function fakeClient(text: string) {
   return {
-   transcribe: async () => text,
+   transcribe: async () => ({ text, tokens: [] as string[], timestamps: [] as number[], durations: [] as number[] }),
    dispose: () => { },
   };
  }
