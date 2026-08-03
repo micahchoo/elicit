@@ -371,6 +371,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/piece/store.ts ──
  { module: 'src/piece/store', name: 'createPieceStore', status: 'live', reason: 'wired by T6: the piece routes write through it' },
 
+ // ── src/piece/stale.ts ──
+ {
+  module: 'src/piece/stale',
+  name: 'stalePins',
+  status: 'unwired',
+  reason: 'T10\'s docket job was blocked at dispatch (src/wiki/thresholds.ts carries ticket 087\'s uncommitted changes) — declared unwired so the sweep holds; flips live when the piece jobs land',
+ },
+
  // ── src/protocols/registry.ts ──
  { module: 'src/protocols/registry', name: 'loadProtocolDefinitions', status: 'live' },
  { module: 'src/protocols/registry', name: 'selectProtocolForTarget', status: 'live' },
