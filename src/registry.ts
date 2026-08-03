@@ -351,6 +351,20 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'called by the decisions route (src/server.ts, T9) — the only path into the corpus',
  },
 
+ // ── src/import/region.ts ──
+ {
+  module: 'src/import/region',
+  name: 'slugFor',
+  status: 'live',
+  reason: 'called by declare() in the same module — a slug is the region record\'s own derived key',
+ },
+ {
+  module: 'src/import/region',
+  name: 'createRegionStore',
+  status: 'unwired',
+  reason: 'nothing constructs it until Task 12\'s POST /api/import/region route — a declaration only reaches the vault through that door',
+ },
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },
