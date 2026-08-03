@@ -9,14 +9,14 @@ import type {
  QueueEntry,
 } from '../types.js';
 import type { SittingContext } from './composed.js';
-import { isExpeditionCandidate } from './composed.js';
+import { isExpeditionCandidate, composeOutcomeQuestion } from './composed.js';
 import { readSitting, sittingCache } from './sitting.js';
 import { stalePins } from '../piece/stale.js';
 import { isDormant } from '../piece/dormancy.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
 import type { Piece, PieceStore } from '../piece/contract.js';
-import { annotateReferent } from './annotate.js';
-import type { AnnotationStore } from './annotation-store.js';
+import { annotateReferent, annotateIntentionHorizon } from './annotate.js';
+import type { AnnotationStore, AnnotationRecord } from './annotation-store.js';
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -195,6 +195,209 @@ export async function runReferentAnnotations(deps: {
  return { annotated, silent, failed };
 }
 
+// ── The intention-horizon annotation job (ticket 106) ──
+// At most one model call per intention-facet snippet: the model reads the
+// prose and extracts the horizon — when the person expected the intention
+// to materialize. An ambiguous timeline becomes a dating question (the
+// Anchor rule), never a guess. The cap bounds model calls per run, not
+// successes. Silence IS persisted: a snippet the model already read is
+// never re-asked, unless the snippet version has changed.
+
+const HORIZON_RUN_CAP = 3;
+
+export async function runIntentionHorizonAnnotations(deps: {
+  vault: Vault;
+  annotations: AnnotationStore;
+  complete: Complete;
+  modelName: string;
+  queue: QueueStore;
+  log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+}): Promise<{ annotated: number; silent: number; ambiguous: number; failed: number }> {
+  const cap = HORIZON_RUN_CAP;
+  const ts = () => new Date().toISOString();
+  const { snippets, readings } = deps.vault.rebuildIndex();
+  const allSnippets = Object.values(snippets);
+
+  // Find snippets that carry an intention-facet reading
+  const intentionIds = new Set<string>();
+  for (const r of Object.values(readings)) {
+    if (r.facet === 'intention' && r.cites.length > 0) {
+      for (const cite of r.cites) {
+        const [snippetId] = cite.split('@');
+        if (snippetId) intentionIds.add(snippetId);
+      }
+    }
+  }
+
+  const candidates = allSnippets
+    .filter((s) => intentionIds.has(s.id))
+    .sort((a, b) => b.captured.localeCompare(a.captured));
+
+  let annotated = 0;
+  let silent = 0;
+  let ambiguous = 0;
+  let failed = 0;
+
+  for (const snippet of candidates.slice(0, cap)) {
+    try {
+      // Check for existing annotation — version-gated, re-ask on new version
+      const existing = deps.annotations.get(snippet.id, 'intention-horizon');
+      if (existing && existing.kind === 'intention-horizon' && existing.version === snippet.version) {
+        silent++;
+        continue;
+      }
+
+      const result = await annotateIntentionHorizon(snippet, deps.modelName, deps.complete);
+
+      if (result.kind === 'horizon') {
+        deps.annotations.put({
+          kind: 'intention-horizon',
+          snippetId: result.snippetId,
+          version: result.version,
+          horizon: result.horizon,
+          model: result.model,
+          modelAt: result.modelAt,
+        });
+        annotated++;
+      } else {
+        // Ambiguous horizon — mint a dating question
+        deps.queue.add({
+          source: 'composed',
+          license: 'CC0',
+          question: result.datingQuestion,
+          questionForm: 'deliberative',
+          cites: [`${result.snippetId}@${result.version}`],
+          quotedFragment: result.datingQuestion,
+          sharpness: 'weak',
+          horizon: 'session',
+        });
+        ambiguous++;
+        deps.log({
+          at: ts(), actor: 'clerk', kind: 'intention-horizon-ambiguous',
+          detail: `ambiguous=1 snippet=${result.snippetId}`,
+          refs: [`${result.snippetId}@${result.version}`],
+        });
+      }
+    } catch (err) {
+      failed++;
+      deps.log({ at: ts(), actor: 'clerk', kind: 'intention-horizon-failed', detail: String(err) });
+    }
+  }
+
+  deps.log({
+    at: ts(), actor: 'clerk', kind: 'intention-horizon-annotated',
+    detail: `annotated=${annotated} silent=${silent} failed=${failed}`,
+  });
+  return { annotated, silent, ambiguous, failed };
+}
+
+// ── Outcome question job (ticket 106) ──
+// Scans intention-horizon annotations for past-horizon intentions and mints
+// outcome questions. Caps at 2 per run with a rotation cursor; ever-minted
+// dedupe through the queue so an expired outcome never re-offers (dormancy is
+// signal). The horizon-past check compares the annotation's modelAt to the
+// horizon's expected elapsed time.
+
+const OUTCOME_RUN_CAP = 2;
+
+/** Milliseconds after which a horizon is considered past (annotation time → now). */
+function isHorizonPast(horizon: 'now' | 'session' | 'days', modelAt: string): boolean {
+  const annotated = Date.parse(modelAt);
+  if (Number.isNaN(annotated)) return false;
+  const elapsed = Date.now() - annotated;
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+  switch (horizon) {
+    case 'now': return elapsed > HOUR;       // the present moment has passed
+    case 'session': return elapsed > DAY;    // the session is over
+    case 'days': return elapsed > 7 * DAY;   // the coming days have passed
+  }
+}
+
+export async function runOutcomeQuestions(deps: {
+  annotations: AnnotationStore;
+  queue: QueueStore;
+  complete: Complete;
+  vault: Vault;
+  log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+  sittingOf?: (root: string, session: string) => SittingContext;
+  vaultRoot: string;
+  outcomeCursor?: { read: () => number; write: (offset: number) => void };
+}): Promise<{ minted: number }> {
+  const cap = OUTCOME_RUN_CAP;
+  const ts = () => new Date().toISOString();
+
+  const horizonRecords = deps.annotations.list('intention-horizon')
+    .filter((r): r is AnnotationRecord & { kind: 'intention-horizon' } => r.kind === 'intention-horizon');
+
+  if (horizonRecords.length === 0) return { minted: 0 };
+
+  // Filter to past-horizon intentions
+  const pastHorizons = horizonRecords.filter((r) => isHorizonPast(r.horizon, r.modelAt));
+  if (pastHorizons.length === 0) return { minted: 0 };
+
+  // Ever-minted dedupe: find every snippet already cited by an outcome question
+  const allEntries = deps.queue.list();
+  const outcomeCited = new Set<string>();
+  for (const e of allEntries) {
+    if (e.source === 'outcome') {
+      for (const cite of e.cites ?? []) {
+        const [snippetId] = cite.split('@');
+        if (snippetId) outcomeCited.add(snippetId);
+      }
+    }
+  }
+
+  // Filter out already-minted
+  const eligible = pastHorizons.filter((r) => !outcomeCited.has(r.snippetId));
+  if (eligible.length === 0) return { minted: 0 };
+
+  // Rotation cursor — like still-true, advance past every candidate offered
+  const cursor = deps.outcomeCursor ?? { read: () => 0, write: () => {} };
+  const offset = cursor.read() % Math.max(1, eligible.length);
+  const candidates = Array.from(
+    { length: Math.min(cap, eligible.length) },
+    (_, i) => eligible[(offset + i) % eligible.length]!,
+  );
+
+  const allSnippets = Object.values(deps.vault.rebuildIndex().snippets);
+  const snippetMap = new Map(allSnippets.map((s) => [s.id, s]));
+  const sittingFor = sittingCache(deps.vaultRoot, deps.sittingOf ?? readSitting);
+
+  let minted = 0;
+  for (const rec of candidates) {
+    const snippet = snippetMap.get(rec.snippetId);
+    if (!snippet) continue;
+    try {
+      const draft = await composeOutcomeQuestion(
+        snippet, rec.horizon, deps.complete, sittingFor(snippet.provenance.session),
+      );
+      if (draft) {
+        deps.queue.add(draft);
+        minted++;
+      }
+    } catch (err) {
+      deps.log({ at: ts(), actor: 'clerk', kind: 'outcome-failed', detail: String(err) });
+    }
+  }
+
+  if (candidates.length > 0) {
+    cursor.write(offset + candidates.length);
+  }
+
+  const heldBack = eligible.length - candidates.length;
+  const logDetail = `${minted}`;
+  deps.log({ at: ts(), actor: 'clerk', kind: 'outcome-minted', detail: logDetail });
+  if (heldBack > 0) {
+    deps.log({
+      at: ts(), actor: 'clerk', kind: 'outcome-clipped',
+      detail: `cap=${cap} eligible=${eligible.length} clipped=${heldBack}`,
+    });
+  }
+  return { minted };
+}
+
+
 export async function runDocket(deps: {
  vault: Vault;
  queue: QueueStore;
@@ -316,6 +519,21 @@ gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
   * memory; the server injects a disk-backed cursor.
   */
  stillTrueCursor?: { read: () => number; write: (offset: number) => void };
+/**
+ * The intention-horizon annotation job (ticket 106), as a docket job
+ * after the referent annotation job. Finds intention-facet readings and
+ * calls the model to extract the timeline — when the person expected the
+ * intention to materialize. Absent means no horizon work this run.
+ */
+intentionHorizonAnnotations?: () => Promise<{ annotated: number; silent: number; ambiguous: number; failed: number }>;
+/**
+ * The outcome-question sweep (ticket 106), as a docket job after the
+ * intention-horizon annotation job. Scans past-horizon intentions and
+ * mints outcome questions — "did this come to pass?" Caps live at birth
+ * (Q-56); ever-minted dedupe through the queue. Absent means no outcome
+ * work this run.
+ */
+outcomeQuestionSweep?: () => Promise<{ minted: number }>;
 }): Promise<DocketReport> {
  if (running) {
   return {
@@ -578,6 +796,29 @@ gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'referent-annotations-failed', detail: String(err) });
    }
+  }
+
+  // ── 7a. Intention-horizon annotations (ticket 106): extract timelines ──
+  // Guarded like the wiki jobs: a failure is one job's failure, and the
+  // index, the minted questions, the expiry and the consolidation are
+  // already on disk by the time this runs.
+  if (deps.intentionHorizonAnnotations) {
+    try {
+      await deps.intentionHorizonAnnotations();
+    } catch (err) {
+      deps.log({ at: ts(), actor: 'clerk', kind: 'intention-horizons-failed', detail: String(err) });
+    }
+  }
+
+  // ── 7b. Outcome questions (ticket 106): mint from past-horizon intentions ──
+  // Guarded like the wiki jobs: a failure is one job's failure. Runs after
+  // the intention-horizon annotation job so the annotations are fresh.
+  if (deps.outcomeQuestionSweep) {
+    try {
+      await deps.outcomeQuestionSweep();
+    } catch (err) {
+      deps.log({ at: ts(), actor: 'clerk', kind: 'outcomes-failed', detail: String(err) });
+    }
   }
 
   // ── 8. Piece work (010 T10): stale-pin sweep, then auto-set-down ──

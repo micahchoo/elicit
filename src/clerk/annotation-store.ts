@@ -1,5 +1,5 @@
-// The Clerk's resolved-referent annotations: model-stamped agent prose
-// about snippets, kept apart from the person's words.
+// The Clerk's resolved-referent annotations and intention-horizon readings:
+// model-stamped agent prose about snippets, kept apart from the person's words.
 //
 // Ticket 074: an annotation is the Clerk's own sentence naming what a
 // dangling "it" in a snippet points at — evidence for the measurement,
@@ -8,9 +8,16 @@
 // nothing here keeps history, because an annotation is a reading of the
 // text, not the text.
 //
+// Ticket 106: intention-horizon records name when an intention was expected
+// to materialize — extracted from the snippet's prose, stored as a separate
+// annotation kind so one snippet can carry both a referent resolution and a
+// timeline reading. The horizon file lives at `${snippetId}.intention-horizon.json`,
+// distinct from the referent annotation at `${snippetId}.json`, so the two
+// kinds never collide.
+//
 // The store lives OUTSIDE the vault — production roots it at
 // `data/annotations` — because the vault is the person's record and 074
-// forbids the Clerk writing there (Q-3). One file per snippet id, holding
+// forbids the Clerk writing there (Q-3). One file per (snippet id, kind), holding
 // the CURRENT record.
 //
 // The wiki store's three rules run through this module unchanged:
@@ -35,12 +42,38 @@ import { join } from 'node:path';
 
 export type AnnotationRecord =
   | { kind: 'annotation'; snippetId: string; version: number; expression: string; referent: string; model: string; modelAt: string }
-  | { kind: 'silence'; snippetId: string; version: number; model: string; modelAt: string };
+  | { kind: 'silence'; snippetId: string; version: number; model: string; modelAt: string }
+  // Ticket 106: the horizon an intention reading carries — when the person
+  // expected the intention to materialize. Extracted from prose by the
+  // model, stored outside the vault alongside referent annotations.
+  | { kind: 'intention-horizon'; snippetId: string; version: number; horizon: 'now' | 'session' | 'days'; model: string; modelAt: string };
+
+/**
+ * The annotation kinds the store can key on. When omitted, the referent
+ * annotation namespace is used — backward-compatible with every caller
+ * that predates ticket 106.
+ */
+export type AnnotateKind = 'intention-horizon';
 
 export interface AnnotationStore {
-  get(snippetId: string): AnnotationRecord | null;
+  /**
+   * Read the current record for a snippet. When `kind` is omitted, reads
+   * the referent annotation at `${snippetId}.json`. When `kind` is
+   * `'intention-horizon'`, reads `${snippetId}.intention-horizon.json`.
+   */
+  get(snippetId: string, kind?: AnnotateKind): AnnotationRecord | null;
+  /**
+   * Persist a validated record. The file path is determined by the record's
+   * own `kind`: `'intention-horizon'` writes `${snippetId}.intention-horizon.json`;
+   * all others write `${snippetId}.json`.
+   */
   put(record: AnnotationRecord): void;
-  list(): AnnotationRecord[];
+  /**
+   * List every record of a given kind. When `kind` is `'intention-horizon'`,
+   * reads only `.intention-horizon.json` files. Otherwise reads all `.json`
+   * files — referent annotations AND intention-horizon records — backward-compatible.
+   */
+  list(kind?: AnnotateKind): AnnotationRecord[];
 }
 
 export function createAnnotationStore(root: string): AnnotationStore {
@@ -101,12 +134,25 @@ function parseRecord(v: unknown): Parsed {
   if (rec.kind === 'silence') {
     return { ok: true, record: { kind: 'silence', snippetId, version: rec.version, model, modelAt } };
   }
-  return { ok: false, why: `kind is ${JSON.stringify(rec.kind)} — expected annotation or silence` };
+  // Ticket 106: intention-horizon records carry a horizon field.
+  if (rec.kind === 'intention-horizon') {
+    const horizon = text(rec.horizon);
+    if (horizon === null) return { ok: false, why: 'intention-horizon without a horizon' };
+    if (horizon !== 'now' && horizon !== 'session' && horizon !== 'days') {
+      return { ok: false, why: `intention-horizon has invalid horizon ${JSON.stringify(horizon)}` };
+    }
+    return {
+      ok: true,
+      record: { kind: 'intention-horizon', snippetId, version: rec.version, horizon: horizon as 'now' | 'session' | 'days', model, modelAt },
+    };
+  }
+  return { ok: false, why: `kind is ${JSON.stringify(rec.kind)} — expected annotation, silence, or intention-horizon` };
 }
 
 function warnSkip(path: string, why: string): void {
   console.warn(`AnnotationStore: skipping malformed file ${path} — ${why}`);
 }
+
 
 class AnnotationStoreImpl implements AnnotationStore {
   #root: string;
@@ -122,12 +168,13 @@ class AnnotationStoreImpl implements AnnotationStore {
     return d;
   }
 
-  #path(snippetId: string): string {
-    return join(this.#dir(), `${snippetId}.json`);
+  #path(snippetId: string, kind?: AnnotateKind): string {
+    const sfx = kind ? `.${kind}` : '';
+    return join(this.#dir(), `${snippetId}${sfx}.json`);
   }
 
-  get(snippetId: string): AnnotationRecord | null {
-    const path = join(this.#root, ANNOTATIONS, `${snippetId}.json`);
+  get(snippetId: string, kind?: AnnotateKind): AnnotationRecord | null {
+    const path = this.#path(snippetId, kind);
     if (!existsSync(path)) return null;
     let parsed: unknown;
     try {
@@ -151,16 +198,22 @@ class AnnotationStoreImpl implements AnnotationStore {
     }
     // Write the validated, canonical record — the store owns the shape,
     // and an extra key from a sloppy caller is not an annotation.
-    writeFileSync(this.#path(result.record.snippetId), `${JSON.stringify(result.record, null, 2)}\n`, 'utf-8');
+    const suffix = result.record.kind === 'intention-horizon' ? '.intention-horizon' : '';
+    writeFileSync(
+      join(this.#dir(), `${result.record.snippetId}${suffix}.json`),
+      `${JSON.stringify(result.record, null, 2)}\n`,
+      'utf-8',
+    );
   }
 
   /** Sorted by snippet id, so `list` is deterministic — `readdirSync` order is not. */
-  list(): AnnotationRecord[] {
+  list(kind?: AnnotateKind): AnnotationRecord[] {
     const dir = join(this.#root, ANNOTATIONS);
     if (!existsSync(dir)) return [];
     const records: AnnotationRecord[] = [];
+    const suffix = kind ? `.${kind}` : '';
     for (const file of readdirSync(dir)
-      .filter((f) => f.endsWith('.json'))
+      .filter((f) => f.endsWith(`${suffix}.json`))
       .sort()) {
       const path = join(dir, file);
       let parsed: unknown;

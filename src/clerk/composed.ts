@@ -17,6 +17,7 @@ import {
  quotesFragmentSetOff,
  setOffSpans,
 } from '../elicitor/guards.js';
+import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -212,6 +213,21 @@ function userTurn(text: string): Turn[] {
  */
 export type SittingContext = { target?: Target; topic?: string };
 
+
+/**
+ * The QuestionForm a still-true re-measure should use for this snippet.
+ *
+ * Q-14 says still-true checks always ask differently. Q-109 makes that
+ * structural: when the original snippet was elicited deliberatively
+ * (avowal stance), the re-measure asks theoretically (self-observation
+ * stance) for triangulation across stances.
+ */
+export function stillTrueForm(snippet: Snippet): QuestionForm {
+ return snippet.provenance.questionForm === 'deliberative'
+  ? 'theoretical'
+  : snippet.provenance.questionForm;
+}
+
 /** Build a QueueDraft from a verified snippet quote. */
 function buildOpenerDraft(
  snippet: Snippet,
@@ -220,12 +236,13 @@ function buildOpenerDraft(
  source: QueueDraft['source'],
  horizon: QueueDraft['horizon'],
  sitting?: SittingContext,
+ questionForm?: QuestionForm,
 ): QueueDraft {
  return {
   source,
   license: 'CC0',
   question,
-  questionForm: 'deliberative' as QuestionForm,
+  questionForm: questionForm ?? 'deliberative',
   cites: [`${snippet.id}@${snippet.version}`],
   quotedFragment,
   sharpness: 'weak',
@@ -474,6 +491,7 @@ export async function composeStillTrue(
  snippet: Snippet,
  complete: Complete,
  sitting?: SittingContext,
+ log?: ThresholdLogFn,
 ): Promise<QueueDraft | null> {
  const prompt = `You are a clerk for Elicit. Given an old snippet the user wrote, compose ONE question asking whether it still holds true. Quote the snippet verbatim — your question must set off an exact phrase from it inside quotation marks. DO NOT repeat or echo the original question that elicited the snippet.
 
@@ -487,10 +505,19 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
 
+ // Compute the triangulation form, gated by shadow-first (Q-35). No log fn
+ // means no shadow record — and a shadow decision that leaves no record may
+ // not act (the Q-56 inversion: a live mechanism claiming shadow), so the
+ // no-log path keeps the unchanged form.
+ const ideal = stillTrueForm(snippet);
+ const form = log
+  ? (shadowDecision(THRESHOLDS['stillTrue.formSelection'], `use form=${ideal} instead of deliberative for still-true on snippet ${snippet.id}`, log) ? ideal : 'deliberative')
+  : 'deliberative';
+
  // Attempt 1
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
- const attempt1 = tryBuildStillTrue(snippet, question1, sitting);
+ const attempt1 = tryBuildStillTrue(snippet, question1, sitting, form);
  if (attempt1.ok) return attempt1.draft;
 
  // One retry — enforce every constraint, corrected for what failed
@@ -498,7 +525,7 @@ Return only the question text. No markdown, no commentary.`;
  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
- const attempt2 = tryBuildStillTrue(snippet, question2, sitting);
+ const attempt2 = tryBuildStillTrue(snippet, question2, sitting, form);
  if (attempt2.ok) return attempt2.draft;
 
  console.warn(
@@ -516,6 +543,7 @@ function tryBuildStillTrue(
  snippet: Snippet,
  question: string,
  sitting?: SittingContext,
+ questionForm?: QuestionForm,
 ): StillTrueResult {
  if (
   question.length === 0 ||
@@ -544,6 +572,7 @@ function tryBuildStillTrue(
    'still-true',
    'session',
    sitting,
+   questionForm,
   ),
  };
 }
@@ -834,4 +863,103 @@ Return ONLY a JSON object: {"rangeA": "<the narrowed context where claim 1 holds
 
  console.warn('Composed: narrowed-ranges retry also rejected — returning null');
  return null;
+}
+
+// ---------------------------------------------------------------------------
+// composeOutcomeQuestion (ticket 106)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compose an outcome question for a past-horizon intention. Like composeStillTrue
+ * but asks whether the intention came to pass, not whether it still holds.
+ * Validated through the same verbatim-quote guards (Q-12).
+ *
+ * @param snippet The intention snippet, already annotated with a past horizon.
+ * @param horizon The recorded horizon (now|session|days — all past by the time
+ *   this is called; the caller has already filtered).
+ */
+export async function composeOutcomeQuestion(
+  snippet: Snippet,
+  horizon: 'now' | 'session' | 'days',
+  complete: Complete,
+  sitting?: SittingContext,
+): Promise<QueueDraft | null> {
+  const horizonPhrase = horizon === 'now' ? 'the present moment'
+    : horizon === 'session' ? 'this session'
+    : 'the coming days';
+
+  const prompt = `You are a clerk for Elicit. Given an intention the user wrote, compose ONE question asking whether it came to pass. The intention's timeline was "${horizonPhrase}" — enough time has passed to check. Quote the intention verbatim — your question must set off an exact phrase from it inside quotation marks.
+
+Intention: "${snippet.prose}"
+Original question that elicited it (do NOT repeat this): "${snippet.provenance.question}"
+Intention date: ${snippet.captured}
+
+${FRAMING_RULE}
+
+Return only the question text. No markdown, no commentary.`;
+
+  const quoteRule = `Your question MUST set off an exact phrase from this intention inside quotation marks: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
+
+  // Attempt 1
+  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
+  const question1 = stripFences(raw).trim();
+  const attempt1 = tryBuildOutcome(snippet, question1, horizon, sitting);
+  if (attempt1.ok) return attempt1.draft;
+
+  // One retry — enforce every constraint, corrected for what failed
+  console.warn(`Composed: outcome question rejected (${attempt1.rejection}), retrying`);
+  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
+  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
+  const question2 = stripFences(retryRaw).trim();
+  const attempt2 = tryBuildOutcome(snippet, question2, horizon, sitting);
+  if (attempt2.ok) return attempt2.draft;
+
+  console.warn(
+    `Composed: outcome question retry also rejected (${attempt2.rejection}) — returning null`,
+  );
+  return null;
+}
+
+type OutcomeResult =
+  | { ok: true; draft: QueueDraft }
+  | { ok: false; rejection: Rejection };
+
+/** Validate and build an outcome-question draft, or name why it was refused. */
+function tryBuildOutcome(
+  snippet: Snippet,
+  question: string,
+  horizon: 'now' | 'session' | 'days',
+  sitting?: SittingContext,
+): OutcomeResult {
+  if (
+    question.length === 0 ||
+    (snippet.provenance.question.length > 0 &&
+      (question === snippet.provenance.question ||
+        question.includes(snippet.provenance.question)))
+  ) {
+    return { ok: false, rejection: 'repeats-original' };
+  }
+
+  const check = checkQuotesSource(question, snippet.prose);
+  if (!check.ok) return { ok: false, rejection: check.rejection };
+
+  // Outcome questions use agent-horizon deduction: the horizon was read
+  // from the prose, so the question's horizon is relative to that reading.
+  const outcomeHorizon: QueueDraft['horizon'] = horizon === 'now' ? 'session' : 'days';
+
+  return {
+    ok: true,
+    draft: {
+      source: 'outcome',
+      license: 'CC0',
+      question,
+      questionForm: 'deliberative' as QuestionForm,
+      cites: [`${snippet.id}@${snippet.version}`],
+      quotedFragment: check.fragment,
+      sharpness: 'weak',
+      horizon: outcomeHorizon,
+      ...(sitting?.target ? { target: sitting.target } : {}),
+      ...(sitting?.topic ? { topic: sitting.topic } : {}),
+    },
+  };
 }

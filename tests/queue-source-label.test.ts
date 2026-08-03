@@ -22,7 +22,9 @@ const SOURCES: QueueEntry['source'][] = [
 'lint-still-true',
 'lint-undiscriminated-range',
 'import-repair',
-'quest-reflection',
+ 'quest-reflection',
+ // Ticket 106: outcome questions — "did this intention come to pass?"
+ 'outcome',
 ];
 
 const LINT_KINDS: LintFinding['kind'][] = [

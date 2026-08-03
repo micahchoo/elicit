@@ -164,4 +164,82 @@ describe('createAnnotationStore', () => {
     store.put(silence(b));
     expect(store.list().map((r) => r.snippetId)).toEqual([a, b, c]);
   });
+
+  const intentionHorizon = (snippetId: string, version = 1, horizon: 'now' | 'session' | 'days' = 'days'): AnnotationRecord => ({
+    kind: 'intention-horizon',
+    snippetId,
+    version,
+    horizon,
+    model: 'test-model',
+    modelAt: '2026-08-02T00:00:00.000Z',
+  });
+
+  it('round-trips an intention-horizon record', () => {
+    const store = createAnnotationStore(root);
+    const sid = id();
+    store.put(intentionHorizon(sid));
+    const got = store.get(sid, 'intention-horizon');
+    expect(got).not.toBeNull();
+    expect(got!.kind).toBe('intention-horizon');
+    expect(got!.snippetId).toBe(sid);
+    if (got && got.kind === 'intention-horizon') {
+      expect(got.horizon).toBe('days');
+    }
+  });
+
+  it('keeps intention-horizon and referent annotations separate for one snippet', () => {
+    const store = createAnnotationStore(root);
+    const sid = id();
+    store.put(annotation(sid));
+    store.put(intentionHorizon(sid));
+    // Default get reads referent annotation
+    const ref = store.get(sid);
+    expect(ref).not.toBeNull();
+    expect(ref!.kind).toBe('annotation');
+    // Kind-specific get reads intention-horizon
+    const ih = store.get(sid, 'intention-horizon');
+    expect(ih).not.toBeNull();
+    expect(ih!.kind).toBe('intention-horizon');
+  });
+
+  it('returns null for intention-horizon when only a referent record exists', () => {
+    const store = createAnnotationStore(root);
+    const sid = id();
+    store.put(annotation(sid));
+    expect(store.get(sid, 'intention-horizon')).toBeNull();
+  });
+
+  it('lists intention-horizon records separately', () => {
+    const store = createAnnotationStore(root);
+    const a = 'AAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const b = 'BBBBBBBBBBBBBBBBBBBBBBBBBB';
+    store.put(annotation(a));
+    store.put(intentionHorizon(b));
+    // list() with no kind: both records
+    expect(store.list().length).toBe(2);
+    // list('intention-horizon'): only the horizon record
+    const ihList = store.list('intention-horizon');
+    expect(ihList.length).toBe(1);
+    expect(ihList[0]!.snippetId).toBe(b);
+  });
+  it('overwrites intention-horizon record for same snippet (no history)', () => {
+    const store = createAnnotationStore(root);
+    const sid = id();
+    store.put(intentionHorizon(sid, 1));
+    store.put(intentionHorizon(sid, 2, 'now'));
+    const got = store.get(sid, 'intention-horizon');
+    expect(got).not.toBeNull();
+    if (got && got.kind === 'intention-horizon') {
+      expect(got.horizon).toBe('now');
+      expect(got.version).toBe(2);
+    }
+  });
+
+
+  it('throws on an intention-horizon record with invalid horizon', () => {
+    const store = createAnnotationStore(root);
+    expect(() =>
+      store.put({ kind: 'intention-horizon', snippetId: id(), version: 1, horizon: 'never' as unknown as 'now', model: 'x', modelAt: 'x' as unknown as string }),
+    ).toThrow();
+  });
 });

@@ -40,7 +40,7 @@ import {
  type SemanticIndex,
 } from './index/semantic.js';
 import { readCadence, cadenceSentence } from './log/cadence.js';
-import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations } from './clerk/docket.js';
+import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions } from './clerk/docket.js';
 import { runGapFillSweep } from './clerk/gap-fill.js';
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
@@ -83,6 +83,8 @@ import {
  readSweepDeferral,
  writeStillTrueCursor,
  readStillTrueCursor,
+ writeOutcomeCursor,
+ readOutcomeCursor,
 } from './wiki/store.js';
 import { THRESHOLDS } from './wiki/thresholds.js';
 import { createRegistry } from './wiki/registry.js';
@@ -574,6 +576,12 @@ const pieces = createPieceStore(deps.vaultRoot);
   read: () => readStillTrueCursor(deps.vaultRoot),
   write: (offset: number) => writeStillTrueCursor(deps.vaultRoot, offset),
  };
+// The outcome-question rotation cursor (ticket 106), disk-backed so
+// rotation survives restarts. Same pattern as the still-true cursor.
+const outcomeCursor = {
+  read: () => readOutcomeCursor(deps.vaultRoot),
+  write: (offset: number) => writeOutcomeCursor(deps.vaultRoot, offset),
+};
  const registry = createRegistry(claimStore, wikiModel, wikiLog);
 
  const embedding: EmbeddingChannel | null = deps.embed
@@ -723,6 +731,35 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
        complete: clerkComplete,
        modelName: clerkModelName ?? DEFAULT_CLERK_MODEL,
        log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      }),
+     }
+     : {}),
+    // Ticket 106: intention-horizon annotations — extract timelines from
+    // intention-facet readings, capped at HORIZON_RUN_CAP per run.
+    ...(annotations
+     ? {
+      intentionHorizonAnnotations: () => runIntentionHorizonAnnotations({
+       vault: deps.vault,
+       annotations,
+       complete: clerkComplete,
+       modelName: clerkModelName ?? DEFAULT_CLERK_MODEL,
+       queue: deps.queue,
+       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      }),
+     }
+     : {}),
+    // Ticket 106: outcome-question sweep — mints "did it happen?" questions
+    // from past-horizon intentions, capped at OUTCOME_RUN_CAP per run.
+    ...(annotations
+     ? {
+      outcomeQuestionSweep: () => runOutcomeQuestions({
+       annotations,
+       queue: deps.queue,
+       complete: clerkComplete,
+       vault: deps.vault,
+       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+       vaultRoot: deps.vaultRoot,
+       outcomeCursor,
       }),
      }
      : {}),

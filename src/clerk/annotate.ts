@@ -209,3 +209,82 @@ export async function annotateReferent(item: AnnotateItem, complete: Complete): 
 
   return shapeAnswer(raw, item);
 }
+
+// ---------------------------------------------------------------------------
+// Intention-horizon annotation (ticket 106)
+// ---------------------------------------------------------------------------
+
+/**
+ * The horizon an intention reading carries — when the person expected the
+ * intention to materialize. Extracted from the snippet's prose by the model,
+ * never guessed: an ambiguous timeline becomes a dating question (Anchor rule).
+ */
+export type IntentionHorizonResult =
+  | { kind: 'horizon'; snippetId: string; version: number; horizon: 'now' | 'session' | 'days'; model: string; modelAt: string; raw: string }
+  | { kind: 'ambiguous'; snippetId: string; version: number; datingQuestion: string; model: string; modelAt: string; raw: string };
+const HORIZON_SYSTEM_PROMPT = `You are the Clerk for Elicit. Given a snippet the user wrote that reads as an intention — something they plan or intend to do — determine the timeline: when they expected this to happen.
+
+Return ONLY valid JSON. No markdown fences. No commentary.
+
+The answer must be ONE of:
+- {"horizon": "now"} — the intention is about the present moment or immediate future, likely already done or in progress
+- {"horizon": "session"} — the intention is for this session or today, likely done by now
+- {"horizon": "days"} — the intention is for the coming days or weeks, likely enough time has passed
+
+If the timeline is truly ambiguous — no horizon can be read from the words — return:
+- {"ambiguous": true, "datingQuestion": "..."} — a question asking the user when they expected this to happen, in your own words, quoting the intention verbatim`;
+
+/**
+ * Read the horizon from one intention snippet. Calls `complete` exactly once.
+ * Writes nothing, gates nothing — the caller owns the run, the quota, and the
+ * try/catch. A model failure is NOT caught: the throw is the measurement's count.
+ */
+export async function annotateIntentionHorizon(
+  snippet: Snippet,
+  model: string,
+  complete: Complete,
+): Promise<IntentionHorizonResult> {
+  const snippetLine = `Snippet [written ${snippet.captured}]: "${snippet.prose}"`;
+  const turns: Turn[] = [{ role: 'user', text: snippetLine, at: new Date().toISOString() }];
+  assertUserTurn(turns);
+
+  const raw = await complete(HORIZON_SYSTEM_PROMPT, turns, { temperature: 0.2 });
+  const modelAt = new Date().toISOString();
+  return shapeHorizon(raw, snippet.id, snippet.version, model, modelAt);
+}
+
+
+/** Parse and validate the model's horizon answer, or throw. */
+function shapeHorizon(
+  raw: string,
+  snippetId: string,
+  version: number,
+  model: string,
+  modelAt: string,
+): IntentionHorizonResult {
+  const trimmed = stripFences(raw).trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(`annotateIntentionHorizon: model returned non-JSON: ${trimmed.slice(0, 200)}`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`annotateIntentionHorizon: JSON is not an object: ${trimmed.slice(0, 200)}`);
+  }
+  const obj = parsed as Record<string, unknown>;
+
+  if (obj.ambiguous === true) {
+    const datingQuestion = typeof obj.datingQuestion === 'string' ? obj.datingQuestion.trim() : '';
+    if (datingQuestion.length === 0) {
+      throw new Error('annotateIntentionHorizon: ambiguous=true but datingQuestion is empty');
+    }
+    return { kind: 'ambiguous', snippetId, version, datingQuestion, model, modelAt, raw };
+  }
+
+  const horizon = typeof obj.horizon === 'string' ? obj.horizon.trim() : '';
+  if (horizon !== 'now' && horizon !== 'session' && horizon !== 'days') {
+    throw new Error(`annotateIntentionHorizon: invalid horizon ${JSON.stringify(horizon)} — expected now, session, or days`);
+  }
+  return { kind: 'horizon', snippetId, version, horizon: horizon as 'now' | 'session' | 'days', model, modelAt, raw };
+}

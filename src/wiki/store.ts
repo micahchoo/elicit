@@ -703,3 +703,27 @@ export function readStillTrueCursor(root: string): number {
     return 0;
   }
 }
+
+// ── Outcome question cursor (ticket 106) ──
+
+const OUTCOME_CURSOR = 'outcome-cursor.json';
+
+export function writeOutcomeCursor(root: string, offset: number): void {
+  const dir = join(root, 'wiki');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, OUTCOME_CURSOR), JSON.stringify({ offset }), 'utf-8');
+}
+
+/** The persisted outcome-question offset; 0 when the file is missing or unparseable. */
+export function readOutcomeCursor(root: string): number {
+  const path = join(root, 'wiki', OUTCOME_CURSOR);
+  if (!existsSync(path)) return 0;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null) return 0;
+    const offset = (parsed as Record<string, unknown>).offset;
+    return typeof offset === 'number' ? offset : 0;
+  } catch {
+    return 0;
+  }
+}

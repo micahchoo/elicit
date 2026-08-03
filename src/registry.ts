@@ -86,6 +86,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeExpedition', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeDiscriminatingQuestion', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
+ {
+  module: 'src/clerk/composed',
+  name: 'stillTrueForm',
+  status: 'live',
+  reason: 'pure form computation for the still-true re-measure; the Q-35 gate on acting on it lives in composeStillTrue behind the stillTrue.formSelection threshold',
+ },
  // ── src/clerk/annotate.ts ──
  { module: 'src/clerk/annotate', name: 'annotateReferent', status: 'live' },
  { module: 'src/clerk/annotate', name: 'annotateIntentionHorizon', status: 'live' },
@@ -125,6 +131,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'wired by 010 T10: runDocketNow\'s thunk runs it as the docket\'s second piece job',
  },
  { module: 'src/clerk/docket', name: 'runReferentAnnotations', status: 'live' },
+ { module: 'src/clerk/docket', name: 'runIntentionHorizonAnnotations', status: 'live' },
+ { module: 'src/clerk/docket', name: 'runOutcomeQuestions', status: 'live' },
 
  // ── src/clerk/gap-fill.ts ──
  {
@@ -711,6 +719,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/wiki/store', name: 'readSweepDeferral', status: 'live' },
  { module: 'src/wiki/store', name: 'writeStillTrueCursor', status: 'live' },
  { module: 'src/wiki/store', name: 'readStillTrueCursor', status: 'live' },
+ { module: 'src/wiki/store', name: 'writeOutcomeCursor', status: 'live' },
+ { module: 'src/wiki/store', name: 'readOutcomeCursor', status: 'live' },
 
  // ── src/wiki/thresholds.ts (Q-35 turned into data) ──
  {
