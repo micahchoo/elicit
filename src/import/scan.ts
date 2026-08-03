@@ -11,6 +11,11 @@
  * makes an imported sitting independent evidence, and a guessed date corrupts
  * that silently and permanently.
  *
+ * A region may declare how its files carry dates (Q-67): `scanFolder(root)`
+ * runs the frontmatter rule above exactly, and `scanFolder(root, rule)` dates
+ * every file by the declared rule and refuses every file it cannot date — by
+ * name, so a silent loss is impossible.
+ *
  * Two load-bearing choices, both ruled on 2026-08-02:
  * - The hash covers the BODY only, never the frontmatter. Frontmatter is not
  *   the person's prose, so it cannot be part of that prose's identity; and a
@@ -21,10 +26,11 @@
 
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import matter from 'gray-matter';
 
-import type { RefusalReason } from './contract.js';
+import { dateFor, DEFAULT_DATING } from './dating.js';
+import type { DatingRule, RefusalReason } from './contract.js';
 
 /** The body's identity (Q-59): SHA-256 of the prose, frontmatter excluded. */
 export function bodyHash(body: string): string {
@@ -73,7 +79,7 @@ function isoDay(value: unknown): string | null {
 /** One file's fate: a ScannedItem, or the reason it did not become one. */
 type ScanOutcome = ScannedItem | { reason: RefusalReason };
 
-function scanFile(sourcePath: string): ScanOutcome {
+function scanFile(sourcePath: string, rule: DatingRule): ScanOutcome {
   const raw = readFileSync(sourcePath, 'utf-8');
   const parsed = matter(raw);
   const body = parsed.content;
@@ -81,33 +87,43 @@ function scanFile(sourcePath: string): ScanOutcome {
   // `matter` is empty both for a file with no `---` block and for an empty
   // one; the raw string alone tells the two apart. An empty block is still a
   // block, so it falls through to the date checks like any other frontmatter.
-  if (parsed.matter === '' && !raw.startsWith('---')) return { reason: 'no-frontmatter' };
+  // Under a filename rule a file with no `---` block is the NORMAL case — the
+  // date lives in the name — so `no-frontmatter` is this branch's refusal,
+  // while `empty-body` stays unconditional: a file with nothing in it has no
+  // prose under any rule.
+  if (rule.kind === 'frontmatter') {
+    if (parsed.matter === '' && !raw.startsWith('---')) return { reason: 'no-frontmatter' };
+  }
   if (body.trimEnd() === '') return { reason: 'empty-body' };
 
-  const date = isoDay(parsed.data.date);
-  if (date === null) {
-    return { reason: parsed.data.date === undefined ? 'no-date' : 'unparsable-date' };
-  }
+  // The rule says where the date lives (Q-67): the declared frontmatter key,
+  // or the file's name. `lastmod` stays frontmatter-only under every rule — a
+  // filename encodes one date, and Q-59's second sitting needs a different one.
+  const dated = dateFor(rule, basename(sourcePath), parsed.data);
+  if ('reason' in dated) return { reason: dated.reason };
 
   const lastmod = isoDay(parsed.data.lastmod);
   const title = typeof parsed.data.title === 'string' ? parsed.data.title : undefined;
   return {
     hash: bodyHash(body),
     sourcePath,
-    date,
+    date: dated.date,
     ...(lastmod === null ? {} : { lastmod }),
     ...(title === undefined ? {} : { title }),
     body,
   };
 }
 
-/** Scan `root` recursively: every `*.md` and `*.markdown` becomes an item or a refusal. */
-export function scanFolder(root: string): ScanResult {
-  const items: ScannedItem[] = [];
-  const refused: { sourcePath: string; reason: RefusalReason }[] = [];
-
+/**
+ * Every `*.md` and `*.markdown` file under `root`, absolute paths, in the
+ * deterministic order the scan visits them. Exported because the survey
+ * (Task 4) needs the SAME walk: a second copy would let the map and the scan
+ * disagree about which files exist.
+ */
+export function walkMarkdown(root: string): string[] {
+  const out: string[] = [];
   const visit = (dir: string): void => {
-    // Sorted so the scan is deterministic on any filesystem.
+    // Sorted so the walk is deterministic on any filesystem.
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     );
@@ -119,15 +135,25 @@ export function scanFolder(root: string): ScanResult {
       }
       if (!entry.isFile()) continue;
       if (!(entry.name.endsWith('.md') || entry.name.endsWith('.markdown'))) continue;
-      const outcome = scanFile(full);
-      if ('hash' in outcome) {
-        items.push(outcome);
-      } else {
-        refused.push({ sourcePath: full, reason: outcome.reason });
-      }
+      out.push(full);
     }
   };
-
   visit(root);
+  return out;
+}
+
+/** Scan `root` recursively: every `*.md` and `*.markdown` becomes an item or a refusal. */
+export function scanFolder(root: string, rule: DatingRule = DEFAULT_DATING): ScanResult {
+  const items: ScannedItem[] = [];
+  const refused: { sourcePath: string; reason: RefusalReason }[] = [];
+
+  for (const full of walkMarkdown(root)) {
+    const outcome = scanFile(full, rule);
+    if ('hash' in outcome) {
+      items.push(outcome);
+    } else {
+      refused.push({ sourcePath: full, reason: outcome.reason });
+    }
+  }
   return { items, refused };
 }

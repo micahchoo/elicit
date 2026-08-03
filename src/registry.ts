@@ -365,6 +365,32 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'nothing constructs it until Task 12\'s POST /api/import/region route — a declaration only reaches the vault through that door',
  },
 
+ // ── src/import/dating.ts ──
+ {
+  module: 'src/import/dating',
+  name: 'compilePattern',
+  status: 'live',
+  reason: 'called by dateFor in the same module',
+ },
+ {
+  module: 'src/import/dating',
+  name: 'dateFor',
+  status: 'live',
+  reason: 'called by scanFile under any dating rule',
+ },
+ {
+  module: 'src/import/dating',
+  name: 'DEFAULT_DATING',
+  status: 'live',
+  reason: 'the default scanFolder rule — frontmatter date, today\'s behaviour',
+ },
+ {
+  module: 'src/import/scan',
+  name: 'walkMarkdown',
+  status: 'live',
+  reason: 'called by scanFolder — one walk for the scan and the survey',
+ },
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },

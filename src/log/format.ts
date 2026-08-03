@@ -552,6 +552,14 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  return `${file} ${why}`;
 },
 
+// Emitted by the region-wired scan route (seeding Task 12): the rule and
+// the count, never a file's path or content — the rule is the decision, and
+// the person chose it; the per-file refusal list already comes back from the
+// scan route whole. The sentence lands ahead of its emitter, so it stays out
+// of the EMITTED samples until that route exists.
+'import-refused-by-rule': (f) =>
+ `refused ${count(num(f, 'count'), 'file')} by the declared rule ${f.rule ?? '…'}`,
+
 // Emitted by the adoption step (T8): the one-off script's nineteen keeps and
 // twenty-eight refusals folded into the staging store. Bare words after the
 // fields are the names that did not resolve — `unresolved=1 jingle-tales`.
