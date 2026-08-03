@@ -67,6 +67,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'gap-fill-failed', detail: 'boom', reads: 'could not run the gap-fill sweep' },
 { kind: 'territory-gap-fill', detail: 'minted=2', reads: 'minted 2 territory questions from the KTG skeleton' },
 { kind: 'territory-gap-fill-failed', detail: 'boom', reads: 'could not run the territory gap-fill sweep' },
+ { kind: 'gazetteer-extraction-failed', detail: 'boom', reads: 'could not run the gazetteer extraction job' },
+ { kind: 'gazetteer-frontier-shadow', detail: 'frontierEntities=3', reads: 'gazetteer frontier would mint 3 questions — shadow mode, nothing minted' },
+ { kind: 'gazetteer-frontier-minted', detail: 'minted=2', reads: 'minted 2 frontier questions from the gazetteer' },
+ { kind: 'gazetteer-frontier-failed', detail: 'boom', reads: 'could not run the gazetteer frontier sweep' },
+ { kind: 'pulse-answered', detail: '', reads: 'answered the opening pulse' },
 {
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',

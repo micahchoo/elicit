@@ -39,8 +39,9 @@ describe('anniversaryDraw', () => {
     const snips = [snap({ wroteAt: '2025-08-03T12:00:00Z' })];
     const result = anniversaryDraw(snips, () => 0, new Date('2026-08-03T12:00:00Z'));
     expect(result).not.toBeNull();
-    expect(result!.draw.draw.kind).toBe('anniversary');
-    expect(result!.draw.draw.snippetId).toBe('01TEST');
+    const draw = result!.draw.draw;
+    if (draw.kind !== 'anniversary') throw new Error('expected an anniversary draw');
+    expect(draw.snippetId).toBe('01TEST');
     expect(result!.draw.provenance).toBe('resurfacing');
     expect(result!.draw.questionForm).toBe('deliberative');
     expect(result!.draw.question).toContain('2025-08-03');

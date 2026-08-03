@@ -5,6 +5,7 @@ import {
   composeJuxtaposition,
   composeOpener,
   composeStillTrue,
+  stillTrueForm,
   composeExpedition,
 } from '../src/clerk/composed.js';
 import type {
@@ -524,6 +525,10 @@ describe('composeStillTrue', () => {
     expect(draft.source).toBe('still-true');
     expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
+    // No log fn passed → no shadow record → the form stays 'deliberative'.
+    // A shadow decision that leaves no record may not act (Q-35, the Q-56
+    // inversion); the triangulation form only ships through a logged,
+    // graduated gate. This pin holds the no-log path to the old behavior.
     expect(draft.questionForm).toBe('deliberative');
     expect(draft.horizon).toBe('session');
     expect(draft.cites).toEqual(['s1@3']);
@@ -595,5 +600,39 @@ describe('composeStillTrue', () => {
     expect(result).not.toBeNull();
     expect(result!.source).toBe('still-true');
     expect(result!.cites).toEqual(['import-1@1']);
+  });
+});
+// ---------------------------------------------------------------------------
+// stillTrueForm (Q-109 form triangulation) + the Q-35 shadow gate
+// ---------------------------------------------------------------------------
+
+describe('stillTrueForm', () => {
+  it('asks theoretically when the original question was deliberative (avowal → self-observation)', () => {
+    expect(stillTrueForm(makeSnippet())).toBe('theoretical');
+  });
+
+  it('keeps any other original form unchanged', () => {
+    const base = makeSnippet().provenance;
+    expect(stillTrueForm(makeSnippet({ provenance: { ...base, questionForm: 'theoretical' } }))).toBe('theoretical');
+    expect(stillTrueForm(makeSnippet({ provenance: { ...base, questionForm: 'why' } }))).toBe('why');
+  });
+});
+
+describe('composeStillTrue form shadow gate (Q-35)', () => {
+  it('keeps the original form and logs the would-be triangulation form while the threshold is shadowed', async () => {
+    const snippet = makeSnippet();
+    const complete = fakeComplete('Is "deep work over shallow productivity" still your priority?');
+    const events: { kind: string; detail: string }[] = [];
+    const log = (e: { kind: string; detail: string }) => void events.push(e);
+
+    const result = await composeStillTrue(snippet, complete, undefined, log);
+
+    expect(result).not.toBeNull();
+    expect(result!.questionForm).toBe('deliberative');
+    expect(
+      events.some(
+        (e) => e.kind === 'shadow-decision' && e.detail.includes('stillTrue.formSelection') && e.detail.includes('theoretical'),
+      ),
+    ).toBe(true);
   });
 });
