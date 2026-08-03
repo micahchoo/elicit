@@ -645,6 +645,21 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  `exported a piece with ${count(num(f, 'paragraphs'), 'paragraph')}`,
 'piece-set-down': () => 'set the piece down',
 'piece-picked-up': () => 'picked the piece up again',
+
+// ── The candidate arrangements (T11): the one model call in the slice ──
+
+// Emitted once per propose run with the surviving count. Zero is a valid,
+// non-exceptional outcome: the person keeps the chronology they already had.
+// The detail carries `count=2`; the reader hears it as other orders of the
+// SAME material, never new paragraphs.
+'arrangements-proposed': (_f, d) =>
+ `offered ${count(nth(d, 0), 'other order')} of the same material`,
+// Emitted once per drop — a whole candidate refused, or a piece of one (a
+// Marginalia or a gap) refused while its candidate survived. The detail
+// names the reason and the principle; the rejection rate is the metric that
+// says whether the model can do this job at all (T14 reads it).
+'arrangement-rejected': (f) =>
+ `set one proposed order aside (${f.reason ?? 'a boundary check'})`,
 };
 
 /**

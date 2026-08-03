@@ -96,6 +96,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/clause', name: 'isCompleteClause', status: 'live' },
  { module: 'src/clerk/clause', name: 'widenToClause', status: 'live' },
 
+ // ── src/clerk/arrangements.ts ──
+ {
+  module: 'src/clerk/arrangements',
+  name: 'proposeArrangements',
+  status: 'unwired',
+  reason: 'wired by T12\'s POST /api/piece/:id/arrangements route (Wave 4)',
+ },
+
  // ── src/clerk/docket.ts ──
  { module: 'src/clerk/docket', name: 'runDocket', status: 'live' },
 
@@ -362,8 +370,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/piece/contract', name: 'noProse', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write; T11 will use all five for the candidate gate' },
  { module: 'src/piece/contract', name: 'noTitle', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write' },
  { module: 'src/piece/contract', name: 'pinsResolve', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write; T11 will use all five for the candidate gate' },
- { module: 'src/piece/contract', name: 'samePinSet', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
- { module: 'src/piece/contract', name: 'distinctPrinciples', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'samePinSet', status: 'live', reason: 'wired by T11: proposeArrangements runs it before any candidate is accepted (010 T11)' },
+ { module: 'src/piece/contract', name: 'distinctPrinciples', status: 'live', reason: 'wired by T11: the candidate gate seats the base\'s chronology and refuses duplicates (010 T11)' },
 
  // ── src/piece/export.ts ──
  { module: 'src/piece/export', name: 'toMarkdown', status: 'live', reason: 'wired by T6: GET /api/piece/:id/export renders the arrangement' },

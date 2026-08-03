@@ -503,6 +503,22 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `piece=${ULID}`,
   reads: 'picked the piece up again',
 },
+
+// The candidate arrangements (T11): the one model call in the slice. A
+// rejection names the reason and the principle — the rejection rate is the
+// metric that says whether the model can do this job at all (T14 reads it);
+// the proposed line carries the surviving count, and zero is a valid,
+// non-exceptional outcome.
+{
+  kind: 'arrangement-rejected',
+  detail: 'reason=pin-set principle=argument',
+  reads: 'set one proposed order aside (pin-set)',
+},
+{
+  kind: 'arrangements-proposed',
+  detail: 'count=2',
+  reads: 'offered 2 other orders of the same material',
+},
 ];
 
 describe('formatEvent', () => {
