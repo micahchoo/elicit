@@ -313,7 +313,7 @@ describe('god-node-referent (Q-35: shadowed)', () => {
   const fanout = THRESHOLDS['lint.godNodeFanout'].value;
 
   it('logs what it would flag and returns nothing while the threshold is shadowed', () => {
-    const g = fatReferent('archie', fanout + 1);
+    const g = fatReferent('atlas', fanout + 1);
     const { events, log } = collector();
 
     const findings = lint(g, THRESHOLDS, log);
@@ -322,26 +322,26 @@ describe('god-node-referent (Q-35: shadowed)', () => {
     const shadow = events.filter((e) => e.kind === 'shadow-decision');
     expect(shadow).toHaveLength(1);
     expect(shadow[0]!.detail).toContain('lint.godNodeFanout');
-    expect(shadow[0]!.detail).toContain('archie');
+    expect(shadow[0]!.detail).toContain('atlas');
     expect(shadow[0]!.actor).toBe('clerk');
   });
 
   it('returns the finding on the SAME graph once the threshold is live', () => {
     // Half two of the shadow proof: the mechanism does fire, and it is the
     // register alone that withholds it.
-    const g = fatReferent('archie', fanout + 1);
+    const g = fatReferent('atlas', fanout + 1);
     const { log } = collector();
 
     const findings = lint(g, GOD_NODE_LIVE, log);
 
     expect(findings).toHaveLength(1);
     expect(findings[0]!.kind).toBe('god-node-referent');
-    expect(findings[0]!.subject).toBe('archie');
+    expect(findings[0]!.subject).toBe('atlas');
     expect(findings[0]!.refs).toHaveLength(fanout + 1);
   });
 
   it('says nothing about a referent exactly at the fanout', () => {
-    const g = fatReferent('janastu', fanout);
+    const g = fatReferent('kiln', fanout);
     const { events, log } = collector();
 
     expect(lint(g, GOD_NODE_LIVE, log)).toEqual([]);
@@ -363,7 +363,7 @@ describe('god-node-referent (Q-35: shadowed)', () => {
     const g = graphOf({
       claims: [
         ...Array.from({ length: fanout + 1 }, (_, i) =>
-          claim(`c${i}`, { referents: ['archie', 'janastu'], cites: ['snipA@1'] }),
+          claim(`c${i}`, { referents: ['atlas', 'kiln'], cites: ['snipA@1'] }),
         ),
         // Names no node — contributes to no fan-out count.
         claim('c-no-refs', { cites: ['snipA@1'] }),
@@ -375,7 +375,7 @@ describe('god-node-referent (Q-35: shadowed)', () => {
     const findings = lint(g, GOD_NODE_LIVE, log);
 
     expect(findings).toHaveLength(2);
-    expect(findings.map((f) => f.subject)).toEqual(['archie', 'janastu']);
+    expect(findings.map((f) => f.subject)).toEqual(['atlas', 'kiln']);
     for (const f of findings) expect(f.refs).toHaveLength(fanout + 1);
   });
 });

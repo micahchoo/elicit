@@ -42,11 +42,11 @@ import { makeFakeComplete } from '../src/fake-responder.js';
 /** The committed fixture. These tests NEVER mutate it. */
 const FIXTURE = join(import.meta.dirname, 'fixtures', 'import-folder');
 /**
- * The (Mol 2008) paragraph of quoted.md — dropped from extraction by
+ * The (Ryde 2008) paragraph of quoted.md — dropped from extraction by
  * dropCitedParagraphs, so it can only reach the surface because the route
  * re-reads the whole source body.
  */
-const CITED_PARAGRAPH = 'the argument I keep returning to (Mol 2008)';
+const CITED_PARAGRAPH = 'the argument I keep returning to (Ryde 2008)';
 
 let root: string;
 let app: Hono;

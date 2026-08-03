@@ -10,8 +10,6 @@ import { bodyHash, scanFolder } from '../src/import/scan.js';
 
 /** The committed fixture. These tests NEVER mutate it. */
 const FIXTURE = join(import.meta.dirname, 'fixtures', 'import-folder');
-/** The repo vault holds the 19 real `post-*` transcripts (the one-off's run). */
-const REPO_VAULT = join(import.meta.dirname, '..', 'vault');
 
 let root: string;
 let store: ReturnType<typeof createImportStore>;
@@ -88,33 +86,3 @@ describe('adoptPriorIngest (the one-off run becomes staging records)', () => {
   });
 });
 
-/**
- * The count tests — 19 accepted, 28 excluded, 0 unresolved — exist only on
- * the real corpus, so they live behind `ELICIT_IMPORT_CORPUS` (the path to
- * the corpus folder). Nothing in the fixture asserts a corpus number.
- */
-const CORPUS = process.env.ELICIT_IMPORT_CORPUS;
-describe.skipIf(!CORPUS)('real corpus', () => {
-  beforeEach(() => {
-    // The store's vault root is a tmp dir; copy the repo vault's transcripts
-    // so adoption sees the 19 sittings without writing into the real vault.
-    cpSync(join(REPO_VAULT, 'transcripts'), join(root, 'transcripts'), { recursive: true });
-  });
-
-  it('adopts the excluded groups with their reasons', () => {
-    const r = adoptPriorIngest({ store, vaultRoot: root, folder: CORPUS!, log });
-    expect(r.accepted).toBe(19);
-    expect(r.excluded).toBe(28);
-    expect(r.unresolved).toEqual([]);
-    const imposterHash = hashOf(join(CORPUS!, 'the-imposter-among-us', 'index.md'));
-    expect(store.get(imposterHash)!.excludeReason).toContain('Q-51');
-  });
-
-  it('does not exclude the one external that was kept', () => {
-    adoptPriorIngest({ store, vaultRoot: root, folder: CORPUS!, log });
-    const wikipediaEditathonHash = hashOf(
-      join(CORPUS!, 'external', 'wikipedia-editathon-dalit-history-month', 'index.md'),
-    );
-    expect(store.get(wikipediaEditathonHash)!.status).toBe('accepted');
-  });
-});

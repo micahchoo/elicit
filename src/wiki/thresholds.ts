@@ -191,7 +191,7 @@ export type ThresholdName = keyof typeof THRESHOLDS;
  * true means the caller is licensed to act, false means it must not.
  *
  * ```
- * if (shadowDecision(THRESHOLDS['lint.godNodeFanout'], 'note god-node on referent=notebook', log)) {
+ * if (shadowDecision(THRESHOLDS['lint.godNodeFanout'], 'note god-node on referent=atlas', log)) {
  *   …act…
  * }
  * ```

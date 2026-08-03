@@ -20,8 +20,8 @@ describe('body pipeline (moved from scripts/ingest-posts.ts)', () => {
   it('drops a paragraph carrying an inline citation, keeps the author around it', () => {
     const { kept, dropped } = dropCitedParagraphs(body);
     expect(dropped).toBe(1);
-    expect(kept).toContain('I believe technology can play a big role');
-    expect(kept).not.toContain('(Mol 2008)');
+    expect(kept).toContain('I believe a good map can play a big role');
+    expect(kept).not.toContain('(Ryde 2008)');
   });
 
   it('splits only on paragraph boundaries', () => {

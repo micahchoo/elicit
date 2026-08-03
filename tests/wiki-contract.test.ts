@@ -183,7 +183,7 @@ describe('shadowCollector', () => {
 
     const acted = shadowDecision(
       THRESHOLDS['lint.godNodeFanout'],
-      'note god-node on referent=archie',
+      'note god-node on referent=atlas',
       log
     );
 
@@ -192,7 +192,7 @@ describe('shadowCollector', () => {
     expect(records).toEqual([
       {
         threshold: 'lint.godNodeFanout',
-        would: 'note god-node on referent=archie',
+        would: 'note god-node on referent=atlas',
         at: seen[0]!.at,
       },
     ]);

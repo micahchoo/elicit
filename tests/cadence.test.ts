@@ -34,13 +34,13 @@ describe('readCadence', () => {
   it('reports nothing when the only transcripts are imports', () => {
     // Ticket 057 put 19 of these in the vault, dated 2017-2026. Counting them
     // would report a last sitting that never happened.
-    transcript('post-archie', { protocol: 'import', started: '2026-07-14T00:00:00.000Z' });
+    transcript('post-atlas', { protocol: 'import', started: '2026-07-14T00:00:00.000Z' });
     transcript('post-glitch-art', { protocol: 'import', started: '2017-01-01T00:00:00.000Z' });
     expect(readCadence(root, NOW)).toEqual({ inLastMonth: 0, total: 0 });
   });
 
   it('counts real sittings and ignores imports mixed in with them', () => {
-    transcript('post-archie', { protocol: 'import', started: '2026-07-14T00:00:00.000Z' });
+    transcript('post-atlas', { protocol: 'import', started: '2026-07-14T00:00:00.000Z' });
     transcript('s1', { protocol: 'first-contact', started: daysAgo(3) });
     transcript('s2', { protocol: 'first-contact', started: daysAgo(10) });
     transcript('s3', { protocol: 'first-contact', started: daysAgo(200) });

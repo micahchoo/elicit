@@ -39,7 +39,7 @@ export const RANDOMIZER_THRESHOLDS = {
     value: 7,
     live: false,
     graduatesWhen:
-      'Shadow. It decides whether the system may OFFER a draw nobody asked for, which is a selection mechanism in the exact sense of Q-35. It graduates when the log shows a run of randomizer-license lines whose grounds=dry-spell days figure lines up with sittings Micah agrees were droughts — and, critically, when the shadow record contains no line that would have interrupted an active week. A week is a guess drawn from Q-16 session budget arithmetic, not a measurement.',
+      'Shadow. It decides whether the system may OFFER a draw nobody asked for, which is a selection mechanism in the exact sense of Q-35. It graduates when the log shows a run of randomizer-license lines whose grounds=dry-spell days figure lines up with sittings the person agrees were droughts — and, critically, when the shadow record contains no line that would have interrupted an active week. A week is a guess drawn from Q-16 session budget arithmetic, not a measurement.',
   },
   'randomizer.staleRegionDays': {
     name: 'randomizer.staleRegionDays',
