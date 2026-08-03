@@ -246,6 +246,9 @@ class QueueStoreImpl implements QueueStore {
    // resume route keys on it across restarts (Q-3: the ladder file is the
    // truth, the pointer only points).
    ...(data.soundingId ? { soundingId: data.soundingId as string } : {}),
+   // The KTG territory node this entry was minted for. Read back because
+   // the dedupe key is the node id across restarts (094).
+   ...(data.territoryNode ? { territoryNode: data.territoryNode as string } : {}),
   };
  }
 
@@ -282,6 +285,7 @@ class QueueStoreImpl implements QueueStore {
   if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
   if (entry.direction) fm.direction = entry.direction;
  if (entry.soundingId) fm.soundingId = entry.soundingId;
+  if (entry.territoryNode) fm.territoryNode = entry.territoryNode;
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#dir(), `${entry.id}.md`), content, 'utf-8');
  }

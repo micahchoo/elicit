@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Server } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { loadEnvFile } from './env.js';
 import matter from 'gray-matter';
 import { join, extname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -36,6 +37,9 @@ import { composeFromCompacted, composeRung } from './clerk/sounding-rung.js';
 import { loadLadderSummary, runLadderSummaries } from './clerk/sounding-summary.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { proposeArrangements } from './clerk/arrangements.js';
+import { runTerritoryGapFillSweep } from './ktg/gap-fill.js';
+import { loadKtgSkeleton } from './ktg/loader.js';
+import { createCoverageStore } from './ktg/coverage.js';
 import { createImportStore } from './import/store.js';
 import { chronological } from './piece/arrange.js';
 import { createPieceStore } from './piece/store.js';
@@ -669,6 +673,18 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      queue: deps.queue,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     }),
+    territoryGapFillSweep: () => {
+     const skel = loadKtgSkeleton('fake-craft', deps.vaultRoot);
+     if (!skel.ok) return Promise.resolve({ minted: 0, frontierQuestions: 0, failureQuestions: 0 });
+     const coverage = createCoverageStore(deps.vaultRoot);
+     return Promise.resolve(runTerritoryGapFillSweep({
+      skeleton: skel.value,
+      coverage,
+      queue: deps.queue,
+      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      now: new Date().toISOString(),
+     }));
+    },
     runImportJobs: runImportJobsNow,
     stillTrueCursor,
     vaultRoot: deps.vaultRoot,
@@ -3166,6 +3182,9 @@ const isDirect =
   process.argv[1].endsWith('\\server.ts') ||
   process.argv[1].endsWith('\\server.js'));
 if (isDirect) {
+ // Machine-specific settings (STT model dir, port, vault root, …) live in
+ // a `.env` next to the server; real environment variables win over it.
+ loadEnvFile();
  const vaultRoot = process.env.ELICIT_VAULT_ROOT ?? './vault';
  const vault = createVault(vaultRoot);
 

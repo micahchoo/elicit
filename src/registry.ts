@@ -616,6 +616,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/randomizer/randomizer.ts ──
  { module: 'src/randomizer/randomizer', name: 'resurfaceQuestion', status: 'live' },
  { module: 'src/randomizer/randomizer', name: 'createRandomizer', status: 'live' },
+ { module: 'src/randomizer/randomizer', name: 'anniversaryDraw', status: 'live' },
 
  // ── src/randomizer/strata.ts ──
  { module: 'src/randomizer/strata', name: 'readSittingDates', status: 'live' },
@@ -806,4 +807,11 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/coach/page', name: 'buildCoachPage', status: 'live', reason: 'live: the page route calls it in src/server.ts (T10)' },
 { module: 'src/coach/page', name: 'waitingLines', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9)' },
 { module: 'src/coach/page', name: 'coachOfferSentence', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9); named to dodge web/reach-line.ts offerSentence (090 T8)' },
+
+// ── src/ktg/ (094 — KTG territory ontology instrument) ──
+{ module: 'src/ktg/validator', name: 'validateKtgSkeleton', status: 'live', reason: 'pure, no I/O — the guard at load time (094 P1)' },
+{ module: 'src/ktg/loader', name: 'loadKtgSkeleton', status: 'live', reason: 'wired by 094: server loads a skeleton at docket time (P3)' },
+{ module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'live', reason: 'convenience caller over loadKtgSkeleton — tests and fixtures (094 P1)' },
+{ module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2)' },
+{ module: 'src/ktg/gap-fill', name: 'runTerritoryGapFillSweep', status: 'live', reason: 'wired by 094: runDocket\'s thunk runs it as the territory gap-fill job (P3)' },
 ];

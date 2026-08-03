@@ -53,6 +53,8 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'gap-fill-minted', detail: 'minted=3 budQuestions=2 constructQuestions=1', reads: 'minted 3 gap-fill questions into the queue' },
  { kind: 'gap-fill-clipped', detail: 'cap=3 clipped=2', reads: 'enforced the gap-fill cap at 3 and clipped: 2' },
  { kind: 'gap-fill-failed', detail: 'boom', reads: 'could not run the gap-fill sweep' },
+{ kind: 'territory-gap-fill', detail: 'minted=2', reads: 'minted 2 territory questions from the KTG skeleton' },
+{ kind: 'territory-gap-fill-failed', detail: 'boom', reads: 'could not run the territory gap-fill sweep' },
 {
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',

@@ -274,6 +274,14 @@ referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed:
  */
 gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
 /**
+ * The territory gap-fill sweep (ticket 094), as a docket job after the
+ * ordinary gap-fill sweep. Reads KTG skeletons against coverage and mints
+ * questions for frontier nodes and common failures.
+ * Absent means no territory work this run, and every caller predating
+ * the field behaves exactly as before. Zero-LLM.
+ */
+territoryGapFillSweep?: () => Promise<{ minted: number; frontierQuestions: number; failureQuestions: number }>;
+/**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
@@ -571,6 +579,17 @@ gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQu
    }
   }
 
+  // Territory gap-fill (ticket 094) — follows the ordinary gap-fill,
+  // reads KTG skeleton coverage, mints frontier and failure questions.
+  let territoryGapFill: DocketReport['territoryGapFill'];
+  if (deps.territoryGapFillSweep) {
+   try {
+    territoryGapFill = await deps.territoryGapFillSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'territory-gap-fill-failed', detail: String(err) });
+   }
+  }
+
   // ── 10. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
@@ -611,6 +630,7 @@ gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQu
    ...(imports ? { imports } : {}),
    ...(annotations ? { annotations } : {}),
    ...(gapFill ? { gapFill } : {}),
+   ...(territoryGapFill ? { territoryGapFill } : {}),
   };
  } finally {
   running = false;

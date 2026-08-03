@@ -43,7 +43,9 @@ export type QuestionProvenance =
  // shuffles of material that already exists — a curated deck, or the person's
  // own older words — so neither can be produced by a model.
  | 'deck'
- | 'resurfacing';
+ | 'resurfacing'
+ // Territory-gap-fill questions minted from KTG instrument data (094)
+ | 'territory';
 
 /**
  * How far the writing is from the person reading it now (Q-18,
@@ -67,6 +69,14 @@ export type DrawProvenance =
   version: number;
   stratum: Stratum;
   /** ISO date of the SITTING the snippet came from, not of its import. */
+  wroteAt: string;
+ };
+ | {
+  kind: 'anniversary';
+  snippetId: string;
+  version: number;
+  stratum: Stratum;
+  /** ISO date of the sitting the snippet came from. */
   wroteAt: string;
  };
 
@@ -121,6 +131,27 @@ export type Turn = {
  skipped?: true;
  /** True when this user turn included dictated (STT) text — evidence tag only */
  spoken?: true;
+ /** Prosody captured from STT — lineage-only trace (ticket 108). */
+ prosody?: Prosody;
+};
+
+/**
+ * Prosody data captured from STT — lineage-only trace.
+ * Evidence for future readings ("said haltingly" is agent judgment about the
+ * saying, Marginalia-class). Q-11 fluency ban: nothing selects, weights, or
+ * scores on these fields (ticket 108).
+ */
+export type Prosody = {
+ /** Wall-clock ms the STT decode took on the server */
+ decodeDurationMs: number;
+ /** Audio length in ms (samples / sampleRate * 1000) */
+ audioDurationMs: number;
+ /** Token count reported by the recognizer */
+ tokenCount: number;
+ /** Average tokens per second across the active speech span */
+ tokensPerSec: number;
+ /** Count of inter-token gaps >= 0.5 seconds */
+ pauseCount: number;
 };
 
 export type CutProposal = {
@@ -314,7 +345,8 @@ source:
  | 'parked-sounding'
  | 'claim-challenged'
  | 'import-repair'
- | 'quest-reflection';
+ | 'quest-reflection'
+ | 'territory-gap-fill';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -411,6 +443,13 @@ source:
  * broken record (Q-3: the ladder file is the truth, the pointer derived).
  */
 soundingId?: string;
+/**
+ * The KTG territory node this entry was minted for. Optional, because
+ * only 'territory-gap-fill' entries carry one — and load-bearing, because
+ * "one question per node" is not expressible without it: the node id
+ * deduplicates both frontier-gap and common-failure questions.
+ */
+territoryNode?: string;
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -472,6 +511,11 @@ export type DocketReport = {
  * `src/clerk/`, so the field names the minimum the docket report renders.
  */
 gapFill?: { minted: number; budQuestions: number; constructQuestions: number };
+/**
+ * What the territory gap-fill sweep did on this run, absent when a run
+ * did none. Structural — this file must not depend on `src/ktg/`.
+ */
+territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions: number };
 };
 
 export type SessionState = {
