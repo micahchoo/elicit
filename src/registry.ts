@@ -355,12 +355,21 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/memory/cover', name: 'saveSummary', status: 'live' },
  { module: 'src/memory/cover', name: 'loadSummaries', status: 'live' },
 
+ // ── src/piece/arrange.ts ──
+ { module: 'src/piece/arrange', name: 'chronological', status: 'unwired', reason: 'wired by T6\'s POST /api/piece route (Wave 2)' },
+
  // ── src/piece/contract.ts ──
- { module: 'src/piece/contract', name: 'noProse', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
- { module: 'src/piece/contract', name: 'noTitle', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
- { module: 'src/piece/contract', name: 'pinsResolve', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'noProse', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write; T11 will use all five for the candidate gate' },
+ { module: 'src/piece/contract', name: 'noTitle', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write' },
+ { module: 'src/piece/contract', name: 'pinsResolve', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write; T11 will use all five for the candidate gate' },
  { module: 'src/piece/contract', name: 'samePinSet', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
  { module: 'src/piece/contract', name: 'distinctPrinciples', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+
+ // ── src/piece/export.ts ──
+ { module: 'src/piece/export', name: 'toMarkdown', status: 'unwired', reason: 'wired by T6\'s GET export route (Wave 2)' },
+
+ // ── src/piece/store.ts ──
+ { module: 'src/piece/store', name: 'createPieceStore', status: 'unwired', reason: 'wired by T6\'s piece routes (Wave 2)' },
 
  // ── src/protocols/registry.ts ──
  { module: 'src/protocols/registry', name: 'loadProtocolDefinitions', status: 'live' },
