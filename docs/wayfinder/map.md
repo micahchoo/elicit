@@ -501,6 +501,13 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Fix: god-node fan-out measured referents, not corpus size](tickets/089-godnode-fanout-measures-corpus.md)
+  — the shadow record convicted the facet reading (fact 15→49 across eight
+  passes, four findings per pass, pure corpus-size echo); re-scoped to
+  registry referents, kind now `god-node-referent`, measured 0 findings on
+  the real vault. The shadow-first discipline (Q-35) did exactly its job:
+  a wrong predicate died in shadow without ever annotating a page.
+
 - [Fix: claim quality at the mint prompt and lint](tickets/087-mint-prompt-claim-quality.md)
   — four prompt clauses from the 085 taxonomy; two lints in shadow
   (occasionless-range, weak-evidence on 074's danglers), dimmed notes never
