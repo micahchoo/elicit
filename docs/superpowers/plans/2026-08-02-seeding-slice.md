@@ -1,6 +1,6 @@
 # Seeding Slice Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A person points Elicit at a vault of thousands of undated notes, sees a
 map of which parts are already in the corpus, is offered one region at a time
@@ -332,7 +332,7 @@ Additions to existing types:
   five members and prove nothing about the fifth.
 </contracts>
 
-- [ ] **Step 1: Append the types, then follow the compiler**
+- [x] **Step 1: Append the types, then follow the compiler**
 
 Append to `src/import/contract.ts`; add the two fields to `src/types.ts` in
 place, each with the doc comment above. Do not touch `ImportDecision` — the
@@ -345,7 +345,7 @@ place: `src/queue/source-label.ts:40`. Add
 `tsc` fails anywhere else, that is a second exhaustive check this plan did not
 find — report it before working around it.
 
-- [ ] **Step 2: Prove the compiler sees them, and that the label says nothing**
+- [x] **Step 2: Prove the compiler sees them, and that the label says nothing**
 
 Add to `tests/import-contract.test.ts` (exists, 2 tests):
 
@@ -381,7 +381,7 @@ Run: `npx vitest run tests/import-contract.test.ts tests/queue-source-label.test
 Expected: PASS — 4 contract tests and the full source-label suite including the
 new Q-15 assertion; tsc clean.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/import/contract.ts src/types.ts src/queue/source-label.ts \
@@ -444,7 +444,7 @@ export function slugFor(root: string): string;
   `/vault/journals`.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('a declaration survives a new store over the same vault', () => {
@@ -483,7 +483,7 @@ it('two same-named subtrees under different parents get different slugs', () => 
 Run: `npx vitest run tests/import-region.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 Mirror `src/import/store.ts` exactly: `mkdirSync(regionsDir, {recursive:true})`,
 `matter.stringify(body, fm)`, and the 048 hazard — every optional field
@@ -494,7 +494,7 @@ not survive a restart.
 Run: `npx vitest run tests/import-region.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 3: Register and commit**
+- [x] **Step 3: Register and commit**
 
 Add two entries to `src/registry.ts`, and **their statuses differ**:
 
@@ -574,7 +574,7 @@ export function walkMarkdown(root: string): string[];   // absolute paths, sorte
   no region is written. A region that cannot date anything must not exist.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('compiles a template into a regex over the basename', () => {
@@ -631,7 +631,7 @@ run the same code and the assertion could not fail. `tests/import-scan.test.ts`
 already pins the old behaviour against fixtures; leaving it untouched is the
 proof that the default is right.
 
-- [ ] **Step 2: Build the fixture**
+- [x] **Step 2: Build the fixture**
 
 **Six files, pinned here once, because Tasks 4, 8 and 15 all count them.** An
 earlier draft described the fixture three times and the three descriptions
@@ -675,7 +675,7 @@ Move the `'no-frontmatter'` refusal inside the `kind === 'frontmatter'` branch.
 The `'empty-body'` refusal stays unconditional: a file with nothing in it has no
 prose under any rule.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `compilePattern` escapes every regex metacharacter in the literal parts, then
 replaces `YYYY` → `(\d{4})`, `MM` → `(\d{2})`, `DD` → `(\d{2})`, remembering the
@@ -694,7 +694,7 @@ unchanged: same sort, same two extensions, same recursion.
 Add the log kind `import-refused-by-rule` and its sentence in `src/log/format.ts`
 — it carries `rule=` and `count=`, never a file's content.
 
-- [ ] **Step 4: Declare the four new exports**
+- [x] **Step 4: Declare the four new exports**
 
 `tests/mechanism-registry.test.ts` sweeps `src/` and fails on any export missing
 from `src/registry.ts`. Add `src/import/dating:compilePattern`, `:dateFor`,
@@ -713,7 +713,7 @@ a fact the plan records in prose, not by misdeclaring a status.
 Run: `npx vitest run tests/import-dating.test.ts tests/import-scan.test.ts tests/log-format.test.ts tests/mechanism-registry.test.ts`
 Expected: PASS — 8 dating, 5 scan (unchanged), log-format and registry green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/import/dating.ts src/import/scan.ts src/registry.ts \
@@ -780,7 +780,7 @@ export function readSurvey(vaultRoot: string): Survey | null;           // null 
   expanded one, and conflating them is how a tree double-counts.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('counts markdown files per folder and aggregates up the tree', () => {
@@ -827,7 +827,7 @@ it('readSurvey is null on a vault that was never surveyed', () => {
 Run: `npx vitest run tests/import-survey.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 Call `walkMarkdown` from `src/import/scan.ts` — the export Task 3 lifted out of
 `scanFolder`'s private `visit` for exactly this. **Do not write a second walk.**
@@ -848,7 +848,7 @@ path from inside the vault beyond the root the person typed.
 Run: `npx vitest run tests/import-survey.test.ts tests/log-format.test.ts`
 Expected: PASS, 7 tests; log-format green.
 
-- [ ] **Step 3: Declare the three exports, all unwired**
+- [x] **Step 3: Declare the three exports, all unwired**
 
 `src/import/survey:surveyFolder`, `:writeSurvey` and `:readSurvey` go into
 `src/registry.ts` as **`unwired`**, and unlike Tasks 2, 3 and 11 all three of
@@ -861,7 +861,7 @@ Run: `npx vitest run tests/mechanism-registry.test.ts`
 Expected: PASS — no `declared unwired but called` violation, which is the check
 that would fire if any of the three had a caller this task did not see.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/import/survey.ts tests/import-survey.test.ts src/registry.ts
@@ -932,7 +932,7 @@ function writtenAtMs(s: Snippet): number | null {
   cursor moves.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('offers a snippet whose prose is nine years old but was filed today', async () => {
@@ -974,7 +974,7 @@ it('excludes and logs a snippet whose dates are both unparseable', async () => {
 Run: `npx vitest run tests/docket.test.ts -t 'still-true'`
 Expected: FAIL on the first — the 2017 snippet is filtered out by `captured`.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 Build one `Map<string, string>` from the already-fetched `sessions` array
 (session → started) above the still-true block; replace the filter's date source
@@ -986,14 +986,14 @@ Run: `npx vitest run tests/docket.test.ts tests/log-format.test.ts`
 Expected: PASS — the full docket suite, including 075's rotation, wrap and
 persistence tests; log-format green.
 
-- [ ] **Step 3: Record the finding where the next reader will look**
+- [x] **Step 3: Record the finding where the next reader will look**
 
 The claim in ticket 075 ("essentially the whole corpus is >90 days old") was true
 of the prose and false of the field. Add one comment at the filter naming
 `captured` as filing time and `started` as writing time, and why the channel must
 read the second. Do not edit ticket 075 — this plan does not modify tickets.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/clerk/docket.ts tests/docket.test.ts
@@ -1046,7 +1046,7 @@ nextPending(region?: string): ImportRecord | null;
   prepared per run*.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('stamps the region on every admitted record', () => {
@@ -1079,7 +1079,7 @@ it('round-trips region through a fresh store', () => {
 Run: `npx vitest run tests/import-store.test.ts`
 Expected: FAIL — 5 new, 7 existing still passing.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 Thread the optional argument through; add `region` to `writeRecord`'s frontmatter
 allowlist, conditionally spread. `nextByDate` takes the filter and applies it
@@ -1088,7 +1088,7 @@ before the sort.
 Run: `npx vitest run tests/import-store.test.ts tests/import-extract.test.ts`
 Expected: PASS, 12 store + 8 extract.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/import/store.ts tests/import-store.test.ts
@@ -1164,7 +1164,7 @@ export type ExtractionDeps = {
   for a cut nobody will see.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('sends the kept-not-written clause for a region declared other', async () => {
@@ -1201,7 +1201,7 @@ it('leaves a record with no region exactly as it is today', async () => {
 Run: `npx vitest run tests/import-extract.test.ts`
 Expected: FAIL, 6 new; the 8 existing pass.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 `import { SYSTEM_PROMPT } from '../harvester/harvester.js'` — it is already
 exported at `:92`. Define `KEPT_NOT_WRITTEN` in `src/import/extract.ts`, next to
@@ -1211,7 +1211,7 @@ Run: `npx vitest run tests/import-extract.test.ts tests/harvest*.test.ts tests/l
 Expected: PASS, 14 extract; the harvester suites unchanged, and `git diff
 src/harvester/` empty; log-format green.
 
-- [ ] **Step 3: Hand the wiring to Task 12, in writing**
+- [x] **Step 3: Hand the wiring to Task 12, in writing**
 
 `regionFor` has no production caller yet. Leave a one-line comment at the dep,
 naming its injection site — `runImportJobs` in `src/server.ts`, Task 12 Step 3 —
@@ -1220,7 +1220,7 @@ Then check it off Task 12's list, not this one: this task is not "done" in the
 sense that matters until Task 12 lands, and its own verification cannot show
 that.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/import/extract.ts tests/import-extract.test.ts
@@ -1260,7 +1260,7 @@ for (const r of deps.store.list('accepted')) {
   two sittings on two dates, so the pair is already in the pool.
 </contracts>
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 ```ts
 it('keeps the same sentence twice when it lives in two files', async () => {
@@ -1293,7 +1293,7 @@ Expected: PASS, 4 tests, with **no source change**. If any fails, the rule is no
 what this task claims and the failure is the finding — report it and stop rather
 than editing `extract.ts` to match the test.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add tests/import-link.test.ts
@@ -1360,7 +1360,7 @@ conditionally-spread field:
   vault never hears about. Name the caller in the commit message.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('stamps the region authorship on every snippet of the sitting', () => {
@@ -1387,7 +1387,7 @@ it('still writes channel pasted and the 073 context window', () => { /* 058's as
 Run: `npx vitest run tests/import-commit.test.ts`
 Expected: FAIL, 3 new; 058's existing commit tests pass.
 
-- [ ] **Step 2: Implement, then read it back**
+- [x] **Step 2: Implement, then read it back**
 
 One conditional spread and one injected `regionFor` added to 058 T7's deps type.
 The third test is the invariant and it must read the vault, not the return
@@ -1401,7 +1401,7 @@ suite here as evidence that a real import stamps anything.
 Run: `npx vitest run tests/import-commit.test.ts`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/import/commit.ts tests/import-commit.test.ts
@@ -1511,7 +1511,7 @@ one thing that makes the ledger load-bearing rather than bookkeeping.
   they are, one at a time, in an ordinary sitting.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('buds a snippet that opens with an anaphor and has no context window', () => {
@@ -1567,7 +1567,7 @@ it('mints nothing twice for the same snippet, across a restart', () => {
 Run: `npx vitest run tests/import-repair.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 2: Implement, and register the threshold**
+- [x] **Step 2: Implement, and register the threshold**
 
 Add to `src/wiki/thresholds.ts`, in the file's own shape:
 
@@ -1578,7 +1578,7 @@ Add to `src/wiki/thresholds.ts`, in the file's own shape:
 },
 ```
 
-- [ ] **Step 3: Hand the wiring to Task 12, and declare the export**
+- [x] **Step 3: Hand the wiring to Task 12, and declare the export**
 
 `runImportRepair` has no caller in this task by design — every `src/server.ts`
 edit in this wave belongs to Task 12, so two tasks never contend on one file.
@@ -1593,7 +1593,7 @@ record of this task's state.
 Run: `npx vitest run tests/import-repair.test.ts tests/wiki-thresholds.test.ts tests/mechanism-registry.test.ts tests/log-format.test.ts`
 Expected: PASS, 7 repair tests; threshold, registry and log-format suites green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/import/repair.ts tests/import-repair.test.ts src/wiki/thresholds.ts src/registry.ts
@@ -1675,7 +1675,7 @@ export function reachDeclines(vaultRoot: string): Map<string, string>;
   word and the region falls behind every region not declined more recently.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('offers the unread region whose own names the live questions touch', () => {
@@ -1738,7 +1738,7 @@ it('offers a region whose files it has never opened', () => {
 Run: `npx vitest run tests/import-reach.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 2: Implement, register the threshold, and declare four exports**
+- [x] **Step 2: Implement, register the threshold, and declare four exports**
 
 `src/registry.ts` gains four entries, and **their statuses differ**:
 
@@ -1759,7 +1759,7 @@ Expected: FAIL — module not found.
 Run: `npx vitest run tests/import-reach.test.ts tests/wiki-thresholds.test.ts tests/log-format.test.ts`
 Expected: PASS, 8 reach; the threshold register test green; log-format green.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/import/reach.ts tests/import-reach.test.ts src/wiki/thresholds.ts src/registry.ts
@@ -1822,7 +1822,7 @@ Downstream: `web/survey-map.ts` (T13) and `renderWaiting` (T14).
   **Task 13, Step 4 is what makes the surface send it.**
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('refuses a dating pattern that cannot produce a day, and writes nothing', async () => {
@@ -1859,12 +1859,12 @@ it('there is no route that harvests a region without a declaration', () => {
 });
 ```
 
-- [ ] **Step 2: Implement the four routes and the query parameter**
+- [x] **Step 2: Implement the four routes and the query parameter**
 
 Run: `npx vitest run tests/seeding-routes.test.ts tests/import-routes.test.ts`
 Expected: PASS, 6 new; 058's 6 route tests unchanged.
 
-- [ ] **Step 3: Pass the three parameters nothing passes yet**
+- [x] **Step 3: Pass the three parameters nothing passes yet**
 
 Each of these is one argument at one call site, and each is the difference
 between a built mechanism and an inert one. Write the assertion first in every
@@ -1927,7 +1927,7 @@ Run: `npx vitest run tests/seeding-routes.test.ts tests/mechanism-registry.test.
 Expected: PASS — 9 route tests; registry green with the eight entries above now
 `live` and no entry left `unwired` in `src/import/`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/server.ts src/registry.ts tests/seeding-routes.test.ts
@@ -2001,7 +2001,7 @@ Injection rather than import, for the reason 058 T10 gives: `el`, `api` and
 `navTo` are module-private in `main.ts` and that file is contended.
 </contracts>
 
-- [ ] **Step 1: The map, as text**
+- [x] **Step 1: The map, as text**
 
 One line per node, indented by depth, in the interface's register:
 
@@ -2019,7 +2019,7 @@ map exists to carry, and hiding it makes the map lie by omission — and the tre
 never renders a per-file list, because a list of 5,000 files is the shape Q-24
 refuses.
 
-- [ ] **Step 2: The declaration, at the point of attention**
+- [x] **Step 2: The declaration, at the point of attention**
 
 Choosing a node opens two questions inline, beneath that line, nothing modal:
 
@@ -2037,7 +2037,7 @@ One sentence under the authorship choice, shown for the two non-authored values:
 avow."* The person should learn the consequence at the moment they declare it,
 not from a wiki claim six weeks later.
 
-- [ ] **Step 3: Prove the structural claims**
+- [x] **Step 3: Prove the structural claims**
 
 **Before writing a line of this step, check the DOM harness.** Verified
 2026-08-02: this repo has **no DOM test environment** — no `jsdom`, no
@@ -2076,7 +2076,7 @@ it('posts the region, then scans it with that slug', async () => {
 Run: `npx vitest run tests/survey-map.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 4: Hand the region to the review, or Q-68's bound reaches nobody**
+- [x] **Step 4: Hand the region to the review, or Q-68's bound reaches nobody**
 
 Task 6 built `nextExtracted(region)` and Task 12 exposed `?region=<slug>`, and
 the piece that makes them mean anything is one line here: `web/import-review.ts`
@@ -2105,7 +2105,7 @@ Expected: PASS, 8 tests — the 6 from Step 3 plus these 2. If the DOM harness i
 absent (Step 3's note), these two move into `renderImportReview`'s own request
 builder as a pure function and are tested there.
 
-- [ ] **Step 5: Wire the entry, and verify by use**
+- [x] **Step 5: Wire the entry, and verify by use**
 
 `web/import-entry.ts` calls `renderSurveyMap` after the folder prompt — one line,
 additive, no existing function reshaped.
@@ -2116,7 +2116,7 @@ Expected: the tree renders with three nodes; declaring `filename: YYYY-MM-DD` an
 `someone else` writes one file under `vault/imports/regions/`; `ideas.md` appears
 by name among the refusals; `vault/transcripts/` is still absent.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/survey-map.ts web/import-entry.ts web/import-review.ts web/style.css \
@@ -2196,7 +2196,7 @@ Upstream: `GET /api/reach`. Downstream: `navTo` into the declaration.
   its own test; the claim, not the test, was wrong.
 </contracts>
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('renders one dimmed line when a region is offered', async () => {
@@ -2223,7 +2223,7 @@ it('reach it lands the map on the region it named', async () => {
 Run: `npx vitest run tests/waiting-surface.test.ts`
 Expected: FAIL, 5.
 
-- [ ] **Step 2: Implement and verify by use**
+- [x] **Step 2: Implement and verify by use**
 
 Run: `npm run build && ELICIT_LLM=fake npx tsx src/server.ts`, survey the fixture,
 leave one queue entry pending whose question shares two terms with a folder name,
@@ -2231,7 +2231,7 @@ open the waiting surface.
 Expected: one dimmed line naming the folder; `not now` removes it and emits
 `reach-declined`; a reload does not bring it back ahead of an undeclined region.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add web/main.ts web/style.css tests/waiting-surface.test.ts
@@ -2253,7 +2253,7 @@ surface that lists debt.
 **Files:**
 - Create: `tests/seeding-acceptance.test.ts`
 
-- [ ] **Step 1: One test per ruling**
+- [x] **Step 1: One test per ruling**
 
 ```ts
 it('Survey — the map is computed, model-free, and stores no completeness flag', () => {
@@ -2311,13 +2311,13 @@ it('Confirm — nothing anywhere holds a weak prior or a fifth status', () => {
 });
 ```
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
 
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: every suite green, tsc clean, the file count above 57 and the pass count
 above 1362 (058 dispatch 1's floor).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/seeding-acceptance.test.ts
