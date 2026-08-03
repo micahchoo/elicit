@@ -768,6 +768,21 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'episodes=5 at=2',
   reads: 'picked a parked DRM back up',
 },
+// The derivation patterns (Q-82, ticket 111): selection is filter-then-
+// random and shadow-first (Q-35, Q-13). The shadow line says what would
+// have been used; the live line what was. pattern-decompose-rejection
+// lands ahead of its emitter, so it stays out of the samples until the
+// decomposition guard emits it (same rule as resonance-checked).
+{
+  kind: 'pattern-selection-shadow',
+  detail: 'eligible=3 selected=shadow',
+  reads: 'would have used pattern shadow (3 eligible)',
+},
+{
+  kind: 'pattern-selection-live',
+  detail: 'eligible=3 selected=counterfactual',
+  reads: 'composed with pattern counterfactual (3 eligible)',
+},
 ];
 
 describe('formatEvent', () => {

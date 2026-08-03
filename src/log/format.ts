@@ -850,6 +850,21 @@ const SENTENCES = {
 'drm-parked': (f) => `parked a DRM session at episode ${f.episode ?? '?'}`,
 'drm-resumed': () => 'picked a parked DRM back up',
 'drm-completed': (f) => `finished a DRM with ${count(num(f, 'fragments'), 'fragment')}`,
+
+// ── The derivation patterns (Q-82, ticket 111): shadow, live, refused ──
+
+// Pattern selection is filter-then-random (Q-13); the shadow line says what
+// would have been used, the live line what was. Both name the pattern and
+// the licensed pool — never the sitting, and never the person.
+'pattern-selection-shadow': (f) =>
+ `would have used pattern ${f.selected ?? '…'} (${num(f, 'eligible')} eligible)`,
+'pattern-selection-live': (f) =>
+ `composed with pattern ${f.selected ?? '…'} (${num(f, 'eligible')} eligible)`,
+// The decomposition guard's refusal: the reason is the record; the pattern
+// id and the question preview stay in the JSONL (Q-6/Q-24 — the preview is
+// never quoted back at the person).
+'pattern-decompose-rejection': (f) =>
+ `pattern question refused: ${f.reason ?? '…'}`,
 } satisfies Record<string, (f: Fields, detail: string) => string>;
 
 /**
