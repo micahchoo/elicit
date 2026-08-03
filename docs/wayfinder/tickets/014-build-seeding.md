@@ -2,7 +2,7 @@
 title: "Plan and build: the Seeding slice"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (omp exec, seeding)
 blocked_by: [013-grill-seeding]
 ---
 
