@@ -779,4 +779,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/clerk/sounding-rung.ts (012 Task 12 — the resumed rung's composition) ──
 { module: 'src/clerk/sounding-rung', name: 'composeFromCompacted', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
+
+// ── src/coach/contract.ts (090 T2 — the coach contract) ──
+{ module: 'src/coach/contract', name: 'directionSlugFor', status: 'unwired', reason: 'wired by the coach store (T3) and advise (T7); routes land in T9/T10' },
+{ module: 'src/coach/contract', name: 'adviceGuard', status: 'unwired', reason: 'wired by the coach store (T3) and advise (T7); routes land in T9/T10' },
+{ module: 'src/coach/contract', name: 'normalizeOption', status: 'live', reason: 'live from birth: adviceGuard calls it in this same module' },
 ];
