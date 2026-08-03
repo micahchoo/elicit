@@ -33,5 +33,4 @@ local:/
 /data/eval-087-mint/
 /data/annotations/
 /scripts/ingest-posts.ts
-/src/import/prior-ingest.ts
-/src/import/prior-ingest.local.ts
+/data/prior-ingest.local.json
