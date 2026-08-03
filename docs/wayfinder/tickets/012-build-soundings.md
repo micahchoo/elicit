@@ -2,7 +2,7 @@
 title: "Plan and build: the Soundings slice"
 labels: [wayfinder:task]
 status: open
-assignee: claude (planning)
+assignee: claude (omp exec, soundings)
 blocked_by: []
 ---
 
