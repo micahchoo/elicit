@@ -299,7 +299,8 @@ source:
  | 'gap-fill'
  | 'contradiction-remeasure'
  | 'lint-still-true'
- | 'lint-undiscriminated-range';
+ | 'lint-undiscriminated-range'
+ | 'parked-sounding';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -363,6 +364,12 @@ source:
   * distinguishable in the record rather than collapsing into "drawn".
   */
  answeredAt?: string;
+/**
+ * The ladder a parked-sounding pointer points at. Optional: only
+ * `parked-sounding` entries carry one, and a pointer without one is a
+ * broken record (Q-3: the ladder file is the truth, the pointer derived).
+ */
+soundingId?: string;
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -457,6 +464,63 @@ export type SessionState = {
   * for that turn, and the Snippet then carries none (ticket 048).
   */
  turnChannels?: (CaptureChannel | undefined)[];
+};
+
+// ── Soundings ──
+
+/** One rung of a descent: the question asked, the phrase it quoted, the answer it drew. */
+export type Rung = {
+ question: string;
+ /**
+  * The exact substring of the PRECEDING answer the question was built from —
+  * `SoundingState.licensingAnswer` for rungs[0], `rungs[n-1].answer` for
+  * rungs[n]. NOT a substring of this rung's own answer (Q-12, the backwards
+  * chain). addRung enforces it; composeRung guarantees it at composition.
+  */
+ foothold: string;
+ answer: string;
+ at: string;
+};
+
+/** The three gate words — the only three (Q-44). */
+export type GateChoice = 'continue' | 'park' | 'another-day';
+
+/** How a descent ended: a gate word, the counter, or the echo check. */
+export type SoundingEnd = 'park' | 'another-day' | 'cap' | 'convergence';
+
+/** What the gate renders on a rung: position, total, and whether it blocks. */
+export type GateReading = {
+ rung: number;
+ of: number;
+ checkpoint: boolean;
+};
+
+/** A live descent: the ladder, plus the question currently on the table. */
+export type SoundingState = {
+ id: string;
+ session: string;
+ started: string;
+ construct: string;
+ /**
+  * The verbatim user turn that licensed the descent — rung 0's foothold
+  * source. Stored, not derived: the licensing turn lives in the transcript
+  * and the ladder cannot reach it (T1 contract).
+  */
+ licensingAnswer: string;
+ allowance: number;
+ checkpointRung: number;
+ rungs: Rung[];
+ /**
+  * The composed question awaiting the next answer. Set at enter and after
+  * every rung; absent only while the descent is blocked at the checkpoint.
+  */
+ pendingQuestion?: { text: string; foothold: string };
+};
+
+/** A finished ladder: a live state stamped with when and how it ended. */
+export type ParkedLadder = SoundingState & {
+ ended: string;
+ endedBy: SoundingEnd;
 };
 
 export type Index = {
