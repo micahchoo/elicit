@@ -361,8 +361,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/import/region',
   name: 'createRegionStore',
-  status: 'unwired',
-  reason: 'nothing constructs it until Task 12\'s POST /api/import/region route — a declaration only reaches the vault through that door',
+  status: 'live',
+  reason: 'constructed in createApp (server.ts) and called by POST /api/import/region — the only writer of a declaration',
  },
 
  // ── src/import/dating.ts ──
@@ -395,20 +395,20 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 {
   module: 'src/import/survey',
   name: 'surveyFolder',
-  status: 'unwired',
-  reason: 'constructed by GET /api/import/survey (Task 12) — the map exists to be read in order to declare',
+  status: 'live',
+  reason: 'called by GET /api/import/survey (server.ts) — the map exists to be read in order to declare',
 },
 {
   module: 'src/import/survey',
   name: 'writeSurvey',
-  status: 'unwired',
-  reason: 'called by GET /api/import/survey (Task 12) — the snapshot is a rebuildable cache (Q-3)',
+  status: 'live',
+  reason: 'called by GET /api/import/survey (server.ts) — the snapshot is a rebuildable cache (Q-3)',
 },
 {
   module: 'src/import/survey',
   name: 'readSurvey',
-  status: 'unwired',
-  reason: 'called by GET /api/reach (Task 12) — Reach reads the snapshot, never the folder',
+  status: 'live',
+  reason: 'called by GET /api/reach (server.ts) — Reach reads the snapshot, never the folder',
 },
 
 // ── src/import/reach.ts ──
@@ -421,28 +421,28 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 {
  module: 'src/import/reach',
  name: 'reachOffer',
- status: 'unwired',
- reason: "nothing calls it until Task 12's GET /api/reach route — the licence is offered through that door",
+ status: 'live',
+ reason: 'called by GET /api/reach (server.ts) — the licence is offered through that door',
 },
 {
  module: 'src/import/reach',
  name: 'appendReachDecline',
- status: 'unwired',
- reason: "nothing calls it until Task 12's POST /api/reach/decline route",
+ status: 'live',
+ reason: 'called by POST /api/reach/decline (server.ts) — one click, one recorded decline',
 },
 {
  module: 'src/import/reach',
  name: 'reachDeclines',
- status: 'unwired',
- reason: 'read by GET /api/reach (Task 12) — the decline ledger ranks offers; re-read every call, never cached',
+ status: 'live',
+ reason: 'called by GET /api/reach (server.ts) — the decline ledger ranks offers; re-read every call, never cached',
 },
 
 // ── src/import/repair.ts ──
 {
  module: 'src/import/repair',
  name: 'runImportRepair',
- status: 'unwired',
- reason: 'nothing calls it until Task 12\'s decisions route calls it after a clean commit — the honest record of this task\'s state',
+ status: 'live',
+ reason: 'called by POST /api/import/:hash/decisions (server.ts) after a clean commit — never before',
 },
 
  // ── src/llm.ts ──

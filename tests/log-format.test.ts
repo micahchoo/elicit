@@ -368,6 +368,15 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'read 5 files: 3 to import, 2 refused',
  },
 
+ // The region-wired scan (014 T12): the rule that refused files, and how
+ // many — never a file's path or content, because the per-file list already
+ // came back in the scan response whole.
+ {
+  kind: 'import-refused-by-rule',
+  detail: 'rule=YYYY-MM-DD count=2',
+  reads: 'refused 2 files by the declared rule YYYY-MM-DD',
+ },
+
  // The adoption step (T8): the one-off script's keeps and refusals folded
  // into the staging store. Bare words after the fields are the names that
  // did not resolve — the sentence must name them, not bury them.

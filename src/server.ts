@@ -45,7 +45,12 @@ import { runImportExtraction } from './import/extract.js';
 import { scanFolder, bodyHash, type ScanResult } from './import/scan.js';
 import { adoptPriorIngest, type AdoptResult } from './import/adopt.js';
 import { commitImport } from './import/commit.js';
-import type { ImportDecision } from './import/contract.js';
+import { createRegionStore } from './import/region.js';
+import { surveyFolder, writeSurvey, readSurvey } from './import/survey.js';
+import { reachOffer, appendReachDecline, reachDeclines, termsOf } from './import/reach.js';
+import { runImportRepair } from './import/repair.js';
+import { compilePattern } from './import/dating.js';
+import type { Authorship, DatingRule, ImportDecision } from './import/contract.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
 import { licenseSounding } from './sounding/license.js';
@@ -465,6 +470,12 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 // live here until the run before the person sits down (T6).
 const importStore = createImportStore(deps.vaultRoot);
 
+// The region store the seeding routes read and write (014): a declaration
+// lives on disk at vault/imports/regions/<slug>.md, and every reader
+// recomputes from it (Q-3), so a restart between declaration and review
+// loses nothing. POST /api/import/region is the only writer.
+const regionStore = createRegionStore(deps.vaultRoot);
+
 // The PieceStore the piece routes write through (T6) — one binding shared
 // with T10's docket thunks. Every write passes the five guards.
 const pieces = createPieceStore(deps.vaultRoot);
@@ -567,6 +578,10 @@ const pieces = createPieceStore(deps.vaultRoot);
 async function runImportJobsNow(): Promise<{ extracted: number; remaining: number; failed: number }> {
  return runImportExtraction({
   store: importStore,
+  // The authorship seam (014 T7): a record whose source path sits inside a
+  // declared region gets the region's prompt clause and stance guard. It was
+  // inert until this line — an optional parameter no caller passes.
+  regionFor: (p) => regionStore.regionFor(p),
   // Extraction IS the harvest path, so it rides the grammar-constrained
   // clerk variant the harvest does (ticket 078).
   complete: harvestComplete,
@@ -1643,15 +1658,23 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
  // request and off local disk by design (Q-57), so the /api/* auth lock is
  // the control — there is no traversal check to write.
 
- // POST /api/import/scan {folder} → {pending, skipped, adopted, refused}
+ // POST /api/import/scan {folder, region?} → {pending, skipped, adopted, refused}
  // The folder becomes staging records, and nothing else: extraction runs in
  // the docket behind this response (T6) and the corpus is written only by a
- // review decision.
+ // review decision. When a `region` slug is present, the region's declared
+ // dating rule drives the scan and its slug bounds the admission (014 T12);
+ // absent, this behaves exactly as 058 built it — the 19 adopted posts and
+ // any plain folder scan stay reachable.
  app.post('/api/import/scan', async (c) => {
-  const body = await c.req.json<{ folder?: string }>();
+  const body = await c.req.json<{ folder?: string; region?: string }>();
   const folder = typeof body.folder === 'string' ? body.folder.trim() : '';
   if (folder.length === 0) {
    return c.json({ error: 'folder is required' }, 400);
+  }
+  const regionSlug = typeof body.region === 'string' ? body.region.trim() : '';
+  const regionRecord = regionSlug.length === 0 ? null : regionStore.get(regionSlug);
+  if (regionSlug.length > 0 && regionRecord === null) {
+   return c.json({ error: `unknown region ${regionSlug}` }, 400);
   }
   // Adoption FIRST, and with this folder: the path arrives here or nowhere
   // (T8), and adoption is idempotent so a re-scan can never skip it. A bad
@@ -1665,11 +1688,13 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
     folder,
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
    });
-   scanned = scanFolder(folder);
+   // The region's rule dates the scan (Anchor, 014 T3): every file that does
+   // not match the declared rule is refused BY NAME, never dated by guess.
+   scanned = regionRecord === null ? scanFolder(folder) : scanFolder(folder, regionRecord.dating);
   } catch (err) {
    return c.json({ error: String(err) }, 400);
   }
-  const { added, skipped, refused } = importStore.admit(scanned.items);
+  const { added, skipped, refused } = importStore.admit(scanned.items, regionRecord?.slug);
   startDocket('import');
   // Two refusal sources, one list: scanFolder refuses on the file alone;
   // admit refuses on what the store knows (Q-59's no-lastmod). To the
@@ -1682,6 +1707,17 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
     ' toImport=' + added.length +
     ' refused=' + (scanned.refused.length + refused.length),
   );
+  if (regionRecord !== null && scanned.refused.length > 0) {
+   // The rule and the count, never a file's content or path — the per-file
+   // list already came back in the response body whole.
+   const ruleRepr = regionRecord.dating.kind === 'filename' ? regionRecord.dating.pattern : regionRecord.dating.key;
+   serverEmit(
+    deps.vaultRoot,
+    'clerk',
+    'import-refused-by-rule',
+    `rule=${ruleRepr} count=${scanned.refused.length}`,
+   );
+  }
   return c.json({
    pending: added.length,
    skipped: skipped.length,
@@ -1695,7 +1731,11 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
  // outside its GET_PREFIXES list and the review surface calls through it.
  // Read-only under both methods — nothing here reads a body or writes.
  const importNext = async (c: Context): Promise<Response> => {
-  const record = importStore.nextExtracted();
+  // The bounded queue (014 T6/T12): `?region=` keeps the review inside the
+  // region the person chose. Absent, the route behaves exactly as 058 built
+  // it — the 19 adopted posts, which carry no region, stay reachable.
+  const region = c.req.query('region') ?? undefined;
+  const record = importStore.nextExtracted(region);
   if (record === null) {
    return c.json({ item: null, waiting: 'no pieces are ready to read yet' });
   }
@@ -1722,7 +1762,7 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
     source: body,
     cuts: record.cuts ?? [],
     marks: droppedRegions(body, importStore.prepared(record.hash)),
-    remaining: Math.max(0, importStore.list('extracted').length - 1),
+    remaining: Math.max(0, importStore.list('extracted', region).length - 1),
    },
   });
  };
@@ -1766,11 +1806,31 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
     store: importStore,
     readSource: (p) => readFileSync(p, 'utf-8'),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    // The authorship seam (014 T9): the region's declared authorship is
+    // stamped on every snippet of the sitting. It was inert until this line.
+    regionFor: (p) => regionStore.regionFor(p),
    },
    hash,
    body.decisions,
   );
-  if (result.ok) return c.json({ sessionId: result.sessionId, snippets: result.snippets });
+  if (result.ok) {
+   // The repair pass (014 T10) runs after a CLEAN commit and never before: a
+   // repair minted for an item that refused to commit is a question about
+   // prose that is not in the corpus. Every unresolvable dangler among the
+   // snippets just written becomes a Bud; the queue question is capped by
+   // repair.liveCap.
+   const committed = Object.values(deps.vault.rebuildIndex().snippets).filter(
+    (s) => s.provenance.session === result.sessionId,
+   );
+   runImportRepair({
+    vault: deps.vault,
+    queue: deps.queue,
+    vaultRoot: deps.vaultRoot,
+    log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    snippets: committed,
+   });
+   return c.json({ sessionId: result.sessionId, snippets: result.snippets });
+  }
   return c.json({ error: result.detail, reason: result.reason }, 409);
  });
 
@@ -1791,6 +1851,107 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   }
   importStore.put({ ...record, status: 'excluded', excludeReason: reason }, importStore.prepared(hash));
   serverEmit(deps.vaultRoot, 'elicitor', 'import-excluded', 'path=' + record.sourcePath);
+  return c.json({ ok: true });
+ });
+
+ // ── Seeding routes (014 T12) ──
+
+ // GET /api/import/survey?folder=… → { survey }
+ // The coarse, model-free map of a folder: per-node counts of files /
+ // harvested / refused / unread, computed from the import store, snapshotted
+ // to vault/imports/survey.json (a rebuildable cache — Q-3 — the one file in
+ // imports/ that may be deleted without loss).
+ app.get('/api/import/survey', async (c) => {
+  const folder = c.req.query('folder') ?? '';
+  if (folder.length === 0) {
+   return c.json({ error: 'folder is required' }, 400);
+  }
+  let survey;
+  try {
+   survey = surveyFolder(folder, importStore);
+  } catch (err) {
+   return c.json({ error: String(err) }, 400);
+  }
+  writeSurvey(deps.vaultRoot, survey);
+  return c.json({ survey });
+ });
+
+ // POST /api/import/region {root, dating, authorship} → {slug}
+ // The ONLY writer of a region record, and it validates before it writes
+ // (Q-67): a pattern that cannot produce a day is 400 and nothing is written
+ // — a region that cannot date anything must not exist — and an authorship
+ // outside the three declared values is 400 with no server-side default, a
+ // default being a silent assertion about who wrote the person's notes.
+ app.post('/api/import/region', async (c) => {
+  const body = await c.req.json<{ root?: string; dating?: unknown; authorship?: unknown }>();
+  const root = typeof body.root === 'string' ? body.root.trim() : '';
+  if (root.length === 0) {
+   return c.json({ error: 'root is required' }, 400);
+  }
+  const d = body.dating as { kind?: unknown; key?: unknown; pattern?: unknown } | null | undefined;
+  if (d === null || typeof d !== 'object' || (d.kind !== 'frontmatter' && d.kind !== 'filename')) {
+   return c.json({ error: 'dating must be a frontmatter or filename rule' }, 400);
+  }
+  const dating: DatingRule =
+   d.kind === 'filename'
+    ? { kind: 'filename', pattern: typeof d.pattern === 'string' ? d.pattern : '' }
+    : { kind: 'frontmatter', key: typeof d.key === 'string' ? d.key : '' };
+  if (dating.kind === 'filename' && compilePattern(dating.pattern) === null) {
+   return c.json({ error: 'the pattern cannot produce a day' }, 400);
+  }
+  if (dating.kind === 'frontmatter' && dating.key.length === 0) {
+   return c.json({ error: 'a frontmatter rule needs a key' }, 400);
+  }
+  const AUTHORS: readonly Authorship[] = ['authored', 'other', 'machine-assisted'];
+  if (typeof body.authorship !== 'string' || !(AUTHORS as readonly string[]).includes(body.authorship)) {
+   return c.json({ error: 'authorship must be one of authored, other, machine-assisted' }, 400);
+  }
+  const record = regionStore.declare({
+   root,
+   dating,
+   authorship: body.authorship as Authorship,
+  });
+  return c.json({ slug: record.slug });
+ });
+
+ // GET /api/reach → { offer: ReachOffer | null }
+ // Read-only and cheap: reads the survey snapshot and the pending queue,
+ // never the folder — a route that re-walked 5,000 files on every waiting-
+ // surface render is a route the person would feel. Offer-only (Q-62):
+ // silence does nothing, and every evaluation is logged.
+ app.get('/api/reach', (c) => {
+  const survey = readSurvey(deps.vaultRoot);
+  const pending = deps.queue.list({ status: 'pending' });
+  const log: LogFn = (e) => appendEvent(deps.vaultRoot, e as ActivityEvent);
+  const offer = reachOffer({
+   survey,
+   // The live Direction (Q-69): the pending queue's question text — the
+   // closest running thing this codebase has to a line of inquiry. Injected
+   // so the swap to real Directions is one call site.
+   liveTerms: () => {
+    const terms = new Set<string>();
+    for (const e of pending) {
+     for (const t of termsOf(e.question)) terms.add(t);
+    }
+    return terms;
+   },
+   declined: (p) => reachDeclines(deps.vaultRoot).get(p) ?? null,
+   log,
+  });
+  return c.json({ offer });
+ });
+
+ // POST /api/reach/decline {path} → {ok: true}
+ // One click, one recorded decline: the region falls behind every region not
+ // declined more recently (Q-22 — recorded signal, never escalated; the
+ // offer never asks why and never chases).
+ app.post('/api/reach/decline', async (c) => {
+  const body = await c.req.json<{ path?: string }>();
+  const path = typeof body.path === 'string' ? body.path.trim() : '';
+  if (path.length === 0) {
+   return c.json({ error: 'path is required' }, 400);
+  }
+  appendReachDecline(deps.vaultRoot, path);
   return c.json({ ok: true });
  });
 
