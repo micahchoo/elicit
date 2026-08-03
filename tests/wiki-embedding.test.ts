@@ -21,7 +21,7 @@ import { PAIRS, DISTRACTORS } from './fixtures/paraphrase-pairs.js';
  *
  * Every test here runs on a scripted fake `Embed`. **No test in this file
  * reaches the network** (ADR-0001/Q-2 forbids a hosted call, and a test that
- * needs a server on 192.168.0.229 is red on every machine without one). The one
+ * needs a live model server is red on every machine without one). The one
  * integration path — `localEmbedder` — is asserted structurally at the bottom
  * and never called.
  *
@@ -1055,7 +1055,7 @@ describe('paraphrase fixture, hash-embedding harness', () => {
    * makes this suite red on every machine without one, and Step 5 requires the
    * suite green with the endpoint unreachable.
    *
-   * Ollama at 192.168.0.229:11434, `qwen3-embedding` (4096-dim), the 8 PAIRS
+   * Ollama on the local network, `qwen3-embedding` (4096-dim), the 8 PAIRS
    * and the 3 DISTRACTORS, no query/document prefixes. Negatives are every
    * cross-pair combination (restated×stored, stored×stored, restated×restated)
    * plus every text against every distractor — 160 non-pairs.
@@ -1102,7 +1102,7 @@ describe('the module', () => {
   });
 
   it('names the local endpoint exactly once, in the one integration path', () => {
-    expect(source.match(/192\.168\.0\.229/g) ?? []).toHaveLength(1);
+    expect(source.match(/127\.0\.0\.1/g) ?? []).toHaveLength(1);
   });
 
   it('calls no chat model', () => {

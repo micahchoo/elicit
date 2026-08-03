@@ -133,9 +133,9 @@ describe('role configuration', () => {
   const clerk = roleConfig('clerk');
 
   expect(elicitor.modelId).toBe('bonsai-27b');
-  expect(elicitor.baseUrl).toBe('http://192.168.0.229:8088/v1');
+  expect(elicitor.baseUrl).toBe('http://127.0.0.1:8088/v1');
   expect(clerk.modelId).toBe('qwen3.6:35b');
-  expect(clerk.baseUrl).toBe('http://192.168.0.229:11434/v1');
+  expect(clerk.baseUrl).toBe('http://127.0.0.1:11434/v1');
   // The point of the split: two different backends, not two names for one.
   expect(elicitor.baseUrl).not.toBe(clerk.baseUrl);
  });
@@ -149,7 +149,7 @@ describe('role configuration', () => {
    baseUrl: 'http://127.0.0.1:9001/v1',
    modelId: 'qwen3.6:27b',
   });
-  expect(roleConfig('elicitor').baseUrl).toBe('http://192.168.0.229:8088/v1');
+  expect(roleConfig('elicitor').baseUrl).toBe('http://127.0.0.1:8088/v1');
 
   process.env.ELICIT_LLM_MODEL = 'bonsai-9b';
   expect(roleConfig('elicitor').modelId).toBe('bonsai-9b');
@@ -157,7 +157,7 @@ describe('role configuration', () => {
  });
 
  it('names the role and endpoint in one line', () => {
-  expect(describeRole(roleConfig('clerk'))).toBe('clerk: qwen3.6:35b @ http://192.168.0.229:11434/v1');
+  expect(describeRole(roleConfig('clerk'))).toBe('clerk: qwen3.6:35b @ http://127.0.0.1:11434/v1');
  });
 
  // ── ADR-0001: both endpoints local, always ──

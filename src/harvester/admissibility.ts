@@ -214,28 +214,27 @@ export function lacksProposition(text: string): boolean {
  * True when the cut begins inside a sentence rather than at the start of one.
  *
  * The test is the first character: a span that opens on a lowercase letter was
- * either lifted mid-sentence ("the move from liability to accountability",
- * "we decided to respond to it") or lifted from a heading that is itself not a
- * sentence ("how affordances on these digital publics drive and manipulate
- * behaviour"). Both are fragments, and neither is readable without the words
- * in front of it.
+ * either lifted mid-sentence ("the move from renting to owning", "we chose
+ * to wait a season") or lifted from a heading that is itself not a sentence
+ * ("how notification patterns steer attention on these platforms"). Both are
+ * fragments, and neither is readable without the words in front of it.
  *
  * MEASURED, against the 295 hand-marked cuts of the 2026-08-02 published-prose
- * harvest (`docs/ingest-triage-2026-08-02.md`): it fires on 7 of the 9 cuts
- * Micah marked `frag`, and on 4 of his 139 keeps. Two things follow from that
- * ratio. First, this is a routing test, not a rejection test — the caller sends
- * what it catches to the Bud path, where the fragment survives and can be asked
- * about, so the 4 keeps are delayed rather than destroyed. Second, it is
- * deliberately NOT the check ticket 035 proposed (a leading bare
- * pronoun/demonstrative). That one was measured on the same set: 0 of 9 `frag`
- * and 25 of 139 keeps. Real prose opens sentences with expletive "It was…" and
- * discourse "This…" constantly, so the rule reads as a fragment detector and
- * behaves as a keep shredder.
+ * harvest (review record kept with the corpus, outside the repo): it fires on
+ * 7 of the 9 cuts the reader marked `frag`, and on 4 of their 139 keeps. Two
+ * things follow from that ratio. First, this is a routing test, not a
+ * rejection test — the caller sends what it catches to the Bud path, where the
+ * fragment survives and can be asked about, so the 4 keeps are delayed rather
+ * than destroyed. Second, it is deliberately NOT the check ticket 035 proposed
+ * (a leading bare pronoun/demonstrative). That one was measured on the same
+ * set: 0 of 9 `frag` and 25 of 139 keeps. Real prose opens sentences with
+ * expletive "It was…" and discourse "This…" constantly, so the rule reads as a
+ * fragment detector and behaves as a keep shredder.
  *
  * The two `frag` cuts this misses are full grammatical sentences whose
- * referents dangle ("After getting to the point of being able to serve
- * singular images, I came across the biggest issue." — which issue?). No
- * structural test reaches those; they need a reader.
+ * referents dangle ("After getting the first version to work, I came across
+ * the biggest issue." — which issue?). No structural test reaches those; they
+ * need a reader.
  */
 export function startsMidSentence(text: string): boolean {
   return /^[a-z]/.test(text.trim());
@@ -271,11 +270,11 @@ export function isQuotedFromSource(cutText: string, spans: string[]): boolean {
 // The gate that is not here: "is this sentence about the person at all?"
 // ---------------------------------------------------------------------------
 //
-// 114 of the 149 cuts Micah dropped on 2026-08-02 he dropped as `world` (true
-// no matter who wrote it — a pottery workshop's floor plan, Pune's case count)
-// or `log` (what he did, in order, with nothing said about why). That is 76% of
-// all the junk, and every one of them passes every test in this file. The
-// criterion he used is one sentence: WOULD THIS BE EVIDENCE ABOUT THE PERSON IF
+// 114 of the 149 cuts the reader dropped on 2026-08-02 they dropped as `world`
+// (true no matter who wrote it — a building's floor plan, a city's case count)
+// or `log` (what they did, in order, with nothing said about why). That is 76%
+// of all the junk, and every one of them passes every test in this file. The
+// criterion used is one sentence: WOULD THIS BE EVIDENCE ABOUT THE PERSON IF
 // YOU DID NOT KNOW WHO WROTE IT?
 //
 // It does not mechanize. Six candidate predicates were measured against the
@@ -288,12 +287,12 @@ export function isQuotedFromSource(cutText: string, spans: string[]): boolean {
 //
 // Doing nothing already scores 53%, because 53% of the cuts are junk. So the
 // whole yield of the best rule is +21 points of precision, bought by shredding
-// real material. And the reason is not that the rules are crude. "The workshop
-// space is where five brothers work from" (drop) and "Fragility is an honest
-// and important understanding because it changes the way we look at incentives"
-// (keep) are both third-person declaratives. "I made a rough spreadsheet which
-// I shared with Padmini" (drop) and "I started to play with the idea of
-// researching through doing" (keep) are both first-person past. One reports an
+// real material. And the reason is not that the rules are crude. "The studio
+// is where the four partners work from" (drop) and "Slowness is an honest
+// constraint because it changes what a plan can promise" (keep) are both
+// third-person declaratives. "I made a rough spreadsheet and shared it with
+// a colleague" (drop) and "I started to treat every draft as an experiment
+// on myself" (keep) are both first-person past. One reports an
 // action, the other reports a stance, and no regex sees the difference —
 // because the difference is what the sentence is ABOUT.
 //

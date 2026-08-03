@@ -33,9 +33,10 @@ export type Cadence = {
 /**
  * An imported piece is a sitting in every structural sense — it has a
  * transcript, a date and snippets — and in no experiential sense: nobody sat
- * for it. Ticket 057 put 19 of them in the vault dated 2017-2026, so counting
- * them here would report a "last sitting" in July 2026 that never happened and
- * would make the number this module exists to show a lie on the first day.
+ * for it. A bulk import (ticket 057) can put years of dated pieces in the
+ * vault at once, so counting them here would report a "last sitting" that
+ * never happened and would make the number this module exists to show a lie
+ * on the first day.
  */
 const IMPORT_PROTOCOL = 'import';
 

@@ -1,11 +1,11 @@
 /**
  * Depth stratification — the second of Q-18's two draw channels.
  *
- * The problem this exists to solve is measurable in the real vault as of
- * 2026-08-02: 139 snippets across 19 sittings spanning 2017 to 2026, and 76 of
- * them — 55% — come from ONE sitting, the March 2020 capstone. A flat uniform
- * draw over the corpus is therefore a draw from March 2020 more often than
- * not, and the nine years Q-18 wants to reach are unreachable in practice.
+ * The problem this exists to solve was measured on a real vault: 139
+ * snippets across 19 sittings spanning nine years, and 76 of them — 55% —
+ * came from ONE long-form sitting. A flat uniform draw over such a corpus is
+ * therefore a draw from that one sitting more often than not, and the nine
+ * years Q-18 wants to reach are unreachable in practice.
  *
  * Two skews, one mechanism:
  *
@@ -13,8 +13,8 @@
  *      band is equally likely regardless of how much was written in it, so the
  *      thin years are as reachable as the loud ones.
  *   2. Document volume. Inside a band, pick a SITTING first, then a snippet
- *      inside the sitting. Without this the capstone still wins its own band
- *      76 times out of 89 — the same skew one level down.
+ *      inside the sitting. Without this the dominant sitting still wins its
+ *      own band 76 times out of 89 — the same skew one level down.
  *
  * The bands, and why these four rather than any others. They are cuts in how
  * far the writing is from the person reading it now, not equal slices of time:
@@ -25,9 +25,9 @@
  *     will usually recognise the position as theirs.
  *   - `years` (1 to 5 years) — another chapter. Agreement has become a claim
  *     rather than a memory, which is exactly what a still-true question tests.
- *   - `deep` (over 5 years) — where this corpus actually parts, measured: the
- *     2017-2021 writing sits on one side of five years and the 2022-2026
- *     writing on the other.
+ *   - `deep` (over 5 years) — where the measured corpus actually parts: its
+ *     early half sits on one side of five years and its recent half on the
+ *     other.
  *
  * Boundaries live in `thresholds.ts`, never here.
  *

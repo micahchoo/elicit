@@ -4,7 +4,7 @@
  * Two sources, because the tree has two and neither is redundant:
  *
  *   - `data/decks/*.jsonl` — what ticket 004 and then 042 actually produced:
- *     371 entries harvested from Micah's own are.na channels and filtered by
+ *     371 entries harvested from public are.na channels and filtered by
  *     `scripts/curate-deck.ts`. They ship with the repo, they are regenerable
  *     from that script, and they are not the person's private material.
  *   - `<vault>/decks/*.md` — a deck the person writes by hand, in markdown,
@@ -112,7 +112,7 @@ export function loadJsonlDecks(dir: string): DeckEntry[] {
  *
  *     ---
  *     deck: mornings
- *     curatedBy: micah
+ *     curatedBy: hand
  *     targetFacet: episode      # optional, applies to the whole deck
  *     ---
  *

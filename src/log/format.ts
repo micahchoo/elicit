@@ -49,7 +49,7 @@ function num(f: Fields, key: string): number {
  return Number.isFinite(n) ? n : 0;
 }
 
-/** A quoted field: `name="Micah Alex"`. `FIELD` stops at the first space, so this does not. */
+/** A quoted field: `name="Robin Hale"`. `FIELD` stops at the first space, so this does not. */
 function quoted(detail: string, key: string): string | undefined {
  return new RegExp(`${key}="([^"]*)"`).exec(detail)?.[1];
 }

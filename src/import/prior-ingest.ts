@@ -48,16 +48,29 @@ const LOCAL_TABLES = join(
   'prior-ingest.local.json',
 );
 
-function loadTables(): { manifest: Post[]; excluded: Excluded[] } {
-  if (!existsSync(LOCAL_TABLES)) return { manifest: [], excluded: [] };
+function loadTables(): { manifest: Post[]; excluded: Excluded[]; orphanQuotes: string[] } {
+  if (!existsSync(LOCAL_TABLES)) return { manifest: [], excluded: [], orphanQuotes: [] };
   const parsed = JSON.parse(readFileSync(LOCAL_TABLES, 'utf-8')) as {
     manifest?: Post[];
     excluded?: Excluded[];
+    orphanQuotes?: string[];
   };
-  return { manifest: parsed.manifest ?? [], excluded: parsed.excluded ?? [] };
+  return {
+    manifest: parsed.manifest ?? [],
+    excluded: parsed.excluded ?? [],
+    orphanQuotes: parsed.orphanQuotes ?? [],
+  };
 }
 
 const tables = loadTables();
 
 export const MANIFEST: Post[] = tables.manifest;
 export const EXCLUDED: Excluded[] = tables.excluded;
+
+/**
+ * Quotations a reader found set as plain paragraphs in the source corpus —
+ * no quote marks, citation elsewhere — which only a human can identify
+ * (Q-51). `dropCitedParagraphs` (body.ts) drops any paragraph containing
+ * one.
+ */
+export const ORPHAN_QUOTES: string[] = tables.orphanQuotes;

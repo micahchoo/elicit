@@ -415,11 +415,12 @@ function occasionlessRangeFindings(
 
 /**
  * `weak-evidence` — a live claim whose only cite is one of the labelled
- * danglers (074's measured set, docs/dangler-labels-2026-08-02.md).
+ * danglers (074's measured set; the label record lives with the corpus,
+ * outside the repo).
  *
- * The 085 review met the consequence: "Archie is my attempt at those four
- * parts in one window" — "those four parts" is a dangler — and the claim
- * minted from it is opaque. The check is mechanical: the claim cites
+ * The 085 review met the consequence: a snippet of the shape "This tool is
+ * my attempt at those four parts in one window" — where "those four parts"
+ * is a dangler — minted a claim that is opaque. The check is mechanical: the claim cites
  * exactly one snippet and that snippet id is in the labelled set. Nothing
  * else about the claim is judged — the note is about the evidence, never
  * the claim's content (Q-31, Q-15).

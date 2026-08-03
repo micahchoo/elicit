@@ -65,9 +65,9 @@ export type MakeCompleteOptions = {
 const DEFAULTS: Record<LlmRole, { baseUrl: string; modelId: string }> = {
  // bonsai-27b on llama.cpp: 3-9s turns, and it collapses on long structured
  // payloads — which the foreground never asks it for.
- elicitor: { baseUrl: 'http://192.168.0.229:8088/v1', modelId: 'bonsai-27b' },
+ elicitor: { baseUrl: 'http://127.0.0.1:8088/v1', modelId: 'bonsai-27b' },
  // qwen3.6:35b on Ollama: clean JSON first try, far slower per call.
- clerk: { baseUrl: 'http://192.168.0.229:11434/v1', modelId: 'qwen3.6:35b' },
+ clerk: { baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'qwen3.6:35b' },
 };
 
 const ENV_KEYS: Record<LlmRole, { baseUrl: string; modelId: string }> = {

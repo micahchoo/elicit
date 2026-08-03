@@ -1,11 +1,11 @@
 /**
  * Adopt what the one-off script already decided — ticket 058, Task 8.
  *
- * The 2026-08-02 script run left 19 `post-*` sittings in
- * `vault/transcripts/` and 28 refusals recorded in `scripts/ingest-posts.ts`
- * (now `src/import/prior-ingest.ts`). Without this step the first real scan
- * re-imports all nineteen and asks the reader to re-refuse the other
- * twenty-eight one piece at a time.
+ * A prior one-off ingest run leaves `post-*` sittings in
+ * `vault/transcripts/` and refusal groups recorded in the prior-ingest
+ * tables (`src/import/prior-ingest.ts`). Without this step the first real
+ * scan re-imports every kept sitting and asks the reader to re-refuse every
+ * exclusion one piece at a time.
  *
  * `adoptPriorIngest` reconciles the staging store with that run. It is
  * called from the scan route (T9) once per scan, and it is idempotent: the
@@ -161,7 +161,7 @@ function resolveExcluded(
     return { files, missing };
   }
   // Glob: every directory under the prefix, minus any slug in MANIFEST —
-  // `external/wikipedia-editathon-dalit-history-month` was kept.
+  // a kept post under an otherwise-excluded prefix stays kept.
   if (entry.slug.endsWith('/*')) {
     const prefix = entry.slug.slice(0, -1); // 'external/'
     const files: string[] = [];
@@ -181,7 +181,7 @@ function resolveExcluded(
   return { files: filesIn(folder, entry.slug), missing: [] };
 }
 
-/** Adopt the 19 `post-*` sittings: one accepted record per existing transcript. */
+/** Adopt the kept `post-*` sittings: one accepted record per existing transcript. */
 function adoptAccepted(deps: AdoptDeps, unresolved: string[]): number {
   const transcriptsDir = join(deps.vaultRoot, 'transcripts');
   if (!existsSync(transcriptsDir)) return 0;
@@ -222,7 +222,7 @@ function adoptAccepted(deps: AdoptDeps, unresolved: string[]): number {
   return accepted;
 }
 
-/** Adopt the 28 refusals: one excluded record per file the table resolves to. */
+/** Adopt the refusals: one excluded record per file the table resolves to. */
 function adoptExcluded(deps: AdoptDeps, unresolved: string[]): number {
   const dirs = directories(deps.folder);
   const manifestSlugs = new Set(MANIFEST.map((p) => p.slug));

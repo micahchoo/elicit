@@ -548,7 +548,7 @@ function persist(
  */
 export function embedderConfig(): { url: string; model: string } {
   return {
-    url: process.env.ELICIT_EMBED_URL ?? 'http://192.168.0.229:11434/v1/embeddings',
+    url: process.env.ELICIT_EMBED_URL ?? 'http://127.0.0.1:11434/v1/embeddings',
     model: process.env.ELICIT_EMBED_MODEL ?? 'qwen3-embedding',
   };
 }
