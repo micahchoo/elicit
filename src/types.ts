@@ -11,7 +11,11 @@ export type Facet =
  | 'construct'
  | 'intention'
  | 'value'
- | 'causal-theory';
+ | 'causal-theory'
+ | 'know-what'
+ | 'know-how'
+ | 'habit'
+ | 'know-why';
 
 export type Stance =
  | 'avowal'

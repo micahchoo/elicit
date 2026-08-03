@@ -309,6 +309,10 @@ const FACETS: Record<Facet, true> = {
   intention: true,
   value: true,
   'causal-theory': true,
+  'know-what': true,
+  'know-how': true,
+  habit: true,
+  'know-why': true,
 };
 
 /** A required string field: present, a string, and not just whitespace. */

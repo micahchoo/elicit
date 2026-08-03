@@ -25,6 +25,10 @@ export const FACETS: readonly Facet[] = [
   'intention',
   'value',
   'causal-theory',
+  'know-what',
+  'know-how',
+  'habit',
+  'know-why',
 ];
 
 /**
@@ -45,6 +49,10 @@ export const BLUEPRINT: Record<Facet, number> = {
   'lifetime-period': 0.05,
   intention: 0.05,
   'causal-theory': 0.05,
+  'know-what': 0.02,
+  'know-how': 0.02,
+  habit: 0.02,
+  'know-why': 0.02,
 };
 
 export type FacetDistribution = Record<Facet, number>;
@@ -59,6 +67,10 @@ function emptyDistribution(): FacetDistribution {
     intention: 0,
     value: 0,
     'causal-theory': 0,
+    'know-what': 0,
+    'know-how': 0,
+    habit: 0,
+    'know-why': 0,
   };
 }
 

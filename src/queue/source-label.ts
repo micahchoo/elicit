@@ -73,14 +73,18 @@ export function sourceLabel(s: QueueEntry['source']): string {
  * said in a reader's words, so the two cannot drift into different meanings.
  */
 const FACET_HEADINGS: Record<Facet, string> = {
- episode: 'Occasions',
- 'general-event': 'What happens again and again',
- 'lifetime-period': 'Stretches of life',
- fact: 'Steady facts',
- construct: 'Distinctions drawn',
- intention: 'Wants and plans',
- value: 'What is worth doing',
- 'causal-theory': 'Explanations of the self',
+  episode: 'Occasions',
+  'general-event': 'What happens again and again',
+  'lifetime-period': 'Stretches of life',
+  fact: 'Steady facts',
+  construct: 'Distinctions drawn',
+  intention: 'Wants and plans',
+  value: 'What is worth doing',
+  'causal-theory': 'Explanations of the self',
+  'know-what': 'What you know',
+  'know-how': 'How you do it',
+  habit: 'Habits of mind',
+  'know-why': 'Why it works',
 };
 
 export function facetHeading(f: Facet): string {

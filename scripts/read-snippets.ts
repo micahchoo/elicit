@@ -56,8 +56,11 @@ const FACETS: Record<Facet, true> = {
   intention: true,
   value: true,
   'causal-theory': true,
+  'know-what': true,
+  'know-how': true,
+  habit: true,
+  'know-why': true,
 };
-
 const STANCES: Record<Stance, true> = {
   avowal: true,
   'self-observation': true,
