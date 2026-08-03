@@ -6,6 +6,11 @@
  * the note replaces its predecessor by store construction (Q-77: one unread
  * note, replaced not stacked).
  *
+ * Ticket 092 amends the compose prompt only: the offer's 2-3 acts
+ * differentiate along the know-what / know-how / know-why axis — the
+ * decomposition is scaffolding the model thinks with, regenerated per
+ * offer, never stored, never displayed, never a coverage measure.
+ *
  * No relevant claims → withheld `no-claims` with NO model call at all: a
  * set of uncitable options is never composed and discarded, it is never
  * requested (Q-74 — the empty-corpus quiet path, 090's data note).
@@ -76,16 +81,28 @@ function stripFences(raw: string): string {
 /**
  * The advice system prompt. The prompt asks for 2–3 alternative concrete
  * acts as JSON with claim-id cites; the GUARD, not the prompt, enforces the
- * shape (Q-36: freedom in generation, rigidity in validation). It never
- * names absence or pace (Q-24: dormancy is signal, never named), and the
- * input type keeps artifact pointers out of reach entirely (Q-78).
+ * shape (Q-36: freedom in generation, rigidity in validation). The acts
+ * differentiate along the know-what / know-how / know-why axis (092): one
+ * act per branch, never shuffles of one, a know-why probe that asks up for
+ * the person's own philosophy or theory (never teaching down), and a genre
+ * act offered as "try the <genre> way". It never names absence or pace
+ * (Q-24: dormancy is signal, never named), and the input type keeps
+ * artifact pointers out of reach entirely (Q-78).
  */
 const ADVICE_SYSTEM =
  'You are a clerk for Elicit, composing an advice note for one page of a ' +
  'person\'s notebook. Offer 2 or 3 ALTERNATIVE concrete acts the person could ' +
  'take next on their direction — never a single prescribed next step, never ' +
- 'advice about what they have not done or how fast they are going. Each act ' +
- 'must cite the claim ids that make it relevant, from the provided list. ' +
+ 'advice about what they have not done or how fast they are going. ' +
+ 'Differentiate the acts along the branches of knowing, one act per branch: ' +
+ 'a vocabulary or terminology act (know-what), a procedure or practice act ' +
+ '(know-how), or a know-why probe — never two acts from the same branch, ' +
+ 'never shuffles of one. A know-why probe is a QUESTION, not a lesson: it ' +
+ 'asks for the person\'s OWN philosophy or theory of the practice, in their ' +
+ 'own words — asking up, never teaching down. One act may be offered as ' +
+ '"try the <genre> way" — doing the practice in a distinct genre, whose ' +
+ 'return (what fit, what chafed) is the person\'s to give. Each act must ' +
+ 'cite the claim ids that make it relevant, from the provided list. ' +
  'Artifacts may be mentioned only by the name the person gave them. ' +
  'Respond with JSON only: {"options": [{"text": "...", "cites": ["claimId"]}]}.';
 
@@ -113,6 +130,11 @@ function buildPrompt(input: AdvicePromptInput): string {
   '',
   'Artifacts, by the name the person gave them:',
   artifactsBlock,
+  '',
+  'Branches of knowing — one act per branch, the axis of the offer:',
+  '- know-what — a vocabulary or terminology act: naming and distinguishing the words of the practice.',
+  '- know-how — a procedure or practice act: doing the practice concretely.',
+  '- know-why — a probe: one question asking for the person\'s own philosophy or theory of the practice, in their own words.',
  ].join('\n');
 }
 

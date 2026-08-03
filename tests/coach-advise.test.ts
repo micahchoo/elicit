@@ -281,3 +281,52 @@ describe('runCoachAdvice (090 T7)', () => {
   if (out.outcome === 'minted') expect(out.replaced).toBe(false);
  });
 });
+
+describe('the KTG decomposition in the advice prompt (092)', () => {
+ it('the K-branch axis differentiates the acts — one act per branch, never shuffles of one', async () => {
+  const store = createCoachStore(root);
+  store.declareCoached('Cooking');
+  const { complete, calls } = recordingComplete([OPTIONS_3]);
+  await runCoachAdvice({ store, facts: facts(), complete, slug: 'cooking', license: 'page-opened' });
+  const promptText = calls[0]!.system + calls[0]!.turns[0]!.text;
+  expect(promptText).toContain('know-what');
+  expect(promptText).toContain('know-how');
+  expect(promptText).toContain('know-why');
+  expect(promptText).toMatch(/one act per branch/);
+  expect(promptText).toMatch(/vocabulary or terminology act/);
+  expect(promptText).toMatch(/procedure or practice act/);
+  expect(promptText).toMatch(/never shuffles of one/);
+ });
+
+ it('the know-why steer asks up — the person\'s own philosophy, never a taught lesson', async () => {
+  const store = createCoachStore(root);
+  store.declareCoached('Cooking');
+  const { complete, calls } = recordingComplete([OPTIONS_3]);
+  await runCoachAdvice({ store, facts: facts(), complete, slug: 'cooking', license: 'page-opened' });
+  const promptText = calls[0]!.system + calls[0]!.turns[0]!.text;
+  expect(promptText).toMatch(/person's OWN philosophy or theory/);
+  expect(promptText).toMatch(/asking up, never teaching down/);
+  expect(promptText).toMatch(/QUESTION, not a lesson/);
+ });
+
+ it('genres are offer-shaped — "try the <genre> way" is one of the alternative acts', async () => {
+  const store = createCoachStore(root);
+  store.declareCoached('Cooking');
+  const { complete, calls } = recordingComplete([OPTIONS_3]);
+  await runCoachAdvice({ store, facts: facts(), complete, slug: 'cooking', license: 'page-opened' });
+  const promptText = calls[0]!.system + calls[0]!.turns[0]!.text;
+  expect(promptText).toContain('try the <genre> way');
+ });
+
+ it('negative pins — the prompt never instructs rendering a tree or grading against canon', async () => {
+  const store = createCoachStore(root);
+  store.declareCoached('Cooking');
+  const { complete, calls } = recordingComplete([OPTIONS_3]);
+  await runCoachAdvice({ store, facts: facts(), complete, slug: 'cooking', license: 'page-opened' });
+  const promptText = calls[0]!.system + calls[0]!.turns[0]!.text;
+  // No tree, no diagram, no hierarchy vocabulary — nothing to render (Q-15 hard line).
+  expect(promptText).not.toMatch(/tree|diagram|hierarch|render/i);
+  // No grading vocabulary — no canon, no score, no coverage, no completion (Q-75).
+  expect(promptText).not.toMatch(/canon|grade|score|coverage|complet|rate|streak|deadline|fail/i);
+ });
+});
