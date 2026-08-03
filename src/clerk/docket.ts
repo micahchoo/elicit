@@ -282,6 +282,22 @@ gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQu
  */
 territoryGapFillSweep?: () => Promise<{ minted: number; frontierQuestions: number; failureQuestions: number }>;
 /**
+ * The gazetteer extraction job (ticket 100), as a docket job before the
+ * frontier sweep. Model-calling: reads snippets and extracts named entities,
+ * merging them into the gazetteer store. Absent means no extraction work
+ * this run, and every caller predating the field behaves exactly as before.
+ * Caps live at birth (Q-56).
+ */
+gazetteerExtraction?: () => Promise<{ extracted: number; entities: number; failed: number }>;
+/**
+ * The gazetteer frontier sweep (ticket 100), as a docket job after the
+ * extraction job. ZERO-LLM: reads the gazetteer index against the queue's
+ * subjects and mints (or shadow-logs) frontier questions. Absent means no
+ * frontier work this run, and every caller predating the field behaves
+ * exactly as before.
+ */
+gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
+/**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
@@ -427,10 +443,31 @@ territoryGapFillSweep?: () => Promise<{ minted: number; frontierQuestions: numbe
   const offset = cursor.read();
   // The modulo keeps the index inside a non-empty array, so the `!` is the
   // narrowing noUncheckedIndexedAccess cannot see.
+
+  // Order by citation thinness then age: snippets with FEWER readings
+  // citing them (thinly evidenced) come first — the wiki wants
+  // triangulation on claims resting on the thinnest evidence.
+  // Within the same citation count, oldest first.
+  const citationCount = new Map<string, number>();
+  for (const r of Object.values(allReadings)) {
+   for (const cite of r.cites ?? []) {
+    const key = cite; // "snippetId@version"
+    citationCount.set(key, (citationCount.get(key) ?? 0) + 1);
+   }
+  }
+  const sortKey = (s: Snippet): number => {
+   const count = citationCount.get(`${s.id}@${s.version}`) ?? 0;
+   // Lower count sorts first; within same count, older (smaller ms) first
+   // Pack into a single number: count * 1e14 + age
+   const t = writtenAtMs(s) ?? 0;
+   return count * 1e14 + t;
+  };
+  oldSnippets.sort((a, b) => sortKey(a) - sortKey(b));
   const stillTrueCandidates = Array.from(
    { length: Math.min(2, oldSnippets.length) },
    (_, i) => oldSnippets[(offset + i) % oldSnippets.length]!,
   );
+
 
   for (const s of stillTrueCandidates) {
    try {
@@ -590,6 +627,31 @@ territoryGapFillSweep?: () => Promise<{ minted: number; frontierQuestions: numbe
    }
   }
 
+  // Gazetteer extraction (ticket 100) — model-calling, extracts named
+  // entities from snippets into the gazetteer store. Must run before the
+  // frontier sweep so new entities are available for frontier detection.
+  // Caps live at birth (Q-56); the thunk is guarded like the wiki jobs.
+  let gazetteerExtraction: DocketReport['gazetteerExtraction'];
+  if (deps.gazetteerExtraction) {
+   try {
+    gazetteerExtraction = await deps.gazetteerExtraction();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'gazetteer-extraction-failed', detail: String(err) });
+   }
+  }
+
+  // Gazetteer frontier (ticket 100) — ZERO-LLM, reads the entity index
+  // against the queue's subjects, mints or shadow-logs frontier questions.
+  // Must run after extraction so new entities are counted.
+  let gazetteerFrontier: DocketReport['gazetteerFrontier'];
+  if (deps.gazetteerFrontier) {
+   try {
+    gazetteerFrontier = await deps.gazetteerFrontier();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'gazetteer-frontier-failed', detail: String(err) });
+   }
+  }
+
   // ── 10. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
@@ -631,6 +693,8 @@ territoryGapFillSweep?: () => Promise<{ minted: number; frontierQuestions: numbe
    ...(annotations ? { annotations } : {}),
    ...(gapFill ? { gapFill } : {}),
    ...(territoryGapFill ? { territoryGapFill } : {}),
+   ...(gazetteerExtraction ? { gazetteerExtraction } : {}),
+   ...(gazetteerFrontier ? { gazetteerFrontier } : {}),
   };
  } finally {
   running = false;

@@ -10,6 +10,18 @@ import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { checkQuestion } from './elicitor/guards.js';
+
+// ── The opening pulse (ticket 105) ──
+// Rotated per sitting so a single unchanging wording never breeds pattern
+// fatigue. The first-turn convention asks nothing diagnostic — just a line
+// of inner weather, optional and skippable with no record of the skip.
+const PULSE_PROMPTS = [
+ "how are you showing up today?",
+ "what's the weather inside?",
+ "one word for where you are right now:",
+ "what's on top of mind before we begin?",
+ "how does today feel, in a line?",
+] as const;
 import { CLOSING_DOOR_QUESTION } from './elicitor/protocol.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, CUTS_RESPONSE_FORMAT, type HarvestDiagnostics } from './harvester/harvester.js';
@@ -40,6 +52,9 @@ import { proposeArrangements } from './clerk/arrangements.js';
 import { runTerritoryGapFillSweep } from './ktg/gap-fill.js';
 import { loadKtgSkeleton } from './ktg/loader.js';
 import { createCoverageStore } from './ktg/coverage.js';
+import { createGazetteerStore, type GazetteerStore } from './clerk/gazetteer-store.js';
+import { extractEntities, entityId } from './clerk/gazetteer.js';
+import { runGazetteerFrontier } from './clerk/gazetteer-frontier.js';
 import { createImportStore } from './import/store.js';
 import { chronological } from './piece/arrange.js';
 import { createPieceStore } from './piece/store.js';
@@ -178,6 +193,12 @@ export interface ServerDeps {
   * job — exactly the pre-ticket behavior, which the tests keep.
   */
  annotations?: AnnotationStore;
+ /**
+  * The gazetteer entity index store (ticket 100). Absent means the
+  * docket runs no extraction or frontier sweep — exactly the pre-ticket
+  * behavior, which the tests keep.
+  */
+ gazetteerStore?: GazetteerStore;
 }
 
 // ── MIME map for static serving ──
@@ -656,6 +677,7 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   // Captured as a const so the closure below narrows it: a property access
   // (deps.annotations) does not keep its narrowing inside an arrow function.
   const annotations = deps.annotations;
+  const gazetteerStore = deps.gazetteerStore;
   try {
    const report = await runDocket({
     vault: deps.vault,
@@ -721,6 +743,72 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       queue: deps.queue,
       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
       now: new Date().toISOString(),
+     }));
+    },
+    gazetteerExtraction: () => {
+     if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
+     const allEntities = gazetteerStore.list();
+     const extractedCiteSet = new Set<string>();
+     for (const entity of allEntities) {
+      for (const m of entity.mentions) extractedCiteSet.add(m);
+     }
+     const modelName = clerkModelName ?? 'default';
+     const snippets = Object.values(deps.vault.rebuildIndex().snippets);
+     // Cap live at birth (Q-56): at most 5 snippets per run, newest first
+     const EXTRACTION_CAP = 5;
+     let extracted = 0;
+     let entities = 0;
+     let failed = 0;
+     return (async () => {
+      for (const s of snippets.sort((a, b) => b.captured.localeCompare(a.captured))) {
+       if (extracted >= EXTRACTION_CAP) break;
+       const cite = `${s.id}@${s.version}`;
+       if (extractedCiteSet.has(cite)) continue;
+       try {
+        const result = await extractEntities(s, clerkComplete, modelName);
+        extracted++;
+        for (const ext of result.entities) {
+         const id = entityId(ext.kind, ext.name);
+         const existing = gazetteerStore.get(id);
+         if (existing) {
+          // Merge: add mention cite if not already present, union aliases
+          if (!existing.mentions.includes(cite)) {
+           existing.mentions.push(cite);
+          }
+          for (const alias of ext.aliases) {
+           if (!existing.aliases.includes(alias)) {
+            existing.aliases.push(alias);
+           }
+          }
+          existing.updatedAt = new Date().toISOString();
+          gazetteerStore.put(existing);
+         } else {
+          gazetteerStore.put({
+           id,
+           name: ext.name,
+           kind: ext.kind,
+           aliases: ext.aliases,
+           mentions: [cite],
+           updatedAt: new Date().toISOString(),
+          });
+          entities++;
+         }
+        }
+       } catch {
+        failed++;
+       }
+      }
+      return { extracted, entities, failed };
+     })();
+    },
+    gazetteerFrontier: () => {
+     if (!gazetteerStore) return Promise.resolve({ minted: 0, frontierEntities: 0 });
+     return Promise.resolve(runGazetteerFrontier({
+      store: gazetteerStore,
+      queue: deps.queue,
+      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      now: new Date().toISOString(),
+      shadowMode: true, // Q-35 shadow-first
      }));
     },
     runImportJobs: runImportJobsNow,
@@ -3334,6 +3422,10 @@ if (isDirect) {
   // under the project data dir — the reading plane keeps its agent-prose
   // stores in the vault, and the ticket forbids vault writes.
   annotations: createAnnotationStore(join(process.cwd(), 'data', 'annotations')),
+  // Ticket 100: the gazetteer entity index lives OUTSIDE the vault for the
+  // same reason — entity readings are agent prose about snippets, never
+  // the person's words, and the ticket forbids vault writes for annotations.
+  gazetteerStore: createGazetteerStore(join(process.cwd(), 'data', 'gazetteer')),
   ...(modelName ? { modelName } : {}),
  });
  await serveApp(app, port);

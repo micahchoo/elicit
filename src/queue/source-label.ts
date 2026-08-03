@@ -59,6 +59,9 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
 'import-repair': 'from your own words',
  'quest-reflection': 'from your own words',
  'territory-gap-fill': 'from your own words',
+ 'gazetteer-frontier': 'from your own words',
+ // Ticket 106: outcome questions — "did this intention come to pass?"
+ 'outcome': 'from your own words',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {

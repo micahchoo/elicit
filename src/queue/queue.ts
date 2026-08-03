@@ -249,6 +249,9 @@ class QueueStoreImpl implements QueueStore {
    // The KTG territory node this entry was minted for. Read back because
    // the dedupe key is the node id across restarts (094).
    ...(data.territoryNode ? { territoryNode: data.territoryNode as string } : {}),
+   // The gazetteer entities this question targets. Read back because
+   // the frontier dedupe keys on entity id across restarts (100).
+   ...(data.subjects ? { subjects: data.subjects as string[] } : {}),
   };
  }
 
@@ -286,6 +289,7 @@ class QueueStoreImpl implements QueueStore {
   if (entry.direction) fm.direction = entry.direction;
  if (entry.soundingId) fm.soundingId = entry.soundingId;
   if (entry.territoryNode) fm.territoryNode = entry.territoryNode;
+  if (entry.subjects) fm.subjects = entry.subjects;
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#dir(), `${entry.id}.md`), content, 'utf-8');
  }

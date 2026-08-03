@@ -88,9 +88,11 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
  // ── src/clerk/annotate.ts ──
  { module: 'src/clerk/annotate', name: 'annotateReferent', status: 'live' },
+ { module: 'src/clerk/annotate', name: 'annotateIntentionHorizon', status: 'live' },
  // ── src/clerk/annotation-store.ts ──
  { module: 'src/clerk/annotation-store', name: 'createAnnotationStore', status: 'live' },
-
+ // ── src/clerk/composed.ts ──
+ { module: 'src/clerk/composed', name: 'composeOutcomeQuestion', status: 'live' },
  // ── src/clerk/contradiction.ts ──
  { module: 'src/clerk/contradiction', name: 'judgeOpposition', status: 'live' },
  { module: 'src/clerk/contradiction', name: 'composeRemeasure', status: 'live' },
@@ -817,4 +819,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadKtgSkeleton (094 P1, corrected by 095 verification)' },
 { module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2)' },
 { module: 'src/ktg/gap-fill', name: 'runTerritoryGapFillSweep', status: 'live', reason: 'wired by 094: runDocket\'s thunk runs it as the territory gap-fill job (P3)' },
+// ── src/clerk/gazetteer-* (100 — gazetteer entity index) ──
+{ module: 'src/clerk/gazetteer-store', name: 'createGazetteerStore', status: 'live', reason: 'wired by 100: server creates the store for extraction + frontier (store)' },
+{ module: 'src/clerk/gazetteer', name: 'extractEntities', status: 'live', reason: 'wired by 100: extraction thunk calls it; model-calling, cap live at birth (Q-56)' },
+{ module: 'src/clerk/gazetteer', name: 'entityId', status: 'live', reason: 'wired by 100: extraction docket job uses it for entity id derivation' },
+{ module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'shadow', shadowKind: 'gazetteer-frontier-shadow', reason: 'selection mechanism (Q-35 shadow-first): mints frontier questions only when shadow record earns it' },
 ];

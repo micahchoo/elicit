@@ -45,7 +45,9 @@ export type QuestionProvenance =
  | 'deck'
  | 'resurfacing'
  // Territory-gap-fill questions minted from KTG instrument data (094)
- | 'territory';
+ | 'territory'
+ // The opening pulse — momentary-state convention at sitting start (105)
+ | 'pulse';
 
 /**
  * How far the writing is from the person reading it now (Q-18,
@@ -133,6 +135,8 @@ export type Turn = {
  spoken?: true;
  /** Prosody captured from STT — lineage-only trace (ticket 108). */
  prosody?: Prosody;
+ /** Provenance tag for the eliciting question (105). Absent means unspecified. */
+ questionProvenance?: QuestionProvenance;
 };
 
 /**
@@ -175,6 +179,8 @@ export type CutProposal = {
  gap?: string;
  /** Preceding sentences from the source turn — mechanically extracted, display-only */
  context?: string;
+ /** Copied from the eliciting probe's Turn.questionProvenance (105). */
+ questionProvenance?: QuestionProvenance;
 };
 
 /** How the words arrived at the box, when the client can tell (ticket 048). */
@@ -250,6 +256,12 @@ export type Provenance = {
   * sees it. It exists so a later decision has something true to read.
   */
  channel?: CaptureChannel;
+/**
+ * The eliciting question's provenance tag — the question's source
+ * classification (105). Threaded through harvester from the eliciting
+ * probe Turn. Absent means unspecified.
+ */
+questionProvenance?: QuestionProvenance;
 /**
  * Who wrote it, DECLARED (Q-70). Absent means never asked — every snippet
  * written before this field existed, and every snippet from a live sitting.
@@ -346,7 +358,10 @@ source:
  | 'claim-challenged'
  | 'import-repair'
  | 'quest-reflection'
- | 'territory-gap-fill';
+ | 'territory-gap-fill'
+ | 'gazetteer-frontier'
+ // Ticket 106: outcome questions — "did this intention come to pass?"
+ | 'outcome';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -450,6 +465,15 @@ soundingId?: string;
  * deduplicates both frontier-gap and common-failure questions.
  */
 territoryNode?: string;
+/**
+ * The gazetteer entities this question targets. Optional, and absent means
+ * none were identified at mint time — never backfilled by guessing (the 042
+ * rule: absent-means-absent). A frontier question mints with the entity id
+ * it was minted for; a composed question may stamp entities the model
+ * identifies in the user's answer. Presence here means the question asked
+ * about this entity; a later frontier sweep reads it to avoid re-asking.
+ */
+subjects?: string[];
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -516,6 +540,16 @@ gapFill?: { minted: number; budQuestions: number; constructQuestions: number };
  * did none. Structural — this file must not depend on `src/ktg/`.
  */
 territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions: number };
+ /**
+  * What the gazetteer extraction job did on this run, absent when a run
+  * did none. Structural — this file must not depend on `src/clerk/`.
+  */
+ gazetteerExtraction?: { extracted: number; entities: number; failed: number };
+ /**
+  * What the gazetteer frontier sweep did on this run, absent when a run
+  * did none. Structural — this file must not depend on `src/clerk/`.
+  */
+ gazetteerFrontier?: { minted: number; frontierEntities: number };
 };
 
 export type SessionState = {
