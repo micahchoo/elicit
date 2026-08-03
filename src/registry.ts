@@ -391,6 +391,26 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'called by scanFolder — one walk for the scan and the survey',
  },
 
+// ── src/import/survey.ts ──
+{
+  module: 'src/import/survey',
+  name: 'surveyFolder',
+  status: 'unwired',
+  reason: 'constructed by GET /api/import/survey (Task 12) — the map exists to be read in order to declare',
+},
+{
+  module: 'src/import/survey',
+  name: 'writeSurvey',
+  status: 'unwired',
+  reason: 'called by GET /api/import/survey (Task 12) — the snapshot is a rebuildable cache (Q-3)',
+},
+{
+  module: 'src/import/survey',
+  name: 'readSurvey',
+  status: 'unwired',
+  reason: 'called by GET /api/reach (Task 12) — Reach reads the snapshot, never the folder',
+},
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },

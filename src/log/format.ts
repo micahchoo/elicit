@@ -560,6 +560,18 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 'import-refused-by-rule': (f) =>
  `refused ${count(num(f, 'count'), 'file')} by the declared rule ${f.rule ?? '…'}`,
 
+// Emitted by the survey (seeding Task 4), written by writeSurvey. The
+// detail carries the whole-tree counts and the root the person typed —
+// `root=/vault/notes files=6 harvested=4 unread=2` — and the sentence
+// shows the counts only: never a path from inside the vault beyond that
+// root. Unread is what Reach may still offer; refused is decided and out.
+'import-surveyed': (f, d) => {
+ const files = f.files === undefined ? nth(d, 0) : num(f, 'files');
+ const harvested = f.harvested === undefined ? nth(d, 1) : num(f, 'harvested');
+ const unread = f.unread === undefined ? nth(d, 2) : num(f, 'unread');
+ return `surveyed the folder: ${count(files, 'file')}, ${harvested} harvested, ${unread} unread`;
+},
+
 // Emitted by the adoption step (T8): the one-off script's nineteen keeps and
 // twenty-eight refusals folded into the staging store. Bare words after the
 // fields are the names that did not resolve — `unresolved=1 jingle-tales`.

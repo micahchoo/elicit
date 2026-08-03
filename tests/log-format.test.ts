@@ -448,6 +448,16 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'the import extraction could not finish this run — the rest of the docket work is already on disk',
  },
 
+// The survey (seeding Task 4), written by src/import/survey.ts: one line
+// per snapshot, the whole-tree counts. The detail carries the root the
+// person typed; the sentence shows the counts only — never a path from
+// inside the vault beyond that root.
+{
+  kind: 'import-surveyed',
+  detail: 'root=/vault/notes files=6 harvested=4 unread=2',
+  reads: 'surveyed the folder: 6 files, 4 harvested, 2 unread',
+},
+
  // The usage stamp (015): a claim or snippet reached the person. The refs
  // are the record; the detail names the surface. One sentence per surface.
  {
