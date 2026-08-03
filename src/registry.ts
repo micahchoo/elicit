@@ -793,7 +793,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/coach/license', name: 'relevantClaims', status: 'live', reason: 'live from birth: evaluateOffer calls it in this same module (T5)' },
 { module: 'src/coach/license', name: 'evaluateOffer', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
 { module: 'src/coach/license', name: 'licenseState', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
-{ module: 'src/coach/license', name: 'somethingNew', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
+{ module: 'src/coach/license', name: 'somethingNew', status: 'live', reason: 'live: waitingLines (src/coach/page.ts) calls it (T8)' },
 
 // ── src/coach/reflection.ts (090 T6 — the reflection follow-ups) ──
 { module: 'src/coach/reflection', name: 'mintReflections', status: 'unwired', reason: 'caller is the return route (T10)' },
@@ -801,4 +801,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // ── src/coach/advise.ts (090 T7 — the one model call) ──
 { module: 'src/coach/advise', name: 'buildAdviceInput', status: 'live', reason: 'live from birth: runCoachAdvice calls it in this same module (T7)' },
 { module: 'src/coach/advise', name: 'runCoachAdvice', status: 'unwired', reason: 'caller is the return and read routes (T10)' },
+
+// ── src/coach/page.ts (090 T8 — the page and the quiet lines) ──
+{ module: 'src/coach/page', name: 'buildCoachPage', status: 'unwired', reason: 'callers are the coach routes (T9/T10)' },
+{ module: 'src/coach/page', name: 'waitingLines', status: 'unwired', reason: 'caller is the waiting route (T9)' },
+{ module: 'src/coach/page', name: 'coachOfferSentence', status: 'unwired', reason: 'caller is the waiting route (T9); named to dodge web/reach-line.ts offerSentence (090 T8)' },
 ];
