@@ -620,6 +620,17 @@ main {
  overflow: hidden;
 }
 
+.blank-page-controls {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ margin-top: 0.5rem;
+}
+
+.blank-page-controls .harvest-now {
+ margin-left: auto;
+}
+
 /* ── harvest review ── */
 
 .harvest-list {
@@ -2102,6 +2113,16 @@ main {
  outline: none;
  resize: none;
  overflow: hidden;
+}
+
+.piece-composer-row {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+}
+
+.piece-composer-row .piece-composer-add {
+ margin-left: auto;
 }
 
 /* margin words: dimmed until the page is focused */

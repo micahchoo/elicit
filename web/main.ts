@@ -798,7 +798,11 @@ function renderUnprompted() {
  }) as HTMLTextAreaElement;
  const pageTracker = pasteTracker(page);
 
+ const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
+ const micStatus = el('span', { class: 'mic-status' });
  const doneBtn = el('button', { class: 'harvest-now' }, 'done');
+ const pageControls = el('div', { class: 'blank-page-controls' });
+ pageControls.append(micBtn, micStatus, doneBtn);
  const errorSlot = el('div', { class: 'error-slot' });
 
  function grow() {
@@ -819,11 +823,12 @@ function renderUnprompted() {
   try {
    const res = await api<EndResponse>(
     '/api/unprompted',
-    { text, channel: pasted ? 'pasted' : 'typed' },
+    { text, channel: pasted ? 'pasted' : state.turnHadSpeech ? 'spoken' : 'typed' },
    );
    state.sessionId = res.sessionId;
    state.pendingReviewSession = res.sessionId;
    wait.done();
+   state.turnHadSpeech = false;
    navTo('reviews');
   } catch (e) {
    wait.failed(e);
@@ -832,8 +837,17 @@ function renderUnprompted() {
   }
  });
 
- div.append(backRow, page, doneBtn, errorSlot);
+ div.append(backRow, page, pageControls, errorSlot);
  surface.append(div);
+
+ wireDictation({
+  textarea: page,
+  micBtn,
+  micStatus,
+  errorSlot,
+  onDictatingChange: (dictating) => { state.dictating = dictating; },
+  onSpeech: () => { state.turnHadSpeech = true; },
+ });
 
  requestAnimationFrame(() => {
   page.focus();
@@ -853,6 +867,11 @@ let _micStream: MediaStream | null = null;
 let _audioCtx: AudioContext | null = null;
 let _workletNode: AudioWorkletNode | null = null;
 let _samples: Float32Array[] = [];
+/** One recording at a time, shared across every writing surface: the mic
+ * stream is module state, so a surface re-paint or a navigation never
+ * strands a live recording behind a stale closure. */
+let dictationActive = false;
+let dictationBusy = false;
 
 async function startRecording(): Promise<void> {
  _samples = [];
@@ -928,6 +947,148 @@ async function stopAndTranscribe(): Promise<string> {
  }
  const data = await res.json() as { text: string };
  return data.text;
+}
+
+/* ── Shared dictation wiring ── */
+
+/**
+ * How long a spacebar hold must last before it counts as a long press.
+ * A tap releases well before this; the OS key-repeat delay is typically
+ * longer, so a held key never types repeated spaces either way.
+ */
+const LONG_PRESS_MS = 400;
+
+/**
+ * Wire dictation onto one writing surface: the mic button and a long
+ * press on the spacebar both toggle recording, and the transcript lands
+ * at the cursor. The spacebar press is intercepted so a hold never types
+ * spaces — a release before the deadline inserts the one space the press
+ * owed, and a hold past it spends the press on the toggle instead.
+ */
+function wireDictation(opts: {
+ textarea: HTMLTextAreaElement;
+ micBtn: HTMLButtonElement;
+ micStatus: HTMLSpanElement;
+ errorSlot: HTMLElement;
+ onDictatingChange?: (dictating: boolean) => void;
+ onSpeech?: () => void;
+}) {
+ const { textarea, micBtn, micStatus, errorSlot } = opts;
+
+ // A re-painted surface picks up a recording that is already live.
+ if (dictationActive) {
+  micBtn.classList.add('active');
+  micStatus.textContent = 'listening\u2026';
+ }
+
+ const insertAtCursor = (text: string) => {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const before = textarea.value.slice(0, start ?? textarea.value.length);
+  const after = textarea.value.slice(end ?? textarea.value.length);
+  textarea.value = before + text + after;
+  textarea.dispatchEvent(new Event('input'));
+  const pos = (start ?? textarea.value.length) + text.length;
+  textarea.setSelectionRange(pos, pos);
+  textarea.focus();
+ };
+
+ const toggle = async () => {
+  if (dictationBusy) return;
+  if (!dictationActive) {
+   // Start recording
+   try {
+    await startRecording();
+    dictationActive = true;
+    micBtn.classList.add('active');
+    micStatus.textContent = 'listening\u2026';
+    opts.onDictatingChange?.(true);
+   } catch (e) {
+    console.error(e);
+    showQuietError(errorSlot, 'the microphone did not open — check permission');
+   }
+  } else {
+   // Stop and transcribe
+   dictationActive = false;
+   dictationBusy = true;
+   micBtn.classList.remove('active');
+   micBtn.disabled = true;
+   micStatus.textContent = 'transcribing\u2026';
+   try {
+    const text = await stopAndTranscribe();
+    if (text) {
+     opts.onSpeech?.();
+     insertAtCursor(text);
+    }
+   } catch (e) {
+    console.error(e);
+    showQuietError(errorSlot, 'that did not come through — say it again');
+   }
+   dictationBusy = false;
+   micBtn.disabled = false;
+   micStatus.textContent = '';
+   opts.onDictatingChange?.(false);
+  }
+ };
+
+ micBtn.addEventListener('click', () => void toggle());
+
+ // Long-press spacebar: every space keydown is prevented, so holding the
+ // key never auto-repeats; the space is inserted by hand on keyup unless
+ // the hold outlived LONG_PRESS_MS, which spends the press on the toggle.
+ let pressTimer: number | null = null;
+ let pressConsumed = false;
+ let spaceDown = false;
+
+ textarea.addEventListener('keydown', (e) => {
+  if (e.key !== ' ') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // let shortcuts through
+  e.preventDefault();
+  if (e.repeat) return;
+  spaceDown = true;
+  pressConsumed = false;
+  pressTimer = window.setTimeout(() => {
+   pressTimer = null;
+   if (!spaceDown) return;
+   pressConsumed = true;
+   void toggle();
+  }, LONG_PRESS_MS);
+ });
+
+ const endPress = (insertSpace: boolean) => {
+  const consumed = pressConsumed;
+  spaceDown = false;
+  if (pressTimer !== null) {
+   clearTimeout(pressTimer);
+   pressTimer = null;
+  }
+  pressConsumed = false;
+  if (insertSpace && !consumed) insertAtCursor(' ');
+ };
+
+ textarea.addEventListener('keyup', (e) => {
+  if (e.key !== ' ') return;
+  endPress(true);
+ });
+
+ textarea.addEventListener('blur', () => {
+  // A press that leaves the field mid-hold still owes its space.
+  endPress(true);
+ });
+
+ // Check STT availability and hide the toggle if unavailable.
+ (async () => {
+  try {
+   const status = await api<{ available: boolean }>('/api/stt/status');
+   state.sttAvailable = status.available;
+  } catch {
+   state.sttAvailable = false;
+  }
+  if (!state.sttAvailable) {
+   micBtn.style.display = 'none';
+   micStatus.style.display = 'none';
+  }
+ })();
 }
 
 /**
@@ -1454,67 +1615,14 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
 
  // ── Mic toggle ──
 
- let micActive = false;
- let micBusy = false;
-
- micBtn.addEventListener('click', async () => {
-  if (micBusy) return;
-  if (!micActive) {
-   // Start recording
-   try {
-    await startRecording();
-    micActive = true;
-    micBtn.classList.add('active');
-    micStatus.textContent = 'listening\u2026';
-    state.dictating = true;
-   } catch (e) {
-    console.error(e);
-    showQuietError(answerArea, 'the microphone did not open — check permission');
-   }
-  } else {
-   // Stop and transcribe
-   micActive = false;
-   micBusy = true;
-   micBtn.classList.remove('active');
-   micBtn.disabled = true;
-   micStatus.textContent = 'transcribing\u2026';
-   try {
-    const text = await stopAndTranscribe();
-    if (text) {
-     state.turnHadSpeech = true;
-     // Append at cursor or end
-     const start = textarea.selectionStart;
-     const end = textarea.selectionEnd;
-     const before = textarea.value.slice(0, start ?? textarea.value.length);
-     const after = textarea.value.slice(end ?? textarea.value.length);
-     textarea.value = before + text + after;
-     textarea.dispatchEvent(new Event('input'));
-     textarea.focus();
-    }
-   } catch (e) {
-    console.error(e);
-    showQuietError(answerArea, 'that did not come through — say it again');
-   }
-   micBusy = false;
-   micBtn.disabled = false;
-   micStatus.textContent = '';
-   state.dictating = false;
-  }
+ wireDictation({
+  textarea,
+  micBtn,
+  micStatus,
+  errorSlot: answerArea,
+  onDictatingChange: (dictating) => { state.dictating = dictating; },
+  onSpeech: () => { state.turnHadSpeech = true; },
  });
-
- // Check STT availability and hide toggle if unavailable
- (async () => {
-  try {
-   const status = await api<{ available: boolean }>('/api/stt/status');
-   state.sttAvailable = status.available;
-  } catch {
-   state.sttAvailable = false;
-  }
-  if (!state.sttAvailable) {
-   micBtn.style.display = 'none';
-   micStatus.style.display = 'none';
-  }
- })();
 
  requestAnimationFrame(() => {
   textarea.focus();
@@ -3364,9 +3472,13 @@ function renderPiece() {
   // it is about to become. It commits on an explicit act, never on leaving.
   const composer = el('textarea', { class: 'piece-composer' }) as HTMLTextAreaElement;
   doc.append(composer);
+  const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
+  const micStatus = el('span', { class: 'mic-status' });
   const addPara = el('button', { class: 'nav-link piece-composer-add' }, 'add paragraph');
   addPara.hidden = true;
-  doc.append(addPara);
+  const composerRow = el('div', { class: 'piece-composer-row' });
+  composerRow.append(micBtn, micStatus, addPara);
+  doc.append(composerRow);
   // A dragged paragraph must not land inside the composer: its drop would
   // paste the entry id into the draft. The composer is the one editable
   // thing on the page, and nothing here is both draggable and editable.
@@ -3386,6 +3498,14 @@ function renderPiece() {
      composer.disabled = false;
      console.error(e);
     });
+  });
+
+  wireDictation({
+   textarea: composer,
+   micBtn,
+   micStatus,
+   errorSlot: doc,
+   onDictatingChange: (dictating) => { state.dictating = dictating; },
   });
  }
 
