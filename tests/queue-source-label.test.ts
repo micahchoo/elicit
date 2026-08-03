@@ -25,6 +25,8 @@ const SOURCES: QueueEntry['source'][] = [
  'quest-reflection',
  // Ticket 106: outcome questions — "did this intention come to pass?"
  'outcome',
+ // Ticket 110: atlas gap-fill — shadow-first territory questions for the self
+ 'atlas-gap-fill',
 ];
 
 const LINT_KINDS: LintFinding['kind'][] = [

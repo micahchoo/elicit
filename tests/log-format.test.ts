@@ -49,6 +49,8 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'expired', detail: 'expired 4 entries', reads: 'expired 4 questions' },
  { kind: 'consolidated', detail: 'summarized 4 sessions', reads: 'summarized 4 sittings' },
  { kind: 'consolidation-failed', detail: 'Error: context overflow', reads: 'could not summarize the sittings' },
+ // QR-5: disfluency elision on fragments quoted INTO questions
+ { kind: 'disfluency-elided', detail: `fragment ${ULID}`, reads: 'elided STT disfluencies from the quoted fragment' },
  { kind: 'referent-annotated', detail: 'annotated=3 silent=2 failed=1', reads: 'annotated 3 referents, 2 stayed silent, 1 failure' },
  { kind: 'referent-annotation-failed', detail: `annotateReferent for snippet ${ULID} failed: boom`, reads: 'could not annotate a referent' },
  // Ticket 106: intention-horizon annotation events
@@ -64,9 +66,12 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'referent-annotations-failed', detail: 'boom', reads: 'could not run the referent annotation job' },
  { kind: 'gap-fill-minted', detail: 'minted=3 budQuestions=2 constructQuestions=1', reads: 'minted 3 gap-fill questions into the queue' },
  { kind: 'gap-fill-clipped', detail: 'cap=3 clipped=2', reads: 'enforced the gap-fill cap at 3 and clipped: 2' },
+ { kind: 'gap-fill-pole-skip', detail: `snippet=${ULID}`, reads: 'skipped a half-Construct whose prose has no construct pole' },
  { kind: 'gap-fill-failed', detail: 'boom', reads: 'could not run the gap-fill sweep' },
 { kind: 'territory-gap-fill', detail: 'minted=2', reads: 'minted 2 territory questions from the KTG skeleton' },
 { kind: 'territory-gap-fill-failed', detail: 'boom', reads: 'could not run the territory gap-fill sweep' },
+{ kind: 'atlas-gap-fill-candidate', detail: 'shadow candidate for atlas indexical-checklist region indexical-checklist.people', reads: 'evaluated an atlas region — shadow mode, candidate logged, nothing minted' },
+{ kind: 'atlas-gap-fill-failed', detail: 'boom', reads: 'could not run the atlas gap-fill sweep' },
  { kind: 'gazetteer-extraction-failed', detail: 'boom', reads: 'could not run the gazetteer extraction job' },
  { kind: 'gazetteer-frontier-shadow', detail: 'frontierEntities=3', reads: 'gazetteer frontier would mint 3 questions — shadow mode, nothing minted' },
  { kind: 'gazetteer-frontier-minted', detail: 'minted=2', reads: 'minted 2 frontier questions from the gazetteer' },
