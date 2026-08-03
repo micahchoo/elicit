@@ -107,6 +107,21 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/clerk/clause.ts ──
  { module: 'src/clerk/clause', name: 'isCompleteClause', status: 'live' },
  { module: 'src/clerk/clause', name: 'widenToClause', status: 'live' },
+ {
+  module: 'src/clerk/clause',
+  name: 'hasConstructPole',
+  status: 'shadow',
+  shadowKind: 'gap-fill-pole-skip',
+  reason: 'Q-35 shadow (ticket 114, QR-1): the pole gate blocks pole-less half-Construct mints; the skip log records the decision',
+ },
+ // ── src/clerk/disfluency.ts ──
+ {
+  module: 'src/clerk/disfluency',
+  name: 'elideDisfluencies',
+  status: 'shadow',
+  shadowKind: 'disfluency-elided',
+  reason: 'Q-35 shadow-first for selection-behavior changes (QR-5): queue add elides STT disfluencies from quoted fragments and logs disfluency-elided when the text changes',
+ },
 
  // ── src/clerk/arrangements.ts ──
  {
@@ -829,6 +844,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadKtgSkeleton (094 P1, corrected by 095 verification)' },
 { module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2)' },
 { module: 'src/ktg/gap-fill', name: 'runTerritoryGapFillSweep', status: 'live', reason: 'wired by 094: runDocket\'s thunk runs it as the territory gap-fill job (P3)' },
+// ── src/ktg/atlas-* (110 — atlas territory instruments) ──
+{ module: 'src/ktg/atlas-validator', name: 'validateAtlasInstrument', status: 'live', reason: 'pure, no I/O — the guard at load time (110)' },
+{ module: 'src/ktg/atlas-loader', name: 'loadAtlas', status: 'live', reason: 'wired by 110: server loads atlas instruments at docket time' },
+{ module: 'src/ktg/atlas-loader', name: 'loadAtlasOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadAtlas (110)' },
+{ module: 'src/ktg/atlas-coverage', name: 'createAtlasCoverageStore', status: 'live', reason: 'wired by 110: server creates atlas coverage stores for the sweep' },
+{ module: 'src/ktg/atlas-gap-fill', name: 'runAtlasGapFillSweep', status: 'shadow', shadowKind: 'atlas-gap-fill-candidate', reason: 'selection mechanism shadow-first (Q-35): evaluates candidates, logs them, does not mint' },
 // ── src/clerk/gazetteer-* (100 — gazetteer entity index) ──
 { module: 'src/clerk/gazetteer-store', name: 'createGazetteerStore', status: 'live', reason: 'wired by 100: server creates the store for extraction + frontier (store)' },
 { module: 'src/clerk/gazetteer', name: 'extractEntities', status: 'live', reason: 'wired by 100: extraction thunk calls it; model-calling, cap live at birth (Q-56)' },

@@ -52,6 +52,9 @@ import { proposeArrangements } from './clerk/arrangements.js';
 import { runTerritoryGapFillSweep } from './ktg/gap-fill.js';
 import { loadKtgSkeleton } from './ktg/loader.js';
 import { createCoverageStore } from './ktg/coverage.js';
+import { loadAtlas } from './ktg/atlas-loader.js';
+import { createAtlasCoverageStore } from './ktg/atlas-coverage.js';
+import { runAtlasGapFillSweep } from './ktg/atlas-gap-fill.js';
 import { createGazetteerStore, type GazetteerStore } from './clerk/gazetteer-store.js';
 import { extractEntities, entityId } from './clerk/gazetteer.js';
 import { runGazetteerFrontier } from './clerk/gazetteer-frontier.js';
@@ -77,6 +80,8 @@ import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
 import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
 import { parkPointer, readLadder, writeLadder } from './sounding/park.js';
 import { resumeSounding } from './sounding/resume.js';
+import { initDRM, beginDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, resumeDRM } from './drm/state.js';
+import { writeDRM, readDRM, parkDRMPointer } from './drm/park.js';
 import {
  createClaimStore,
  appendSweepDeferral,
@@ -781,6 +786,37 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
       now: new Date().toISOString(),
      }));
+    },
+    atlasGapFillSweep: () => {
+     const atlasDir = join(deps.vaultRoot, 'data', 'atlases');
+     let totalCandidates = 0;
+     let totalScanned = 0;
+
+     let files: string[];
+     try {
+      files = readdirSync(atlasDir).filter((f) => f.endsWith('.json'));
+     } catch {
+      return Promise.resolve({ candidateCount: 0, scanned: 0 });
+     }
+
+     for (const file of files) {
+      const instrument = file.replace('.json', '');
+      const atlas = loadAtlas(instrument, deps.vaultRoot);
+      if (!atlas.ok) continue;
+
+      const coverage = createAtlasCoverageStore(deps.vaultRoot);
+      const result = runAtlasGapFillSweep({
+       atlas: atlas.value,
+       coverage,
+       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+       now: new Date().toISOString(),
+      });
+
+      totalCandidates += result.candidateCount;
+      totalScanned += result.scanned;
+     }
+
+     return Promise.resolve({ candidateCount: totalCandidates, scanned: totalScanned });
     },
     gazetteerExtraction: () => {
      if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
@@ -1692,6 +1728,276 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   sounding: gateStateFor(state.sounding),
  });
  });
+
+// ── DRM (Day Reconstruction Method) routes ──
+// Q-85: user-declared entry only, fixed probes, gate always visible,
+// fragments through ordinary harvest review. Follows the Sounding endpoint
+// pattern for auth, session lookup, response shape, and park/resume.
+
+// POST /api/session/:id/drm/start — begin a DRM session
+app.post('/api/session/:id/drm/start', (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (state.drm) return c.json({ error: 'DRM already running' }, 400);
+
+ const drm = initDRM(sessionId);
+ const { state: started, yesterday } = beginDRM(drm);
+ state.drm = started;
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'drm-started', `episodes=0`);
+
+ return c.json({
+  kind: 'drm-enumerate',
+  yesterday,
+  phase: state.phase,
+ });
+});
+
+// POST /api/session/:id/drm/episode {name, startHour} — add an episode
+app.post('/api/session/:id/drm/episode', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+
+ const body = await c.req.json<{ name: string; startHour: number }>();
+ if (typeof body.name !== 'string' || body.name.trim() === '') {
+  return c.json({ error: 'name is required' }, 400);
+ }
+ if (typeof body.startHour !== 'number' || body.startHour < 0 || body.startHour > 23) {
+  return c.json({ error: 'startHour must be 0–23' }, 400);
+ }
+
+ try {
+  state.drm = addEpisode(state.drm, body.name.trim(), body.startHour);
+ } catch (e) {
+  return c.json({ error: String(e) }, 400);
+ }
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'drm-episode-added',
+  `count=${state.drm.episodes.length} name=${body.name.trim()}`);
+
+ return c.json({
+  kind: 'drm-episode-added',
+  count: state.drm.episodes.length,
+ });
+});
+
+// POST /api/session/:id/drm/enumerate-done — finish enumeration
+app.post('/api/session/:id/drm/enumerate-done', (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+
+ try {
+  state.drm = doneEnumerating(state.drm);
+ } catch (e) {
+  return c.json({ error: String(e) }, 400);
+ }
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'drm-enumeration-finished',
+  `episodes=${state.drm.episodes.length}`);
+
+ const question = probeQuestion(state.drm);
+ const now = new Date().toISOString();
+ deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+
+ return c.json({
+  kind: 'drm-probe',
+  text: question,
+  episode: state.drm.currentEpisodeIdx + 1,
+  of: state.drm.episodes.length,
+  step: state.drm.probeStep,
+  gate: gateReading(state.drm),
+ });
+});
+
+// POST /api/session/:id/drm/probe {text} — answer current probe
+app.post('/api/session/:id/drm/probe', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+
+ const body = await c.req.json<{ text: string }>();
+ if (typeof body.text !== 'string' || body.text.trim() === '') {
+  return c.json({ error: 'text is required' }, 400);
+ }
+
+ const now = new Date().toISOString();
+ // Write the user's answer as a turn
+ deps.vault.appendTurn(sessionId, { role: 'user', text: body.text, at: now });
+
+ const probeResult = answerProbe(state.drm, body.text);
+ state.drm = probeResult.state;
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'drm-probe-answered',
+  `step=${state.drm.probeStep}`);
+
+ if (probeResult.atGate) {
+  // All probes done for this episode — show gate
+  return c.json({
+   kind: 'drm-gate',
+   episode: state.drm.currentEpisodeIdx + 1,
+   of: state.drm.episodes.length,
+   atEnd: probeResult.atEnd,
+   gate: gateReading(state.drm),
+  });
+ }
+
+ // More probes — ask the next one
+ // For the affect step with nudge, check if the previous affect answer was thin
+ const question = state.drm.probeStep === 'affect' && probeResult.fragment
+  ? probeQuestion(state.drm) // nudge handled in web UI by checking answer shape
+  : probeQuestion(state.drm);
+ deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+
+ return c.json({
+  kind: 'drm-probe',
+  text: question,
+  episode: state.drm.currentEpisodeIdx + 1,
+  of: state.drm.episodes.length,
+  step: state.drm.probeStep,
+  gate: gateReading(state.drm),
+ });
+});
+
+// POST /api/session/:id/drm/gate {choice} — continue/park/another-day
+app.post('/api/session/:id/drm/gate', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+
+ const body = await c.req.json<{ choice: 'continue' | 'park' | 'another-day' }>();
+ if (!['continue', 'park', 'another-day'].includes(body.choice)) {
+  return c.json({ error: 'choice must be continue, park, or another-day' }, 400);
+ }
+
+ const now = new Date().toISOString();
+ const result = applyDRMGate(state.drm, body.choice);
+ state.drm = result.state;
+
+ if (body.choice === 'park' && result.parked) {
+  writeDRM(deps.vaultRoot, result.parked);
+  const queueTarget = state.mode?.target;
+  parkDRMPointer(deps.queue, result.parked, queueTarget);
+  state.finishedDRM = result.parked;
+  delete state.drm;
+
+  serverEmit(deps.vaultRoot, 'elicitor', 'drm-parked',
+   `episode=${result.parked.currentEpisodeIdx}`);
+
+  return c.json({
+   kind: 'drm-closed',
+   endedBy: 'park',
+   phase: state.phase,
+  });
+ }
+
+ if (body.choice === 'another-day') {
+  const parked = {
+   ...state.drm,
+   ended: now,
+   endedBy: 'another-day' as const,
+  };
+  writeDRM(deps.vaultRoot, parked);
+  state.finishedDRM = parked;
+  delete state.drm;
+
+  return c.json({
+   kind: 'drm-closed',
+   endedBy: 'another-day',
+   phase: state.phase,
+  });
+ }
+
+ // Continue: advance to next episode
+ if (result.complete) {
+  state.finishedDRM = { ...state.drm, ended: now, endedBy: 'park' };
+  delete state.drm;
+
+  serverEmit(deps.vaultRoot, 'elicitor', 'drm-completed',
+   `fragments=${state.finishedDRM.fragments.length}`);
+
+  return c.json({
+   kind: 'drm-closed',
+   endedBy: 'complete',
+   phase: state.phase,
+  });
+ }
+
+ // Next episode — ask first probe
+ const question = probeQuestion(state.drm);
+ deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+
+ return c.json({
+  kind: 'drm-probe',
+  text: question,
+  episode: state.drm.currentEpisodeIdx + 1,
+  of: state.drm.episodes.length,
+  step: state.drm.probeStep,
+  gate: gateReading(state.drm),
+ });
+});
+
+// POST /api/session/:id/drm/resume {queueEntryId} — resume a parked DRM
+app.post('/api/session/:id/drm/resume', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ if (state.drm) return c.json({ error: 'DRM already running' }, 400);
+
+ const body = await c.req.json<{ queueEntryId: string }>();
+ const queueEntryId = body.queueEntryId;
+ if (typeof queueEntryId !== 'string' || queueEntryId.trim() === '') {
+  return c.json({ error: 'queueEntryId is required' }, 400);
+ }
+
+ const entry = deps.queue
+  .list({ source: 'parked-drm' })
+  .find((e) => e.id === queueEntryId);
+ if (!entry) return c.json({ error: 'no parked DRM with that id' }, 404);
+
+ const parked = readDRM(deps.vaultRoot, entry.drmId ?? '');
+ if (!parked) {
+  return c.json({ error: 'this DRM is no longer on disk' }, 404);
+ }
+
+ const resumed = resumeDRM(parked, sessionId);
+ state.drm = resumed;
+
+ // Mark the pointer answered
+ deps.queue.markAnswered(entry.id);
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'drm-resumed',
+  `episodes=${resumed.episodes.length} at=${resumed.currentEpisodeIdx}`);
+
+ if (resumed.phase === 'complete') {
+  state.finishedDRM = { ...resumed, ended: new Date().toISOString(), endedBy: 'park' };
+  delete state.drm;
+  return c.json({
+   kind: 'drm-closed',
+   endedBy: 'complete',
+   phase: state.phase,
+  });
+ }
+
+ const question = probeQuestion(resumed);
+ const now = new Date().toISOString();
+ deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+
+ return c.json({
+  kind: 'drm-probe',
+  text: question,
+  episode: resumed.currentEpisodeIdx + 1,
+  of: resumed.episodes.length,
+  step: resumed.probeStep,
+  gate: gateReading(resumed),
+ });
+});
 
  /**
   * Fire-and-return harvest (ticket 084): /end and /unprompted answer

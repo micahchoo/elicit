@@ -327,6 +327,9 @@ const SENTENCES = {
  'expired': (_f, d) => `expired ${count(nth(d, 0), 'question')}`,
  'consolidated': (_f, d) => `summarized ${count(nth(d, 0), 'sitting')}`,
  'consolidation-failed': () => 'could not summarize the sittings',
+ // QR-5: disfluency elision on fragments quoted INTO questions (shadow
+ // record — the elision itself is what the record measures).
+ 'disfluency-elided': () => 'elided STT disfluencies from the quoted fragment',
  'referent-annotated': (f) => `annotated ${count(num(f, 'annotated'), 'referent')}, ${num(f, 'silent')} stayed silent, ${count(num(f, 'failed'), 'failure')}`,
  'referent-annotation-failed': () => 'could not annotate a referent',
  'referent-annotations-failed': () => 'could not run the referent annotation job',
@@ -342,9 +345,12 @@ const SENTENCES = {
  'outcomes-failed': () => 'could not run the outcome question job',
  'gap-fill-minted': (f) => `minted ${count(num(f, 'minted'), 'gap-fill question')} into the queue`,
  'gap-fill-clipped': (f, d) => `enforced the gap-fill cap at ${f.cap ?? 'its setting'} and clipped: ${clause(d, 'clipped')}`,
+ 'gap-fill-pole-skip': () => 'skipped a half-Construct whose prose has no construct pole',
  'gap-fill-failed': () => 'could not run the gap-fill sweep',
  'territory-gap-fill': (f) => `minted ${count(num(f, 'minted'), 'territory question')} from the KTG skeleton`,
  'territory-gap-fill-failed': () => 'could not run the territory gap-fill sweep',
+ 'atlas-gap-fill-candidate': () => 'evaluated an atlas region — shadow mode, candidate logged, nothing minted',
+ 'atlas-gap-fill-failed': () => 'could not run the atlas gap-fill sweep',
  'gazetteer-entities-extracted': (f) => `extracted ${count(num(f, 'entities'), 'entity')} from ${count(num(f, 'snippets'), 'snippet')} into the gazetteer`,
  'gazetteer-extraction-failed': () => 'could not run the gazetteer extraction job',
  'gazetteer-frontier-shadow': (f) => `gazetteer frontier would mint ${count(num(f, 'frontierEntities'), 'question')} — shadow mode, nothing minted`,
@@ -821,6 +827,17 @@ const SENTENCES = {
 // render the act, never the person.
  'sounding-summarized': () => 'wrote one line about a descent',
  'soundings-summary-failed': () => 'could not summarize a ladder',
+
+// ── The DRM instrument (Q-85): the entry, the probes, the gate ──
+'drm-started': (f) => `began a day reconstruction (DRM) of ${num(f, 'episodes')} episodes`,
+'drm-episode-added': (f) => `named episode ${num(f, 'count')}: ${f.name ?? '?'}`,
+'drm-enumeration-finished': (f) => `finished enumerating ${num(f, 'episodes')} episodes`,
+'drm-probe-asked': () => 'asked a DRM probe',
+'drm-probe-answered': (f) => `answered the ${f.step ?? '?'} probe`,
+'drm-gate': (f) => `the gate word ${f.choice ?? '?'} was pressed`,
+'drm-parked': (f) => `parked a DRM session at episode ${f.episode ?? '?'}`,
+'drm-resumed': () => 'picked a parked DRM back up',
+'drm-completed': (f) => `finished a DRM with ${count(num(f, 'fragments'), 'fragment')}`,
 } satisfies Record<string, (f: Fields, detail: string) => string>;
 
 /**

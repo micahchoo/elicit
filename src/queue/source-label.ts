@@ -55,11 +55,13 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'lint-still-true': 'from your own words',
  'lint-undiscriminated-range': 'from your own words',
  'parked-sounding': 'from your own words',
+ 'parked-drm': 'from your own words',
  'claim-challenged': 'you pushed back on the wiki',
 'import-repair': 'from your own words',
  'quest-reflection': 'from your own words',
  'territory-gap-fill': 'from your own words',
  'gazetteer-frontier': 'from your own words',
+ 'atlas-gap-fill': 'from your own words',
  // Ticket 106: outcome questions — "did this intention come to pass?"
  'outcome': 'from your own words',
 };
@@ -85,6 +87,7 @@ const FACET_HEADINGS: Record<Facet, string> = {
   intention: 'Wants and plans',
   value: 'What is worth doing',
   'causal-theory': 'Explanations of the self',
+  'momentary-state': 'How it felt in the moment',
   'know-what': 'What you know',
   'know-how': 'How you do it',
   habit: 'Habits of mind',

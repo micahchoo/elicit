@@ -267,7 +267,6 @@ export async function runIntentionHorizonAnnotations(deps: {
           question: result.datingQuestion,
           questionForm: 'deliberative',
           cites: [`${result.snippetId}@${result.version}`],
-          quotedFragment: result.datingQuestion,
           sharpness: 'weak',
           horizon: 'session',
         });
@@ -500,6 +499,14 @@ gazetteerExtraction?: () => Promise<{ extracted: number; entities: number; faile
  * exactly as before.
  */
 gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
+/**
+ * The atlas gap-fill sweep (ticket 110), as a docket job after the
+ * territory gap-fill. Reads atlas instruments against coverage and
+ * evaluates candidate questions. Shadow-first (Q-35): candidates are
+ * logged, not minted. ZERO-LLM. Absent means no atlas work this run,
+ * and every caller predating the field behaves exactly as before.
+ */
+atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number }>;
 /**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
@@ -868,6 +875,19 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
    }
   }
 
+  // Atlas gap-fill (ticket 110) — follows the territory gap-fill,
+  // reads atlas instrument coverage, shadow-logs candidate questions.
+  // Shadow-first (Q-35): candidates are logged, never minted.
+  // ZERO-LLM by design — the sweep is pure vault-and-coverage work.
+  let atlasGapFill: DocketReport['atlasGapFill'];
+  if (deps.atlasGapFillSweep) {
+   try {
+    atlasGapFill = await deps.atlasGapFillSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'atlas-gap-fill-failed', detail: String(err) });
+   }
+   }
+
   // Gazetteer extraction (ticket 100) — model-calling, extracts named
   // entities from snippets into the gazetteer store. Must run before the
   // frontier sweep so new entities are available for frontier detection.
@@ -935,6 +955,7 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
    ...(gapFill ? { gapFill } : {}),
    ...(territoryGapFill ? { territoryGapFill } : {}),
    ...(gazetteerExtraction ? { gazetteerExtraction } : {}),
+   ...(atlasGapFill ? { atlasGapFill } : {}),
    ...(gazetteerFrontier ? { gazetteerFrontier } : {}),
   };
  } finally {

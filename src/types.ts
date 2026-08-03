@@ -2,6 +2,7 @@
 // Encode invariants from CONTEXT.md as visible type constraints
 
 import type { SemanticIndex } from './index/semantic.js';
+import type { DRMState, DRMParkedState } from './drm/types.js';
 
 export type Facet =
  | 'episode'
@@ -15,7 +16,8 @@ export type Facet =
  | 'know-what'
  | 'know-how'
  | 'habit'
- | 'know-why';
+ | 'know-why'
+ | 'momentary-state';
 
 export type Stance =
  | 'avowal'
@@ -355,11 +357,13 @@ source:
  | 'lint-still-true'
  | 'lint-undiscriminated-range'
  | 'parked-sounding'
+ | 'parked-drm'
  | 'claim-challenged'
  | 'import-repair'
  | 'quest-reflection'
  | 'territory-gap-fill'
  | 'gazetteer-frontier'
+ | 'atlas-gap-fill'
  // Ticket 106: outcome questions — "did this intention come to pass?"
  | 'outcome';
  license: string;
@@ -459,12 +463,26 @@ source:
  */
 soundingId?: string;
 /**
+ * The DRM session a parked-drm pointer points at. Optional: only
+ * `parked-drm` entries carry one, and a pointer without one is a
+ * broken record (Q-3: the DRM file is the truth, the pointer derived).
+ */
+drmId?: string;
+/**
  * The KTG territory node this entry was minted for. Optional, because
  * only 'territory-gap-fill' entries carry one — and load-bearing, because
  * "one question per node" is not expressible without it: the node id
  * deduplicates both frontier-gap and common-failure questions.
  */
 territoryNode?: string;
+/**
+ * The atlas region this entry targets. Optional, because only
+ * 'atlas-gap-fill' entries carry one — and load-bearing, because
+ * "one question per region" is not expressible without it: the region id
+ * deduplicates atlas frontier questions in the eventual live sweep
+ * (ticket 110, shadow-first Q-35).
+ */
+atlasRegion?: string;
 /**
  * The gazetteer entities this question targets. Optional, and absent means
  * none were identified at mint time — never backfilled by guessing (the 042
@@ -541,6 +559,12 @@ gapFill?: { minted: number; budQuestions: number; constructQuestions: number };
  */
 territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions: number };
  /**
+  * What the atlas gap-fill sweep evaluated on this run, absent when a run
+  * did none. Shadow-first (Q-35): candidates are logged, not minted.
+  * Structural — this file must not depend on `src/ktg/`.
+  */
+ atlasGapFill?: { candidateCount: number; scanned: number };
+ /**
   * What the gazetteer extraction job did on this run, absent when a run
   * did none. Structural — this file must not depend on `src/clerk/`.
   */
@@ -596,6 +620,10 @@ export type SessionState = {
  * from `finishedSounding` being absent (no descent ended on this turn).
  */
 sounding?: SoundingState;
+/** A live DRM instrument session, when one is running. */
+drm?: DRMState;
+/** The finished DRM state, carried from the route when a DRM closes. */
+finishedDRM?: DRMParkedState;
 /**
  * Whether a descent was offered this sitting and what came of it. Absent
  * means none has been offered yet; 'declined' means one was and will not be
@@ -704,3 +732,15 @@ export interface Vault {
  appendTurn(session: string, turn: Turn): void;
  rebuildIndex(): Index;
 }
+
+// ── DRM types — live in their own module per Q-85; re-exported here for the
+// type-only import convention the rest of the codebase uses.
+export type {
+ DRMProbeStep,
+ DRMEpisode,
+ DRMFragment,
+ DRMParkedState,
+ DRMPhase,
+ DRMState,
+} from './drm/types.js';
+export { DRM_PROBE_QUESTIONS, DRM_AFFECT_NUDGE } from './drm/types.js';
