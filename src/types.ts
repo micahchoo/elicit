@@ -609,7 +609,15 @@ export interface Vault {
  saveBud(fragment: string, failures: string[], session: string): Bud;
  startTranscript(
   session: string,
-  meta: { mode: Mode; protocol: string; started: string }
+  meta: {
+   mode: Mode;
+   protocol: string;
+   started: string;
+   /** The quest this sitting returns to (Q-75). Absent on every ordinary sitting. */
+   quest?: string;
+   /** The coached Direction this capture belongs to. Absent means untagged. */
+   direction?: string;
+  }
  ): void;
  appendTurn(session: string, turn: Turn): void;
  rebuildIndex(): Index;

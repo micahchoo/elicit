@@ -190,6 +190,54 @@ describe('Vault', () => {
     expect(raw).toContain('topic: philosophy');
   });
 
+  // ── Transcript carries quest/direction tags (Q-75) ──
+
+  it('startTranscript writes quest and direction to frontmatter', () => {
+    const session = 'test-session-quest';
+    vault.startTranscript(session, {
+      mode: makeMode(),
+      protocol: 'coached',
+      started: '2026-08-03T00:00:00.000Z',
+      quest: 'q_01HZX0test',
+      direction: 'd_01HZX0test',
+    });
+
+    const raw = readFileSync(
+      join(root, 'transcripts', `${session}.md`),
+      'utf-8',
+    );
+    expect(raw).toContain('quest: q_01HZX0test');
+    expect(raw).toContain('direction: d_01HZX0test');
+  });
+
+  it('startTranscript without quest/direction writes neither key', () => {
+    const session = 'test-session-plain';
+    vault.startTranscript(session, {
+      mode: makeMode(),
+      protocol: 'reflective-interview',
+      started: '2026-08-03T00:00:00.000Z',
+    });
+
+    const raw = readFileSync(
+      join(root, 'transcripts', `${session}.md`),
+      'utf-8',
+    );
+    expect(raw).not.toContain('quest');
+    expect(raw).not.toContain('direction');
+    // Absent stays absent: byte-identical to the pre-Q-75 shape.
+    expect(raw).toBe(
+      '---\n' +
+        'session: test-session-plain\n' +
+        'mode:\n' +
+        '  minutes: 30\n' +
+        '  energy: medium\n' +
+        'protocol: reflective-interview\n' +
+        "started: '2026-08-03T00:00:00.000Z'\n" +
+        '---\n' +
+        '\n',
+    );
+  });
+
   // ── rebuildIndex from fresh instance (Q-3) ──
 
   it('rebuildIndex from a fresh Vault instance sees all files', () => {

@@ -152,7 +152,15 @@ class VaultImpl implements Vault {
 
   startTranscript(
     session: string,
-    meta: { mode: Mode; protocol: string; started: string },
+    meta: {
+      mode: Mode;
+      protocol: string;
+      started: string;
+      /** The quest this sitting returns to (Q-75). Absent on every ordinary sitting. */
+      quest?: string;
+      /** The coached Direction this capture belongs to. Absent means untagged. */
+      direction?: string;
+    },
   ): void {
     const dir = join(this.#root, 'transcripts');
     mkdirSync(dir, { recursive: true });
@@ -163,6 +171,8 @@ class VaultImpl implements Vault {
       mode: meta.mode,
       protocol: meta.protocol,
       started: meta.started,
+      ...(meta.quest !== undefined ? { quest: meta.quest } : {}),
+      ...(meta.direction !== undefined ? { direction: meta.direction } : {}),
     };
     const content = matter.stringify('', fm);
     writeFileSync(path, content, 'utf-8');
