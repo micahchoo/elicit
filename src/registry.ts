@@ -355,6 +355,13 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/memory/cover', name: 'saveSummary', status: 'live' },
  { module: 'src/memory/cover', name: 'loadSummaries', status: 'live' },
 
+ // ── src/piece/contract.ts ──
+ { module: 'src/piece/contract', name: 'noProse', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'noTitle', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'pinsResolve', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'samePinSet', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+ { module: 'src/piece/contract', name: 'distinctPrinciples', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
+
  // ── src/protocols/registry.ts ──
  { module: 'src/protocols/registry', name: 'loadProtocolDefinitions', status: 'live' },
  { module: 'src/protocols/registry', name: 'selectProtocolForTarget', status: 'live' },
