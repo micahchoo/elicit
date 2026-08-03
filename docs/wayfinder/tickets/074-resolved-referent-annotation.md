@@ -2,7 +2,7 @@
 title: "Build: model-resolved referent — an agent-plane annotation, evaluated before it ships"
 labels: [wayfinder:task]
 status: open
-assignee: claude (omp labelling)
+assignee: claude (omp wave 7, annotation)
 blocked_by: [073-antecedent-context]
 ---
 
