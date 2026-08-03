@@ -59,7 +59,10 @@ export function makeFakeComplete(): RecordingFakeComplete {
   // required phrase; quote it back inside quotation marks so checkAroundPhrase
   // passes on the first try, and ask a question around it (Q-12).
   if (s.includes('triggered a concern') && s.includes('inside quotation marks')) {
-   const m = /inside quotation marks: "([^"]+)"/.exec(s);
+   // Extract from `system`, not `s`: the prompt's phrase is interpolated
+   // verbatim (Q-12), and `s` is lowercased for matching — a lowercase
+   // capture would fail checkAroundPhrase's case-sensitive includes().
+   const m = /inside quotation marks: "([^"]+)"/.exec(system);
    const phrase = m?.[1] ?? '';
    return phrase ? `What did you mean by "${phrase}"?` : 'What did you mean by that?';
   }
