@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCompleteClause, widenToClause } from '../src/clerk/clause.js';
+import { isCompleteClause, widenToClause, hasConstructPole } from '../src/clerk/clause.js';
 
 /**
  * Ticket 088: the quoted pole must be a complete clause, decided
@@ -113,5 +113,47 @@ describe('widenToClause', () => {
  it('widens across a multi-sentence run when the fragment spans one', () => {
   const prose = 'I worked on making things. Then I stopped.';
   expect(widenToClause('things. Then', prose)).toBe(prose);
+ });
+});
+
+// ── hasConstructPole: the QR-1 pole gate (ticket 114) ──────────────────────
+
+// Fixtures from docs/queue-review-2026-08-03.md QR-1: the half-Construct
+// mint fires on poetry, metaphor and observation because 037's over-labeling
+// stamps them `construct`. The gate must verify a pole is present.
+
+describe('hasConstructPole', () => {
+ it('accepts a genuine construct: a stance with an evaluative predicate', () => {
+  expect(hasConstructPole('I believe honesty matters more than kindness')).toBe(true);
+ });
+
+ it('accepts a first-person value claim', () => {
+  expect(hasConstructPole('I value directness in every exchange.')).toBe(true);
+ });
+
+ it('rejects verse, even when every line is a complete clause', () => {
+  expect(hasConstructPole('My head has been here on this pillow, / For eons.')).toBe(false);
+  expect(hasConstructPole('My head has been here on this pillow,\nFor eons.')).toBe(false);
+ });
+
+ it('rejects impersonal method-talk that only names a figure', () => {
+  expect(
+   hasConstructPole(
+    'A much harder but effective way is to experience a taste of the iceberg while they are in the water.'
+   )
+  ).toBe(false);
+ });
+
+ it('rejects pure observation without evaluative language', () => {
+  expect(hasConstructPole("It's raining outside.")).toBe(false);
+ });
+
+ it('rejects a fragment that names no clause at all', () => {
+  expect(hasConstructPole('Co designing and co writing')).toBe(false);
+ });
+
+ it('rejects empty prose', () => {
+  expect(hasConstructPole('')).toBe(false);
+  expect(hasConstructPole('   ')).toBe(false);
  });
 });

@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
  Vault,
  QueueStore,
@@ -396,6 +398,116 @@ export async function runOutcomeQuestions(deps: {
   return { minted };
 }
 
+// ── The one-time template sweep (QR-6, ticket 114) ──
+// One cleanup, ever: template-generation questions that have outlived their
+// template — the half-Construct opposite mints (gap-fill with a snippet),
+// the still-true repeats, and composed questions wearing therapy-voice
+// assertion smuggling. Each expiry is logged to the Activity Log
+// (Q-23), and the sweep never mints anything: an expired entry keeps its
+// join keys on disk, and the gap-fill dedupe blocks on ANY status (Q-24,
+// Q-41, Q-72), so a re-mint from the same license instances is impossible
+// by construction. User-declared entries are never touched (Q-41: only a
+// question the person typed in by hand is theirs). The flag file makes the
+// whole thing run once, ever.
+
+/** The flag that makes the sweep one-time. Lives in the vault root. */
+const TEMPLATE_SWEEP_FLAG = '.template-sweep-done';
+
+/** Therapy-register phrases — the mechanical voice check, kept deliberately short. */
+const THERAPY_PHRASES = [
+ 'hold space',
+ 'truly welcome',
+ 'fully welcome',
+ 'tend to',
+ 'let yourself',
+ 'make space for',
+ 'show up for',
+ 'new path',
+ 'aliveness',
+ 'honor that',
+ 'sitting with',
+] as const;
+
+/**
+ * Presupposition-heavy openings that smuggle an assertion into the ask —
+ * "when you…", "how long will you let…". One alone is not enough; the
+ * conservatism gate below demands a therapy phrase beside it.
+ */
+const ASSERTION_SMUGGLING_PREFIXES = ['when you', 'how long will you let'] as const;
+
+/**
+ * Conservative therapy-voice check: two distinct therapy phrases, or one
+ * phrase PLUS a presupposition-smuggling opening. A bare "when you…"
+ * question with no therapy register is a perfectly good composed question
+ * and survives — the sweep only expires what CLEARLY matches (QR-6).
+ */
+function isTherapyVoiced(question: string): boolean {
+ const q = question.toLowerCase();
+ const hits = THERAPY_PHRASES.filter((p) => q.includes(p));
+ if (hits.length >= 2) return true;
+ return (
+  hits.length === 1 &&
+  ASSERTION_SMUGGLING_PREFIXES.some((p) => q.startsWith(p))
+ );
+}
+
+/** What the one-time sweep expired, by category. */
+export type TemplateSweepCounts = {
+ expired: number;
+ oppositeMints: number;
+ stillTrueRepeats: number;
+ therapyVoiced: number;
+};
+
+/**
+ * QR-6: the one-time template sweep. Expires every pending template
+ * question the templates no longer deserve to be asked from — opposite
+ * mints, still-true repeats and therapy-voiced composed entries — logs
+ * each to the Activity Log and returns the counts by category. Never
+ * expires a user-declared entry and never mints. A no-op (and a zero
+ * report) once the flag file exists.
+ */
+export async function runOneTimeTemplateSweep(deps: {
+ queue: QueueStore;
+ vaultRoot: string;
+ log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+}): Promise<TemplateSweepCounts> {
+ const flag = join(deps.vaultRoot, TEMPLATE_SWEEP_FLAG);
+ if (existsSync(flag)) {
+  return { expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 };
+ }
+ const counts: TemplateSweepCounts = { expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 };
+ const at = new Date().toISOString();
+ for (const entry of deps.queue.list({ status: 'pending' })) {
+  // The person's own questions are theirs, whatever the template said (Q-41).
+  if (entry.source === 'user-declared' || entry.source === 'gap-declared') continue;
+  let category: 'oppositeMints' | 'stillTrueRepeats' | 'therapyVoiced' | null = null;
+  if (entry.source === 'gap-fill' && entry.snippet !== undefined) {
+   category = 'oppositeMints';
+  } else if (entry.source === 'still-true') {
+   category = 'stillTrueRepeats';
+  } else if (entry.source === 'composed' && isTherapyVoiced(entry.question)) {
+   category = 'therapyVoiced';
+  }
+  if (category === null) continue;
+  deps.queue.markExpired(entry.id);
+  counts[category]++;
+  counts.expired++;
+  const excerpt =
+   entry.question.length > 60 ? `${entry.question.slice(0, 60)}…` : entry.question;
+  deps.log({
+   at,
+   actor: 'clerk',
+   kind: 'template-sweep-expired',
+   detail: `expired ${entry.source} ${entry.id}: ${excerpt}`,
+   refs: [entry.id],
+  });
+ }
+ // The flag lands only after the sweep succeeded, so a failed run retries.
+ mkdirSync(deps.vaultRoot, { recursive: true });
+ writeFileSync(flag, at, 'utf-8');
+ return counts;
+}
 
 export async function runDocket(deps: {
  vault: Vault;
@@ -564,6 +676,23 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
   const allReadings = rebuildResult.readings;
   const index = deps.buildIndex(allSnippets);
   deps.log({ at: ts(), actor: 'clerk', kind: 'index-rebuilt', detail: `rebuilt index from ${allSnippets.length} snippets` });
+
+  // ── 1b. The one-time template sweep (QR-6) ──
+  // Runs once, ever: the flag file gates it inside the sweep, so a second
+  // run is a no-op. It only ever expires — never mints — so the dedupe keys
+  // an expired entry carries stay put and the gap-fill sweep's any-status
+  // block keeps a re-mint from the same license instances impossible.
+  // Guarded like every other job: a throw is one job's failure, and the
+  // index is already on disk by the time this runs.
+  try {
+   await runOneTimeTemplateSweep({
+    queue: deps.queue,
+    vaultRoot: deps.vaultRoot,
+    log: deps.log,
+   });
+  } catch (err) {
+   deps.log({ at: ts(), actor: 'clerk', kind: 'template-sweep-failed', detail: String(err) });
+  }
 
   const minted: QueueEntry[] = [];
 

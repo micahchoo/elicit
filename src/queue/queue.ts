@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.js';
 import { appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/format.js';
+import { elideDisfluencies } from '../clerk/disfluency.js';
 import {
  applyFacetBalance,
  facetBalanceIsLive,
@@ -29,6 +30,26 @@ export function createQueueStore(root: string): QueueStore {
  */
 export function isUserDeclaredWeight(e: QueueEntry): boolean {
  return e.source === 'user-declared' || e.source === 'gap-declared';
+}
+
+/**
+ * QR-6: the display bound on the open array GET /api/queue returns. A cap
+ * that keeps the pile readable (Q-56 — caps ship live): the stale tail
+ * beyond it is expired rather than hidden, so the queue on disk and the
+ * queue the person sees cannot drift.
+ */
+export const MAX_OPEN_QUESTIONS = 20;
+
+/**
+ * The open pool's order: the person's own questions first, then newest
+ * first. Shared by the draw's display order and the QR-6 bound's kept set
+ * so the surface and the expiry always agree on which entries stay.
+ */
+function compareOpenEntries(a: QueueEntry, b: QueueEntry): number {
+ const aUd = isUserDeclaredWeight(a) ? 0 : 1;
+ const bUd = isUserDeclaredWeight(b) ? 0 : 1;
+ if (aUd !== bUd) return aUd - bUd;
+ return b.created.localeCompare(a.created);
 }
 
 const ENERGY_LEVEL: Record<NonNullable<Mode['energy']>, number> = {
@@ -305,15 +326,32 @@ class QueueStoreImpl implements QueueStore {
 
  // ── Public API ──
 
- add(draft: QueueDraft): QueueEntry {
-  const entry: QueueEntry = {
-   id: ulid(),
-   status: 'pending',
-   created: new Date().toISOString(),
-   ...draft,
-  };
-  this.#write(entry);
-  return entry;
+add(draft: QueueDraft): QueueEntry {
+ const entry: QueueEntry = {
+  id: ulid(),
+  status: 'pending',
+  created: new Date().toISOString(),
+  ...draft,
+ };
+ // QR-5: elide STT disfluencies from fragments quoted INTO questions at
+ // the one write gate every draft passes through. The kept Snippet stays
+ // verbatim (Q-12); only the quotation is elided, by the mechanical marked
+ // rule (src/clerk/disfluency.ts). Absent stays absent, and a fragment
+ // that elides to itself is not re-written. The shadow record (Q-35) is
+ // what can graduate the selection change.
+ if (entry.quotedFragment) {
+  const elided = elideDisfluencies(entry.quotedFragment);
+  if (elided !== entry.quotedFragment) {
+   entry.quotedFragment = elided;
+   this.#append({
+    kind: 'disfluency-elided',
+    detail: `fragment ${entry.id}`,
+    refs: [entry.id],
+   });
+  }
+ }
+ this.#write(entry);
+ return entry;
  }
 
  list(
@@ -563,5 +601,48 @@ class QueueStoreImpl implements QueueStore {
   }
 
   return count;
+ }
+
+ /**
+  * QR-6: the flood bound's expiry. Keeps the first `keep` of the pending
+  * entries the filter names — user-declared first, then newest first — and
+  * expires the tail beyond it, so a display cap and the disk state cannot
+  * drift (the queue the person sees IS the queue on disk). The default
+  * filter is the open pool: days/session horizons, never a user-declared
+  * entry. One summary line per call; per-entry lines are the caller's.
+  */
+ expireTailBeyond(keep: number, filter?: (e: QueueEntry) => boolean): number {
+  const all = this.#readAll();
+  const pending = all.filter((e) => e.status === 'pending');
+  const match =
+   filter ??
+   ((e) => (e.horizon === 'days' || e.horizon === 'session') && !isUserDeclaredWeight(e));
+  const candidates = pending.filter(match).sort(compareOpenEntries);
+  const tail = candidates.slice(keep);
+  for (const entry of tail) {
+   entry.status = 'expired';
+   this.#write(entry);
+  }
+  if (tail.length > 0) {
+   this.#append({
+    kind: 'queue-tail-expired',
+    detail: `expired=${tail.length} kept=${keep}`,
+    refs: tail.map((e) => e.id),
+   });
+  }
+  return tail.length;
+ }
+
+ /**
+  * QR-6: set ONE entry to 'expired' and write it back. The primitive the
+  * one-time template sweep persists through; the caller owns the policy
+  * (who is never expired) and the Activity Log line. A no-op when nothing
+  * reads back for the id.
+  */
+ markExpired(id: string): void {
+  const entry = this.#readOne(id);
+  if (!entry) return;
+  entry.status = 'expired';
+  this.#write(entry);
  }
 }

@@ -221,7 +221,9 @@ describe('runGapFillSweep — the half-Construct sweep', () => {
  });
 
  it('two construct-facet readings of the SAME snippet mint exactly one entry', async () => {
-  const snippet = saveSnippet('One pole, stated once.');
+  // Must pass the QR-1 pole gate (ticket 114) or the snippet is skipped
+  // before the dedupe is ever exercised.
+  const snippet = saveSnippet('I believe one pole is enough.');
   vault.saveReading({
    facet: 'construct',
    stance: 'avowal',
@@ -251,6 +253,39 @@ describe('runGapFillSweep — the half-Construct sweep', () => {
   const result = await runSweep();
   expect(result).toEqual({ minted: 0, budQuestions: 0, constructQuestions: 0 });
   expect(queue.list({ source: 'gap-fill' })).toHaveLength(0);
+ });
+
+ it('skips a construct-facet snippet whose prose has no pole (QR-1 gate)', async () => {
+  const snippet = saveSnippet("It's raining outside.");
+  vault.saveReading({
+   facet: 'construct',
+   stance: 'avowal',
+   reading: 'The person reports the weather.',
+   cites: [`${snippet.id}@1`],
+  });
+
+  const result = await runSweep();
+  expect(result).toEqual({ minted: 0, budQuestions: 0, constructQuestions: 0 });
+  expect(queue.list({ source: 'gap-fill' })).toHaveLength(0);
+  const kinds = events.map((e) => e.kind);
+  expect(kinds).toContain('gap-fill-pole-skip');
+  expect(events.find((e) => e.kind === 'gap-fill-pole-skip')?.refs).toEqual([
+   `${snippet.id}@1`,
+  ]);
+ });
+
+ it('mints past the pole gate when the prose carries a stance', async () => {
+  const snippet = saveSnippet('I believe one pole is enough.');
+  vault.saveReading({
+   facet: 'construct',
+   stance: 'avowal',
+   reading: 'The person believes one pole is enough.',
+   cites: [`${snippet.id}@1`],
+  });
+
+  const result = await runSweep();
+  expect(result).toEqual({ minted: 1, budQuestions: 0, constructQuestions: 1 });
+  expect(events.map((e) => e.kind)).not.toContain('gap-fill-pole-skip');
  });
 });
 
@@ -307,7 +342,7 @@ describe('runGapFillSweep — cap, logging, empty vault', () => {
 
  it('logs gap-fill-minted with the right per-sweep counts', async () => {
   vault.saveBud('a bud', ['mid-sentence'], 's1');
-  const snippet = saveSnippet('A pole without a contrast.');
+  const snippet = saveSnippet('I believe a pole must have a contrast.');
   vault.saveReading({
    facet: 'construct',
    stance: 'avowal',

@@ -371,6 +371,109 @@ export function isCompleteClause(text: string): boolean {
  return false;
 }
 
+// ---------------------------------------------------------------------------
+// Pole detection (ticket 114, QR-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stance verbs — first- or second-person predicates that commit the
+ * speaker to a position. A position is one end of a construct; naming one
+ * is the minimal evidence that a pole exists.
+ */
+const STANCE_VERBS: Record<string, true> = {
+ believe: true, think: true, feel: true, find: true, consider: true,
+ value: true, prefer: true, want: true, need: true, hope: true, wish: true,
+ care: true, trust: true, respect: true, admire: true, enjoy: true,
+ love: true, hate: true, fear: true, doubt: true, suspect: true,
+ expect: true, intend: true, plan: true, aim: true, seek: true,
+ avoid: true, accept: true, reject: true, support: true, oppose: true,
+ favor: true, prioritize: true, champion: true, advocate: true,
+ defend: true, embrace: true, resist: true,
+};
+
+/** Evaluative adjectives — quality judgments that have a natural opposite. */
+const EVALUATIVE_ADJECTIVES: Record<string, true> = {
+ important: true, better: true, worse: true, best: true, worst: true,
+ right: true, wrong: true, good: true, bad: true, honest: true, kind: true,
+ fair: true, unfair: true, effective: true, worthwhile: true, worth: true,
+ enough: true, essential: true, crucial: true, critical: true,
+ valuable: true, meaningful: true, significant: true, healthy: true,
+ harmful: true, helpful: true, destructive: true, constructive: true,
+};
+
+/** Evaluative predicates — verbs that rank or weigh a subject. */
+const EVALUATIVE_PREDICATES: Record<string, true> = {
+ matters: true, matter: true, counts: true, count: true,
+ deserves: true, deserve: true, outweighs: true, outweigh: true,
+};
+
+/**
+ * Does the text assert an evaluative stance, not mere observation?
+ *
+ * Three mechanical arms: a first/second-person subject with a stance verb
+ * or evaluative adjective; an evaluative predicate (`it matters`); or a
+ * copula with an evaluative adjective (`honesty is important`). Pure
+ * observation (`it's raining outside`) and impersonal method-talk (`a way
+ * is to experience…`) carry none of these, so they carry no pole.
+ */
+function hasEvaluativeStance(text: string): boolean {
+ const tokens = expandContractions(text.toLowerCase())
+  .split(/[^\p{L}]+/u)
+  .filter((w) => w.length > 0);
+ const hasPerson = tokens.some((w) => w === 'i' || w === 'we' || w === 'you');
+ if (
+  hasPerson &&
+  tokens.some((w) => STANCE_VERBS[w] === true || EVALUATIVE_ADJECTIVES[w] === true)
+ ) {
+  return true;
+ }
+ if (tokens.some((w) => EVALUATIVE_PREDICATES[w] === true)) return true;
+ for (let i = 0; i + 1 < tokens.length; i++) {
+  const copula =
+   tokens[i] === 'is' || tokens[i] === 'are' || tokens[i] === 'was' ||
+   tokens[i] === 'were' || tokens[i] === 'seems' || tokens[i] === 'felt';
+  if (
+   copula &&
+   (EVALUATIVE_ADJECTIVES[tokens[i + 1]!] === true ||
+    EVALUATIVE_ADJECTIVES[tokens[i + 2]!] === true)
+  ) {
+   return true;
+  }
+ }
+ return false;
+}
+
+/**
+ * Does the prose carry a construct pole — a clause that can hold a
+ * contrast?
+ *
+ * Ticket 114, QR-1. The half-Construct mint (ticket 027) asks for the
+ * opposite of any construct-facet reading, but ticket 037's over-labeling
+ * bias stamps poetry, metaphor and bare observation with the construct
+ * label. The gate must verify a pole is actually present:
+ *
+ *   1. The prose asserts something — at least one complete clause
+ *      (`isCompleteClause`, the mechanical core).
+ *   2. It is not obviously verse: line breaks or the in-line poetry slash
+ *      (` / `).
+ *   3. It carries evaluative language, so it is a stance or a quality
+ *      judgment rather than an observation or a metaphor's impersonal
+ *      method-talk.
+ *
+ * A quality knob, like the verb tables above: the closed lexicons can miss
+ * a pole, never invent one.
+ */
+export function hasConstructPole(prose: string): boolean {
+ const t = prose.trim();
+ if (t.length === 0) return false;
+ if (!isCompleteClause(t)) return false;
+ // Verse: real line breaks, or the in-line slash that marks a line break
+ // in a one-line quote ("…pillow, / For eons."). Rhyme is not checked
+ // mechanically — line breaks are the fixture the over-labeling produces.
+ if (t.includes('\n') || /\s\/\s/.test(t)) return false;
+ return hasEvaluativeStance(t);
+}
+
 /**
  * The smallest enclosing clause of `fragment` inside `prose`.
  *

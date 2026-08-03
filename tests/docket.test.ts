@@ -130,6 +130,8 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
    _expireCalls.push(olderThanDays);
    return 0;
   },
+  expireTailBeyond() { return 0; },
+  markExpired() { },
  };
 }
 
@@ -150,6 +152,11 @@ type AnnotationJobDeps = {
  cap?: number;
 };
 let runReferentAnnotations: (deps: AnnotationJobDeps) => Promise<{ annotated: number; silent: number; failed: number }>;
+let runOneTimeTemplateSweep: (deps: {
+ queue: QueueStore;
+ vaultRoot: string;
+ log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+}) => Promise<{ expired: number; oppositeMints: number; stillTrueRepeats: number; therapyVoiced: number }>;
 
 beforeEach(async () => {
  vi.resetModules();
@@ -158,6 +165,7 @@ beforeEach(async () => {
  runStalePinSweep = mod.runStalePinSweep;
  runDormancySweep = mod.runDormancySweep;
  runReferentAnnotations = mod.runReferentAnnotations;
+ runOneTimeTemplateSweep = mod.runOneTimeTemplateSweep;
 });
 
 describe('runDocket', () => {
@@ -1585,5 +1593,155 @@ describe('runReferentAnnotations', () => {
   if (failed !== undefined) expect(failed.detail).toContain('boom');
   expect(report).toBeTruthy();
   expect(report.gapFill).toBeUndefined();
+ });
+});
+
+// ===========================================================================
+// QR-6 (ticket 114): the one-time template sweep
+// ===========================================================================
+
+describe('the one-time template sweep (QR-6)', () => {
+ const IDX: LexicalIndex = { _brand: 'LexicalIndex' } as LexicalIndex;
+ let root: string;
+ let store: QueueStore;
+ let events: Array<{ kind: string; detail: string }>;
+
+ const log = (e: { kind: string; detail: string }) => { events.push(e); };
+
+ /** Seed a pending entry through the real store (add stamps id/status/created). */
+ function seed(overrides: Partial<QueueDraft>): QueueEntry {
+  return store.add({
+   source: 'composed',
+   license: 'CC0',
+   question: 'What matters to you?',
+   questionForm: 'deliberative',
+   sharpness: 'weak',
+   horizon: 'now',
+   ...overrides,
+  });
+ }
+
+ beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'elicit-qr6-sweep-'));
+  store = createQueueStore(root);
+  events = [];
+ });
+
+ afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+ });
+
+ it('expires opposite mints, still-true repeats and therapy-voiced composed; keeps user-declared and the controls', async () => {
+  const opposite = seed({ source: 'gap-fill', snippet: 'sn-1', question: 'What is the opposite of that for you?' });
+  // A gap-fill WITHOUT a snippet is a Bud question, not the half-Construct
+  // opposite template — it must survive.
+  const budFill = seed({ source: 'gap-fill', question: 'What happened with that failure?' });
+  const stillTrue = seed({ source: 'still-true', question: 'Is that still true for you?' });
+  const therapy = seed({ source: 'composed', question: 'Let yourself make space for the new path.' });
+  const plain = seed({ source: 'composed', question: 'What did the walk clarify?' });
+  const userDeclared = seed({ source: 'user-declared', question: 'My own question to keep.' });
+  const gapDeclared = seed({ source: 'gap-declared', question: 'A gap I declared myself.' });
+
+  const res = await runOneTimeTemplateSweep({ queue: store, vaultRoot: root, log });
+
+  expect(res).toEqual({ expired: 3, oppositeMints: 1, stillTrueRepeats: 1, therapyVoiced: 1 });
+
+  const all = store.list();
+  expect(all.find((e) => e.id === opposite.id)!.status).toBe('expired');
+  expect(all.find((e) => e.id === stillTrue.id)!.status).toBe('expired');
+  expect(all.find((e) => e.id === therapy.id)!.status).toBe('expired');
+  expect(all.find((e) => e.id === budFill.id)!.status).toBe('pending');
+  expect(all.find((e) => e.id === plain.id)!.status).toBe('pending');
+  expect(all.find((e) => e.id === userDeclared.id)!.status).toBe('pending');
+  expect(all.find((e) => e.id === gapDeclared.id)!.status).toBe('pending');
+
+  // One Activity Log line per expiry, naming the source and the id (the
+  // excerpt stays short enough to never truncate here).
+  const logs = events.filter((e) => e.kind === 'template-sweep-expired');
+  expect(logs).toHaveLength(3);
+  // Disk read order is not guaranteed, so compare sorted.
+  expect(logs.map((e) => e.detail).sort()).toEqual([
+   `expired composed ${therapy.id}: ${therapy.question}`,
+   `expired gap-fill ${opposite.id}: ${opposite.question}`,
+   `expired still-true ${stillTrue.id}: ${stillTrue.question}`,
+  ].sort());
+ });
+
+ it('is conservative about the therapy register: a bare when-you question survives', async () => {
+  const smuggleOnly = seed({ source: 'composed', question: 'When you think about the meeting, what comes up?' });
+  const phraseOnly = seed({ source: 'composed', question: 'Can you tend to that feeling?' });
+  const smugglePlusPhrase = seed({ source: 'composed', question: 'How long will you let yourself put this off?' });
+
+  const res = await runOneTimeTemplateSweep({ queue: store, vaultRoot: root, log });
+
+  expect(res.therapyVoiced).toBe(1);
+  const all = store.list();
+  expect(all.find((e) => e.id === smuggleOnly.id)!.status).toBe('pending');
+  expect(all.find((e) => e.id === phraseOnly.id)!.status).toBe('pending');
+  expect(all.find((e) => e.id === smugglePlusPhrase.id)!.status).toBe('expired');
+ });
+
+ it('runs once: the flag file makes a second run a no-op', async () => {
+  seed({ source: 'still-true', question: 'Is that still true for you?' });
+  const r1 = await runOneTimeTemplateSweep({ queue: store, vaultRoot: root, log });
+  expect(r1.stillTrueRepeats).toBe(1);
+  expect(existsSync(join(root, '.template-sweep-done'))).toBe(true);
+
+  // A NEW target seeded after the first run must survive the second run.
+  const late = seed({ source: 'gap-fill', snippet: 'sn-2', question: 'What is the opposite of that for you?' });
+  const r2 = await runOneTimeTemplateSweep({ queue: store, vaultRoot: root, log });
+  expect(r2).toEqual({ expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 });
+  expect(store.list().find((e) => e.id === late.id)!.status).toBe('pending');
+  expect(events.filter((e) => e.kind === 'template-sweep-expired')).toHaveLength(1);
+ });
+
+ it('a pre-existing flag file skips the sweep entirely', async () => {
+  writeFileSync(join(root, '.template-sweep-done'), new Date().toISOString(), 'utf-8');
+  const target = seed({ source: 'still-true', question: 'Is that still true for you?' });
+
+  const res = await runOneTimeTemplateSweep({ queue: store, vaultRoot: root, log });
+
+  expect(res).toEqual({ expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 });
+  expect(store.list().find((e) => e.id === target.id)!.status).toBe('pending');
+  expect(events).toHaveLength(0);
+ });
+
+ it('runDocket runs the sweep on its first run and skips it on later runs', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'elicit-qr6-docket-'));
+  try {
+   const q = createQueueStore(dir);
+   const first = q.add({
+    source: 'still-true', license: 'CC0', question: 'Is that still true for you?',
+    questionForm: 'deliberative', sharpness: 'weak', horizon: 'now',
+   });
+
+   const deps = {
+    vault: fakeVault([]),
+    queue: q,
+    complete: makeFakeComplete(),
+    buildIndex: vi.fn().mockReturnValue(IDX),
+    composeOpener: vi.fn(),
+    composeStillTrue: vi.fn(),
+    log: vi.fn(),
+    vaultRoot: dir,
+   };
+   await runDocket(deps);
+
+   expect(q.list().find((e) => e.id === first.id)!.status).toBe('expired');
+   expect(existsSync(join(dir, '.template-sweep-done'))).toBe(true);
+
+   // A second run over the same vault must NOT sweep again: a fresh target
+   // seeded after the flag was written survives untouched.
+   const second = q.add({
+    source: 'gap-fill', license: 'CC0', question: 'What is the opposite of that for you?',
+    questionForm: 'deliberative', sharpness: 'weak', horizon: 'now', snippet: 'sn-9',
+   });
+   await runDocket(deps);
+
+   expect(q.list().find((e) => e.id === second.id)!.status).toBe('pending');
+   expect(q.list({ status: 'expired' })).toHaveLength(1);
+  } finally {
+   rmSync(dir, { recursive: true, force: true });
+  }
  });
 });

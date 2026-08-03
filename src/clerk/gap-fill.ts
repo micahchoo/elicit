@@ -1,4 +1,5 @@
 import type { Vault, QueueStore, Bud, Reading, Snippet } from '../types.js';
+import { hasConstructPole } from './clause.js';
 
 // ── The gap-fill sweep (ticket 027) ──
 // Buds are a dead letter box: a capture the person never followed through
@@ -107,6 +108,20 @@ export async function runGapFillSweep(deps: {
   // by id — the CURRENT version from this rebuild.
   const snippet = resolveFirstCite(reading, index.snippets);
   if (snippet === null) continue;
+  // The pole gate (ticket 114, QR-1): 037 over-labels poetry, metaphor
+  // and observation as `construct`. A half-Construct needs a pole — a
+  // clause that can carry a contrast — or the opposite question mints on
+  // nothing. Shadow (Q-35): the skip log records the decision.
+  if (!hasConstructPole(snippet.prose)) {
+   deps.log({
+    at: new Date().toISOString(),
+    actor: 'clerk',
+    kind: 'gap-fill-pole-skip',
+    detail: `snippet=${snippet.id}`,
+    refs: [`${snippet.id}@${snippet.version}`],
+   });
+   continue;
+  }
   // Dedupe on the snippet id, any status blocks: one contrast question per
   // half-Construct, ever (ticket 027).
   if (heldSnippets.has(snippet.id)) {

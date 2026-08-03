@@ -148,6 +148,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/docket', name: 'runReferentAnnotations', status: 'live' },
  { module: 'src/clerk/docket', name: 'runIntentionHorizonAnnotations', status: 'live' },
  { module: 'src/clerk/docket', name: 'runOutcomeQuestions', status: 'live' },
+ {
+  module: 'src/clerk/docket',
+  name: 'runOneTimeTemplateSweep',
+  status: 'live',
+  reason: 'wired by 114: runDocket calls it once before the minting jobs; the flag file gates it to a single run',
+ },
 
  // ── src/clerk/gap-fill.ts ──
  {
@@ -806,8 +812,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/sounding/resume', name: 'resumeSounding', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
 
 // ── src/drm/types.ts (Q-85 — DRM types and constants) ──
+// DRM_AFFECT_NUDGE is deliberately absent: it is a prompt string, and the
+// sweep treats exported primitives and prompt strings as data (ticket 077).
 { module: 'src/drm/types', name: 'DRM_PROBE_QUESTIONS', status: 'live' },
-{ module: 'src/drm/types', name: 'DRM_AFFECT_NUDGE', status: 'live' },
 
 // ── src/drm/state.ts (Q-85 — DRM state machine) ──
 { module: 'src/drm/state', name: 'initDRM', status: 'live' },

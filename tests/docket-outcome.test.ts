@@ -89,6 +89,8 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
     markAnswered() { },
     defer() { },
     expire() { return 0; },
+    expireTailBeyond() { return 0; },
+    markExpired() { },
   };
 }
 
@@ -315,7 +317,10 @@ describe('runIntentionHorizonAnnotations', () => {
     expect(entry.horizon).toBe('session');
     expect(entry.sharpness).toBe('weak');
     expect(entry.cites).toEqual([`${s.id}@1`]);
-    expect(entry.quotedFragment).toBe('When did you expect to finish the migration?');
+    // Ticket 114, QR-4: the dating question is model prose, not a user
+    // quote — no quotedFragment, so the UI shows no "from your own words"
+    // label for it. The cites field already links the snippet.
+    expect(entry.quotedFragment).toBeUndefined();
     const events = log.mock.calls.map((call) => call[0] as { kind: string });
     expect(events.some((e) => e.kind === 'intention-horizon-ambiguous')).toBe(true);
   });

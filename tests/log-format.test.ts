@@ -713,6 +713,61 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'path=journal/therapy-sessions',
   reads: 'set therapy-sessions aside — it falls behind every region not declined more recently',
 },
+// QR-6 (ticket 114): the flood bound's tail expiry, one summary line per
+// call, and the one-time template sweep's per-entry journal. The sweep's
+// sentence names the template, never the person's words (Q-6/Q-24).
+{
+  kind: 'queue-tail-expired',
+  detail: 'expired=4 kept=20',
+  reads: 'expired 4 questions beyond the visible bound',
+},
+{
+  kind: 'template-sweep-expired',
+  detail: `expired gap-fill ${ULID}: When you hold space for...`,
+  reads: 'expired a stale gap-fill template question',
+},
+{
+  kind: 'template-sweep-failed',
+  detail: 'boom',
+  reads: 'could not finish the one-time template sweep',
+},
+// The DRM instrument (Q-85): routes in src/server.ts. The park and the
+// resume name the episode, never the session.
+{
+  kind: 'drm-started',
+  detail: 'episodes=0',
+  reads: 'began a day reconstruction (DRM) of 0 episodes',
+},
+{
+  kind: 'drm-episode-added',
+  detail: 'count=3 name=Morning',
+  reads: 'named episode 3: Morning',
+},
+{
+  kind: 'drm-enumeration-finished',
+  detail: 'episodes=5',
+  reads: 'finished enumerating 5 episodes',
+},
+{
+  kind: 'drm-probe-answered',
+  detail: 'step=affect',
+  reads: 'answered the affect probe',
+},
+{
+  kind: 'drm-parked',
+  detail: 'episode=2',
+  reads: 'parked a DRM session at episode 2',
+},
+{
+  kind: 'drm-completed',
+  detail: 'fragments=4',
+  reads: 'finished a DRM with 4 fragments',
+},
+{
+  kind: 'drm-resumed',
+  detail: 'episodes=5 at=2',
+  reads: 'picked a parked DRM back up',
+},
 ];
 
 describe('formatEvent', () => {
