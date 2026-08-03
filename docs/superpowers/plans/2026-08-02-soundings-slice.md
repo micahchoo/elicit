@@ -1139,7 +1139,7 @@ git commit -m "sounding: the offer and the always-present gate on the exchange s
 **Why this does not call `cover()`.** Q-45 says to reuse the Cover consolidation *mechanism* (ADR-0002 layer 3), and this module reuses its shape — newest verbatim, older behind one line, summaries stored as Marginalia — and its storage convention (`marginalia/`, model-stamped, one line of prose; see `src/memory/cover.ts:205-227`). It does not call `cover()` itself, for two reasons that are about correctness, not taste. First, `cover()`'s unit is a `SessionRef` with `session`, `started`, `turnCount` and `chars`; a rung is not a session, and passing one as one would be a type lie that the next reader has to unpick. Second, `cover()` tiles against a *binary-bracketed tree* of summaries (`cover.ts:149-201`) because a session history grows without bound; a ladder is at most twelve rungs and wants exactly one summary of its head. The tree would produce a correct answer to a question nobody asked. `compactLadder` is about forty lines and does the one thing.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test('the last two rungs come back verbatim, newest last', () => {
@@ -1164,17 +1164,17 @@ test('a missing summary drops context — it never falls back to the whole ladde
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-compaction.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/compaction.js`.
 
-- [ ] **Step 3: Write the module. Step 4: Run to verify it passes.**
+- [x] **Step 3: Write the module. Step 4: Run to verify it passes.**
 
 Run: `npx vitest run tests/sounding-compaction.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sounding/compaction.ts tests/sounding-compaction.test.ts
@@ -1208,7 +1208,7 @@ git commit -m "sounding: compaction — two rungs verbatim, one line for the res
 - Behavioral invariant: a failed or empty completion returns `null` and writes nothing. `compactLadder` already degrades correctly on a missing summary (T10), so the failure mode is less context and never a stale or invented line.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test('the summary is one line, stamped with the clerk model', async () => {
@@ -1232,21 +1232,21 @@ test('a summary never becomes a snippet', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-summary.test.ts`
 Expected: FAIL — cannot resolve `../src/clerk/sounding-summary.js`.
 
-- [ ] **Step 3: Write the module, the Docket call, and the `sounding-summarized` format case**
+- [x] **Step 3: Write the module, the Docket call, and the `sounding-summarized` format case**
 
 The prompt asks for one line naming what the descent moved through. It gets the rungs it is summarizing and nothing else. In `src/clerk/docket.ts`, the call is guarded the way the wiki job is (`src/server.ts:328-365` shows the posture): a throw is caught, logged, and does not fail the run. The format case ships in this same commit — see *Activity Log kinds*.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-summary.test.ts tests/docket.test.ts tests/log-format.test.ts`
 Expected: PASS, and every existing docket test unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/clerk/sounding-summary.ts src/clerk/docket.ts src/log/format.ts tests/sounding-summary.test.ts tests/log-format.test.ts
@@ -1287,7 +1287,7 @@ git commit -m "sounding: the ladder's one line — clerk model, marginalia, writ
 - Rendering rule (Q-24): no age colouring, no "still waiting", no count of how long it has sat. `ageString` already exists in that function and reads neutrally — reuse it. Dormancy is signal, never debt, and a parked descent is the single most tempting thing in this app to render as a reproach.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test('resuming composes a question that is not the parked one', async () => {
@@ -1330,45 +1330,45 @@ test('picking it up clears it from the waiting surface', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-resume.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/resume.js`, and the resume route still returns 501.
 
-- [ ] **Step 3: Write `src/sounding/resume.ts`**
+- [x] **Step 3: Write `src/sounding/resume.ts`**
 
 Read the ladder by `entry.soundingId`, load the summary via `loadLadderSummary` (T11), call `compactLadder` (T10), recompute the allowance and checkpoint via `rungAllowance` (T3), carry `licensingAnswer` forward, and return the live state plus the compacted view. Return `null` when the ladder file is missing.
 
-- [ ] **Step 4: Append `composeFromCompacted` to `src/clerk/sounding-rung.ts`**
+- [x] **Step 4: Append `composeFromCompacted` to `src/clerk/sounding-rung.ts`**
 
 Same shape as `composeRung`, and it delegates to it: build the context prose from `summarized.line` plus any earlier verbatim rung, then run `redLights` / `composeFollowUp` / `guard` against `c.verbatim.at(-1)!.answer`. Add two cases to `tests/sounding-rung.test.ts`: the foothold is a substring of the last kept answer, and a `null` summary still composes.
 
 Run: `npx vitest run tests/sounding-rung.test.ts`
 Expected: PASS, 4 tests (T6's two plus these two).
 
-- [ ] **Step 5: Fill in the resume route**
+- [x] **Step 5: Fill in the resume route**
 
 Replace T8's 501 shell and its `TODO(T12)` marker. On success: call `resumeSounding`, then `composeFromCompacted`, mark the Queue entry answered, set `state.sounding` with the composed `pendingQuestion`, set `state.soundingOffer = 'entered'`, emit `sounding-resumed`, and return `{ kind: 'probe', text, sounding }`. On a `null` from `resumeSounding`: 404. On a `null` from the composer: 503 with a message the client can show, because a resume that cannot compose is a failed call, not a closed descent. Touch no other handler in the file.
 
-- [ ] **Step 6: Add the `sounding-resumed` format case**
+- [x] **Step 6: Add the `sounding-resumed` format case**
 
 Same commit as the emit — see *Activity Log kinds*.
 
-- [ ] **Step 7: Add the waiting-surface section**
+- [x] **Step 7: Add the waiting-surface section**
 
 Per the sideways contract above, including the client-side `source` filter that keeps parked pointers out of the "open questions" list.
 
-- [ ] **Step 8: Run to verify it passes**
+- [x] **Step 8: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-resume.test.ts tests/sounding-rung.test.ts tests/log-format.test.ts tests/queue.test.ts`
 Expected: PASS.
 
-- [ ] **Step 9: Verify the surface by hand**
+- [x] **Step 9: Verify the surface by hand**
 
 Run: `npm run dev`, park a descent, open the waiting surface.
 Expected: a "parked" section showing the last rung's question and the rung count, appearing exactly once, with no age emphasis and nothing that reads as owed work.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/sounding/resume.ts src/clerk/sounding-rung.ts src/server.ts src/log/format.ts web/main.ts tests/sounding-resume.test.ts tests/sounding-rung.test.ts tests/log-format.test.ts
@@ -1390,7 +1390,7 @@ git commit -m "sounding: pick a parked descent back up — compacted view, fresh
 **Downstream:** none. This task produces no source.
 </contracts>
 
-- [ ] **Step 1: Write the walk**
+- [x] **Step 1: Write the walk**
 
 Two tests, both driving a real sitting, asserted at every seam.
 
@@ -1412,12 +1412,12 @@ Two tests, both driving a real sitting, asserted at every seam.
 6. Start a second sitting, resume from the pointer; assert the composed question is not the parked one, that its foothold is a substring of the last kept answer, and that the compacted view carried two rungs verbatim.
 7. Assert the second sitting still ends with the door question and then the bookmark question.
 
-- [ ] **Step 2: Run the whole suite**
+- [x] **Step 2: Run the whole suite**
 
 Run: `npx vitest run && npx tsc --noEmit -p tsconfig.json`
 Expected: PASS, everything green.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/sounding-e2e.test.ts
@@ -1599,3 +1599,4 @@ Stated plainly, because they were true at read time on 2026-08-02 and build agen
 | 2026-08-02 | author | Review round 2, two issues | (1) `soundingId?: string` added to the turn response's declared fields — it is the cap-and-convergence path, where no gate is pressed and the response is the only thing that can say which ladder closed; T13's Test A could not otherwise read what it caused to be written. (2) The finished ladder now has a named carrier: **`SessionState.finishedSounding?: ParkedLadder`**, chosen over "closeDescent returns the ladder beside the probe" because `elicitor.ts` already uses exactly this handoff shape for `openQueueEntryId` (set by the elicitor, consumed downstream, `delete`d — `elicitor.ts:276-279`), and because a whole `ParkedLadder` on `Probe` would fatten a lean type. T1 declares it, T6's `closeDescent` is now written out in full with its four steps ordered so the handoff happens *before* `s.sounding` is cleared, and T8 reads, persists, emits, and clears it in one shared helper both the turn route and the gate route call. **Deliberate deviation:** taking that option made `Probe.descentClosed` redundant — the route reads `endedBy` off the ladder it already holds — so it is dropped, T1 no longer touches `elicitor.ts`, and T6 is that file's sole owner. The client-facing `descentClosed` field is unchanged and is built by the route. Advisories: the stale `Probe` line reference is gone with the edit that needed it; T8's gate contract now says the checkpoint-continue probe composes from `state.sounding.rungs.at(-1)!.answer` (the gate carries a choice word, never prose, so the foothold must come off the ladder); and T6 now marks the T12-503-vs-T6-convergence difference as deliberate, with the reason each is right where it is. |
 | 2026-08-02 | author (T5 spike) | Six seams re-verified, plan-time anchors re-resolved | (1) `renderExchange` controls unchanged: harvestBtn/skipBtn/laterBtn at web/main.ts:794-796, deferRow 799-804, `answerArea.append` 807 — T9 gate row lands after deferRow. (2) `setControlsBusy` exists at web/main.ts:928-934, disables all five controls — gate controls join it or they race. (3) `sessions` Map at src/server.ts:763; ServerDeps 94-150; turn route at 953. (4) turn response `{kind, text, questionForm, phase, juxtaposition?}` at 1021-1027; `userTurn` has ONE caller (994) and ONE kind-switch (the saturated if at 1005) — T6's `checkpoint` widening requires the route touch, which is T8's, landed back to back. (5) log-kind drift enforced three ways at tests/log-format.test.ts:710-789 (unrendered emit, unsampled emit, stale sample), set derived from src/ at test time via tests/emitted-kinds.ts; both format.ts and the test were committed post-plan (82d662c, eebb5cc). (6) `userTurn` order intact at 299-466 (bookmark 325-337, door 340-343, budget 346-351, pivot 354-358, juxtaposition 363-394, red-light 397-413, generic 416-465); the descent branch slots between lines 351 and 353. Baseline green: 83 files / 1689 passed / 3 skipped, tsc clean. One transient red during the wave (registry.ts mid-append) cleared on re-run. |
 | 2026-08-02 | exec | Wave 2 gate: hand walk under ELICIT_LLM=fake | Three sittings driven in a real browser (scratch instance, temp vault): (1) decline costs one word and is never re-offered over three further turns; (2) accept shows the three words under every rung with continue rendered as the reading and park/another-day live; the checkpoint at rung 4 of 8 blocks (textarea disabled, no next question, all three words controls); park writes the ladder to soundings/<id>.md with endedBy: park and every foothold a verbatim substring of the preceding answer, mints the parked-sounding queue pointer, and the sitting closes door-then-bookmark; (3) a descent answers to its cap with no exit gate word ever pressed — the checkpoint continue is the only press — and closes with endedBy: cap and the door question. The walk caught and fixed two real seams: the queue store dropped `soundingId` on disk (T7's pointer was a dead entry after any list() re-read — persisted in src/queue/queue.ts with round-trip tests); and the gate-route continue response still reports checkpoint=true (the interrupted rung is not yet recorded), which re-locked the textarea and deadlocked the exchange — pressGate now lifts the block on any gate-route probe. The fake responder gained the descent (whole-answer phrases, eight second-person frames, last-half on re-composition) because the plan's Step-6 drive requires it and the stock fake returned empty red lights; the near-duplicate guard was the constraint that shaped it. |
+| 2026-08-02 | exec | Wave 3: park, resume, and the background line | T10 compaction and T11 summary landed in parallel; T12 picked up (resume module, composeFromCompacted, the resume route body replacing the 501 shell, the waiting surface parked section); T13 walks both descents end to end (cap with no exit word; parked and picked up across sittings, docket-written summary asserted). Deviations recorded: T11 added a second kind `soundings-summary-failed` beyond the kinds table (the guarded docket job must log its throw, and the bidirectional sweep forces every emitted kind to render — house pattern: wiki-jobs-failed etc.); the plan's UI contract 'how many rungs are kept' had no wire source inside the ownership map, so GET /api/queue enriches parked-sounding entries with rungsKept via readLadder (T12, recorded deviation — one read-only map, no other handler); T11's runLadderSummaries was wired into runDocket but the server never passed it — the production docket skipped the job until the server-side wiring landed (82fd367); composeFromCompacted appends the context block to the last kept answer before delegating to composeRung, with addRung's backwards check as the loud guard against context-quoting drift. Wave 3 gate: 180 files / 3480 passed, tsc clean. |
