@@ -2060,7 +2060,7 @@ function syncEmptyActivity() {
   const readWord = el('button', { class: 'nav-link' }, 'read them');
   readWord.addEventListener('click', () => navTo('reviews'));
   reviewsLine.append(
-   document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
+   document.createTextNode(`${n} harvest${n === 1 ? ' waits' : 's wait'} for your review \u2014 `),
    readWord,
    document.createTextNode('.'),
   );

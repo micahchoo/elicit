@@ -37,9 +37,13 @@ when today's answer contradicts something you wrote months ago, both
 quotes appear side by side, dated. Elicit asks about the tension. It never
 resolves it; only you do.
 
+![The wiki as an essay: facet headings in a sidebar, the Clerk's claims in light ink, your dated quotes in dark ink beneath](docs/guide/wiki.png)
+
 Out of this fall the things you keep: a wiki you can read as an essay
 about yourself, and pieces — essays assembled from your own past
 sentences, in your order, with no generated filler.
+
+![The library: your snippets as dated paragraphs under snippets and pieces tabs, with a filter over your own words](docs/guide/library.png)
 
 More screens, including the phone-width layout, are in
 [`docs/guide/`](docs/guide/).
