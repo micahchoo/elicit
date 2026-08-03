@@ -371,6 +371,105 @@ main {
  color: var(--fg);
 }
 
+/* ── sounding offer (012 T9) — one sentence, two words, in the margin ── */
+.sounding-offer {
+ display: flex;
+ align-items: baseline;
+ flex-wrap: wrap;
+ gap: 0.4rem 0.75rem;
+ padding: 0.5rem 0 0.25rem;
+}
+
+.sounding-offer-sentence {
+ font-family: var(--font-serif);
+ font-size: 0.85rem;
+ font-style: italic;
+ color: var(--dim);
+}
+
+.sounding-offer-word {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0;
+ text-decoration: underline;
+ text-underline-offset: 2px;
+}
+
+.sounding-offer-word:hover {
+ color: var(--fg);
+}
+
+.sounding-offer-word:disabled {
+ opacity: 0.3;
+ cursor: default;
+}
+
+/* ── the gate (012 T9) — three words under every rung of a live descent ──
+   The register of the defer margin words: quiet, marginal, never competing
+   with the textarea. The checkpoint state is the same words in the same
+   order, framed — a counter reaching a number, never a judgement (Q-44). */
+.gate-row {
+ display: none;
+ align-items: baseline;
+ gap: 0.5rem;
+ flex-wrap: wrap;
+ padding-top: 0.1rem;
+}
+
+.gate-row.visible {
+ display: flex;
+}
+
+.gate-reading {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+.gate-word {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0;
+ text-decoration: underline;
+ text-underline-offset: 2px;
+}
+
+.gate-word:hover {
+ color: var(--fg);
+}
+
+.gate-word:disabled {
+ opacity: 0.3;
+ cursor: default;
+}
+
+.gate-word[hidden] {
+ display: none;
+}
+
+/* The checkpoint: the gate moves above the textarea and becomes the thing
+   on the screen — a hairline frame around the same three words. */
+.gate-row.checkpoint {
+ width: 100%;
+ padding: 0.6rem 0;
+ border-top: 1px solid var(--border);
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 0.25rem;
+}
+
+.gate-row.checkpoint .gate-reading,
+.gate-row.checkpoint .gate-word {
+ font-size: 0.8rem;
+}
+
 .skip-exhausted {
  color: var(--dim);
  font-style: italic;
@@ -651,6 +750,45 @@ main {
  color: var(--dim);
 }
 
+/* parked ladders (012 T12) — the waiting surface's third section, same
+   register as expeditions and the queue */
+.parked-section {
+ padding-bottom: 1.5rem;
+ border-bottom: 2px solid var(--border);
+ margin-bottom: 0.5rem;
+}
+
+.parked-list {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+}
+
+.parked-entry {
+ display: flex;
+ flex-direction: column;
+ gap: 0.15rem;
+ padding: 0.4rem 0;
+ border-bottom: 1px solid var(--border);
+}
+
+.parked-entry:last-child {
+ border-bottom: none;
+}
+
+.parked-question {
+ font-size: 0.95rem;
+ color: var(--fg);
+ line-height: 1.45;
+}
+
+.parked-meta {
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ color: var(--dim);
+ text-transform: lowercase;
+}
+
 /* activity — marginalia style */
 .activity-list {
  display: flex;
@@ -909,6 +1047,14 @@ main {
   font-size: 0.8rem;
  }
 
+ .gate-word,
+ .sounding-offer-word {
+  font-size: 0.85rem;
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+ }
+
  .proposal-action {
   font-size: 0.8rem;
   padding: 0.35rem 0.6rem;
@@ -916,6 +1062,10 @@ main {
  }
 
  .queue-entry {
+  padding: 0.5rem 0;
+ }
+
+ .parked-entry {
   padding: 0.5rem 0;
  }
 

@@ -1,10 +1,12 @@
 import type {
  CaptureChannel,
  CutProposal,
+ GateReading,
  HarvestDecision,
  Mode,
  QuestionForm,
  Snippet,
+ SoundingEnd,
  Target,
  QueueEntry,
 } from '../src/types.ts';
@@ -28,11 +30,21 @@ interface SessionResponse {
 }
 
 interface TurnData {
- kind: 'probe' | 'saturated';
+ kind: 'probe' | 'saturated' | 'checkpoint' | 'descent-closed' | 'declined';
  text?: string;
  questionForm?: QuestionForm;
  phase?: string;
  juxtaposition?: { snippetText: string; snippetDate: string };
+ /** Live descent reading (012 T9): present on every rung, never cached. */
+ sounding?: GateReading;
+ /** The one-shot offer (012 T9): present at most once per sitting. */
+ soundingOffer?: { construct: string; allowance: number; sentence: string };
+ /** The descent closed on this answer (012 T9) — cap or convergence, no gate press. */
+ descentClosed?: SoundingEnd;
+ /** Ladder identity, riding with `descentClosed` (012 T9). */
+ soundingId?: string;
+ /** The gate word that closed a descent (012 T9) — on descent-closed responses. */
+ endedBy?: SoundingEnd;
 }
 
 /**
@@ -173,6 +185,10 @@ interface AppState {
  turnHadSpeech: boolean;
  /** Session whose harvest is running behind the /end response (084). */
  pendingReviewSession: string | null;
+ /** Live descent reading (012 T9): set on every rung, null when no descent is open. */
+ sounding: GateReading | null;
+ /** The one-shot offer (012 T9): set once, cleared by either word. */
+ soundingOffer: { construct: string; allowance: number; sentence: string } | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -188,6 +204,8 @@ const state: AppState = {
  dictating: false,
  turnHadSpeech: false,
  pendingReviewSession: null,
+ sounding: null,
+ soundingOffer: null,
 };
 
 const main = $('main')!;
@@ -750,12 +768,24 @@ async function stopAndTranscribe(): Promise<string> {
  return data.text;
 }
 
+/**
+ * The door question a gate-press close leaves behind (012 T9). The gate
+ * route returns no text on descent-closed — the server appends this same
+ * sentence to its transcript — so the exchange renders it itself. The
+ * wording announces the descent closing, never the person stopping (Q-46).
+ */
+const DOOR_QUESTION = "Anything else we didn't touch?";
+
 function renderExchange() {
  clear();
  state.screen = 'exchange';
  exchangeTurnCount = 0;
  state.turnHadSpeech = false;
  state.dictating = false;
+ // A fresh exchange screen starts with no descent and no offer (012 T9);
+ // re-rendering must not inherit either from a previous screen.
+ state.sounding = null;
+ state.soundingOffer = null;
 
  const div = el('div', { class: 'screen active' });
 
@@ -803,8 +833,204 @@ function renderExchange() {
  const plainWord = el('button', { class: 'defer-need' }, 'just later');
  deferRow.append(deferPrompt, timeWord, energyWord, plainWord);
 
+// ── The sounding offer (012 T9): one sentence, two words, in the margin ──
+// Shown once per sitting, below the question block. Both words are one
+// click and spent on the click: declining never asks why and never returns
+// (Q-43), accepting enters the descent.
+
+let offerRow: HTMLDivElement | null = null;
+
+function showOffer(offer: { construct: string; allowance: number; sentence: string }) {
+ if (offerRow) return; // one offer per sitting — a set offer never repeats
+ offerRow = el('div', { class: 'sounding-offer' });
+ const sentence = el('span', { class: 'sounding-offer-sentence' }, offer.sentence);
+ const acceptWord = el('button', { class: 'sounding-offer-word accept', type: 'button' }, 'accept');
+ const declineWord = el('button', { class: 'sounding-offer-word decline', type: 'button' }, 'decline');
+ offerRow.append(sentence, acceptWord, declineWord);
+ header.append(offerRow);
+ acceptWord.addEventListener('click', () => consent(true));
+ declineWord.addEventListener('click', () => consent(false));
+}
+
+async function consent(accept: boolean) {
+ // The word is spent the moment it is clicked (Q-43): the row is gone
+ // before the call returns, either way. A decline never comes back.
+ const offer = state.soundingOffer;
+ if (offerRow) {
+  offerRow.remove();
+  offerRow = null;
+ }
+ state.soundingOffer = null;
+ if (!accept) {
+  try {
+   await api<TurnData>(`/api/session/${state.sessionId}/sounding`, { accept });
+  } catch (e) {
+   // A decline that did not land would be re-offered on the next turn; the
+   // person has already spent the word and must not be asked again (Q-43).
+   showQuietError(answerArea, 'that did not land \u2014 the offer will come back');
+  }
+  return;
+ }
+ setControlsBusy(true);
+ const wait = beginWait(answerArea, 'beginning\u2026');
+ try {
+  const res = await api<TurnData>(
+   `/api/session/${state.sessionId}/sounding`,
+   { accept },
+  );
+  wait.done();
+  if (res.kind === 'probe') applyProbe(res);
+ } catch (e) {
+  wait.failed(e);
+  setControlsBusy(false);
+  // A failed accept leaves the offer on the server's table (T8 puts it
+  // back for a second word); restore the row so either word can be taken.
+  if (offer) {
+   state.soundingOffer = offer;
+   showOffer(offer);
+  }
+ }
+}
+
+// ── The gate (012 T9): three words under every rung of a live descent ──
+// state.sounding is set on every rung and never cached, so the row is born
+// on the first reading and rewritten in place on every rung after that.
+
+const gateRow = el('div', { class: 'gate-row' });
+const gateReading = el('span', { class: 'gate-reading' });
+const continueWord = el('button', { class: 'gate-word continue', type: 'button' }, 'continue');
+const parkWord = el('button', { class: 'gate-word park', type: 'button' }, 'park, depth kept');
+const anotherDayWord = el('button', { class: 'gate-word another-day', type: 'button' }, 'another day');
+continueWord.hidden = true; // 'continue' is a control only at the checkpoint
+gateRow.append(gateReading, continueWord, parkWord, anotherDayWord);
+
+let gateControls: HTMLButtonElement[] = [];
+let checkpointActive = false;
+
+/** Render the gate row for the current reading, in the checkpoint state or out. */
+function renderGate(checkpoint: boolean) {
+ const reading = state.sounding;
+ if (!reading) return;
+ checkpointActive = checkpoint;
+ continueWord.hidden = !checkpoint;
+ gateControls = checkpoint
+  ? [continueWord, parkWord, anotherDayWord]
+  : [parkWord, anotherDayWord];
+ gateReading.textContent = `continuing \u00b7 rung ${reading.rung} of ${reading.of}`;
+ gateRow.classList.toggle('checkpoint', checkpoint);
+ gateRow.classList.add('visible');
+ if (checkpoint) {
+  // The checkpoint is the thing on the screen: the gate moves above the
+  // textarea and withholds the next question until a word is pressed.
+  answerArea.insertBefore(gateRow, answerRow);
+  textarea.disabled = true;
+ } else {
+  answerArea.append(gateRow);
+  textarea.disabled = false;
+ }
+}
+
+/** Take the gate off the screen and restore the ordinary controls. */
+function removeGateRow() {
+ gateRow.classList.remove('visible');
+ gateRow.classList.remove('checkpoint');
+ continueWord.hidden = true;
+ gateControls = [];
+ checkpointActive = false;
+ textarea.disabled = false;
+}
+
+/** Apply the sounding fields of a turn response (012 T9). `sounding` is
+ *  present on every rung of a live descent and is never cached; a response
+ *  without it means no descent is live, so a stale row must not linger. */
+function syncSounding(res: TurnData) {
+ if (res.soundingOffer) {
+  state.soundingOffer = res.soundingOffer;
+  showOffer(res.soundingOffer);
+ }
+ if (res.sounding) {
+  state.sounding = res.sounding;
+  renderGate(res.sounding.checkpoint);
+ } else {
+  // No live descent behind this response: the descent closed on this answer
+  // (cap/convergence) or the server no longer holds one.
+  state.sounding = null;
+  removeGateRow();
+ }
+}
+
+/** Apply a probe response to the exchange surface (012 T9): the question,
+ *  the lineage, the juxtaposition, the transcript, and the sounding state. */
+function applyProbe(res: TurnData) {
+ state.question = res.text!;
+ // The lineage belonged to the resurfaced opener; later questions have none.
+ state.lineageQuestion = null;
+ state.lineageContext = null;
+ openerLineage?.remove();
+ state.turnPhase = res.phase ?? null;
+ state.juxtaposition = res.juxtaposition ?? null;
+
+ // Update question + juxtaposition display
+ questionBlock.textContent = res.text!;
+ juxDiv.innerHTML = '';
+ if (state.juxtaposition) {
+  juxDiv.classList.add('active');
+  juxDiv.append(
+   el('span', { class: 'jux-date' }, state.juxtaposition.snippetDate),
+   el('blockquote', { class: 'jux-quote' }, state.juxtaposition.snippetText),
+  );
+ } else {
+  juxDiv.classList.remove('active');
+ }
+
+ appendTurn('agent', res.text!);
+ syncSounding(res);
+}
+
+/** The gate route closed the descent (park / another-day / the counter at
+ *  the gate). No question text rides the response; the door question is the
+ *  known close sentence (Q-46: the descent closes, never the person stops). */
+function closeByGate() {
+ state.sounding = null;
+ removeGateRow();
+ state.question = DOOR_QUESTION;
+ questionBlock.textContent = DOOR_QUESTION;
+ appendTurn('agent', DOOR_QUESTION);
+}
+
+async function pressGate(choice: 'continue' | 'park' | 'another-day') {
+ setControlsBusy(true);
+ const wait = beginWait(
+  answerArea,
+  choice === 'continue' ? 'continuing\u2026' : 'putting it away\u2026',
+ );
+ try {
+  const res = await api<TurnData>(
+   `/api/session/${state.sessionId}/sounding/gate`,
+   { choice },
+  );
+  wait.done();
+  if (res.kind === 'probe') {
+   applyProbe(res);
+   // The checkpoint handed focus to the gate; the next rung hands it back
+   // (focus-management-across-boundaries).
+   textarea.focus();
+  } else if (res.kind === 'descent-closed') {
+   closeByGate();
+  }
+  setControlsBusy(false);
+ } catch (e) {
+  wait.failed(e);
+  setControlsBusy(false);
+ }
+}
+
+continueWord.addEventListener('click', () => pressGate('continue'));
+parkWord.addEventListener('click', () => pressGate('park'));
+anotherDayWord.addEventListener('click', () => pressGate('another-day'));
+
  answerRow.append(textarea, micBtn, micStatus);
- answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow);
+ answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow, gateRow);
 
 
  div.append(header, transcript, answerArea);
@@ -860,28 +1086,15 @@ function renderExchange() {
    state.turnHadSpeech = false;
 
    if (res.kind === 'probe') {
-    state.question = res.text!;
-    // The lineage belonged to the resurfaced opener; later questions have none.
-    state.lineageQuestion = null;
-    state.lineageContext = null;
-    openerLineage?.remove();
-    state.turnPhase = res.phase ?? null;
-    state.juxtaposition = res.juxtaposition ?? null;
-
-    // Update question + juxtaposition display
-    questionBlock.textContent = res.text!;
-    juxDiv.innerHTML = '';
-    if (state.juxtaposition) {
-     juxDiv.classList.add('active');
-     juxDiv.append(
-      el('span', { class: 'jux-date' }, state.juxtaposition.snippetDate),
-      el('blockquote', { class: 'jux-quote' }, state.juxtaposition.snippetText),
-     );
-    } else {
-     juxDiv.classList.remove('active');
-    }
-
-    appendTurn('agent', res.text!);
+    applyProbe(res);
+   } else if (res.kind === 'checkpoint') {
+    // The rung was answered and recorded; the descent is blocked until a
+    // gate word arrives and no next question exists yet (Q-44). The gate
+    // becomes the thing on the screen.
+    state.sounding = res.sounding ?? null;
+    if (state.sounding) renderGate(true);
+   } else if (res.kind === 'descent-closed') {
+    closeByGate();
    } else {
     // saturated — the sitting is over. The harvest runs behind the response
     // and lands in the review queue (084), where the existing review cards
@@ -908,7 +1121,7 @@ function renderExchange() {
    textarea.dispatchEvent(new Event('input'));
   }
 
-  textarea.disabled = false;
+  textarea.disabled = checkpointActive;
   harvestBtn.disabled = false;
   skipBtn.disabled = false;
   laterBtn.disabled = false;
@@ -924,13 +1137,16 @@ function renderExchange() {
   }
  });
 
- /** Enable or disable everything that would race the call in flight. */
+ /** Enable or disable everything that would race the call in flight. The
+  *  gate words join the set (012 T9) so a double-press cannot park a ladder
+  *  twice; the textarea stays disabled at the checkpoint either way. */
  function setControlsBusy(busy: boolean) {
-  textarea.disabled = busy;
+  textarea.disabled = busy || checkpointActive;
   harvestBtn.disabled = busy;
   skipBtn.disabled = busy;
   laterBtn.disabled = busy;
   if (state.sttAvailable) micBtn.disabled = busy;
+  for (const c of gateControls) c.disabled = busy;
  }
 
  harvestBtn.addEventListener('click', async () => {
