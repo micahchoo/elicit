@@ -282,6 +282,111 @@ describe('runDocket', () => {
   expect(report.minted[0]!.question).toBe('Still true for old1?');
  });
 
+ // ── 2b: still-true ages by WRITTEN-when, never filed-when (seeding Task 5) ──
+ // `captured` is filing time; `started` is writing time. An imported note
+ // written in 2017 and filed today must be a candidate at once — the whole
+ // point of the still-true channel for seeded material.
+ it('offers a snippet whose prose is nine years old but was filed today', async () => {
+  const snippet = {
+   id: 'a', version: 1, captured: new Date().toISOString(),
+   provenance: { kind: 'unprompted' as const, session: 'import-abc', question: '', questionForm: 'deliberative' as const },
+   prose: 'Kept from a 2017 note.',
+  };
+  const spy = vi.fn().mockResolvedValue(null);
+  const events: { kind: string }[] = [];
+  await runDocket({
+   vault: fakeVault([snippet]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn().mockResolvedValue(null),
+   composeStillTrue: spy,
+   log: (e: { kind: string }) => events.push(e),
+   listSessions: () => [{ session: 'import-abc', started: '2017-04-11T00:00:00.000Z', turnCount: 1, chars: 10 }],
+   vaultRoot: '/tmp/fake',
+  });
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), expect.anything(), expect.anything());
+ });
+
+ it('does not offer a snippet written today and filed today', async () => {
+  const snippet = {
+   id: 'a', version: 1, captured: new Date().toISOString(),
+   provenance: { kind: 'unprompted' as const, session: 'import-abc', question: '', questionForm: 'deliberative' as const },
+   prose: 'Written today.',
+  };
+  const spy = vi.fn().mockResolvedValue(null);
+  await runDocket({
+   vault: fakeVault([snippet]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn().mockResolvedValue(null),
+   composeStillTrue: spy,
+   log: vi.fn(),
+   listSessions: () => [{ session: 'import-abc', started: new Date().toISOString(), turnCount: 1, chars: 10 }],
+   vaultRoot: '/tmp/fake',
+  });
+  expect(spy).not.toHaveBeenCalled();
+ });
+
+ it('falls back to captured when the session is unknown', async () => {
+  const snippet = makeSnippet('a', { captured: daysAgo(200), provenance: { session: 'unknown-session' } });
+  const spy = vi.fn().mockResolvedValue(null);
+  await runDocket({
+   vault: fakeVault([snippet]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn().mockResolvedValue(null),
+   composeStillTrue: spy,
+   log: vi.fn(),
+   listSessions: () => [],
+   vaultRoot: '/tmp/fake',
+  });
+  expect(spy).toHaveBeenCalled();
+ });
+
+ it('falls back to captured when started is the EMPTY STRING listSessions writes', async () => {
+  // The real shape: src/server.ts listSessions writes `started: data.started ?? ''`.
+  // This is the test a `??` implementation fails — `'' ?? captured` is `''`,
+  // `new Date('').getTime()` is NaN, and NaN < ninetyDaysMs is false.
+  const snippet = makeSnippet('a', { captured: daysAgo(200), provenance: { session: 'import-abc' } });
+  const spy = vi.fn().mockResolvedValue(null);
+  await runDocket({
+   vault: fakeVault([snippet]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn().mockResolvedValue(null),
+   composeStillTrue: spy,
+   log: vi.fn(),
+   listSessions: () => [{ session: 'import-abc', started: '', turnCount: 1, chars: 10 }],
+   vaultRoot: '/tmp/fake',
+  });
+  expect(spy).toHaveBeenCalled();
+ });
+
+ it('excludes and logs a snippet whose dates are both unparseable', async () => {
+  // started '' + captured 'not a date': neither direction — never treated as
+  // ancient (a flood from the path that knows least) and never as fresh.
+  const snippet = makeSnippet('a', { captured: 'not a date', provenance: { session: 'import-abc' } });
+  const spy = vi.fn().mockResolvedValue(null);
+  const events: { kind: string }[] = [];
+  await runDocket({
+   vault: fakeVault([snippet]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn().mockResolvedValue(null),
+   composeStillTrue: spy,
+   log: (e: { kind: string }) => events.push(e),
+   listSessions: () => [{ session: 'import-abc', started: '', turnCount: 1, chars: 10 }],
+   vaultRoot: '/tmp/fake',
+  });
+  expect(spy).not.toHaveBeenCalled();
+  expect(events.filter((e) => e.kind === 'still-true-undateable')).toHaveLength(1);
+ });
+
  // ── 3: expire(30) once ──
  it('calls queue.expire(30) exactly once', async () => {
   const q = makeFakeQueue();

@@ -313,6 +313,12 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'opener-failed': () => 'could not mint an opener',
  'still-true-minted': (_f, d) => `minted ${count(nth(d, 0), 'still-true question')}`,
  'still-true-failed': () => 'could not mint a still-true question',
+ // Neither the sitting's started nor the snippet's captured parses as a
+ // date — the snippet can be neither old nor fresh, so it is set aside in
+ // neither direction (seeding Task 5). The count is the whole story; the
+ // ids stay off the surface.
+ 'still-true-undateable': (_f, d) =>
+  `set aside ${count(nth(d, 0), 'snippet')} whose writing time nothing says`,
  'expedition-minted': () => 'minted an expedition from an earlier snippet',
  'expedition-failed': () => 'could not mint an expedition',
  'expired': (_f, d) => `expired ${count(nth(d, 0), 'question')}`,

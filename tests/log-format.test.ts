@@ -41,6 +41,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'opener-failed', detail: `composeOpener for snippet ${ULID} failed: boom`, reads: 'could not mint an opener' },
  { kind: 'still-true-minted', detail: 'minted 1 still-true', reads: 'minted 1 still-true question' },
  { kind: 'still-true-failed', detail: `composeStillTrue for snippet ${ULID} failed: boom`, reads: 'could not mint a still-true question' },
+ { kind: 'still-true-undateable', detail: 'count=1 snippets have no readable writing or filing time', reads: 'set aside 1 snippet whose writing time nothing says' },
  { kind: 'expedition-minted', detail: `minted expedition from snippet ${ULID}`, reads: 'minted an expedition from an earlier snippet' },
  { kind: 'expedition-failed', detail: 'Error: model returned nothing', reads: 'could not mint an expedition' },
  { kind: 'expired', detail: 'expired 4 entries', reads: 'expired 4 questions' },

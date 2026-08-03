@@ -371,10 +371,47 @@ gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQu
    deps.log(evt);
   }
 
-  // ── 3. Still-true minting: snippets captured > 90 days, quota 2 ──
+  // ── 3. Still-true minting: prose written > 90 days ago, quota 2 ──
   const ninetyDaysMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  // `captured` is FILING time (vault.saveSnippet stamps the moment of
+  // filing); `started` is WRITING time. The still-true channel exists for
+  // prose that has AGED, so it ages by when the prose was written — a note
+  // written in 2017 but filed today is invisible to the channel until 90
+  // days after filing if the filter reads `captured` (seeding Finding 2:
+  // ticket 075's "whole corpus > 90 days" was true of the prose and false
+  // of the field).
+  const startedBySession = new Map((sessions ?? []).map((s) => [s.session, s.started]));
+  /** Milliseconds a snippet's PROSE was written, or null when nothing says. */
+  const writtenAtMs = (s: Snippet): number | null => {
+    // A parseable-date check, never `??`: listSessions writes `started: ''`
+    // when a transcript has no started, `'' ?? captured` would evaluate to
+    // '', `new Date('').getTime()` is NaN, and NaN < ninetyDaysMs is false —
+    // the snippet would drop out of candidacy in silence instead of falling
+    // back to `captured` (seeding Finding 3).
+    const started = startedBySession.get(s.provenance.session);
+    const t = started === undefined ? NaN : Date.parse(started);
+    if (!Number.isNaN(t)) return t;
+    const c = Date.parse(s.captured);
+    return Number.isNaN(c) ? null : c;
+  };
   let stillTrueCount = 0;
-  const oldSnippets = allSnippets.filter(s => new Date(s.captured).getTime() < ninetyDaysMs);
+  const undateable: string[] = [];
+  const oldSnippets = allSnippets.filter((s) => {
+    const t = writtenAtMs(s);
+    if (t === null) {
+      undateable.push(s.id);
+      return false;
+    }
+    return t < ninetyDaysMs;
+  });
+  if (undateable.length > 0) {
+    // Neither date parseable: excluded in neither direction — never treated
+    // as ancient (a flood from the path that knows least) and never as fresh.
+    deps.log({
+      at: ts(), actor: 'clerk', kind: 'still-true-undateable',
+      detail: `count=${undateable.length} snippets have no readable writing or filing time`,
+    });
+  }
   // Rotate (ticket 075): take up to 2 old snippets starting at the cursor,
   // wrapping modulo, so consecutive runs propose different candidates even
   // when the composer keeps refusing them.
