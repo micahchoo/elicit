@@ -46,7 +46,7 @@ function pickTopK(pool: QueueEntry[], k = 3): QueueEntry {
 }
 
 /** A hard filter, named as the ladder's log lines say it. */
-type FilterName = 'status' | 'modeNeeds' | 'sharpness' | 'horizon' | 'target';
+type FilterName = 'status' | 'sounding' | 'modeNeeds' | 'sharpness' | 'horizon' | 'target';
 
 type DrawFilter = {
  name: FilterName;
@@ -74,6 +74,11 @@ function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[
    relaxable: false,
    keep: (e) => e.status === 'pending' || e.status === 'deferred',
   },
+  // A parked ladder is a pointer, not a question. Rung 2 of the
+  // degradation ladder (Q-55) exists to admit the person's own
+  // declared questions past a preference, never a pointer as if it
+  // were a question — relaxable: false is the whole point.
+  { name: 'sounding', relaxable: false, keep: (e) => e.source !== 'parked-sounding' },
   {
    name: 'modeNeeds',
    relaxable: true,

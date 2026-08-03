@@ -643,4 +643,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/sounding/license.ts ──
 { module: 'src/sounding/license', name: 'licenseSounding', status: 'unwired', reason: 'wired by 012 T8: the turn route calls it on every turn' },
+
+// ── src/sounding/park.ts (012 Task 7 — the only sounding module that touches disk) ──
+{ module: 'src/sounding/park', name: 'writeLadder', status: 'unwired', reason: 'wired by 012 T8: the turn and gate routes persist finished ladders' },
+{ module: 'src/sounding/park', name: 'readLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding reads it' },
+{ module: 'src/sounding/park', name: 'parkPointer', status: 'unwired', reason: 'wired by 012 T8: the gate route mints the pointer' },
 ];
