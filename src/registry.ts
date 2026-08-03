@@ -84,6 +84,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeStillTrue', status: 'live' },
  { module: 'src/clerk/composed', name: 'isExpeditionCandidate', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeExpedition', status: 'live' },
+ { module: 'src/clerk/composed', name: 'isOtherMindsCandidate', status: 'live' },
+ { module: 'src/clerk/composed', name: 'composeOtherMindsExpedition', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeDiscriminatingQuestion', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
  {
@@ -884,4 +886,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/clerk/gazetteer', name: 'extractEntities', status: 'live', reason: 'wired by 100: extraction thunk calls it; model-calling, cap live at birth (Q-56)' },
 { module: 'src/clerk/gazetteer', name: 'entityId', status: 'live', reason: 'wired by 100: extraction docket job uses it for entity id derivation' },
 { module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'shadow', shadowKind: 'gazetteer-frontier-shadow', reason: 'selection mechanism (Q-35 shadow-first): mints frontier questions only when shadow record earns it' },
+// ── src/patterns/ (111 — derivation patterns) ──
+{ module: 'src/patterns/registry', name: 'loadPatterns', status: 'live', reason: 'pure, no I/O side effects beyond disk reads — loaded at composition time (111 T2)' },
+{ module: 'src/patterns/registry', name: 'clearPatternCache', status: 'live', reason: 'test seam only; no production caller but the mechanism is a loader, not a selection mechanism (111 T2)' },
+{ module: 'src/patterns/registry', name: 'patternById', status: 'live', reason: 'pure lookup; used by composition paths (111 T2)' },
+{ module: 'src/patterns/license', name: 'licensePattern', status: 'live', reason: 'pure predicate; gating what patterns are available (111 T2)' },
+{ module: 'src/patterns/select', name: 'selectPattern', status: 'live', reason: 'caller-side shadow gate via threshold — the selection mechanism is shadow-first, the function ships live (111 T2)' },
+{ module: 'src/patterns/select', name: 'selectCheapPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
+{ module: 'src/patterns/select', name: 'selectDeepPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
 ];
