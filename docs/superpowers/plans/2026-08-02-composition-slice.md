@@ -318,15 +318,15 @@ Every hop is a conditional spread, never a present key holding `undefined`. **Ab
 - Modify: `src/types.ts`, `src/queue/queue.ts`, `src/queue/source-label.ts`, `src/elicitor/elicitor.ts` (hop 2 only), `src/harvester/harvester.ts` (hops 3 and 4 only)
 - Test: `tests/queue.test.ts` (extend), `tests/queue-source-label.test.ts` (extend), `tests/gap-link.test.ts` (new — the arrival test)
 
-- [ ] **Step 1: Grep for exhaustive readers of `Provenance.kind` and `QueueEntry.source`** before writing anything. Record what you find in the commit message. A `switch` with no `default` over either union is a compile break waiting in another agent's file.
-- [ ] **Step 2: Failing tests** in `tests/queue.test.ts` — a `gap-declared` entry sorts ahead of a `composed` entry of the same age in `draw()` while a `gap-fill` entry does **not**; a `gap-declared` entry is admitted by rung 2 when sharpness would have excluded it, and a `gap-fill` entry is not (assert the `queue-rung` event names the relaxed filter in the first case and is absent in the second); **a pending entry of either gap source older than 30 days IS expired by `expire(30)` while a `user-declared` entry of the same age is not**; both literals round-trip through `#write`/`#parseEntry`. In `tests/queue-source-label.test.ts`: `sourceLabel` returns a non-empty label for every member of the union, and no label contains the substring `gap`.
-- [ ] **Step 2a: The arrival test** — `tests/gap-link.test.ts`, and it must drive the product rather than stage the state. Mint a queue entry with `source: 'gap-declared'` and `gap: <id>` through `queue.add`; start a session so the entry is **drawn** by `startSession`/`drawFallback`; answer it through `userTurn`; harvest through `propose`/`decide` with a scripted fake; then assert the snippet **on disk** carries `provenance.gap === <id>`. Then the same flow with a `restate` decision, asserting the restated snippet carries it too. **`grep -n 'provenance: {' tests/gap-link.test.ts` must return nothing** — a hand-built Provenance proves hop 4 and nothing else.
-- [ ] **Step 3: Run** — `npx vitest run tests/queue.test.ts tests/queue-source-label.test.ts tests/gap-link.test.ts` Expected: FAIL.
-- [ ] **Step 4: Implement** all five files, plus the corrected comment at `src/types.ts:240`.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass, **including every pre-existing test**. A red test outside the two extended files means the union widening hit an exhaustive reader: stop and report rather than editing that file.
-- [ ] **Step 6: Verify the asymmetry is load-bearing, as an exit code** — `[ $(grep -c "isUserDeclaredWeight" src/queue/queue.ts) -ge 3 ]` Expected: exit 0. The floor is 3 rather than an exact count because the sort's minimal diff replaces **two** lines — `const aUd = a.source === 'user-declared' ? 0 : 1;` and its `bUd` twin at `src/queue/queue.ts:317-318` — so one definition plus two sort lines plus `runChain` is 4, and a rewrite that hoists the key into one call is 3. Both are correct; fewer than 3 means a call site was missed. Then `grep -A2 "source === 'user-declared'" src/queue/queue.ts | grep -q "continue"` Expected: exit 0 — the literal survives in `expire()` and nowhere else.
-- [ ] **Step 6a: Verify every hop exists, as an exit code** — `[ $(grep -c "gap" src/elicitor/elicitor.ts) -ge 4 ] && [ $(grep -c "gap" src/harvester/harvester.ts) -ge 3 ]` Expected: exit 0. The elicitor floor is **4**, not 2: the opener Turn spread, `emitProbe`'s widened opts, the `agentTurn` spread inside it, and the `drawFallback` call site. The baseline is 0, so a floor of 2 passes on the opener branch alone — which is precisely the path that leaves `drawFallback` unwired and the offer empty for every gap question drawn mid-sitting. The harvester floor is 3: one `propose()` copy and both `decide()` spreads. A field declared in `types.ts` with a low count here is the inert-parameter failure, and Step 2a is what makes it red.
-- [ ] **Step 7: Commit** — `git commit -m "feat: composition provenance, the two gap sources, and the gap link end to end"`
+- [x] **Step 1: Grep for exhaustive readers of `Provenance.kind` and `QueueEntry.source`** before writing anything. Record what you find in the commit message. A `switch` with no `default` over either union is a compile break waiting in another agent's file.
+- [x] **Step 2: Failing tests** in `tests/queue.test.ts` — a `gap-declared` entry sorts ahead of a `composed` entry of the same age in `draw()` while a `gap-fill` entry does **not**; a `gap-declared` entry is admitted by rung 2 when sharpness would have excluded it, and a `gap-fill` entry is not (assert the `queue-rung` event names the relaxed filter in the first case and is absent in the second); **a pending entry of either gap source older than 30 days IS expired by `expire(30)` while a `user-declared` entry of the same age is not**; both literals round-trip through `#write`/`#parseEntry`. In `tests/queue-source-label.test.ts`: `sourceLabel` returns a non-empty label for every member of the union, and no label contains the substring `gap`.
+- [x] **Step 2a: The arrival test** — `tests/gap-link.test.ts`, and it must drive the product rather than stage the state. Mint a queue entry with `source: 'gap-declared'` and `gap: <id>` through `queue.add`; start a session so the entry is **drawn** by `startSession`/`drawFallback`; answer it through `userTurn`; harvest through `propose`/`decide` with a scripted fake; then assert the snippet **on disk** carries `provenance.gap === <id>`. Then the same flow with a `restate` decision, asserting the restated snippet carries it too. **`grep -n 'provenance: {' tests/gap-link.test.ts` must return nothing** — a hand-built Provenance proves hop 4 and nothing else.
+- [x] **Step 3: Run** — `npx vitest run tests/queue.test.ts tests/queue-source-label.test.ts tests/gap-link.test.ts` Expected: FAIL.
+- [x] **Step 4: Implement** all five files, plus the corrected comment at `src/types.ts:240`.
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass, **including every pre-existing test**. A red test outside the two extended files means the union widening hit an exhaustive reader: stop and report rather than editing that file.
+- [x] **Step 6: Verify the asymmetry is load-bearing, as an exit code** — `[ $(grep -c "isUserDeclaredWeight" src/queue/queue.ts) -ge 3 ]` Expected: exit 0. The floor is 3 rather than an exact count because the sort's minimal diff replaces **two** lines — `const aUd = a.source === 'user-declared' ? 0 : 1;` and its `bUd` twin at `src/queue/queue.ts:317-318` — so one definition plus two sort lines plus `runChain` is 4, and a rewrite that hoists the key into one call is 3. Both are correct; fewer than 3 means a call site was missed. Then `grep -A2 "source === 'user-declared'" src/queue/queue.ts | grep -q "continue"` Expected: exit 0 — the literal survives in `expire()` and nowhere else.
+- [x] **Step 6a: Verify every hop exists, as an exit code** — `[ $(grep -c "gap" src/elicitor/elicitor.ts) -ge 4 ] && [ $(grep -c "gap" src/harvester/harvester.ts) -ge 3 ]` Expected: exit 0. The elicitor floor is **4**, not 2: the opener Turn spread, `emitProbe`'s widened opts, the `agentTurn` spread inside it, and the `drawFallback` call site. The baseline is 0, so a floor of 2 passes on the opener branch alone — which is precisely the path that leaves `drawFallback` unwired and the offer empty for every gap question drawn mid-sitting. The harvester floor is 3: one `propose()` copy and both `decide()` spreads. A field declared in `types.ts` with a low count here is the inert-parameter failure, and Step 2a is what makes it red.
+- [x] **Step 7: Commit** — `git commit -m "feat: composition provenance, the two gap sources, and the gap link end to end"`
 
 ---
 
@@ -424,12 +424,12 @@ export interface PieceStore {
 - Create: `src/piece/contract.ts`
 - Test: `tests/piece-contract.test.ts`
 
-- [ ] **Step 1: Failing tests** — an entry carrying an extra `text` field fails `noProse` with a reason naming the field; a `title` on the Arrangement, on an entry, and on a Marginalia each fail `noTitle`; a pin to `v4` of a snippet whose latest is `v3` fails `pinsResolve` while a pin to `v1` of that same snippet passes; a candidate that adds one pin, one that drops one, and one that changes a pin's version each fail `samePinSet`, while a pure permutation passes; two candidates both claiming `chronology` fail `distinctPrinciples`, four candidates fail it, and `[chronology, argument]` passes; **the module exports nothing that takes a `Complete`** (assert with `@ts-expect-error` on passing one to each guard).
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-contract.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-contract.test.ts` Expected: both pass. Then assert the zero-LLM contract for the whole namespace as an exit code: `! grep -rqE 'Complete|complete\(|pi-ai|llm' src/piece/` Expected: exit 0.
-- [ ] **Step 5: Verify no field can hold a sentence** — `! grep -qE '\b(title|body|prose|transition|text)\??:' <(grep -A8 "export type Pin\|export type Gap\|export type Arrangement =\|export type Piece =" src/piece/contract.ts)` Expected: exit 0. `Marginalia.text` is exempt and lives outside those four blocks by design.
-- [ ] **Step 6: Commit** — `git commit -m "feat: the Piece contract and its five guards"`
+- [x] **Step 1: Failing tests** — an entry carrying an extra `text` field fails `noProse` with a reason naming the field; a `title` on the Arrangement, on an entry, and on a Marginalia each fail `noTitle`; a pin to `v4` of a snippet whose latest is `v3` fails `pinsResolve` while a pin to `v1` of that same snippet passes; a candidate that adds one pin, one that drops one, and one that changes a pin's version each fail `samePinSet`, while a pure permutation passes; two candidates both claiming `chronology` fail `distinctPrinciples`, four candidates fail it, and `[chronology, argument]` passes; **the module exports nothing that takes a `Complete`** (assert with `@ts-expect-error` on passing one to each guard).
+- [x] **Step 2: Run** — `npx vitest run tests/piece-contract.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-contract.test.ts` Expected: both pass. Then assert the zero-LLM contract for the whole namespace as an exit code: `! grep -rqE 'Complete|complete\(|pi-ai|llm' src/piece/` Expected: exit 0.
+- [x] **Step 5: Verify no field can hold a sentence** — `! grep -qE '\b(title|body|prose|transition|text)\??:' <(grep -A8 "export type Pin\|export type Gap\|export type Arrangement =\|export type Piece =" src/piece/contract.ts)` Expected: exit 0. `Marginalia.text` is exempt and lives outside those four blocks by design.
+- [x] **Step 6: Commit** — `git commit -m "feat: the Piece contract and its five guards"`
 
 ---
 
@@ -459,11 +459,11 @@ export interface PieceStore {
 - Create: `src/piece/store.ts`
 - Test: `tests/piece-store.test.ts`
 
-- [ ] **Step 1: Failing tests** — `create` writes a piece dir with `piece.md` and one arrangement file, both with **empty bodies** (assert `matter.read(...).content.trim() === ''` on each); a round-trip through `get` returns deep-equal entries including entry ids; `setDown` then `pickUp` leaves the frontmatter with **no `setDownAt` key at all** (assert `'setDownAt' in data === false`, not `data.setDownAt === undefined`); `putArrangement` with an entry carrying a stray `text` field throws with the guard's reason; a piece with three arrangements round-trips all three and `current` still names the right one; `list()` on a root with no `pieces/` dir returns `[]` rather than throwing.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-store.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-store.test.ts` Expected: both pass. Then `! grep -qE 'unlinkSync|rmSync|rmdirSync' src/piece/store.ts` Expected: exit 0 — nothing here deletes.
-- [ ] **Step 5: Commit** — `git commit -m "feat: PieceStore — pieces as markdown in the vault"`
+- [x] **Step 1: Failing tests** — `create` writes a piece dir with `piece.md` and one arrangement file, both with **empty bodies** (assert `matter.read(...).content.trim() === ''` on each); a round-trip through `get` returns deep-equal entries including entry ids; `setDown` then `pickUp` leaves the frontmatter with **no `setDownAt` key at all** (assert `'setDownAt' in data === false`, not `data.setDownAt === undefined`); `putArrangement` with an entry carrying a stray `text` field throws with the guard's reason; a piece with three arrangements round-trips all three and `current` still names the right one; `list()` on a root with no `pieces/` dir returns `[]` rather than throwing.
+- [x] **Step 2: Run** — `npx vitest run tests/piece-store.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-store.test.ts` Expected: both pass. Then `! grep -qE 'unlinkSync|rmSync|rmdirSync' src/piece/store.ts` Expected: exit 0 — nothing here deletes.
+- [x] **Step 5: Commit** — `git commit -m "feat: PieceStore — pieces as markdown in the vault"`
 
 ---
 
@@ -489,11 +489,11 @@ export interface PieceStore {
 - Create: `src/piece/arrange.ts`
 - Test: `tests/piece-arrange.test.ts`
 
-- [ ] **Step 1: Failing tests** — three snippets from sittings dated 2018, 2022 and 2026 order 2018 → 2026 **even when their `captured` timestamps are all today** (this is the Q-59 case and it is the whole point); a snippet whose session has no transcript falls back to `captured` and is not dropped; two snippets from the same sitting tie-break by id, stably, across two calls; the returned pins carry distinct entry ids and the snippets' current versions; an empty input returns `[]`.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-arrange.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-arrange.test.ts` Expected: both pass. Then `! grep -qE "readFileSync|readdirSync|node:fs" src/piece/arrange.ts` Expected: exit 0 — the dates arrive through the parameter or not at all.
-- [ ] **Step 5: Commit** — `git commit -m "feat: the deterministic chronological arrangement"`
+- [x] **Step 1: Failing tests** — three snippets from sittings dated 2018, 2022 and 2026 order 2018 → 2026 **even when their `captured` timestamps are all today** (this is the Q-59 case and it is the whole point); a snippet whose session has no transcript falls back to `captured` and is not dropped; two snippets from the same sitting tie-break by id, stably, across two calls; the returned pins carry distinct entry ids and the snippets' current versions; an empty input returns `[]`.
+- [x] **Step 2: Run** — `npx vitest run tests/piece-arrange.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-arrange.test.ts` Expected: both pass. Then `! grep -qE "readFileSync|readdirSync|node:fs" src/piece/arrange.ts` Expected: exit 0 — the dates arrive through the parameter or not at all.
+- [x] **Step 5: Commit** — `git commit -m "feat: the deterministic chronological arrangement"`
 
 ---
 
@@ -521,11 +521,11 @@ export interface PieceStore {
 - Create: `src/piece/export.ts`
 - Test: `tests/piece-export.test.ts`
 
-- [ ] **Step 1: Failing tests** — three pins export as three paragraphs, blank-line separated, in entry order; a Gap between two pins leaves **no trace at all** in the output (assert the output equals the same arrangement with the gap removed, byte for byte); an arrangement carrying three Marginalia exports identically to one carrying none; the output starts with the first snippet's first character (assert no `---` and no `#` anywhere); a pin to `v1` of a snippet whose `v2` exists exports **v1's** prose; an unresolvable pin throws.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-export.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-export.test.ts` Expected: both pass.
-- [ ] **Step 5: Commit** — `git commit -m "feat: export a Piece as the person's words alone"`
+- [x] **Step 1: Failing tests** — three pins export as three paragraphs, blank-line separated, in entry order; a Gap between two pins leaves **no trace at all** in the output (assert the output equals the same arrangement with the gap removed, byte for byte); an arrangement carrying three Marginalia exports identically to one carrying none; the output starts with the first snippet's first character (assert no `---` and no `#` anywhere); a pin to `v1` of a snippet whose `v2` exists exports **v1's** prose; an unresolvable pin throws.
+- [x] **Step 2: Run** — `npx vitest run tests/piece-export.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-export.test.ts` Expected: both pass.
+- [x] **Step 5: Commit** — `git commit -m "feat: export a Piece as the person's words alone"`
 
 ---
 
@@ -608,7 +608,7 @@ Accepting rewrites the Arrangement with a Pin in the Gap's position (same index,
 - Modify: `src/server.ts` (append routes only), `src/log/format.ts` (append sentences only)
 - Test: `tests/piece-routes.test.ts` (new), `tests/log-format.test.ts` (extend `EMITTED`)
 
-- [ ] **Step 1: Failing tests** in `tests/piece-routes.test.ts`, against a real `createApp` with `ELICIT_LLM=fake` and a temp vault —
+- [x] **Step 1: Failing tests** in `tests/piece-routes.test.ts`, against a real `createApp` with `ELICIT_LLM=fake` and a temp vault —
   - `POST /api/piece` with three snippets from three sittings returns them in sitting order.
   - `POST /prose` writes a snippet whose `provenance.kind` is `'composition'`, whose `piece` is the piece id, and whose `session` is **a new session with its own transcript on disk**; the prose appears in the arrangement as a pin at v1; the text appears **nowhere** in the activity log (assert on the log file's bytes).
   - `POST /gap` mints exactly one queue entry with `source: 'gap-declared'` and no `target`, and the entry's id is on the Gap. **The same POST sent twice with the same `gap` id yields one gap and one queue entry** (200 both times, the second a no-op), while two POSTs with different `gap` ids yield two of each.
@@ -619,13 +619,13 @@ Accepting rewrites the Arrangement with a Pin in the Gap's position (same index,
   - **The gap offer and its clearing:** a Gap whose queue entry was answered, plus a snippet on disk carrying `provenance.gap` equal to that Gap's id, makes `GET /api/piece/:id` return that snippet as the Gap's offer — and a snippet with **no** `gap` in its provenance, however similar its text, is **not** offered. `POST /gap/accept` with that snippet replaces the Gap with a Pin at the same index; the queue entry is untouched. `POST /gap/accept` naming a snippet whose `provenance.gap` is absent or different returns **400** and the Arrangement is unchanged on disk. Accepting on a set-down Piece succeeds and mints nothing.
   - `GET /export` returns `text/markdown` whose body contains every pinned paragraph and **no `#`, no `---`, and no Marginalia text**.
   - Every route returns 401 without a session cookie.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-routes.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement `readVersion` and the routes**, appending to `src/server.ts` after the auth middleware. Re-read the file first — it is contended.
-- [ ] **Step 3a: Verify the resolver is the one in use, as an exit code** — `[ $(grep -c "readVersion" src/server.ts) -ge 3 ]` Expected: exit 0 — one definition and at least two call sites (`GET /api/piece/:id` and `GET /export`). Then `! grep -n "toMarkdown(.*rebuildIndex" src/server.ts` Expected: exit 0 — the index never stands in for a pinned version.
-- [ ] **Step 4: Add one sentence per new kind** to `src/log/format.ts` and one sample per kind to `EMITTED` in `tests/log-format.test.ts`. Append; reword nothing.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass, including `tests/log-format.test.ts`'s derived sweep, which fails both on a kind with no sentence and on a sentence for a kind nothing emits.
-- [ ] **Step 6: Verify no identifier reaches the surface** — the sweep test already asserts it; confirm by `npx vitest run tests/log-format.test.ts -t "no formatted line contains a ULID"` Expected: PASS.
-- [ ] **Step 7: Commit** — `git commit -m "feat: the piece routes — compose, gap, set down, export"`
+- [x] **Step 2: Run** — `npx vitest run tests/piece-routes.test.ts` Expected: FAIL
+- [x] **Step 3: Implement `readVersion` and the routes**, appending to `src/server.ts` after the auth middleware. Re-read the file first — it is contended.
+- [x] **Step 3a: Verify the resolver is the one in use, as an exit code** — `[ $(grep -c "readVersion" src/server.ts) -ge 3 ]` Expected: exit 0 — one definition and at least two call sites (`GET /api/piece/:id` and `GET /export`). Then `! grep -n "toMarkdown(.*rebuildIndex" src/server.ts` Expected: exit 0 — the index never stands in for a pinned version.
+- [x] **Step 4: Add one sentence per new kind** to `src/log/format.ts` and one sample per kind to `EMITTED` in `tests/log-format.test.ts`. Append; reword nothing.
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass, including `tests/log-format.test.ts`'s derived sweep, which fails both on a kind with no sentence and on a sentence for a kind nothing emits.
+- [x] **Step 6: Verify no identifier reaches the surface** — the sweep test already asserts it; confirm by `npx vitest run tests/log-format.test.ts -t "no formatted line contains a ULID"` Expected: PASS.
+- [x] **Step 7: Commit** — `git commit -m "feat: the piece routes — compose, gap, set down, export"`
 
 ---
 
@@ -660,15 +660,15 @@ Accepting rewrites the Arrangement with a Pin in the Gap's position (same index,
 **Files:**
 - Modify: `web/main.ts`, `web/style.css`
 
-- [ ] **Step 1: The `material` screen** — snippets as dated paragraphs, touch to light, one margin word.
-- [ ] **Step 2: The `piece` screen** — the arrangement as the document, gaps as thin rules, margin words for set down / pick up / export.
-- [ ] **Step 3: Drag reordering on the paragraph itself**, then the `/reorder` POST.
-- [ ] **Step 4: The trailing composer**, committing through `/prose`.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run && npx vite build` Expected: all three pass. Then, as exit codes:
+- [x] **Step 1: The `material` screen** — snippets as dated paragraphs, touch to light, one margin word.
+- [x] **Step 2: The `piece` screen** — the arrangement as the document, gaps as thin rules, margin words for set down / pick up / export.
+- [x] **Step 3: Drag reordering on the paragraph itself**, then the `/reorder` POST.
+- [x] **Step 4: The trailing composer**, committing through `/prose`.
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run && npx vite build` Expected: all three pass. Then, as exit codes:
   - `! grep -nE "drag-handle|piece-card|\.card" web/style.css` Expected: exit 0 — no card, no handle.
   - `! grep -niE "\bdone\b|finished|complete\b" <(sed -n '/── Piece surface ──/,/── end Piece surface ──/p' web/main.ts)` Expected: exit 0 — the shame gradient has no vocabulary here. (Mark the section with those two comments so the check has a span to read.)
-- [ ] **Step 6: Look at it** — serve with `ELICIT_LLM=fake`, build a Piece from three snippets, drag one, insert a gap, write a paragraph, export. Confirm it reads as a page of writing rather than a tool. If it reads as a tool, the document rule has been violated: re-read it and rebuild the screen, do not add a setting.
-- [ ] **Step 7: Commit** — `git commit -m "feat: the Piece surface — the arrangement is the draft"`
+- [x] **Step 6: Look at it** — serve with `ELICIT_LLM=fake`, build a Piece from three snippets, drag one, insert a gap, write a paragraph, export. Confirm it reads as a page of writing rather than a tool. If it reads as a tool, the document rule has been violated: re-read it and rebuild the screen, do not add a setting.
+- [x] **Step 7: Commit** — `git commit -m "feat: the Piece surface — the arrangement is the draft"`
 
 ---
 
@@ -694,11 +694,11 @@ Assert on **disk state**, not only on responses: the piece dir exists, the arran
 **Files:**
 - Create: `tests/piece-e2e.test.ts`
 
-- [ ] **Step 1: Write the flow above as one describe block**, with a throwing `Complete`.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-e2e.test.ts` Expected: PASS
-- [ ] **Step 3: Verify pass 1 is genuinely model-free, as an exit code** — `! grep -rqE 'Complete|complete\(' src/piece/` Expected: exit 0. Then confirm the throwing-`Complete` assertion exists: `grep -q "throw new Error" tests/piece-e2e.test.ts` Expected: exit 0.
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass.
-- [ ] **Step 5: Commit** — `git commit -m "test: pass 1 end to end, with no model reachable"`
+- [x] **Step 1: Write the flow above as one describe block**, with a throwing `Complete`.
+- [x] **Step 2: Run** — `npx vitest run tests/piece-e2e.test.ts` Expected: PASS
+- [x] **Step 3: Verify pass 1 is genuinely model-free, as an exit code** — `! grep -rqE 'Complete|complete\(' src/piece/` Expected: exit 0. Then confirm the throwing-`Complete` assertion exists: `grep -q "throw new Error" tests/piece-e2e.test.ts` Expected: exit 0.
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass.
+- [x] **Step 5: Commit** — `git commit -m "test: pass 1 end to end, with no model reachable"`
 
 ---
 
@@ -724,11 +724,11 @@ Assert on **disk state**, not only on responses: the piece dir exists, the arran
 - Create: `src/piece/stale.ts`
 - Test: `tests/piece-stale.test.ts`
 
-- [ ] **Step 1: Failing tests** — a pin to `v1` where `v3` exists yields exactly one `stale-pin` Marginalia whose `on` is that entry id and which carries no `model`; a pin to the current version yields none; **the arrangement is deep-equal before and after** and in particular no pin's `version` changed; two calls return deep-equal results; a gap entry yields nothing; the module exports nothing taking a `Complete` (`@ts-expect-error`).
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-stale.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-stale.test.ts` Expected: both pass. Then, as exit codes: `! grep -qE 'Complete|complete\(' src/piece/stale.ts` and `! grep -qE '\.version\s*=|version:\s*latest' src/piece/stale.ts` Expected: exit 0 each — nothing here assigns a version.
-- [ ] **Step 5: Commit** — `git commit -m "feat: stale-pin lint — flag, never re-pin"`
+- [x] **Step 1: Failing tests** — a pin to `v1` where `v3` exists yields exactly one `stale-pin` Marginalia whose `on` is that entry id and which carries no `model`; a pin to the current version yields none; **the arrangement is deep-equal before and after** and in particular no pin's `version` changed; two calls return deep-equal results; a gap entry yields nothing; the module exports nothing taking a `Complete` (`@ts-expect-error`).
+- [x] **Step 2: Run** — `npx vitest run tests/piece-stale.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Verify** — `npx tsc --noEmit && npx vitest run tests/piece-stale.test.ts` Expected: both pass. Then, as exit codes: `! grep -qE 'Complete|complete\(' src/piece/stale.ts` and `! grep -qE '\.version\s*=|version:\s*latest' src/piece/stale.ts` Expected: exit 0 each — nothing here assigns a version.
+- [x] **Step 5: Commit** — `git commit -m "feat: stale-pin lint — flag, never re-pin"`
 
 ---
 
@@ -851,14 +851,14 @@ Every drop is logged: `arrangement-rejected` with the reason, and `arrangements-
 - Test: `tests/clerk-arrangements.test.ts`
 - Modify: `src/log/format.ts`, `tests/log-format.test.ts`
 
-- [ ] **Step 1: Failing tests**, scripted fake `Complete` throughout — a well-formed response yields two candidates whose principles are `argument` and `contrast`, both permutations of the base pin set; a response that **adds** a pin is dropped with `'pin-set'`; one that **drops** a pin is dropped the same way; one that changes a pin's version is dropped; a response carrying a `title` is dropped with `'title'`; a response carrying a transition sentence as an entry is dropped with `'prose-in-body'`; two candidates both claiming `argument` yield one and a `'duplicate-principle'` drop; a model gap whose question quotes **no** adjacent snippet is dropped while its candidate survives; five gaps in one candidate leave three; malformed JSON returns zero candidates and does not throw; **the base arrangement is deep-equal before and after every one of these**; every surviving candidate carries a `model` stamp; every prompt ends on a user-role message.
-- [ ] **Step 2: Run** — `npx vitest run tests/clerk-arrangements.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Add sentences for `arrangements-proposed` and `arrangement-rejected`** to `src/log/format.ts` plus `EMITTED` samples.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass. Then, as exit codes:
+- [x] **Step 1: Failing tests**, scripted fake `Complete` throughout — a well-formed response yields two candidates whose principles are `argument` and `contrast`, both permutations of the base pin set; a response that **adds** a pin is dropped with `'pin-set'`; one that **drops** a pin is dropped the same way; one that changes a pin's version is dropped; a response carrying a `title` is dropped with `'title'`; a response carrying a transition sentence as an entry is dropped with `'prose-in-body'`; two candidates both claiming `argument` yield one and a `'duplicate-principle'` drop; a model gap whose question quotes **no** adjacent snippet is dropped while its candidate survives; five gaps in one candidate leave three; malformed JSON returns zero candidates and does not throw; **the base arrangement is deep-equal before and after every one of these**; every surviving candidate carries a `model` stamp; every prompt ends on a user-role message.
+- [x] **Step 2: Run** — `npx vitest run tests/clerk-arrangements.test.ts` Expected: FAIL
+- [x] **Step 3: Implement**
+- [x] **Step 4: Add sentences for `arrangements-proposed` and `arrangement-rejected`** to `src/log/format.ts` plus `EMITTED` samples.
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass. Then, as exit codes:
   - `grep -c "samePinSet\|noTitle\|noProse" src/clerk/arrangements.ts` Expected: ≥ 3 — every guard is actually called, not merely imported.
   - `! grep -qE 'QueueStore|queue\.|QueueDraft' src/clerk/arrangements.ts` Expected: exit 0 — the proposer cannot reach the Queue, so it cannot mint.
-- [ ] **Step 6: Commit** — `git commit -m "feat: candidate arrangements under distinct organizing principles"`
+- [x] **Step 6: Commit** — `git commit -m "feat: candidate arrangements under distinct organizing principles"`
 
 ---
 
@@ -891,11 +891,11 @@ Choosing one makes it `current`. The others stay on disk (Q-38: a Piece may hold
 **Files:**
 - Modify: `src/server.ts`, `web/main.ts`, `web/style.css`
 
-- [ ] **Step 1: The two routes.** Re-read `src/server.ts` first.
-- [ ] **Step 2: The margin word, the principle switcher, the Marginalia column.**
-- [ ] **Step 3: Verify** — `npx tsc --noEmit && npx vitest run && npx vite build` Expected: all three pass. Then `! grep -nE "tab-bar|\.panel|side-by-side" web/style.css` Expected: exit 0.
-- [ ] **Step 4: Look at it** — serve with `ELICIT_LLM=local`, ask for other orders on a real Piece, switch between them. Confirm the page reads as the same writing rearranged rather than as a comparison tool.
-- [ ] **Step 5: Commit** — `git commit -m "feat: candidate arrangements as a margin word"`
+- [x] **Step 1: The two routes.** Re-read `src/server.ts` first.
+- [x] **Step 2: The margin word, the principle switcher, the Marginalia column.**
+- [x] **Step 3: Verify** — `npx tsc --noEmit && npx vitest run && npx vite build` Expected: all three pass. Then `! grep -nE "tab-bar|\.panel|side-by-side" web/style.css` Expected: exit 0.
+- [x] **Step 4: Look at it** — serve with `ELICIT_LLM=local`, ask for other orders on a real Piece, switch between them. Confirm the page reads as the same writing rearranged rather than as a comparison tool.
+- [x] **Step 5: Commit** — `git commit -m "feat: candidate arrangements as a margin word"`
 
 ---
 
