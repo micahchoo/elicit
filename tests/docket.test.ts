@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import matter from 'gray-matter';
+import { ulid } from 'ulid';
+import { createPieceStore } from '../src/piece/store.js';
+import type { PieceStore } from '../src/piece/contract.js';
 
 import { createApp } from '../src/server.js';
 import { createVault } from '../src/vault/vault.js';
@@ -44,6 +48,8 @@ type DocketDeps = {
  modelName?: string;
  vaultRoot: string;
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
+ stalePinSweep?: () => Promise<number>;
+ dormancySweep?: () => Promise<number>;
  stillTrueCursor?: { read: () => number; write: (offset: number) => void };
 };
 
@@ -123,11 +129,20 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
 }
 
 let runDocket: (deps: DocketDeps) => Promise<DocketReport>;
+type PieceSweepDeps = {
+ pieces: PieceStore;
+ snippets: () => Record<string, Snippet>;
+ log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
+};
+let runStalePinSweep: (deps: PieceSweepDeps) => Promise<number>;
+let runDormancySweep: (deps: PieceSweepDeps) => Promise<number>;
 
 beforeEach(async () => {
  vi.resetModules();
  const mod = await import('../src/clerk/docket.js');
  runDocket = mod.runDocket;
+ runStalePinSweep = mod.runStalePinSweep;
+ runDormancySweep = mod.runDormancySweep;
 });
 
 describe('runDocket', () => {
@@ -1052,5 +1067,149 @@ describe('a real docket run and the Activity Log', () => {
   } finally {
    vi.unstubAllEnvs();
   }
+ });
+});
+
+// ===========================================================================
+// The piece jobs (Task 10 — the stale-pin sweep and auto-set-down)
+// ===========================================================================
+// The REAL job functions over a REAL vault directory, because the sweep
+// writes through putArrangement, which validates pins against the store's
+// own disk read of snippets — so the snippet files must exist on disk.
+
+describe('the piece jobs on a real vault (010 T10)', () => {
+ let dir: string;
+
+ beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'elicit-piece-jobs-'));
+ });
+
+ afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+ });
+
+ it('sets a dormant piece down once, on disk, and never again', async () => {
+  const vault = createVault(dir);
+  const snip = vault.saveSnippet('a paragraph pinned long ago', {
+   kind: 'harvest',
+   session: 's-old',
+   question: 'what changed?',
+   questionForm: 'deliberative',
+  });
+  // Age the pinned snippet's captured to 60 days ago, body preserved.
+  const v1 = matter.read(join(dir, 'snippets', snip.id, 'v1.md'));
+  v1.data.captured = daysAgo(60);
+  writeFileSync(join(dir, 'snippets', snip.id, 'v1.md'), matter.stringify(v1.content, v1.data), 'utf-8');
+
+  const store = createPieceStore(dir);
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+  // The piece and its arrangement were created just now; age them too, so
+  // every candidate for lastTouched is 60 days old.
+  const pm = matter.read(join(dir, 'pieces', piece.id, 'piece.md'));
+  pm.data.created = daysAgo(60);
+  writeFileSync(join(dir, 'pieces', piece.id, 'piece.md'), matter.stringify(pm.content, pm.data), 'utf-8');
+  const am = matter.read(join(dir, 'pieces', piece.id, 'arrangements', piece.current + '.md'));
+  am.data.created = daysAgo(60);
+  writeFileSync(join(dir, 'pieces', piece.id, 'arrangements', piece.current + '.md'), matter.stringify(am.content, am.data), 'utf-8');
+
+  const emitted: string[] = [];
+  const log = (e: { kind: string }) => { emitted.push(e.kind); };
+  const first = await runDormancySweep({
+   pieces: store,
+   snippets: () => vault.rebuildIndex().snippets,
+   log,
+  });
+  expect(first).toBe(1);
+  const onDisk = matter.read(join(dir, 'pieces', piece.id, 'piece.md')).data as {
+   setDownAt?: string;
+   setDownBy?: string;
+  };
+  expect(onDisk.setDownAt).toBeDefined();
+  expect(onDisk.setDownBy).toBe('dormancy');
+  expect(emitted.filter((k) => k === 'piece-set-down-auto')).toHaveLength(1);
+
+  // A second run over the same vault emits nothing and changes nothing.
+  const second = await runDormancySweep({
+   pieces: store,
+   snippets: () => vault.rebuildIndex().snippets,
+   log,
+  });
+  expect(second).toBe(0);
+  expect(emitted.filter((k) => k === 'piece-set-down-auto')).toHaveLength(1);
+ });
+
+ it('flags a stale pin as Marginalia, leaves the pin alone, and never duplicates', async () => {
+  const vault = createVault(dir);
+  const snip = vault.saveSnippet('v1 prose', {
+   kind: 'harvest',
+   session: 's-old',
+   question: 'what changed?',
+   questionForm: 'deliberative',
+  });
+  const store = createPieceStore(dir);
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+  // The snippet moves on — v2 exists on disk; the pin still names v1.
+  vault.saveVersion(snip.id, 'v2 prose');
+
+  const emitted: string[] = [];
+  const log = (e: { kind: string }) => { emitted.push(e.kind); };
+  const first = await runStalePinSweep({
+   pieces: store,
+   snippets: () => vault.rebuildIndex().snippets,
+   log,
+  });
+  expect(first).toBe(1);
+  const current = store.get(piece.id)!.arrangements.find((a) => a.id === piece.current)!;
+  const flags = current.marginalia.filter((m) => m.note === 'stale-pin');
+  expect(flags).toHaveLength(1);
+  expect(flags[0]!.on).toBe(piece.arrangements[0]!.entries[0]!.id);
+  // The pin itself is untouched — still version 1 (Q-39).
+  const pin = current.entries[0]!;
+  expect(pin.kind).toBe('pin');
+  if (pin.kind === 'pin') expect(pin.version).toBe(1);
+  expect(emitted).toContain('stale-pin-flagged');
+
+  // A second run dedupes by (on, note): no duplicate Marginalia, no event.
+  const second = await runStalePinSweep({
+   pieces: store,
+   snippets: () => vault.rebuildIndex().snippets,
+   log,
+  });
+  expect(second).toBe(0);
+  const after = store.get(piece.id)!.arrangements.find((a) => a.id === piece.current)!;
+  expect(after.marginalia.filter((m) => m.note === 'stale-pin')).toHaveLength(1);
+  expect(emitted.filter((k) => k === 'stale-pin-flagged')).toHaveLength(1);
+ });
+
+ it('a docket run whose complete rejects still completes both piece jobs', async () => {
+  const vault = createVault(dir);
+  const snip = vault.saveSnippet('v1 prose', {
+   kind: 'harvest',
+   session: 's-old',
+   question: 'what changed?',
+   questionForm: 'deliberative',
+  });
+  vault.saveVersion(snip.id, 'v2 prose');
+  const store = createPieceStore(dir);
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+
+  const stalePinSweep = vi.fn().mockResolvedValue(1);
+  const dormancySweep = vi.fn().mockResolvedValue(1);
+  const log = vi.fn();
+  await runDocket({
+   vault,
+   queue: makeFakeQueue(),
+   complete: vi.fn().mockRejectedValue(new Error('boom')),
+   buildIndex: (snippets) => realBuildIndex(snippets),
+   composeOpener: async () => null,
+   composeStillTrue: async () => null,
+   log,
+   vaultRoot: dir,
+   stalePinSweep,
+   dormancySweep,
+  });
+  // Neither job received the Complete; both ran to completion.
+  expect(stalePinSweep).toHaveBeenCalledTimes(1);
+  expect(dormancySweep).toHaveBeenCalledTimes(1);
  });
 });

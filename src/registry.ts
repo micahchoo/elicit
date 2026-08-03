@@ -106,6 +106,18 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
  // ── src/clerk/docket.ts ──
  { module: 'src/clerk/docket', name: 'runDocket', status: 'live' },
+ {
+  module: 'src/clerk/docket',
+  name: 'runStalePinSweep',
+  status: 'live',
+  reason: 'wired by 010 T10: runDocketNow\'s thunk runs it as the docket\'s first piece job',
+ },
+ {
+  module: 'src/clerk/docket',
+  name: 'runDormancySweep',
+  status: 'live',
+  reason: 'wired by 010 T10: runDocketNow\'s thunk runs it as the docket\'s second piece job',
+ },
 
  // ── src/clerk/mint.ts ──
  { module: 'src/clerk/mint', name: 'proposeOps', status: 'live' },
@@ -383,8 +395,16 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/piece/stale',
   name: 'stalePins',
-  status: 'unwired',
-  reason: 'T10\'s docket job was blocked at dispatch (src/wiki/thresholds.ts carries ticket 087\'s uncommitted changes) — declared unwired so the sweep holds; flips live when the piece jobs land',
+  status: 'live',
+  reason: 'wired by 010 T10: the docket\'s stale-pin sweep flags, never re-pins (Q-39)',
+ },
+
+ // ── src/piece/dormancy.ts ──
+ {
+  module: 'src/piece/dormancy',
+  name: 'isDormant',
+  status: 'live',
+  reason: 'wired by 010 T10: the docket\'s dormancy sweep decides set-down with it (Q-41)',
  },
 
  // ── src/protocols/registry.ts ──

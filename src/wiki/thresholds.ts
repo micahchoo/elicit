@@ -140,6 +140,20 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Already live: a quota that protects the docket run must act from day one, or a first run over a large corpus monopolizes every pass. Every clip is logged, and the log is what would resize it.',
  },
+ 'piece.dormancyDays': {
+  name: 'piece.dormancyDays',
+  value: 45,
+  live: true,
+  graduatesWhen:
+   'Already live, and the liveness is not what is unearned. Q-35 governs SELECTION mechanisms and this selects nothing; Q-56 says bounds ship live. The consequence is one reversible act — gap-question minting stops and picking the Piece up resumes it (Q-41) — so a shadowed auto-set-down would be no feature at all rather than a cautious one. PROVISIONAL in its VALUE: 45 days is a guess with no evidence behind it. It earns a real number when the log shows how long a real Piece sits between touches, and the first evidence is the T14 run.',
+ },
+ 'piece.gapsPerCandidate': {
+  name: 'piece.gapsPerCandidate',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'Already live: a cap on how many gaps one model-proposed Arrangement may mark is a bound, and Q-56 puts bounds in force from birth — a shadowed cap writes "I would have stopped at 3" while the model marks without limit, which is worse than no cap because the mechanism is what generated the work. Every clip emits threshold-clipped, so the value stays honest. It is re-tuned from that record, never from argument.',
+ },
  'lint.occasionlessRange': {
   name: 'lint.occasionlessRange',
   value: true,

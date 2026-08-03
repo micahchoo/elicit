@@ -503,6 +503,21 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `piece=${ULID}`,
   reads: 'picked the piece up again',
 },
+{
+  kind: 'stale-pin-flagged',
+  detail: 'flagged=2',
+  reads: 'flagged 2 stale pins',
+},
+{
+  kind: 'piece-set-down-auto',
+  detail: `piece=${ULID}`,
+  reads: 'set the piece down after a long quiet',
+},
+{
+  kind: 'piece-jobs-failed',
+  detail: 'dormancy sweep: boom',
+  reads: 'could not finish the piece work this run — the rest of the docket work is already on disk',
+},
 
 // The candidate arrangements (T11): the one model call in the slice. A
 // rejection names the reason and the principle — the rejection rate is the

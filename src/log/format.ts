@@ -645,6 +645,14 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  `exported a piece with ${count(num(f, 'paragraphs'), 'paragraph')}`,
 'piece-set-down': () => 'set the piece down',
 'piece-picked-up': () => 'picked the piece up again',
+// The two docket piece jobs (010 T10): the stale-pin sweep flags, never
+// re-pins (Q-39); auto-set-down is silent (Q-22), logged (Q-23), and
+// reversible — and the sentence carries no reproach, no count of days and
+// nothing owed (Q-24). piece-jobs-failed guards both, so a failure in one
+// never stops the other or the rest of the run.
+'stale-pin-flagged': (f) => `flagged ${count(num(f, 'flagged'), 'stale pin')}`,
+'piece-set-down-auto': () => 'set the piece down after a long quiet',
+'piece-jobs-failed': () => 'could not finish the piece work this run — the rest of the docket work is already on disk',
 
 // ── The candidate arrangements (T11): the one model call in the slice ──
 

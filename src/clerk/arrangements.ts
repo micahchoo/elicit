@@ -261,9 +261,8 @@ function buildEntries(
  * accepted.
  *
  * `thresholds.gapsPerCandidate` is the Q-56 bound. The register value
- * (`piece.gapsPerCandidate`, T10, 3) is BLOCKED at dispatch because
- * src/wiki/thresholds.ts carries ticket 087's uncommitted changes, so the
- * value arrives through this parameter instead; T12's route passes it.
+ * (`piece.gapsPerCandidate`, 010 T10) arrives through this parameter;
+ * T12's route passes THRESHOLDS['piece.gapsPerCandidate'].value.
  *
  * `modelName` (Q-34) is the model's NAME, which `complete` does not carry;
  * T12's route passes its clerk model name. Absent, the stamp is omitted —

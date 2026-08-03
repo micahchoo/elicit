@@ -38,6 +38,7 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { makeFakeComplete } from '../src/fake-responder.js';
+import { createPieceStore } from '../src/piece/store.js';
 import type { QueueStore, Snippet, Vault } from '../src/types.js';
 
 // ── The response shapes this suite asserts (the cross-slice contract) ──
@@ -673,5 +674,99 @@ describe('the piece routes (T6)', () => {
     expect((await anon(`/api/piece/${piece.id}/set-down`, 'POST')).status).toBe(401);
     expect((await anon(`/api/piece/${piece.id}/pick-up`, 'POST')).status).toBe(401);
     expect((await anon(`/api/piece/${piece.id}/export`)).status).toBe(401);
+  });
+});
+
+// ===========================================================================
+// The piece jobs through createApp (010 T10)
+// ===========================================================================
+// The wiring test the plan demands: the vault is SEEDED before createApp so
+// the boot docket run IS the run under test — a test that hand-builds a
+// runDocket deps object would stay green over an unwired product.
+
+describe('the piece jobs through createApp (010 T10)', () => {
+  let pieceId: string;
+
+  function daysAgo(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString();
+  }
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), 'elicit-piece-routes-'));
+    settled = 0;
+    waiting = [];
+    vault = createVault(root);
+    queue = createQueueStore(root);
+
+    // Seed the vault BEFORE createApp: one dormant piece carrying one stale
+    // pin, so the boot docket run does both piece jobs.
+    seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
+    const snip = seedSnippet('a paragraph pinned long ago', 's-2018');
+    const store = createPieceStore(root);
+    const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+    pieceId = piece.id;
+    // The snippet moves on: v2 exists on disk, the pin still names v1.
+    vault.saveVersion(snip.id, 'newer prose');
+    // Age every captured/created the sweep reads to 60 days ago, bodies
+    // preserved. The dormancy sweep reads the register's CURRENT version of
+    // the pinned snippet, so v2's captured is the one that must be old.
+    const v1 = matter.read(join(root, 'snippets', snip.id, 'v1.md'));
+    v1.data.captured = daysAgo(60);
+    writeFileSync(join(root, 'snippets', snip.id, 'v1.md'), matter.stringify(v1.content, v1.data), 'utf-8');
+    const v2 = matter.read(join(root, 'snippets', snip.id, 'v2.md'));
+    v2.data.captured = daysAgo(60);
+    writeFileSync(join(root, 'snippets', snip.id, 'v2.md'), matter.stringify(v2.content, v2.data), 'utf-8');
+    const pm = matter.read(join(root, 'pieces', piece.id, 'piece.md'));
+    pm.data.created = daysAgo(60);
+    writeFileSync(join(root, 'pieces', piece.id, 'piece.md'), matter.stringify(pm.content, pm.data), 'utf-8');
+    const am = matter.read(join(root, 'pieces', piece.id, 'arrangements', piece.current + '.md'));
+    am.data.created = daysAgo(60);
+    writeFileSync(join(root, 'pieces', piece.id, 'arrangements', piece.current + '.md'), matter.stringify(am.content, am.data), 'utf-8');
+
+    const authStore = createFileAuth(join(root, '.auth.json'));
+    authStore.setup('a password');
+    app = await createApp({
+      vault,
+      complete: makeFakeComplete(),
+      queue,
+      index: buildIndex(Object.values(vault.rebuildIndex().snippets)),
+      vaultRoot: root,
+      authStore,
+      onDocketSettled,
+    });
+    // The boot docket run IS the run under test; wait for it to settle.
+    await waitForSettles(1);
+    const login = await post('/api/login', { password: 'a password' });
+    expect(login.status).toBe(200);
+    cookie = /elicit_session=[^;]+/.exec(login.headers.get('set-cookie') ?? '')?.[0] ?? '';
+    expect(cookie).not.toBe('');
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('the boot run flags the stale pin and sets the dormant piece down, on disk', async () => {
+    const pieces = createPieceStore(root).list();
+    expect(pieces).toHaveLength(1);
+    const current = pieces[0]!.arrangements.find((a) => a.id === pieces[0]!.current)!;
+    const flags = current.marginalia.filter((m) => m.note === 'stale-pin');
+    // Exactly one stale-pin note, aimed at the pin's entry id.
+    expect(flags).toHaveLength(1);
+    const pin = current.entries.find((e) => e.kind === 'pin')!;
+    expect(flags[0]!.on).toBe(pin.id);
+    // The pin's version is still 1 on disk (Q-39: flagged, never re-pinned).
+    expect(pin.kind).toBe('pin');
+    if (pin.kind === 'pin') expect(pin.version).toBe(1);
+
+    // piece.md frontmatter: set down by dormancy, reversibly (Q-41).
+    const fm = matter.read(join(root, 'pieces', pieceId, 'piece.md')).data as {
+      setDownAt?: string;
+      setDownBy?: string;
+    };
+    expect(fm.setDownAt).toBeDefined();
+    expect(fm.setDownBy).toBe('dormancy');
   });
 });

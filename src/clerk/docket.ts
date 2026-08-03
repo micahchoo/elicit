@@ -11,6 +11,10 @@ import type {
 import type { SittingContext } from './composed.js';
 import { isExpeditionCandidate } from './composed.js';
 import { readSitting, sittingCache } from './sitting.js';
+import { stalePins } from '../piece/stale.js';
+import { isDormant } from '../piece/dormancy.js';
+import { THRESHOLDS } from '../wiki/thresholds.js';
+import type { Piece, PieceStore } from '../piece/contract.js';
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -29,6 +33,93 @@ const DEFAULT_STILL_TRUE_CURSOR = {
  read: (): number => stillTrueOffset,
  write: (offset: number): void => { stillTrueOffset = offset; },
 };
+
+// ── The piece sweeps (010 T10) ──
+// Two docket jobs that learn Pieces exist: the stale-pin sweep flags, never
+// re-pins (Q-39), and the dormancy sweep sets a long-quiet Piece down —
+// silently (Q-22: nothing is sent anywhere), logged (Q-23), reversibly
+// (Q-41: picking it up resumes minting). Both are zero-LLM: neither ever
+// receives the Complete. Both are injected structurally as optional thunks
+// on runDocket, absent meaning no piece work this run — every caller
+// predating the field behaves exactly as before.
+
+/** The docket log sink, narrowed to what the piece sweeps emit (010 T10). */
+export type PieceLog = (e: {
+ at: string;
+ actor: string;
+ kind: string;
+ detail: string;
+ refs?: string[];
+}) => void;
+
+/**
+ * The stale-pin sweep (010 T10, Q-39): one flag per pin whose snippet has
+ * moved on, written as Marginalia on the Piece's CURRENT arrangement. The
+ * consequence of a stale pin is a dimmed note, never a re-pin — this job
+ * has no write path for pins. Findings are deduped by `(on, note)` against
+ * what is already on disk, so a second run writes nothing; the count
+ * returned is the number of NEW Marginalia written this run.
+ */
+export async function runStalePinSweep(deps: {
+ pieces: PieceStore;
+ snippets: () => Record<string, Snippet>;
+ log: PieceLog;
+}): Promise<number> {
+ const snippets = deps.snippets();
+ let flagged = 0;
+ for (const piece of deps.pieces.list()) {
+  const current = piece.arrangements.find((a) => a.id === piece.current);
+  if (current === undefined) continue;
+  const onDisk = new Set(current.marginalia.map((m) => `${m.on}\u0000${m.note}`));
+  const findings = stalePins(current, snippets).filter((m) => !onDisk.has(`${m.on}\u0000${m.note}`));
+  if (findings.length === 0) continue;
+  deps.pieces.putArrangement(piece.id, { ...current, marginalia: [...current.marginalia, ...findings] });
+  flagged += findings.length;
+ }
+ if (flagged > 0) {
+  deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'stale-pin-flagged', detail: `flagged=${flagged}` });
+ }
+ return flagged;
+}
+
+/**
+ * The dormancy sweep (010 T10, Q-41): a Piece nobody has touched for
+ * `piece.dormancyDays` is set down. `lastTouched` is the newest of the
+ * Piece's `created`, its CURRENT arrangement's `created`, and the `captured`
+ * of every pin in that arrangement — the draft is what the person touches;
+ * candidate arrangements are proposals, not touches. The activity log is
+ * deliberately NOT consulted: it is evidence, not a dependency, and a job
+ * that fails when the log is unreadable is a job that stops the Docket.
+ */
+export async function runDormancySweep(deps: {
+ pieces: PieceStore;
+ snippets: () => Record<string, Snippet>;
+ log: PieceLog;
+}): Promise<number> {
+ const daysEntry = THRESHOLDS['piece.dormancyDays'];
+ const days = typeof daysEntry.value === 'number' ? daysEntry.value : 45;
+ const snippets = deps.snippets();
+ const now = Date.now();
+ let setDown = 0;
+ for (const piece of deps.pieces.list()) {
+  const current = piece.arrangements.find((a) => a.id === piece.current);
+  const touched: string[] = [piece.created];
+  if (current !== undefined) {
+   touched.push(current.created);
+   for (const entry of current.entries) {
+    if (entry.kind !== 'pin') continue;
+    const s = snippets[entry.snippet];
+    if (s !== undefined) touched.push(s.captured);
+   }
+  }
+  const lastTouched = touched.sort().at(-1) ?? piece.created;
+  if (!isDormant(piece, lastTouched, now, days)) continue;
+  deps.pieces.setDown(piece.id, 'dormancy');
+  setDown++;
+  deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'piece-set-down-auto', detail: `piece=${piece.id}` });
+ }
+ return setDown;
+}
 
 export async function runDocket(deps: {
  vault: Vault;
@@ -62,6 +153,18 @@ export async function runDocket(deps: {
   * that predates the field behaves exactly as it did.
   */
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
+/**
+ * The stale-pin sweep (010 T10), as the first piece job of a run. Absent
+ * means no piece work this run, and every caller predating the field
+ * behaves exactly as before. Zero-LLM: it never receives the Complete.
+ */
+ stalePinSweep?: () => Promise<number>;
+/**
+ * The dormancy sweep (010 T10), as the second piece job of a run. Absent
+ * means no piece work this run, and every caller predating the field
+ * behaves exactly as before. Zero-LLM: it never receives the Complete.
+ */
+ dormancySweep?: () => Promise<number>;
 /**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
@@ -257,7 +360,28 @@ export async function runDocket(deps: {
    }
   }
 
-  // ── 7. The wiki jobs, last and guarded (ticket 023 item 2) ──
+  // ── 7. Piece work (010 T10): stale-pin sweep, then auto-set-down ──
+  // piece jobs
+  // Each guarded on its own: a failure in one is one job's failure, and the
+  // other still runs. Neither job calls a model — zero-LLM by contract
+  // (Q-39, Q-41).
+  if (deps.stalePinSweep) {
+   try {
+    await deps.stalePinSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `stale pin sweep: ${String(err)}` });
+   }
+  }
+  if (deps.dormancySweep) {
+   try {
+    await deps.dormancySweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `dormancy sweep: ${String(err)}` });
+   }
+  }
+  // end piece jobs
+
+  // ── 8. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
   // job's failure. The index, the minted questions, the expiry and the
@@ -272,7 +396,7 @@ export async function runDocket(deps: {
    }
   }
 
-  // ── 8. The import extraction, last and guarded (T6) ──
+  // ── 9. The import extraction, last and guarded (T6) ──
   // Last because it is the slowest thing in the run and no other job may
   // wait on it — the cost is paid before the person sits down (Q-58), and
   // nothing the docket owns must be pushed later than it already is.

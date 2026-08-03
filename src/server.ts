@@ -25,7 +25,7 @@ import {
  type SemanticIndex,
 } from './index/semantic.js';
 import { readCadence, cadenceSentence } from './log/cadence.js';
-import { runDocket } from './clerk/docket.js';
+import { runDocket, runDormancySweep, runStalePinSweep } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
@@ -588,6 +588,16 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
     ...(clerkModelName ? { modelName: clerkModelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     runWikiJobs: runWikiJobsNow,
+    stalePinSweep: () => runStalePinSweep({
+     pieces,
+     snippets: () => deps.vault.rebuildIndex().snippets,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
+    dormancySweep: () => runDormancySweep({
+     pieces,
+     snippets: () => deps.vault.rebuildIndex().snippets,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
     runImportJobs: runImportJobsNow,
     stillTrueCursor,
     vaultRoot: deps.vaultRoot,
@@ -2003,15 +2013,15 @@ app.post('/api/piece/:id/arrangements', async (c) => {
  const base = piece.arrangements.find((a) => a.id === piece.current);
  if (!base) return c.json({ error: 'piece has no arrangement' }, 404);
  const snippets = deps.vault.rebuildIndex().snippets;
- // Q-56: the bound is registered as piece.gapsPerCandidate (T10, 3), but
- // src/wiki/thresholds.ts carries ticket 087's uncommitted changes and is
- // blocked at dispatch, so the value arrives here. When T10 lands, switch
- // to THRESHOLDS.piece.gapsPerCandidate.
+ // Q-56: the bound comes from the register — piece.gapsPerCandidate
+ // (010 T10) — and arrives through this parameter; the register is the
+ // single source of the number, and the route passes its value.
+ const gapsCap = THRESHOLDS['piece.gapsPerCandidate'].value;
  const { candidates } = await proposeArrangements(
   base,
   snippets,
   clerkComplete,
-  { gapsPerCandidate: 3 },
+  { gapsPerCandidate: typeof gapsCap === 'number' ? gapsCap : 3 },
   (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
   clerkModelName,
  );
