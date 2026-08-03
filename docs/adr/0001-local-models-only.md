@@ -26,8 +26,8 @@ provider's terms of service.
 
 ## Model change 2026-08-02
 
-Default model switched from `bonsai-27b` (llama.cpp, `192.168.0.229:8088/v1`)
-to **`qwen3.6:35b` on Ollama (`192.168.0.229:11434/v1`)** — the same host that
+Default model switched from `bonsai-27b` (llama.cpp, the local llama.cpp endpoint)
+to **`qwen3.6:35b` on Ollama (the local Ollama endpoint)** — the same host that
 already serves embeddings (Q-17). The decision this ADR records is unchanged:
 all inference is local, no hosted API, ever. Only the endpoint and weights
 moved.

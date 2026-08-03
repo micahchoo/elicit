@@ -108,7 +108,7 @@ check('a declared domain sitting stays domain', session.target === 'domain', ses
 console.log(`  opener: ${session.question}\n`);
 
 /**
- * The junk lines are verbatim from Micah's own sitting and the persona eval.
+ * The junk lines are the shapes real sittings and the persona eval produced.
  * The real lines are what must survive the same pass — a filter that eats
  * these is worse than no filter.
  */

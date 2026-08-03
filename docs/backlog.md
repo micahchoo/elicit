@@ -26,7 +26,7 @@ decision it extends. Nothing here is licensed to ship without its slice.
   maps onto Status transitions; cascade on resolution honors the
   both-cited-only invalidation rule.
 - **Embedding channel** (Q-17 stage 2): Ollama `qwen3-embedding` at
-  `192.168.0.229:11434/v1/embeddings`; MMR/diversity re-rank per the
+  the local Ollama `/v1/embeddings` endpoint; MMR/diversity re-rank per the
   loudest-thought rule (lexical channel got it in slice 2).
 
 ## Queue/selection maturation

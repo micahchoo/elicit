@@ -1,5 +1,5 @@
 // Endpoint diagnostics for ticket 007. Local Ollama only (ADR-0001, Q-2).
-const BASE = 'http://192.168.0.229:11434';
+const BASE = 'http://127.0.0.1:11434';
 
 async function tryCall(label: string, path: string, body: unknown, ms = 600000) {
   const t0 = Date.now();

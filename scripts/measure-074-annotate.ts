@@ -19,7 +19,7 @@
  * precision, the unresolvable-bucket silence rate, and the
  * resolvable-bucket recall.
  *
- * The model is the standing clerk: qwen3.6:35b @ 192.168.0.229:11434/v1
+ * The model is the standing clerk: qwen3.6:35b at the clerk endpoint (src/llm.ts defaults)
  * (the src/llm.ts default; ELICIT_CLERK_* env overrides it, and the
  * banner stamps what actually answered).
  *

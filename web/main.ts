@@ -3366,7 +3366,11 @@ function renderPiece() {
   } catch { /* server may return HTML on non-loopback */ }
 
   if (needsSetup) {
-   renderMode(true);
+   // A fresh install still honors a deep link; only the default differs —
+   // home carries the set-a-password hint until a password exists.
+   const fromHash = screenFromHash();
+   if (fromHash && fromHash !== 'mode' && fromHash !== 'home') navTo(fromHash);
+   else renderMode(true);
    return;
   }
 

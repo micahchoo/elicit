@@ -95,11 +95,11 @@ type VaultView = {
  * the acceptance criterion is about the vault and a script that checks its own
  * log checks nothing.
  *
- * ORDER: smallest sitting first, then session, then snippet id. The capstone is
- * 76 of the 139 and shares one session, so reading it last means an interrupted
- * run leaves the eighteen small posts — the corpus's only cross-sitting
- * evidence under Q-50 — already read, and gives the facet distribution its
- * widest sample earliest. The order is total and deterministic, so a resumed
+ * ORDER: smallest sitting first, then session, then snippet id. One long-form
+ * sitting can dominate a corpus (measured: 76 of 139 snippets in one), so
+ * reading it last means an interrupted run leaves the many small sittings —
+ * the corpus's only cross-sitting evidence under Q-50 — already read, and
+ * gives the facet distribution its widest sample earliest. The order is total and deterministic, so a resumed
  * run continues exactly where the last one stopped.
  */
 function readVault(vault: Vault): VaultView {
@@ -190,9 +190,9 @@ function stripFences(raw: string): string {
  * job. Four of the 139 snippets open on a lowercase letter, and ticket 037's
  * `startsMidSentence` router sends any such cut to the Bud path — correctly,
  * when the question is whether a span should become a Snippet. Here that
- * question was answered by Micah's own hand during the 057 triage, months of
- * reading ago, and re-asking it now would leave four of his keeps with no
- * reading at all rather than route them anywhere.
+ * question was answered by the reader's own hand during import triage, and
+ * re-asking it now would leave lowercase-opening keeps with no reading at
+ * all rather than route them anywhere.
  *
  * So this path skips the Bud router and NOTHING else: same clerk model, same
  * `SYSTEM_PROMPT`, same temperature, same Q-1 substring check, same

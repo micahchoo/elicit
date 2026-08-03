@@ -34,3 +34,5 @@ local:/
 /data/annotations/
 /scripts/ingest-posts.ts
 /data/prior-ingest.local.json
+/scripts/eval-007-embeddings.ts
+/scripts/eval-007-lexical-overlap.ts

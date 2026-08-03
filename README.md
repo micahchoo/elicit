@@ -67,9 +67,9 @@ background work, where nobody is. Point each role at an endpoint — or both
 at the same one:
 
 ```bash
-export ELICIT_LLM_BASE_URL="http://192.168.0.229:8088/v1"     # interview
+export ELICIT_LLM_BASE_URL="http://127.0.0.1:8088/v1"     # interview
 export ELICIT_LLM_MODEL="bonsai-27b"
-export ELICIT_CLERK_BASE_URL="http://192.168.0.229:11434/v1"  # background
+export ELICIT_CLERK_BASE_URL="http://127.0.0.1:11434/v1"  # background
 export ELICIT_CLERK_MODEL="qwen3.6:35b"
 
 npm start
@@ -90,9 +90,9 @@ ELICIT_HOST=0.0.0.0 npm start
 | Variable | Default | What it does |
 |---|---|---|
 | `ELICIT_LLM` | `fake` | `local` = real models; `fake` = scripted responses for development |
-| `ELICIT_LLM_BASE_URL` | `http://192.168.0.229:8088/v1` | Endpoint for the live-interview model |
+| `ELICIT_LLM_BASE_URL` | `http://127.0.0.1:8088/v1` | Endpoint for the live-interview model |
 | `ELICIT_LLM_MODEL` | `bonsai-27b` | Model id for the live interview |
-| `ELICIT_CLERK_BASE_URL` | `http://192.168.0.229:11434/v1` | Endpoint for the background model |
+| `ELICIT_CLERK_BASE_URL` | `http://127.0.0.1:11434/v1` | Endpoint for the background model |
 | `ELICIT_CLERK_MODEL` | `qwen3.6:35b` | Model id for background work |
 | `ELICIT_VAULT_ROOT` | `./vault` | Where your archive lives |
 | `ELICIT_HOST` | `127.0.0.1` | Bind address; `0.0.0.0` for network access |

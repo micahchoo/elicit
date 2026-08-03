@@ -14,7 +14,7 @@
  * bodies and the occasionless-range findings the new lint (flipped live
  * here, shadowed in the shipped register) would produce.
  *
- * The model is the standing clerk: qwen3.6:35b @ 192.168.0.229:11434/v1
+ * The model is the standing clerk: qwen3.6:35b at the clerk endpoint (src/llm.ts defaults)
  * (the src/llm.ts default; ELICIT_CLERK_* env overrides it, and the
  * output stamps what actually answered).
  *
