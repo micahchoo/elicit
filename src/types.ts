@@ -464,6 +464,24 @@ export type SessionState = {
   * for that turn, and the Snippet then carries none (ticket 048).
   */
  turnChannels?: (CaptureChannel | undefined)[];
+/**
+ * A live descent, when one is running. Absent means no descent is running —
+ * a different fact from `soundingOffer` being absent (none offered yet) and
+ * from `finishedSounding` being absent (no descent ended on this turn).
+ */
+sounding?: SoundingState;
+/**
+ * Whether a descent was offered this sitting and what came of it. Absent
+ * means none has been offered yet; 'declined' means one was and will not be
+ * again (Q-43).
+ */
+soundingOffer?: 'offered' | 'declined' | 'entered';
+/**
+ * The finished ladder, carried from the elicitor to the route when a descent
+ * closes on the answer path. Absent means no descent ended on this turn. The
+ * route persists it and clears it — the only carrier (T1 contract).
+ */
+finishedSounding?: ParkedLadder;
 };
 
 // ── Soundings ──
