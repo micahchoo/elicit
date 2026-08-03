@@ -325,6 +325,9 @@ const SENTENCES = {
  'expedition-minted': () => 'minted an expedition from an earlier snippet',
  'expedition-failed': () => 'could not mint an expedition',
  'expired': (_f, d) => `expired ${count(nth(d, 0), 'question')}`,
+ // QR-6: the flood bound's tail expiry (one summary line per call).
+ 'queue-tail-expired': (f) =>
+  `expired ${count(num(f, 'expired'), 'question')} beyond the visible bound`,
  'consolidated': (_f, d) => `summarized ${count(nth(d, 0), 'sitting')}`,
  'consolidation-failed': () => 'could not summarize the sittings',
  // QR-5: disfluency elision on fragments quoted INTO questions (shadow
@@ -343,6 +346,15 @@ const SENTENCES = {
  'outcome-clipped': (f, d) => `enforced the outcome cap at ${f.cap ?? 'its setting'} and clipped: ${clause(d, 'clipped')}`,
  'outcome-failed': () => 'could not mint an outcome question',
  'outcomes-failed': () => 'could not run the outcome question job',
+ // QR-6 (ticket 114): the one-time template sweep. The sentence names the
+ // template whose question was expired; the excerpt stays in the JSONL,
+ // never on the surface (Q-6/Q-24 — the person's words are not quoted back
+ // at them as a headline).
+ 'template-sweep-expired': (_f, d) => {
+  const m = /^expired\s+([a-z-]+)/.exec(d);
+  return m ? `expired a stale ${m[1]} template question` : 'expired a stale template question';
+ },
+ 'template-sweep-failed': () => 'could not finish the one-time template sweep',
  'gap-fill-minted': (f) => `minted ${count(num(f, 'minted'), 'gap-fill question')} into the queue`,
  'gap-fill-clipped': (f, d) => `enforced the gap-fill cap at ${f.cap ?? 'its setting'} and clipped: ${clause(d, 'clipped')}`,
  'gap-fill-pole-skip': () => 'skipped a half-Construct whose prose has no construct pole',

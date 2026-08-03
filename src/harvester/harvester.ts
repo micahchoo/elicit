@@ -17,6 +17,7 @@ import { admissible, normalize, startsMidSentence } from './admissibility.js';
 const FACETS: ReadonlySet<string> = new Set<Facet>([
  'episode', 'general-event', 'lifetime-period', 'fact',
  'construct', 'intention', 'value', 'causal-theory',
+ 'momentary-state',
 ]);
 
 const STANCES: ReadonlySet<string> = new Set<Stance>([
@@ -122,6 +123,7 @@ facet — what kind of knowledge about the person this cut is evidence of:
 - "intention" — a stated future-directed want, plan or goal. Use ONLY when the text says the person wants, plans, intends, hopes, aims or means TO DO something. This is not a fallback label: when the sentence reports what the person believes, notices or holds worth doing, the facet is "construct", "fact" or "value", never "intention".
 - "value" — something held to be worth doing or being.
 - "causal-theory" — the person explaining why they are the way they are.
+- "momentary-state" — how the person felt in a specific moment, their emotional tone or energy level at one point in time.
 
 stance — how the person holds it:
 - "avowal" — asserted as their own position.

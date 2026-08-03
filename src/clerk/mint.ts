@@ -309,6 +309,7 @@ const FACETS: Record<Facet, true> = {
   intention: true,
   value: true,
   'causal-theory': true,
+  'momentary-state': true,
   'know-what': true,
   'know-how': true,
   habit: true,

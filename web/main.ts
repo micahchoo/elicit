@@ -171,7 +171,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece' | 'coach';
+type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece' | 'coach' | 'drm';
 
 interface AppState {
  screen: Screen;
@@ -286,6 +286,9 @@ function navTo(screen: Screen, opts?: { focus?: string; folder?: string; slug?: 
    }, state.coachSlug);
    break;
   case 'piece': renderPiece(); break;
+  case 'drm':
+   if (!state.sessionId) { navTo('home'); break; }
+   renderDRM(); break;
  }
 }
 
@@ -295,7 +298,7 @@ function navTo(screen: Screen, opts?: { focus?: string; folder?: string; slug?: 
 const SCREENS: readonly Screen[] = [
  'mode', 'home', 'exchange', 'harvest', 'done', 'waiting', 'login',
  'setup', 'unprompted', 'wiki', 'reviews', 'inbox', 'import',
- 'material', 'library', 'piece', 'coach',
+ 'material', 'library', 'piece', 'coach', 'drm',
 ];
 
 /** The screen a hash names, or null when it names nothing routable. */
@@ -310,6 +313,7 @@ function canonicalOf(screen: Screen): Screen {
   case 'home': return 'mode';
   case 'library': return 'material';
   case 'inbox': return 'reviews';
+  case 'drm': return 'drm';
   default: return screen;
  }
 }
@@ -1719,6 +1723,313 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   turn.scrollIntoView({ block: 'nearest' });
   return turn;
  }
+}
+
+function renderDRM() {
+  clear();
+  state.screen = 'drm';
+  renderShell();
+
+  const div = el('div', { class: 'screen active drm-screen' });
+  const header = el('h2', { class: 'exchange-heading' });
+  div.append(header);
+
+  // ── DRM intro ──
+  const introBlock = el('div', { class: 'drm-intro' });
+  const yesterdaySpan = el('span', { class: 'drm-yesterday' });
+  const beginBtn = el('button', { class: 'nav-link drm-begin-btn' }, 'begin →');
+  introBlock.append(
+    el('p', { class: 'drm-intro-prompt' }, 'Yesterday was '),
+    yesterdaySpan,
+    el('p', { class: 'drm-intro-hint' }, 'Walk through your day, hour by hour.'),
+    beginBtn,
+  );
+
+  // ── Enumeration ──
+  const enumBlock = el('div', { class: 'drm-enum' });
+  const nameInput = el('input', {
+    class: 'drm-episode-name',
+    type: 'text',
+    placeholder: 'episode name',
+  });
+  const hourSelect = el('select', { class: 'drm-hour' });
+  for (let h = 5; h <= 23; h++) {
+    const opt = el('option', { value: String(h) }, `~${h}:00`);
+    hourSelect.append(opt);
+  }
+  const addBtn = el('button', { class: 'drm-add-btn', type: 'button' }, 'add episode');
+  const doneBtn = el('button', { class: 'drm-done-btn', type: 'button' }, 'done enumerating');
+  const episodeList = el('div', { class: 'drm-episode-list' });
+  const enumRow = el('div', { class: 'drm-enum-row' });
+  enumRow.append(nameInput, hourSelect, addBtn, doneBtn);
+  enumBlock.append(enumRow, episodeList);
+
+  // ── Probe area ──
+  const probeBlock = el('div', { class: 'drm-probe' });
+  const probeHeader = el('div', { class: 'drm-probe-header' });
+  const probeQuestion = el('div', { class: 'drm-probe-question' });
+  const probeMeta = el('div', { class: 'drm-probe-meta' });
+  probeHeader.append(probeMeta, probeQuestion);
+
+  const textarea = el('textarea', {
+    class: 'drm-textarea',
+    placeholder: '…',
+    rows: '3',
+  });
+  const sendBtn = el('button', { class: 'send-btn', type: 'button' }, 'send ↵');
+  const answerRow = el('div', { class: 'drm-answer-row' });
+  answerRow.append(textarea, sendBtn);
+
+  // ── Gate-row (Q-44: always visible, replicate Sounding pattern) ──
+  const gateBlock = el('div', { class: 'gate-row drm-gate' });
+  const gateReading = el('span', { class: 'gate-reading' });
+  const continueWord = el('button', { class: 'gate-word continue', type: 'button' }, 'continue');
+  const parkWord = el('button', { class: 'gate-word park', type: 'button' }, 'park, depth kept');
+  const anotherDayWord = el('button', { class: 'gate-word another-day', type: 'button' }, 'another day');
+  gateBlock.append(gateReading, continueWord, parkWord, anotherDayWord);
+  // Gate not visible until probe phase
+  gateBlock.classList.remove('visible');
+
+  const errorSlot = el('div', { class: 'error-slot' });
+  probeBlock.append(probeHeader, answerRow, gateBlock, errorSlot);
+
+  div.append(introBlock, enumBlock, probeBlock);
+  surface.append(div);
+
+  // ── DRM episode data, held locally ──
+  let episodes: { name: string; startHour: number }[] = [];
+  let drmPhase: 'intro' | 'enumerate' | 'probe' = 'intro';
+  let currentEpisode = 0;
+  let totalEpisodes = 0;
+  let currentStep = '';
+  let gateAtEnd = false;
+
+  function showPhase(phase: 'intro' | 'enumerate' | 'probe') {
+    drmPhase = phase;
+    introBlock.style.display = phase === 'intro' ? '' : 'none';
+    enumBlock.style.display = phase === 'enumerate' ? '' : 'none';
+    probeBlock.style.display = phase === 'probe' ? '' : 'none';
+  }
+
+  function setBusy(busy: boolean) {
+    textarea.disabled = busy;
+    sendBtn.disabled = busy;
+    beginBtn.disabled = busy;
+    addBtn.disabled = busy;
+    doneBtn.disabled = busy;
+    continueWord.disabled = busy;
+    parkWord.disabled = busy;
+    anotherDayWord.disabled = busy;
+  }
+
+  function showError(msg: string) {
+    errorSlot.textContent = msg;
+  }
+
+  // ── Intro: begin DRM ──
+  beginBtn.addEventListener('click', async () => {
+    setBusy(true);
+    showError('');
+    try {
+      const res = await api<{ kind: string; yesterday: string }>(
+        `/api/session/${state.sessionId}/drm/start`,
+      );
+      yesterdaySpan.textContent = res.yesterday;
+      header.textContent = 'Day Reconstruction';
+      showPhase('enumerate');
+      nameInput.focus();
+    } catch (e) {
+      showError('could not start');
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  // ── Enumeration: add episode ──
+  function refreshEpisodeList() {
+    episodeList.innerHTML = '';
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i]!;
+      const row = el('div', { class: 'drm-episode-item' },
+        `${ep.name} ~${ep.startHour}:00`,
+      );
+      episodeList.append(row);
+    }
+  }
+
+  async function doAddEpisode() {
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const startHour = parseInt(hourSelect.value, 10);
+
+    setBusy(true);
+    showError('');
+    try {
+      await api(`/api/session/${state.sessionId}/drm/episode`, { name, startHour });
+      episodes.push({ name, startHour });
+      refreshEpisodeList();
+      nameInput.value = '';
+      nameInput.focus();
+    } catch (e) {
+      showError('could not add');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  addBtn.addEventListener('click', doAddEpisode);
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doAddEpisode();
+  });
+
+  // ── Enumeration: done ──
+  doneBtn.addEventListener('click', async () => {
+    if (episodes.length === 0) return;
+    setBusy(true);
+    showError('');
+    try {
+      const res = await api<{
+        kind: string;
+        text: string;
+        episode: number;
+        of: number;
+        step: string;
+        gate: { episode: number; of: number; label: string };
+      }>(`/api/session/${state.sessionId}/drm/enumerate-done`);
+      totalEpisodes = res.of;
+      currentEpisode = res.episode;
+      currentStep = res.step;
+      showPhase('probe');
+      probeQuestion.textContent = res.text;
+      probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
+      gateReading.textContent = res.gate.label;
+      gateBlock.classList.add('visible');
+      textarea.focus();
+    } catch (e) {
+      showError('could not start probes');
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  // ── Probe: answer ──
+  async function sendAnswer() {
+    const text = textarea.value.trim();
+    if (!text) return;
+
+    setBusy(true);
+    showError('');
+    try {
+      const res = await api<{
+        kind: string;
+        text?: string;
+        episode?: number;
+        of?: number;
+        step?: string;
+        gate?: { episode: number; of: number; label: string };
+        atEnd?: boolean;
+      }>(`/api/session/${state.sessionId}/drm/probe`, { text });
+
+      textarea.value = '';
+
+      if (res.kind === 'drm-gate') {
+        // At episode gate
+        showPhase('probe');
+        gateAtEnd = res.atEnd ?? false;
+        if (gateAtEnd) {
+          continueWord.hidden = false;
+          continueWord.textContent = 'finish';
+        } else {
+          continueWord.hidden = false;
+          continueWord.textContent = 'continue';
+        }
+        gateBlock.classList.add('checkpoint');
+        gateReading.textContent = res.gate?.label ?? '';
+        textarea.disabled = true;
+        sendBtn.disabled = true;
+      } else if (res.kind === 'drm-probe') {
+        // More probes
+        currentStep = res.step ?? '';
+        probeQuestion.textContent = res.text ?? '';
+        probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
+        gateReading.textContent = res.gate?.label ?? '';
+        continueWord.hidden = true;
+        gateBlock.classList.remove('checkpoint');
+        textarea.disabled = false;
+        textarea.focus();
+      }
+    } catch (e) {
+      showError('could not send');
+      textarea.disabled = false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  sendBtn.addEventListener('click', sendAnswer);
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAnswer();
+    }
+  });
+
+  // ── Gate: continue / park / another-day ──
+  async function pressGate(choice: 'continue' | 'park' | 'another-day') {
+    setBusy(true);
+    showError('');
+    try {
+      const res = await api<{
+        kind: string;
+        text?: string;
+        episode?: number;
+        of?: number;
+        step?: string;
+        gate?: { episode: number; of: number; label: string };
+        endedBy?: string;
+        phase?: string;
+      }>(`/api/session/${state.sessionId}/drm/gate`, { choice });
+
+      if (res.kind === 'drm-closed') {
+        // DRM complete — end the session for harvest
+        try {
+          const endRes = await api<{ status: string }>(`/api/session/${state.sessionId}/end`);
+          if (endRes.status === 'harvesting') {
+            state.pendingReviewSession = state.sessionId;
+          }
+        } catch {
+          // End may fail but session is over
+        }
+        navTo('reviews');
+        return;
+      }
+
+      // Continue to next episode
+      if (res.kind === 'drm-probe') {
+        currentEpisode = res.episode ?? 1;
+        totalEpisodes = res.of ?? 1;
+        currentStep = res.step ?? '';
+        probeQuestion.textContent = res.text ?? '';
+        probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
+        gateReading.textContent = res.gate?.label ?? '';
+        continueWord.hidden = true;
+        gateBlock.classList.remove('checkpoint');
+        textarea.disabled = false;
+        textarea.focus();
+      }
+    } catch (e) {
+      showError('could not process');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  continueWord.addEventListener('click', () => pressGate('continue'));
+  parkWord.addEventListener('click', () => pressGate('park'));
+  anotherDayWord.addEventListener('click', () => pressGate('another-day'));
+
+  // ── Re-trigger hash for the navigator ──
+  if (location.hash !== '#/drm') location.hash = '#/drm';
 }
 
 /* ── Harvest screen ── */

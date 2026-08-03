@@ -805,6 +805,28 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // ── src/sounding/resume.ts (012 Task 12 — picking a parked descent back up) ──
 { module: 'src/sounding/resume', name: 'resumeSounding', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
 
+// ── src/drm/types.ts (Q-85 — DRM types and constants) ──
+{ module: 'src/drm/types', name: 'DRM_PROBE_QUESTIONS', status: 'live' },
+{ module: 'src/drm/types', name: 'DRM_AFFECT_NUDGE', status: 'live' },
+
+// ── src/drm/state.ts (Q-85 — DRM state machine) ──
+{ module: 'src/drm/state', name: 'initDRM', status: 'live' },
+{ module: 'src/drm/state', name: 'beginDRM', status: 'live' },
+{ module: 'src/drm/state', name: 'addEpisode', status: 'live' },
+{ module: 'src/drm/state', name: 'doneEnumerating', status: 'live' },
+{ module: 'src/drm/state', name: 'answerProbe', status: 'live' },
+{ module: 'src/drm/state', name: 'buildProbeFragment', status: 'unwired', reason: 'used only in tests; server builds fragments through answerProbe' },
+{ module: 'src/drm/state', name: 'applyGate', status: 'live' },
+{ module: 'src/drm/state', name: 'resumeDRM', status: 'live' },
+{ module: 'src/drm/state', name: 'gateReading', status: 'live' },
+{ module: 'src/drm/state', name: 'probeQuestion', status: 'live' },
+{ module: 'src/drm/state', name: 'affectQuestionWithNudge', status: 'unwired', reason: 'nudge handled in web UI; server route uses probeQuestion' },
+
+// ── src/drm/park.ts (Q-85 — DRM persistence) ──
+{ module: 'src/drm/park', name: 'writeDRM', status: 'live' },
+{ module: 'src/drm/park', name: 'readDRM', status: 'live' },
+{ module: 'src/drm/park', name: 'parkDRMPointer', status: 'live' },
+
 // ── src/clerk/sounding-rung.ts (012 Task 12 — the resumed rung's composition) ──
 { module: 'src/clerk/sounding-rung', name: 'composeFromCompacted', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
 

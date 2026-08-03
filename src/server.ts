@@ -31,7 +31,7 @@ import {
  listPendingHarvests,
  removePendingHarvest,
 } from './harvester/pending.js';
-import { createQueueStore } from './queue/queue.js';
+import { createQueueStore, isUserDeclaredWeight, MAX_OPEN_QUESTIONS } from './queue/queue.js';
 import { buildIndex } from './index/lexical.js';
 import {
  buildSemanticIndex,
@@ -2529,6 +2529,20 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   const open = all.filter(
    (e) => e.status === 'pending' && (e.horizon === 'days' || e.horizon === 'session'),
   );
+  // QR-6 flood bound: the pile is readable when the open array is capped
+  // (Q-56 — caps ship live). The person's own questions first, then newest
+  // first; the stale tail beyond the cap is expired rather than hidden, so
+  // the queue on disk and the queue the person sees never disagree.
+  open.sort((a, b) => {
+   const aUd = isUserDeclaredWeight(a) ? 0 : 1;
+   const bUd = isUserDeclaredWeight(b) ? 0 : 1;
+   if (aUd !== bUd) return aUd - bUd;
+   return b.created.localeCompare(a.created);
+  });
+  if (open.length > MAX_OPEN_QUESTIONS) {
+   deps.queue.expireTailBeyond(MAX_OPEN_QUESTIONS);
+  }
+  const capped = open.slice(0, MAX_OPEN_QUESTIONS);
   // Parked-sounding pointers carry the rung count so the waiting surface can
   // say how many rungs are kept (T12 recorded deviation — the plan's UI
   // contract has no other wire source inside the ownership map). Every other
@@ -2537,8 +2551,8 @@ app.post('/api/session/:id/drm/resume', async (c) => {
    e.source === 'parked-sounding'
     ? { ...e, rungsKept: readLadder(deps.vaultRoot, e.soundingId ?? '')?.rungs.length ?? 0 }
     : e;
-  return c.json({ pending: pending.map(enrich), open: open.map(enrich) });
- });
+  return c.json({ pending: pending.map(enrich), open: capped.map(enrich) });
+});
 
  // GET /api/cadence → the record, as a sentence (ticket 056)
  //

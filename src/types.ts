@@ -504,6 +504,21 @@ export interface QueueStore {
  markAnswered(id: string): void;
  defer(id: string): void;
  expire(olderThanDays: number): number;
+ /**
+  * QR-6: expire the tail of the pending pool beyond the first `keep`
+  * entries — the entries the optional filter names, sorted user-declared
+  * first then newest first. The default filter is the open pool: days and
+  * session horizons, never a user-declared entry. Returns how many entries
+  * were expired.
+  */
+ expireTailBeyond(keep: number, filter?: (e: QueueEntry) => boolean): number;
+ /**
+  * QR-6: set ONE entry to 'expired' and write it back. The primitive the
+  * one-time template sweep persists through; the caller owns the policy
+  * (who is never expired) and the Activity Log line. A no-op on an id
+  * nothing reads back.
+  */
+ markExpired(id: string): void;
 }
 
 export interface LexicalIndex {

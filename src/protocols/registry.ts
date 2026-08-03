@@ -19,6 +19,11 @@ export interface ProtocolDef {
   * can itself fail. Carried as data, never composed.
   */
  floorProbe: string;
+ /**
+  * Whether this protocol participates in the target-based rotation.
+  * Defaults to true; set false for user-declared-only instruments (Q-85).
+  */
+ rotation?: boolean;
 }
 
 /**
@@ -83,6 +88,8 @@ function loadFromDisk(): Map<string, ProtocolDef> {
    questionForm: parseQuestionForm(data.questionForm),
    prompt: (parsed.content ?? '').trim(),
    floorProbe,
+   // rotation defaults to true; false for user-declared-only instruments (Q-85)
+   rotation: data.rotation !== false,
   };
 
   if (def.name.length > 0) {
@@ -112,7 +119,7 @@ export function selectProtocolForTarget(
  sessionIndex: number,
  defs: Map<string, ProtocolDef>,
 ): ProtocolDef {
- const candidates = [...defs.values()].filter((d) => d.targets.includes(target));
+ const candidates = [...defs.values()].filter((d) => d.targets.includes(target) && d.rotation !== false);
  if (candidates.length === 0) {
   // No protocol for this target — fall back to reflective
   return defs.get('reflective') ?? [...defs.values()][0]!;

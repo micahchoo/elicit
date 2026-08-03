@@ -2472,3 +2472,87 @@ main {
  opacity: 0.55;
  font-family: var(--font-ui);
 }
+
+/* ── DRM (Day Reconstruction Method) ── */
+.drm-screen .drm-intro {
+ margin-bottom: 2rem;
+}
+
+.drm-screen .drm-yesterday {
+ font-weight: 500;
+}
+
+.drm-screen .drm-intro-prompt,
+.drm-screen .drm-intro-hint {
+ margin: 0 0 0.75rem;
+ font-size: 1.1rem;
+ line-height: 1.6;
+}
+
+.drm-screen .drm-begin-btn {
+ margin-top: 1rem;
+}
+
+.drm-screen .drm-enum-row {
+ display: flex;
+ gap: 0.5rem;
+ align-items: center;
+ margin-bottom: 1rem;
+}
+
+.drm-screen .drm-episode-name {
+ flex: 1;
+ font-size: 1rem;
+ padding: 0.5rem;
+}
+
+.drm-screen .drm-hour {
+ font-size: 0.9rem;
+ padding: 0.5rem;
+}
+
+.drm-screen .drm-episode-list {
+ margin-bottom: 1.5rem;
+}
+
+.drm-screen .drm-episode-item {
+ padding: 0.35rem 0;
+ font-size: 0.95rem;
+ color: var(--dim);
+}
+
+.drm-screen .drm-probe-header {
+ margin-bottom: 1.25rem;
+}
+
+.drm-screen .drm-probe-meta {
+ font-size: 0.75rem;
+ color: var(--dim);
+ font-family: var(--font-ui);
+ margin-bottom: 0.35rem;
+}
+
+.drm-screen .drm-probe-question {
+ font-size: 1.15rem;
+ line-height: 1.5;
+}
+
+.drm-screen .drm-answer-row {
+ display: flex;
+ gap: 0.5rem;
+ align-items: flex-end;
+ margin-bottom: 1rem;
+}
+
+.drm-screen .drm-textarea {
+ flex: 1;
+ font-size: 1rem;
+ line-height: 1.6;
+ padding: 0.6rem;
+ resize: vertical;
+}
+
+.drm-screen .error-slot {
+ color: var(--warn);
+ font-size: 0.85rem;
+}
