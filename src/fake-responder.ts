@@ -37,6 +37,7 @@ export function makeFakeComplete(): RecordingFakeComplete {
   'What happens when you sit with that?',
  ];
  let probeIdx = 0;
+let followUpIdx = 0;
  const calls: FakeCall[] = [];
 
  const respond = async (system: string, turns: Turn[], opts?: { temperature?: number }): Promise<string> => {
@@ -64,7 +65,20 @@ export function makeFakeComplete(): RecordingFakeComplete {
    // capture would fail checkAroundPhrase's case-sensitive includes().
    const m = /inside quotation marks: "([^"]+)"/.exec(system);
    const phrase = m?.[1] ?? '';
-   return phrase ? `What did you mean by "${phrase}"?` : 'What did you mean by that?';
+   if (!phrase) return 'What did you mean by that?';
+   // Vary the frame: a real composer does not repeat one syntactic shape,
+   // and the near-duplicate guard rejects a uniform one — a descent of
+   // eight 'What did you mean by "…"?' rungs would close itself as
+   // convergence after the second rung. Every frame quotes the phrase
+   // verbatim inside quotation marks and asks in the second person.
+   const frames = [
+    (p: string) => `What did you mean by "${p}"?`,
+    (p: string) => `Can you say more about "${p}"?`,
+    (p: string) => `When did "${p}" first show up for you?`,
+    (p: string) => `What makes "${p}" important to you?`,
+    (p: string) => `How does "${p}" sit with you now?`,
+   ];
+   return frames[followUpIdx++ % frames.length]!(phrase);
   }
 
   if (s.includes('harvesting agent')) {
