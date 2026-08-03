@@ -4,6 +4,9 @@ dist/
 node-compile-cache/
 tsx-1000/
 
+# Machine-specific config — never shared (see .env for what goes here)
+/.env
+
 # Agent tooling scratch — machine-local, never shared
 .claude/
 .seeds/
