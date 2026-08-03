@@ -411,6 +411,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'called by GET /api/reach (Task 12) — Reach reads the snapshot, never the folder',
 },
 
+// ── src/import/repair.ts ──
+{
+ module: 'src/import/repair',
+ name: 'runImportRepair',
+ status: 'unwired',
+ reason: 'nothing calls it until Task 12\'s decisions route calls it after a clean commit — the honest record of this task\'s state',
+},
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },

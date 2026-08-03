@@ -435,6 +435,23 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  reads: 'a cut could not be verified against the source — nothing was saved',
 },
 
+// The repair step (seeding Task 10), emitted by runImportRepair after a
+// clean commit: the first names the act that holds every dangler (the
+// count is the whole story — the fragments stay off the surface, Q-6 /
+// Q-24); the second names the cap that stopped more questions reaching
+// the queue — the deferred danglers are in the repair ledger, never
+// dropped (Q-72).
+{
+ kind: 'repair-budded',
+ detail: 'buds=2',
+ reads: 'held 2 dangling openings as buds',
+},
+{
+ kind: 'repair-question-capped',
+ detail: 'deferred=3',
+ reads: 'deferred 3 repair questions — the live cap is full',
+},
+
 // The docket's import job (T6): one line per run, the three counts. The
 // sentence shows what moved and what is still to be read; a non-zero
 // `failed` adds the failing clause.

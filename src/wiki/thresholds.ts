@@ -154,6 +154,13 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Already live: a cap on how many gaps one model-proposed Arrangement may mark is a bound, and Q-56 puts bounds in force from birth — a shadowed cap writes "I would have stopped at 3" while the model marks without limit, which is worse than no cap because the mechanism is what generated the work. Every clip emits threshold-clipped, so the value stays honest. It is re-tuned from that record, never from argument.',
  },
+ 'repair.liveCap': {
+  name: 'repair.liveCap',
+  value: 2,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a shadowed cap is not a cap. Re-tune when a real vault import records how many repair questions a person answers per week versus how many were minted.',
+ },
  'lint.occasionlessRange': {
   name: 'lint.occasionlessRange',
   value: true,

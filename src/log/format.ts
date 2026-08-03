@@ -657,6 +657,18 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 // rest of the run is already on disk and only the extraction is missing.
 'import-run-failed': () => 'the import extraction could not finish this run — the rest of the docket work is already on disk',
 
+// ── The repair step (seeding Task 10): every dangler buds; only the question is capped ──
+
+// Emitted by runImportRepair once per run when any dangling snippet was
+// held as a Bud. The count is the whole story — the fragments stay off the
+// surface (Q-6, Q-24), and the ids live in the JSONL.
+'repair-budded': (_f, d) => `held ${count(nth(d, 0), 'dangling opening')} as buds`,
+// Emitted when the live cap (repair.liveCap, Q-56) stopped questions
+// reaching the queue. The deferred danglers are recorded in the repair
+// ledger — deferred, never dropped (Q-72).
+'repair-question-capped': (f) =>
+ `deferred ${count(num(f, 'deferred'), 'repair question')} — the live cap is full`,
+
 // ── The surfaced usage stamp (015) ──
 
 // One line per surfacing act: a claim or snippet reached the person on a
