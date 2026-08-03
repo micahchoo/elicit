@@ -53,6 +53,19 @@ export interface ImportReviewDeps {
     msg: string,
   ) => { done(): void; failed(cause: unknown, message?: string): void };
   navTo: (screen: string) => void;
+  /**
+   * The region slug the review stays inside (plan Task 13): the next-item
+   * request carries `?region=<slug>` so the bounded queue keeps the reader
+   * in the folder they declared. Absent for the 19 adopted posts and plain
+   * folder scans — callers omit the parameter then (exactOptionalPropertyTypes
+   * callers use a conditional spread).
+   */
+  region?: string;
+}
+
+/** The next-item path, inside the region when one is open (plan Task 13). */
+export function nextPath(region?: string): string {
+  return region === undefined ? '/api/import/next' : `/api/import/next?region=${encodeURIComponent(region)}`;
 }
 
 type Verb = 'approve' | 'trim' | 'discard';
@@ -74,7 +87,7 @@ async function load(deps: ImportReviewDeps): Promise<void> {
   const wait = deps.beginWait(deps.main, 'looking for a piece to review…');
   try {
     const res = await deps.api<{ item: ImportReviewItem | null; waiting?: string }>(
-      '/api/import/next',
+      nextPath(deps.region),
     );
     wait.done();
     if (!res.item) {

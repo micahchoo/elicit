@@ -19,6 +19,7 @@
  */
 
 import { renderImportReview } from './import-review.js';
+import { renderSurveyMap, takeDeclaredRegion } from './survey-map.js';
 import type { ImportReviewDeps, ImportReviewItem } from './import-review.js';
 
 /** The entry surface takes exactly the same seam as the review surface. */
@@ -61,7 +62,12 @@ export function renderImportEntry(deps: ImportEntryDeps): void {
     .then((res) => {
       wait.done();
       if (res.item) {
-        renderImportReview(deps);
+        // A review opened from a declared region stays inside it (Q-68's
+        // bound): the slug is taken once, then cleared. Without one — the
+        // 19 adopted posts, or a plain folder scan — the parameter is
+        // omitted (exactOptionalPropertyTypes: no present-undefined).
+        const region = takeDeclaredRegion();
+        renderImportReview(region ? { ...deps, region } : deps);
         return;
       }
       renderEntry(deps, res.waiting);
@@ -71,7 +77,7 @@ export function renderImportEntry(deps: ImportEntryDeps): void {
 
 /** The entry surface: the waiting sentence, and the way in. */
 function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
-  const { main, el } = deps;
+  const { main, el, api, navTo } = deps;
   main.replaceChildren();
 
   const surface = el('div', { class: 'screen active import-review' });
@@ -111,6 +117,26 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
 
   const slot = el('div');
   surface.append(slot);
+
+  // The map (Task 13): the folder as a shape, below the prompt, live. It
+  // gets its own container, so each render replaces only the previous map
+  // surface; the entry's navTo takes no focus, and Task 14's offer line
+  // widens main.ts's own function instead of this bridge.
+  const mapSlot = el('div', { class: 'survey-map' });
+  surface.append(mapSlot);
+
+  const renderMap = (): void => {
+    renderSurveyMap({
+      main: mapSlot,
+      el,
+      api,
+      navTo: (s) => navTo(s),
+      folder: folderInput.value.trim(),
+    });
+  };
+  renderMap();
+  folderInput.addEventListener('input', renderMap);
+
   main.append(surface);
   folderInput.focus();
 
