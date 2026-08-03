@@ -1,0 +1,108 @@
+{
+  "domain": "fake-craft",
+  "level": "serious-amateur",
+  "provenance": {
+    "generator": "hand-authored-fixture",
+    "generatedAt": "2026-08-03T00:00:00Z",
+    "domain": "fake-craft",
+    "targetLevel": "serious-amateur"
+  },
+  "schools": [
+    {
+      "id": "precision",
+      "name": "Precision School",
+      "optimisesFor": "exact results with minimal waste",
+      "givesUp": "speed and improvisation",
+      "quarrelsWith": ["improvisation"]
+    },
+    {
+      "id": "improvisation",
+      "name": "Improvisation School",
+      "optimisesFor": "fluidity and adaptability",
+      "givesUp": "repeatability and measurement",
+      "quarrelsWith": ["precision"]
+    }
+  ],
+  "clusters": [
+    { "id": "foundations", "icon": "🧱", "name": "Foundations", "gist": "The irreducible basics every practitioner shares across schools." },
+    { "id": "technique", "icon": "🔧", "name": "Technique", "gist": "The methods that distinguish one school from another." },
+    { "id": "integration", "icon": "🧩", "name": "Integration", "gist": "Putting it together — the compound skills that draw on everything below." }
+  ],
+  "spine": ["fake-craft.foundations.setup", "fake-craft.foundations.materials", "fake-craft.technique.core", "fake-craft.integration.capstone"],
+  "nodes": [
+    {
+      "id": "fake-craft.foundations.setup",
+      "label": "Workspace Setup",
+      "tier": 1,
+      "cluster": "foundations",
+      "prereqs": [],
+      "oneLine": "Prepare a workspace that supports sustained practice without injury or distraction.",
+      "hours": 5,
+      "knowWhat": ["ergonomic positioning", "tool layout conventions"],
+      "knowHow": ["arrange tools within reach", "set lighting for the dominant hand"],
+      "habits": ["scan the workspace before starting", "return tools to home position"],
+      "knowWhy": null,
+      "schoolWeights": {},
+      "checkpoint": "Set up a workspace from scratch in under 3 minutes; an observer can name every tool's location without asking.",
+      "commonFailure": "Tool placement copied from a video without adapting for arm length — leads to overreaching fatigue.",
+      "sources": ["Standard Practice Manual v3"]
+    },
+    {
+      "id": "fake-craft.foundations.materials",
+      "label": "Material Selection",
+      "tier": 1,
+      "cluster": "foundations",
+      "prereqs": [],
+      "oneLine": "Choose the right material for a given job by inspecting grain, weight, and moisture.",
+      "hours": 10,
+      "knowWhat": ["grain direction", "moisture content thresholds", "weight-to-strength ratios"],
+      "knowHow": ["read grain by feel, not sight", "test moisture with the back-of-hand method"],
+      "habits": ["inspect every piece before cutting", "pair pieces by grain direction"],
+      "knowWhy": null,
+      "schoolWeights": { "precision": "high" },
+      "checkpoint": "Given five unlabeled samples, correctly identify the grain direction and moisture state of each within 2 minutes.",
+      "commonFailure": "Judging by colour alone — dyed stock and aged surfaces mislead the eye.",
+      "sources": ["Materials Handbook, 4th ed"]
+    },
+    {
+      "id": "fake-craft.technique.core",
+      "label": "Core Technique",
+      "tier": 2,
+      "cluster": "technique",
+      "prereqs": ["fake-craft.foundations.setup", "fake-craft.foundations.materials"],
+      "softPrereqs": [],
+      "oneLine": "Execute the fundamental operation with consistent, measurable results.",
+      "hours": 30,
+      "knowWhat": ["feed rate", "angle of approach", "pressure curve"],
+      "knowHow": ["maintain consistent feed rate through variable-density material", "adjust angle mid-operation when grain shifts"],
+      "habits": ["measure twice before the operation, once after", "listen for pitch change as early warning"],
+      "knowWhy": {
+        "claim": "Feed rate should decrease through knots",
+        "because": "Knots are denser and generate more heat at standard speed",
+        "disputedBy": "improvisation",
+        "source": "Precision School Manual"
+      },
+      "schoolWeights": { "precision": "high", "improvisation": "low" },
+      "checkpoint": "Perform the core operation on ten consecutive pieces; all ten meet the ±0.5mm tolerance.",
+      "commonFailure": "Overcompensating after a miss — adjusting too far creates an oscillation that widens rather than narrows the error.",
+      "sources": ["Master Practitioner Nguyen, Techniques (2023)"]
+    },
+    {
+      "id": "fake-craft.integration.capstone",
+      "label": "Capstone Project",
+      "tier": 3,
+      "cluster": "integration",
+      "prereqs": ["fake-craft.technique.core"],
+      "oneLine": "Design and execute a complete project from material selection through finishing.",
+      "hours": 40,
+      "knowWhat": ["project planning", "finishing sequence", "assembly order"],
+      "knowHow": ["draft a cut list from a design", "sequence operations to minimise setup changes"],
+      "habits": ["dry-fit before final assembly", "photograph each stage for the post-mortem"],
+      "knowWhy": null,
+      "schoolWeights": {},
+      "checkpoint": "Complete a project with at least three joined components; a second practitioner can reproduce it from your notes alone.",
+      "commonFailure": "Rushing the finishing stage — the project looks 90% done at assembly and the last 10% gets skipped.",
+      "sources": ["Portfolio Review Standards v2"]
+    }
+  ]
+}
