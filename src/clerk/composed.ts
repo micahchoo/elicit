@@ -36,7 +36,7 @@ function stripFences(raw: string): string {
  * Returns null if no match of at least `minWords` content words is found.
  * Mirrors the harvester's substring validation posture (Q-1 → Q-12).
  */
-function findQuotedFragment(
+export function findQuotedFragment(
  source: string,
  question: string,
  minWords = 3,

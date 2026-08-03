@@ -895,4 +895,6 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/patterns/select', name: 'selectCheapPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
 { module: 'src/patterns/select', name: 'selectDeepPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
 { module: 'src/patterns/decompose', name: 'decomposeDerived', status: 'live', reason: 'pure predicate with no I/O — the Q-81 boundary guard; callers outside tests do not yet exist (111 T4)' },
+// ── src/clerk/compose-pattern.ts (111 — pattern-aware composition) ──
+{ module: 'src/clerk/compose-pattern', name: 'composeWithPattern', status: 'live', reason: 'LLM-calling composition path with decomposition guard — shadow gate in caller, function ships live (111 T5)' },
 ];
