@@ -50,7 +50,7 @@ export type CoachStore = {
  listQuests(direction?: string): Quest[];
  questStatus(q: Quest, tags: SittingTag[]): QuestStatus; // retiredAt → retired; any tag.quest===q.id → returned; else adopted
 
- declareArtifact(input: { direction: string; quest?: string; pointer: string; name: string; sentenceSession: string }): ArtifactRecord;
+ declareArtifact(input: { direction: string; quest?: string; pointer: string; name: string; sentenceSession: string; declaredAt?: string }): ArtifactRecord;
  listArtifacts(direction?: string): ArtifactRecord[];
 
  writeAdvice(note: AdviceNote): void; // REPLACES vault/coach/advice/<slug>.md (Q-77 — structural cap)
@@ -356,7 +356,7 @@ class CoachStoreImpl implements CoachStore {
   writeFileSync(join(this.#artifactsDir(), `${a.id}.md`), content, 'utf-8');
  }
 
- declareArtifact(input: { direction: string; quest?: string; pointer: string; name: string; sentenceSession: string }): ArtifactRecord {
+ declareArtifact(input: { direction: string; quest?: string; pointer: string; name: string; sentenceSession: string; declaredAt?: string }): ArtifactRecord {
   const a: ArtifactRecord = {
    id: ulid(),
    direction: input.direction,
@@ -364,7 +364,7 @@ class CoachStoreImpl implements CoachStore {
    pointer: input.pointer,
    name: input.name,
    sentenceSession: input.sentenceSession,
-   declaredAt: new Date().toISOString(),
+   declaredAt: input.declaredAt ?? new Date().toISOString(),
   };
   this.#writeArtifact(a);
   return a;

@@ -2968,7 +2968,15 @@ app.post('/api/coach/:slug/artifact', async (c) => {
   started: at,
   origin: 'unprompted',
  });
- coachStore.declareArtifact({ direction: slug, pointer, name, sentenceSession: sessionId });
+ // The declaration stamp must be strictly later than the licence baseline
+ // (advice mintedAt, else coachedAt), or a same-millisecond declare→artifact
+ // compares equal in licenseState's `>` and the background mint silently
+ // skips — the same clock-precision seam /read guards against.
+ const baseline = [direction.coachedAt, coachStore.readAdvice(slug)?.mintedAt].filter((s): s is string => s !== undefined);
+ const latest = baseline.length > 0 ? baseline.reduce((a, b) => (a > b ? a : b)) : '';
+ let declaredAt = new Date().toISOString();
+ if (latest !== '' && declaredAt <= latest) declaredAt = new Date(Date.parse(latest) + 1).toISOString();
+ coachStore.declareArtifact({ direction: slug, pointer, name, sentenceSession: sessionId, declaredAt });
  serverEmit(deps.vaultRoot, 'elicitor', 'artifact-declared', `direction=${slug} named=true`);
  refreshAdviceInBackground(slug);
  return c.json({ status: 'harvesting', sessionId });
