@@ -217,6 +217,57 @@ function resurfaceDraw(
 }
 
 /**
+ * An anniversary draw — the third Randomizer channel (ticket 107).
+ * Filters snippets to those whose wroteAt month+day matches `now`,
+ * then picks uniformly. Returns null when no snippet anniversary falls today.
+ *
+ * Q-18 holds by construction: every candidate is a date the user wrote,
+ * and no model is involved. The channel is an OFFER (Q-62): the waiting
+ * surface requests it explicitly, and the user declines with one tap.
+ *
+ * The `question` field carries a floor line (date + quote). The composed
+ * layer owns the wording per the 079 pattern; this is the fallback.
+ */
+export function anniversaryDraw(
+  snips: DatedSnippet[],
+  random: () => number,
+  now: Date,
+): { draw: RandomizerDraw; ref: string } | null {
+  const month = now.getMonth();
+  const day = now.getDate();
+
+  const candidates = snips.filter((s) => {
+    const d = new Date(s.wroteAt);
+    return d.getMonth() === month && d.getDate() === day;
+  });
+
+  if (candidates.length === 0) return null;
+
+  const s = pick(candidates, random());
+  const wroteOn = s.wroteAt.slice(0, 10);
+  const yearDiff = now.getFullYear() - new Date(s.wroteAt).getFullYear();
+  const ago = yearDiff <= 0 ? 'this year' : yearDiff === 1 ? '1 year ago' : `${yearDiff} years ago`;
+
+  return {
+    draw: {
+      question: `${wroteOn} (${ago}):\n\n"${s.prose}"`,
+      questionForm: 'deliberative',
+      provenance: 'resurfacing',
+      draw: {
+        kind: 'anniversary',
+        snippetId: s.id,
+        version: s.version,
+        stratum: s.stratum,
+        wroteAt: s.wroteAt,
+      },
+      ...(s.question ? { snippetQuestion: s.question } : {}),
+      ...(s.context ? { context: s.context } : {}),
+    },
+    ref: s.id,
+  };
+}
+
+/**
  * Build the draw. One call, one shuffle, one pair of log lines.
  *
  * `invokedBy` is the ONLY thing the licence can change:

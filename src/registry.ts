@@ -808,10 +808,13 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/coach/page', name: 'waitingLines', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9)' },
 { module: 'src/coach/page', name: 'coachOfferSentence', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9); named to dodge web/reach-line.ts offerSentence (090 T8)' },
 
+// ── src/env.ts ──
+{ module: 'src/env', name: 'loadEnvFile', status: 'live', reason: 'server boot reads .env before any ELICIT_* read — machine config lives beside the server' },
+
 // ── src/ktg/ (094 — KTG territory ontology instrument) ──
 { module: 'src/ktg/validator', name: 'validateKtgSkeleton', status: 'live', reason: 'pure, no I/O — the guard at load time (094 P1)' },
 { module: 'src/ktg/loader', name: 'loadKtgSkeleton', status: 'live', reason: 'wired by 094: server loads a skeleton at docket time (P3)' },
-{ module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'live', reason: 'convenience caller over loadKtgSkeleton — tests and fixtures (094 P1)' },
+{ module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadKtgSkeleton (094 P1, corrected by 095 verification)' },
 { module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2)' },
 { module: 'src/ktg/gap-fill', name: 'runTerritoryGapFillSweep', status: 'live', reason: 'wired by 094: runDocket\'s thunk runs it as the territory gap-fill job (P3)' },
 ];

@@ -70,7 +70,7 @@ export type DrawProvenance =
   stratum: Stratum;
   /** ISO date of the SITTING the snippet came from, not of its import. */
   wroteAt: string;
- };
+ }
  | {
   kind: 'anniversary';
   snippetId: string;

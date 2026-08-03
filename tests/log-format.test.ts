@@ -33,6 +33,8 @@ function ev(kind: string, detail: string, actor = 'clerk'): FormattableEvent {
  * and nothing enforced it, which is how four kinds drifted past it.
  */
 const EMITTED: { kind: string; detail: string; reads: string }[] = [
+ { kind: 'anniversary-drawn', detail: `snippet=${ULID}`, reads: 'drew an anniversary card' },
+ { kind: 'anniversary-evaluated', detail: 'candidates=0', reads: 'evaluated anniversaries — nothing written on this day' },
  { kind: 'run-started', detail: 'docket run started', reads: 'started a docket run' },
  { kind: 'index-rebuilt', detail: 'rebuilt index from 12 snippets', reads: 'rebuilt the index from 12 snippets' },
  { kind: 'docket-run', detail: 'minted 3, expired 1', reads: 'ran the docket: minted 3 questions, expired 1' },

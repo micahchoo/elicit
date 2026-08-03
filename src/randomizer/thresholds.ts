@@ -76,6 +76,13 @@ export const RANDOMIZER_THRESHOLDS = {
     graduatesWhen:
       'Live by decision, same reasoning as randomizer.recentDays. Five years is where the measured corpus actually parted: its early years of writing against its recent years, measured 2026-08-02 on a real vault. It is a description of that corpus and it is revisited whenever the corpus stops looking like that.',
   },
+  'randomizer.anniversaryLookbackYears': {
+    name: 'randomizer.anniversaryLookbackYears',
+    value: 5,
+    live: true,
+    graduatesWhen:
+      'Live by decision. An anniversary draw is an offer under Q-62: the waiting surface requests it explicitly, and the user declines with one tap. No selection mechanism is involved — the pool is every snippet whose month-day matches today within the lookback window. Five years is the measured deep stratum boundary (randomizer.yearsDays) and is deep enough to surface the older corpus without making every day an anniversary.',
+  },
 } satisfies Record<string, RandomizerThreshold>;
 
 /**

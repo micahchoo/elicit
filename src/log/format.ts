@@ -306,6 +306,8 @@ const COMMIT_REFUSED: Record<string, string> = {
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
 const SENTENCES = {
  'run-started': () => 'started a docket run',
+ 'anniversary-drawn': () => 'drew an anniversary card',
+ 'anniversary-evaluated': () => 'evaluated anniversaries — nothing written on this day',
  'index-rebuilt': (_f, d) => `rebuilt the index from ${count(nth(d, 0), 'snippet')}`,
  'docket-run': (_f, d) => `ran the docket: minted ${count(nth(d, 0), 'question')}, expired ${nth(d, 1)}`,
  'docket-run-failed': () => 'could not finish the docket run',

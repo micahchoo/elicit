@@ -93,7 +93,9 @@ import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
-import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
+import { anniversaryDraw, createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
+import { datedSnippets, readSittingDates } from './randomizer/strata.js';
+import { RANDOMIZER_THRESHOLDS } from './randomizer/thresholds.js';
 import { createCoachStore, readSittingTags } from './coach/store.js';
 import { evaluateOffer, licenseState, type CoachFacts } from './coach/license.js';
 import { waitingLines, coachOfferSentence, buildCoachPage } from './coach/page.js';
@@ -115,6 +117,7 @@ import type {
  QueueEntry,
  Snippet,
  Turn,
+ Prosody,
  Target,
  ParkedLadder,
  SoundingEnd,
@@ -193,6 +196,7 @@ const MIME: Record<string, string> = {
 
 let _sttClient: SttClient | null = null;
 let _sttUnavailable = false;
+let pendingProsody: { text: string; prosody: Prosody } | null = null;
 
 function getSttClient(deps: ServerDeps): SttClient | null {
  if (_sttClient) return _sttClient;
@@ -454,6 +458,40 @@ function droppedRegions(body: string, prepared: string): DroppedRegion[] {
  }
  if (runStart !== -1) marks.push(classifyRun(body, runStart, runEnd));
  return marks;
+}
+
+/**
+ * Prosody for the spoken turn that just landed (ticket 108). Computed in the
+ * transcribe route, consumed by the turn route when the dictated text
+ * matches, then cleared — lineage-only, nothing selects on it (Q-11).
+ */
+function computeProsody(
+ result: { tokens: string[]; timestamps: number[]; durations: number[] },
+ decodeDurationMs: number,
+ audioDurationMs: number,
+): Prosody {
+ const tokenCount = result.tokens.length;
+ if (tokenCount === 0) {
+  return { decodeDurationMs: Math.round(decodeDurationMs), audioDurationMs: Math.round(audioDurationMs), tokenCount: 0, tokensPerSec: 0, pauseCount: 0 };
+ }
+ const firstTs = result.timestamps[0]!;
+ const lastTs = result.timestamps[tokenCount - 1]!;
+ const lastDur = result.durations[tokenCount - 1]!;
+ const speechDurationSec = lastTs + lastDur - firstTs;
+ const tokensPerSec = speechDurationSec > 0 ? tokenCount / speechDurationSec : 0;
+ let pauseCount = 0;
+ for (let i = 1; i < tokenCount; i++) {
+  const prevEnd = result.timestamps[i - 1]! + result.durations[i - 1]!;
+  const gap = result.timestamps[i]! - prevEnd;
+  if (gap >= 0.5) pauseCount++;
+ }
+ return {
+  decodeDurationMs: Math.round(decodeDurationMs),
+  audioDurationMs: Math.round(audioDurationMs),
+  tokenCount,
+  tokensPerSec: Math.round(tokensPerSec * 100) / 100,
+  pauseCount,
+ };
 }
 
 // ── Create app ──
@@ -1019,6 +1057,26 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   });
  });
 
+// GET /api/anniversary — the on-this-day card for the Waiting Surface (ticket 107).
+// Returns a draw when a snippet's wroteAt month+day matches today; null otherwise.
+// An offer under Q-62: the surface requests it, the user declines with one tap.
+app.get('/api/anniversary', (c) => {
+  const now = new Date();
+  const snips = datedSnippets(
+    deps.vault.rebuildIndex(),
+    readSittingDates(deps.vaultRoot),
+    now,
+    RANDOMIZER_THRESHOLDS,
+  );
+  const result = anniversaryDraw(snips, Math.random, now);
+  if (!result) {
+    serverEmit(deps.vaultRoot, 'elicitor', 'anniversary-evaluated', 'candidates=0');
+    return c.json(null);
+  }
+  serverEmit(deps.vaultRoot, 'elicitor', 'anniversary-drawn', `snippet=${result.ref}`);
+  return c.json(result.draw);
+});
+
 /**
  * The shared answer-path close (plan Task 8 contract): persist the finished
  * ladder, consume the carrier, log the close. One copy for the turn route
@@ -1093,7 +1151,12 @@ function closeTheDoor(state: SessionState, at: string): void {
    }
   }
 
-  const result = await userTurn(state, body.text, body.spoken);
+ let turnProsody: Prosody | undefined;
+ if (body.spoken && pendingProsody && pendingProsody.text === body.text) {
+  turnProsody = pendingProsody.prosody;
+  pendingProsody = null;
+ }
+ const result = await userTurn(state, body.text, body.spoken, turnProsody);
 
   // Record the capture channel for this turn ordinal, unconditionally —
   // an absent channel pushes undefined so the ordinals never shift (ticket 048).
@@ -2305,13 +2368,16 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
 
   const samples = new Float32Array(raw);
   const start = performance.now();
-  const text = await client.transcribe(samples, sampleRate);
+  const result = await client.transcribe(samples, sampleRate);
+  const audioDurationMs = (samples.length / sampleRate) * 1000;
   const duration = Math.round(performance.now() - start);
-  const chars = text.length;
+  const prosody = computeProsody(result, duration, audioDurationMs);
+  pendingProsody = { text: result.text, prosody };
+  const chars = result.text.length;
 
  serverEmit(deps.vaultRoot, 'system', 'transcribed', `${duration}ms ${chars}chars`);
 
- return c.json({ text });
+ return c.json({ text: result.text });
  });
 
  // ── The piece routes (T6): compose, gap, set down, export ──
