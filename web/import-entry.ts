@@ -71,16 +71,13 @@ export function renderImportEntry(deps: ImportEntryDeps): void {
 
 /** The entry surface: the waiting sentence, and the way in. */
 function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
-  const { main, el, navTo } = deps;
+  const { main, el } = deps;
   main.replaceChildren();
 
   const surface = el('div', { class: 'screen active import-review' });
 
-  const back = el('button', { class: 'import-back' }, 'back');
-  back.addEventListener('click', () => navTo('mode'));
-  surface.append(back);
-
   if (waiting) {
+    surface.append(el('p', { class: 'import-step' }, '3 \u00b7 reading'));
     surface.append(el('p', { class: 'import-waiting' }, waiting));
     const advice = adviceFor(waiting);
     if (advice) {
@@ -93,6 +90,8 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
       );
     }
   }
+
+  surface.append(el('p', { class: 'import-step' }, '1 \u00b7 the folder'));
 
   // The folder prompt — one line in the mode idiom, no file picker (Q-57:
   // the app never opens a socket, and a picker adds nothing a path does not).
@@ -166,6 +165,8 @@ function appendManifest(surface: HTMLElement, deps: ImportEntryDeps, res: ScanRe
   );
   const start = el('button', { class: 'import-save' }, 'start reading');
   start.addEventListener('click', () => navTo('import'));
+
+  surface.append(el('p', { class: 'import-step' }, '2 \u00b7 what the scan found'));
 
   const manifest = el('div', { style: 'display: flex; flex-direction: column; gap: 0.4rem' });
   manifest.append(counts, ...refusals, next, start);

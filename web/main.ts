@@ -167,7 +167,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'import' | 'material' | 'piece';
+type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece';
 
 interface AppState {
  screen: Screen;
@@ -183,6 +183,10 @@ interface AppState {
  sttAvailable: boolean;
  dictating: boolean;
  turnHadSpeech: boolean;
+ /** Minutes declared for the sitting; the session clock counts down from it. */
+ sessionMinutes: number | null;
+ /** Epoch ms when the sitting's countdown runs out; set when the sitting begins. */
+ sessionDeadline: number | null;
  /** Session whose harvest is running behind the /end response (084). */
  pendingReviewSession: string | null;
  /** Live descent reading (012 T9): set on every rung, null when no descent is open. */
@@ -203,36 +207,87 @@ const state: AppState = {
  sttAvailable: false,
  dictating: false,
  turnHadSpeech: false,
+ sessionMinutes: null,
+ sessionDeadline: null,
  pendingReviewSession: null,
  sounding: null,
  soundingOffer: null,
 };
 
 const main = $('main')!;
+/** The scroll surface under the shell; `clear()` empties only this. */
+const surface = el('div', { id: 'surface' });
+main.append(surface);
 
 /* ─── Navigation ─── */
 
 function navTo(screen: Screen) {
+ const target = '#/' + screen;
+ if (location.hash !== target) location.hash = target;
  state.screen = screen;
  switch (screen) {
-  case 'mode': renderMode(); break;
-  case 'exchange': renderExchange(); break;
-  case 'harvest': renderHarvest(); break;
+  case 'mode':
+  case 'home': renderMode(); break;
+  case 'exchange':
+   // A sitting must be under way; a bare hash cannot fake one.
+   if (!state.sessionId) { navTo('home'); break; }
+   renderExchange(); break;
+  case 'harvest':
+   // A harvest needs a session and its proposals; otherwise home.
+   if (!state.sessionId || state.proposals.length === 0) { navTo('home'); break; }
+   renderHarvest(); break;
   case 'done': renderDone(); break;
   case 'waiting': renderWaiting(); break;
-  case 'reviews': renderReviews(); break;
+  case 'reviews':
+  case 'inbox': renderReviews(); break;
   // The seam widens navTo: the entry module takes `(screen: string)`, this
   // app's screens are the Screen union, and the entry only ever asks for
   // screens the union contains.
-  case 'import': renderImportEntry({ main, el, api, beginWait, navTo: (s: string) => navTo(s as Screen) }); break;
+  case 'import': renderShell(); renderImportEntry({ main: surface, el, api, beginWait, navTo: (s: string) => navTo(s as Screen) }); break;
   case 'wiki': renderWiki(false); break;
   case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
   case 'setup': renderSetup(); break;
-  case 'material': renderMaterial(); break;
+  case 'material':
+  case 'library': renderMaterial(); break;
   case 'piece': renderPiece(); break;
  }
 }
+
+/**
+ * Every routable name. The hash is honored only for these.
+ */
+const SCREENS: readonly Screen[] = [
+ 'mode', 'home', 'exchange', 'harvest', 'done', 'waiting', 'login',
+ 'setup', 'unprompted', 'wiki', 'reviews', 'inbox', 'import',
+ 'material', 'library', 'piece',
+];
+
+/** The screen a hash names, or null when it names nothing routable. */
+function screenFromHash(): Screen | null {
+ const name = location.hash.replace(/^#\/?/, '');
+ return (SCREENS as readonly string[]).includes(name) ? (name as Screen) : null;
+}
+
+/** The canonical screen a hash name lands on; aliases collapse here. */
+function canonicalOf(screen: Screen): Screen {
+ switch (screen) {
+  case 'home': return 'mode';
+  case 'library': return 'material';
+  case 'inbox': return 'reviews';
+  default: return screen;
+ }
+}
+
+// Hash routing: navTo writes the hash, this listener reads it back. An
+// event for the current screen (our own write, or an alias of it) is
+// skipped so a navigation never re-renders twice.
+window.addEventListener('hashchange', () => {
+ const screen = screenFromHash();
+ if (!screen) { navTo('home'); return; }
+ if (canonicalOf(screen) === canonicalOf(state.screen)) return;
+ navTo(screen);
+});
 
 
 /**
@@ -311,15 +366,92 @@ async function apiRaw(path: string): Promise<Response> {
 
 /* ─── Render ─── */
 
+/* ── The shell ── */
+
+/** The nav word a screen lights in the shell; '' lights none. */
+function navWordOf(screen: Screen): string {
+ switch (screen) {
+  case 'mode':
+  case 'home': return 'home';
+  case 'wiki': return 'wiki';
+  case 'material':
+  case 'library': return 'library';
+  case 'import': return 'import';
+  case 'reviews':
+  case 'inbox': return 'inbox';
+  default: return '';
+ }
+}
+
+/**
+ * The persistent top nav, built once and kept by `clear()`. Every authed
+ * screen calls it; each call re-lights the active word and refreshes the
+ * inbox count. Login and setup render without it.
+ */
+function renderShell(): void {
+ let nav = main.querySelector<HTMLElement>('.topnav');
+ if (!nav) {
+  nav = el('nav', { class: 'topnav' });
+  nav.append(el('a', { class: 'wordmark', href: '#/home' }, 'elicit'));
+  const links: [Screen, string][] = [
+   ['home', 'home'],
+   ['wiki', 'wiki'],
+   ['library', 'library'],
+   ['import', 'import'],
+   ['inbox', 'inbox'],
+  ];
+  for (const [screen, word] of links) {
+   const link = el('a', { class: 'nav-link', href: `#/${screen}` }, word);
+   link.dataset.screen = screen;
+   nav.append(link);
+  }
+  main.prepend(nav);
+ }
+ const here = navWordOf(state.screen);
+ for (const link of nav.querySelectorAll<HTMLAnchorElement>('a')) {
+  link.classList.toggle('here', here !== '' && link.dataset.screen === here);
+ }
+ refreshInboxBadge();
+}
+
+/** The inbox count: a small number when harvests wait, nothing when none. */
+function refreshInboxBadge(): void {
+ (async () => {
+  try {
+   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+   const inbox = main.querySelector<HTMLAnchorElement>('.topnav a[data-screen="inbox"]');
+   if (!inbox) return;
+   const badge = inbox.querySelector('.topnav-count');
+   if (data.pending.length === 0) {
+    badge?.remove();
+    return;
+   }
+   if (badge) {
+    badge.textContent = String(data.pending.length);
+    return;
+   }
+   inbox.append(el('span', { class: 'topnav-count' }, String(data.pending.length)));
+  } catch {
+   // The badge is a nicety; a failed read just means no count.
+  }
+ })();
+}
+
 function clear() {
  releaseReadWatch();
  releaseCorrectingMode();
- main.innerHTML = '';
+ surface.innerHTML = '';
+ // The session clock hangs in the shell; it leaves with the exchange screen.
+ main.querySelector<HTMLElement>('.session-clock')?.remove();
+ if (clockTimer !== null) {
+  clearInterval(clockTimer);
+  clockTimer = null;
+ }
 }
 
 function showError(msg: string) {
  const err = el('p', { class: 'error-msg' }, msg);
- main.append(err);
+ surface.append(err);
 }
 
 /* ── Waiting ── */
@@ -390,6 +522,8 @@ function beginWait(container: HTMLElement, label: string, delayMs = 0): Wait {
 
 function renderLogin() {
  clear();
+ // No nav before auth: a stale shell from a previous session leaves.
+ main.querySelector('.topnav')?.remove();
  state.screen = 'login';
 
  const div = el('div', { class: 'screen active login-form' });
@@ -423,7 +557,7 @@ function renderLogin() {
  });
 
  div.append(heading, input, submit, errorSlot);
- main.append(div);
+ surface.append(div);
  input.focus();
 }
 
@@ -431,6 +565,8 @@ function renderLogin() {
 
 function renderSetup() {
  clear();
+ // No nav before auth: a stale shell from a previous session leaves.
+ main.querySelector('.topnav')?.remove();
  state.screen = 'setup';
 
  const div = el('div', { class: 'screen active login-form' });
@@ -481,7 +617,7 @@ function renderSetup() {
  });
 
  div.append(backLink, heading, hint, input, confirm, submit, errorSlot);
- main.append(div);
+ surface.append(div);
  input.focus();
 }
 
@@ -490,10 +626,14 @@ function renderSetup() {
 function renderMode(showSetupHint?: boolean) {
  clear();
  state.screen = 'mode';
+ renderShell();
  state.turnPhase = null;
  state.juxtaposition = null;
 
  const div = el('div', { class: 'screen active mode-form' });
+
+ // Region one — begin: the sitting controls, under one heading.
+ const beginHeading = el('h2', { class: 'home-heading' }, 'start a sitting');
 
  const minutesRow = el('div', { class: 'mode-row' });
  const minLabel = el('label', {}, 'how long?');
@@ -525,39 +665,9 @@ function renderMode(showSetupHint?: boolean) {
  });
 
  const navRow = el('div', { class: 'mode-nav' });
- const waitingLink = el('button', { class: 'nav-link' }, 'open questions');
- waitingLink.addEventListener('click', () => navTo('waiting'));
  const writeLink = el('button', { class: 'nav-link' }, 'just write');
  writeLink.addEventListener('click', () => navTo('unprompted'));
- const wikiLink = el('button', { class: 'nav-link' }, 'the wiki');
- wikiLink.addEventListener('click', () => navTo('wiki'));
- // Your words are a hub destination now (the verb-grammar rule): composing
- // has its own surface, reached from the mode page like the others.
- const wordsLink = el('button', { class: 'nav-link' }, 'your words');
- wordsLink.addEventListener('click', () => navTo('material'));
- const importLink = el('button', { class: 'nav-link' }, 'import');
- importLink.addEventListener('click', () => navTo('import'));
- navRow.append(waitingLink, writeLink, wikiLink, wordsLink, importLink);
-
- // A quiet count of finished harvests awaiting review — offer-only (Q-62):
- // it sits in the nav row of a surface the person opened, never outbound.
- (async () => {
-  try {
-   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
-   if (state.screen !== 'mode') return;
-   if (data.pending.length === 0) return;
-   const n = data.pending.length;
-   const countLink = el(
-    'button',
-    { class: 'nav-link harvest-ready-count' },
-    `${n} harvest${n === 1 ? '' : 's'} ready for review`,
-   );
-   countLink.addEventListener('click', () => navTo('reviews'));
-   navRow.append(countLink);
-  } catch {
-   // The queue is offer-only; a failed read just means no count.
-  }
- })();
+ navRow.append(writeLink);
 
  if (showSetupHint) {
   const setupLink = el('button', { class: 'nav-link' }, 'set a password');
@@ -593,6 +703,10 @@ function renderMode(showSetupHint?: boolean) {
    state.question = res.question;
    state.lineageQuestion = res.snippetQuestion ?? null;
    state.lineageContext = res.context ?? null;
+   // The clock counts down from the declared minutes; the deadline is set
+   // once, here, so re-rendering the exchange screen does not reset it.
+   state.sessionMinutes = mode.minutes;
+   state.sessionDeadline = Date.now() + mode.minutes * 60_000;
    wait.done();
    renderExchange();
   } catch (e) {
@@ -616,8 +730,204 @@ function renderMode(showSetupHint?: boolean) {
   if (e.key === 'Enter') submit.click();
  });
 
- div.append(minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot);
- main.append(div);
+// Region two — waits: what is open, under the sitting controls.
+const waitsSection = el('div', { class: 'home-section waits-section' });
+const waitsHeading = el('h2', { class: 'home-heading' }, 'waits for you');
+
+// Cadence — one sentence, at the top, above the lists (ticket 056).
+// The document rule: a line of text on a page, not a widget. It carries no
+// control, no colour and no comparison; a long gap reads exactly like a
+// short one, because dormancy is signal and never debt (Q-24). The wording
+// is composed server-side so it is testable — see src/log/cadence.ts.
+const cadenceLine = el('p', { class: 'cadence-line' }, '');
+api<{ sentence: string }>('/api/cadence')
+ .then((r) => { cadenceLine.textContent = r.sentence; })
+ .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
+
+// The review queue, as a sentence below the cadence (the verb-grammar
+// rule): what waits is said, with one control word at the point of
+// attention. The `:empty` rule keeps it off the page until a harvest
+// actually waits.
+const reviewsLine = el('p', { class: 'waiting-reviews-line' });
+
+// Expedition section — entries with horizon 'days' waiting to go out
+const expSection = el('div', { class: 'waiting-section expedition-section' });
+const expHeading = el('h2', { class: 'waiting-heading' }, 'out in the world');
+const expList = el('div', { class: 'expedition-list' });
+expSection.append(expHeading, expList);
+
+// Queue section — entries with horizon 'session' waiting to be drawn
+const queueSection = el('div', { class: 'waiting-section' });
+const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
+const queueList = el('div', { class: 'queue-list' });
+queueSection.append(queueHeading, queueList);
+
+// The parked pointers keep their own page at #/waiting (their section does
+// not move); a quiet word here points at them when any are kept.
+const parkedLink = el('button', { class: 'nav-link parked-link', type: 'button' }, 'parked descents');
+parkedLink.hidden = true;
+parkedLink.addEventListener('click', () => navTo('waiting'));
+
+waitsSection.append(waitsHeading, cadenceLine, reviewsLine, expSection, queueSection, parkedLink);
+
+// Region three — activity: the stream, folded to its newest lines.
+const activitySection = el('div', { class: 'home-section activity-section' });
+const activityHeading = el('h2', { class: 'home-heading' }, 'activity');
+const activityList = el('div', { class: 'activity-list' });
+const moreWord = el('button', { class: 'nav-link activity-more', type: 'button' }, 'more');
+moreWord.hidden = true;
+moreWord.addEventListener('click', () => {
+ for (const l of activityList.querySelectorAll<HTMLElement>('.activity-line')) l.hidden = false;
+ moreWord.hidden = true;
+});
+activitySection.append(activityHeading, activityList, moreWord);
+
+// No initial events yet — show a quiet empty message until the SSE
+// snapshot arrives (removed below when real events show up).
+let emptyMsg: HTMLParagraphElement | null = el('p', { class: 'empty-msg' }, 'nothing yet');
+activityList.append(emptyMsg);
+
+function syncEmptyActivity() {
+ const hasLines = activityList.querySelector('.activity-line') !== null;
+ if (hasLines && emptyMsg) {
+  emptyMsg.remove();
+  emptyMsg = null;
+ } else if (activityList.children.length === 0) {
+  emptyMsg = el('p', { class: 'empty-msg' }, 'nothing yet');
+  activityList.append(emptyMsg);
+ }
+}
+
+div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot, waitsSection, activitySection);
+surface.append(div);
+
+// What wants the person, as a sentence with one word in it — the same
+// call the old mode page made for its count. A failed read shows nothing.
+(async () => {
+ try {
+  const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+  if (state.screen !== 'mode') return;
+  if (data.pending.length === 0) return;
+  const n = data.pending.length;
+  const readWord = el('button', { class: 'nav-link' }, 'read them');
+  readWord.addEventListener('click', () => navTo('reviews'));
+  reviewsLine.append(
+   document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
+   readWord,
+   document.createTextNode('.'),
+  );
+ } catch {
+  // The review queue is offer-only; a failed read just means no line.
+ }
+})();
+
+// Age helper: compact relative-time display (e.g. "2d ago", "just now")
+function ageString(created: string): string {
+ const ms = Date.now() - new Date(created).getTime();
+ const mins = Math.floor(ms / 60000);
+ if (mins < 1) return 'just now';
+ if (mins < 60) return `${mins}m ago`;
+ const hours = Math.floor(mins / 60);
+ if (hours < 24) return `${hours}h ago`;
+ const days = Math.floor(hours / 24);
+ return `${days}d ago`;
+}
+
+// Load the lists
+(async () => {
+ const wait = beginWait(queueList, 'looking…', 400);
+ try {
+  const data = await api<QueueData>('/api/queue');
+  wait.done();
+  queueList.innerHTML = '';
+  expList.innerHTML = '';
+
+  const expeditions = data.open.filter((e) => e.horizon === 'days');
+  const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
+  if (data.open.some((e) => e.source === 'parked-sounding')) parkedLink.hidden = false;
+
+  if (expeditions.length > 0) {
+   for (const entry of expeditions) {
+    const row = el('div', { class: 'expedition-entry' });
+    const question = el('span', { class: 'expedition-question' }, entry.question);
+    const age = el('span', { class: 'expedition-age' }, ageString(entry.created));
+    row.append(question, age);
+    expList.append(row);
+   }
+  }
+
+  if (pending.length === 0) {
+   queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
+  } else {
+   for (const entry of pending) {
+    const row = el('div', { class: 'queue-entry' });
+    const question = el('span', { class: 'queue-question' }, entry.question);
+    // Where the question came from, in words. No queue `source` literal
+    // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
+    // re-measure is the verification Q-15 forbids.
+    const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
+    row.append(question, meta);
+    queueList.append(row);
+   }
+  }
+ } catch (e) {
+  wait.done();
+  queueList.innerHTML = '';
+  queueList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
+  console.error(e);
+ }
+})();
+
+// Connect activity SSE
+(async () => {
+ try {
+  const resp = await fetch('/api/activity', {
+   method: 'GET',
+   headers: { Accept: 'text/event-stream' },
+  });
+  if (!resp.ok) throw new Error(`${resp.status}`);
+  if (!resp.body) return;
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+   const { done, value } = await reader.read();
+   if (done) break;
+   buffer += decoder.decode(value, { stream: true });
+
+   // Parse SSE events
+   const lines = buffer.split('\n');
+   buffer = lines.pop() ?? '';
+   let currentData = '';
+   for (const line of lines) {
+    if (line.startsWith('data: ')) {
+     currentData = line.slice(6);
+    } else if (line.startsWith(': heartbeat')) {
+     // Historical batch flushed — settle the empty state.
+     syncEmptyActivity();
+    } else if (line === '' && currentData) {
+     try {
+      const ev: ActivityEvent = JSON.parse(currentData);
+      const lineEl = el('div', { class: 'activity-line' });
+      const actor = el('span', { class: 'activity-actor' }, ev.actor);
+      const detail = el('span', { class: 'activity-detail' }, formatEvent(ev));
+      lineEl.append(actor, ' ', detail);
+      const age = relativeTime(ev.at);
+      if (age) lineEl.append(' ', el('span', { class: 'activity-age' }, age));
+      activityList.prepend(lineEl);
+      syncEmptyActivity();
+      // Keep the newest eight lines; fold the rest behind the more word.
+      const shown = activityList.querySelectorAll<HTMLElement>('.activity-line');
+      for (const old of Array.from(shown).slice(8)) old.hidden = true;
+      moreWord.hidden = shown.length <= 8;
+     } catch { /* skip malformed */ }
+     currentData = '';
+    }
+   }
+  }
+ } catch { /* SSE connection failed silently */ }
+})();
 }
 
 /* ── Unprompted entry: a blank page, no question ── */
@@ -625,6 +935,7 @@ function renderMode(showSetupHint?: boolean) {
 function renderUnprompted() {
  clear();
  state.screen = 'unprompted';
+ renderShell();
  state.sessionId = null;
  state.question = null;
  state.proposals = [];
@@ -678,7 +989,7 @@ function renderUnprompted() {
  });
 
  div.append(backRow, page, doneBtn, errorSlot);
- main.append(div);
+ surface.append(div);
 
  requestAnimationFrame(() => {
   page.focus();
@@ -689,6 +1000,8 @@ function renderUnprompted() {
 /* ── Exchange screen ── */
 
 let exchangeTurnCount = 0;
+/** The session clock's interval, stopped when the screen it hangs on leaves. */
+let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── STT recording ──
 
@@ -784,6 +1097,34 @@ const DOOR_QUESTION = "Anything else we didn't touch?";
 function renderExchange() {
  clear();
  state.screen = 'exchange';
+ renderShell();
+ // The session clock hangs in the shell: the declared minutes, counting
+ // down. It is a quiet span, never a control — at zero it says so and stops.
+ if (state.sessionDeadline !== null) {
+  const deadline = state.sessionDeadline;
+  const nav = main.querySelector<HTMLElement>('.topnav');
+  if (nav) {
+   const clock = el('span', { class: 'session-clock' });
+   nav.append(clock);
+   const tick = () => {
+    const left = deadline - Date.now();
+    if (left <= 0) {
+     clock.textContent = "time's up \u2014 harvest when ready";
+     if (clockTimer !== null) {
+      clearInterval(clockTimer);
+      clockTimer = null;
+     }
+     return;
+    }
+    const total = Math.floor(left / 1000);
+    const mm = String(Math.floor(total / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    clock.textContent = `${mm}:${ss} left`;
+   };
+   tick();
+   clockTimer = setInterval(tick, 1000);
+  }
+ }
  exchangeTurnCount = 0;
  state.turnHadSpeech = false;
  state.dictating = false;
@@ -826,6 +1167,8 @@ function renderExchange() {
  const turnTracker = pasteTracker(textarea);
  const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
  const micStatus = el('span', { class: 'mic-status' });
+ // A visible send, beside the mic: the Enter path in word form.
+ const sendBtn = el('button', { class: 'send-btn', type: 'button' }, 'send \u21b5');
  const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
  const skipBtn = el('button', { class: 'harvest-now' }, 'skip');
  const laterBtn = el('button', { class: 'harvest-now' }, 'later');
@@ -1047,12 +1390,17 @@ continueWord.addEventListener('click', () => pressGate('continue'));
 parkWord.addEventListener('click', () => pressGate('park'));
 anotherDayWord.addEventListener('click', () => pressGate('another-day'));
 
- answerRow.append(textarea, micBtn, micStatus);
+ answerRow.append(textarea, micBtn, micStatus, sendBtn);
  answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow, answerHint, leaveWord, gateRow);
+ // The end-of-sitting words group into one row, right-aligned under a
+ // hairline; appending moves them without touching the append above.
+ const actionRow = el('div', { class: 'action-row' });
+ actionRow.append(harvestBtn, skipBtn, laterBtn, leaveWord);
+ answerArea.append(actionRow);
 
 
  div.append(header, transcript, answerArea);
- main.append(div);
+ surface.append(div);
 
  // typewriter auto-grow
  textarea.addEventListener('input', () => {
@@ -1079,6 +1427,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   laterBtn.disabled = true;
   deferRow.classList.remove('active');
   if (state.sttAvailable) micBtn.disabled = true;
+  sendBtn.disabled = true;
 
   // The answer moves into the transcript now, so it is not on screen twice
   // while the probe is out. A failure puts it back in the field.
@@ -1144,6 +1493,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   skipBtn.disabled = false;
   laterBtn.disabled = false;
   if (state.sttAvailable) micBtn.disabled = false;
+  sendBtn.disabled = checkpointActive;
   textarea.focus();
   textarea.scrollIntoView({ block: 'center', behavior: 'smooth' });
  }
@@ -1155,6 +1505,8 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   }
  });
 
+ sendBtn.addEventListener('click', () => void sendTurn());
+
  /** Enable or disable everything that would race the call in flight. The
   *  gate words join the set (012 T9) so a double-press cannot park a ladder
   *  twice; the textarea stays disabled at the checkpoint either way. */
@@ -1164,6 +1516,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   skipBtn.disabled = busy;
   laterBtn.disabled = busy;
   if (state.sttAvailable) micBtn.disabled = busy;
+  sendBtn.disabled = busy;
   for (const c of gateControls) c.disabled = busy;
  }
 
@@ -1344,6 +1697,7 @@ const harvestDrafts = new Map<string, HarvestDecision[]>();
 function renderHarvest() {
  clear();
  state.screen = 'harvest';
+ renderShell();
  state.decisions = harvestDrafts.get(state.sessionId!) ?? [];
 
  const div = el('div', { class: 'screen active' });
@@ -1415,7 +1769,7 @@ function renderHarvest() {
   });
  }
 
- main.append(div);
+ surface.append(div);
 
  for (let i = 0; i < state.proposals.length; i++) {
   renderProposal(i, list);
@@ -1628,6 +1982,7 @@ let reviewPollTimer: ReturnType<typeof setInterval> | null = null;
 function renderReviews() {
  clear();
  state.screen = 'reviews';
+ renderShell();
 
  // Re-entry must never stack timers; clearing a dead handle is a no-op.
  if (reviewPollTimer !== null) clearInterval(reviewPollTimer);
@@ -1635,15 +1990,10 @@ function renderReviews() {
 
  const div = el('div', { class: 'screen active reviews-screen' });
 
- const backRow = el('div', { class: 'waiting-nav' });
- const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
- backBtn.addEventListener('click', () => navTo('mode'));
- backRow.append(backBtn);
-
  const heading = el('h2', { class: 'waiting-heading' }, 'harvests awaiting review');
  const list = el('div', { class: 'harvest-queue-list' });
- div.append(backRow, heading, list);
- main.append(div);
+ div.append(heading, list);
+ surface.append(div);
 
  const pending = state.pendingReviewSession;
 
@@ -1746,6 +2096,7 @@ function renderReviews() {
 function renderDone() {
  clear();
  state.screen = 'done';
+ renderShell();
  const div = el('div', { class: 'screen active' });
  const msg = el(
   'p',
@@ -1755,29 +2106,21 @@ function renderDone() {
  const backBtn = el('button', { class: 'submit-btn', style: 'margin-top: 1rem' }, 'back');
  backBtn.addEventListener('click', () => navTo('mode'));
  div.append(msg, backBtn);
- main.append(div);
+ surface.append(div);
 }
 
-/* ── Open questions surface ── */
+/* ── Parked descents surface ── */
+
+// The home surface absorbed the waiting lists; this page keeps only the
+// parked pointers, whose section the sounding no-touch zone does not allow
+// to move.
 
 function renderWaiting() {
  clear();
  state.screen = 'waiting';
+ renderShell();
 
  const div = el('div', { class: 'screen active waiting-surface' });
-
- // Back link
- const backRow = el('div', { class: 'waiting-nav' });
- const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
- backBtn.addEventListener('click', () => navTo('mode'));
- backRow.append(backBtn);
- div.append(backRow);
-
- // Expedition section — entries with horizon 'days' waiting to go out
- const expSection = el('div', { class: 'waiting-section expedition-section' });
- const expHeading = el('h2', { class: 'waiting-heading' }, 'out in the world');
- const expList = el('div', { class: 'expedition-list' });
- expSection.append(expHeading, expList);
 
  // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
  // Dormancy is signal, never debt (Q-24): each row shows the last rung's
@@ -1788,95 +2131,16 @@ function renderWaiting() {
  const parkedList = el('div', { class: 'parked-list' });
  parkedSection.append(parkedHeading, parkedList);
 
- // Queue section — entries with horizon 'session' waiting to be drawn
- const queueSection = el('div', { class: 'waiting-section' });
- const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
- const queueList = el('div', { class: 'queue-list' });
- queueSection.append(queueHeading, queueList);
+ div.append(parkedSection);
+ surface.append(div);
 
- // Activity section
- const activitySection = el('div', { class: 'waiting-section' });
- const activityHeading = el('h2', { class: 'waiting-heading' }, 'activity');
- const activityList = el('div', { class: 'activity-list' });
- activitySection.append(activityHeading, activityList);
 
- // No initial events yet — show a quiet empty message until the SSE
- // snapshot arrives (removed below when real events show up).
- let emptyMsg: HTMLParagraphElement | null = el('p', { class: 'empty-msg' }, 'nothing yet');
- activityList.append(emptyMsg);
-
- function syncEmptyActivity() {
-  const hasLines = activityList.querySelector('.activity-line') !== null;
-  if (hasLines && emptyMsg) {
-   emptyMsg.remove();
-   emptyMsg = null;
-  } else if (activityList.children.length === 0) {
-   emptyMsg = el('p', { class: 'empty-msg' }, 'nothing yet');
-   activityList.append(emptyMsg);
-  }
- }
-
- // Cadence — one sentence, at the top, above the sections (ticket 056).
- // The document rule: a line of text on a page, not a widget. It carries no
- // control, no colour and no comparison; a long gap reads exactly like a
- // short one, because dormancy is signal and never debt (Q-24). The wording
- // is composed server-side so it is testable — see src/log/cadence.ts.
- const cadenceLine = el('p', { class: 'cadence-line' }, '');
- api<{ sentence: string }>('/api/cadence')
-  .then((r) => { cadenceLine.textContent = r.sentence; })
-  .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
-
- // The review queue, as a sentence below the cadence (the verb-grammar
- // rule): what waits is said, with one control word at the point of
- // attention. The `:empty` rule keeps it off the page until a harvest
- // actually waits.
- const reviewsLine = el('p', { class: 'waiting-reviews-line' });
-
- // Append in order: cadence, reviews, expeditions, questions, activity
- // Activity appended last so the layout flows correctly
- div.append(backRow, cadenceLine, reviewsLine, expSection, parkedSection, queueSection, activitySection);
- main.append(div);
-
- // What wants the person, as a sentence with one word in it — the same
- // call renderMode makes for its count. A failed read shows nothing.
+ // Load the parked pointers
  (async () => {
-  try {
-   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
-   if (state.screen !== 'waiting') return;
-   if (data.pending.length === 0) return;
-   const n = data.pending.length;
-   const readWord = el('button', { class: 'nav-link' }, 'read them');
-   readWord.addEventListener('click', () => navTo('reviews'));
-   reviewsLine.append(
-    document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
-    readWord,
-    document.createTextNode('.'),
-   );
-  } catch {
-   // The review queue is offer-only; a failed read just means no line.
-  }
- })();
-
- // Age helper: compact relative-time display (e.g. "2d ago", "just now")
- function ageString(created: string): string {
-  const ms = Date.now() - new Date(created).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
- }
-
- // Load queue
- (async () => {
-  const wait = beginWait(queueList, 'looking…', 400);
+  const wait = beginWait(parkedList, 'looking…', 400);
   try {
    const data = await api<QueueData>('/api/queue');
    wait.done();
-   queueList.innerHTML = '';
-   expList.innerHTML = '';
    parkedList.innerHTML = '';
 
    const expeditions = data.open.filter((e) => e.horizon === 'days');
@@ -1884,16 +2148,6 @@ function renderWaiting() {
    // filter keeps them out of the questions list so nothing appears twice.
    const parked = data.open.filter((e) => e.source === 'parked-sounding');
    const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
-
-   if (expeditions.length > 0) {
-    for (const entry of expeditions) {
-     const row = el('div', { class: 'expedition-entry' });
-     const question = el('span', { class: 'expedition-question' }, entry.question);
-     const age = el('span', { class: 'expedition-age' }, ageString(entry.created));
-     row.append(question, age);
-     expList.append(row);
-    }
-   }
 
    if (parked.length > 0) {
     for (const entry of parked) {
@@ -1933,75 +2187,14 @@ function renderWaiting() {
     // of how long anything has sat (Q-24).
     parkedSection.hidden = true;
    }
-
-   if (pending.length === 0) {
-    queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
-   } else {
-    for (const entry of pending) {
-     const row = el('div', { class: 'queue-entry' });
-     const question = el('span', { class: 'queue-question' }, entry.question);
-     // Where the question came from, in words. No queue `source` literal
-     // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
-     // re-measure is the verification Q-15 forbids.
-     const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
-     row.append(question, meta);
-     queueList.append(row);
-    }
-   }
   } catch (e) {
    wait.done();
-   queueList.innerHTML = '';
-   queueList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
+   parkedList.innerHTML = '';
+   parkedList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
    console.error(e);
   }
  })();
 
- // Connect activity SSE
- (async () => {
-  try {
-   const resp = await fetch('/api/activity', {
-    method: 'GET',
-    headers: { Accept: 'text/event-stream' },
-   });
-   if (!resp.ok) throw new Error(`${resp.status}`);
-   if (!resp.body) return;
-   const reader = resp.body.getReader();
-   const decoder = new TextDecoder();
-   let buffer = '';
-
-   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // Parse SSE events
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    let currentData = '';
-    for (const line of lines) {
-     if (line.startsWith('data: ')) {
-      currentData = line.slice(6);
-     } else if (line.startsWith(': heartbeat')) {
-      // Historical batch flushed — settle the empty state.
-      syncEmptyActivity();
-     } else if (line === '' && currentData) {
-      try {
-       const ev: ActivityEvent = JSON.parse(currentData);
-       const lineEl = el('div', { class: 'activity-line' });
-       const actor = el('span', { class: 'activity-actor' }, ev.actor);
-       const detail = el('span', { class: 'activity-detail' }, formatEvent(ev));
-       lineEl.append(actor, ' ', detail);
-       const age = relativeTime(ev.at);
-       if (age) lineEl.append(' ', el('span', { class: 'activity-age' }, age));
-       activityList.prepend(lineEl);
-       syncEmptyActivity();
-      } catch { /* skip malformed */ }
-      currentData = '';
-     }
-    }
-   }
-  } catch { /* SSE connection failed silently */ }
- })();
 }
 
 /* ── The wiki: a reading surface ──
@@ -2283,17 +2476,16 @@ function claimInk(cl: Claim): string {
 function renderWiki(all = false) {
  clear();
  state.screen = 'wiki';
+ renderShell();
 
  const div = el('div', { class: 'screen active wiki-surface' });
 
- const nav = el('div', { class: 'wiki-nav' });
- const backBtn = el('button', { class: 'nav-link' }, '← back');
- backBtn.addEventListener('click', () => navTo('mode'));
- nav.append(backBtn);
-
+ const shell = el('div', { class: 'wiki-shell' });
+ const sidebar = el('nav', { class: 'wiki-sidebar' });
  const page = el('div', { class: 'wiki-page' });
- div.append(nav, page);
- main.append(div);
+ shell.append(sidebar, page);
+ div.append(shell);
+ surface.append(div);
 
  (async () => {
   const wait = beginWait(page, 'reading…', 400);
@@ -2305,7 +2497,7 @@ function renderWiki(all = false) {
     api<{ snippets: Snippet[] }>('/api/snippets').catch(() => ({ snippets: [] as Snippet[] })),
    ]);
    wait.done();
-   paintWiki(page, wiki, snippets.snippets);
+   paintWiki(page, sidebar, wiki, snippets.snippets);
    watchReads(page);
   } catch (e) {
    wait.failed(e, 'the page did not come through — try again');
@@ -2313,7 +2505,7 @@ function renderWiki(all = false) {
  })();
 }
 
-function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[]) {
+function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[]) {
  page.innerHTML = '';
 
  const byId = new Map<string, WikiSnippet>();
@@ -2340,6 +2532,9 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[
  }
 
  const hasClaims = wiki.facets.some((g) => g.claims.length > 0);
+
+ // The headings that render on this page, in page order, for the sidebar.
+ const sections: { heading: string; el: HTMLElement }[] = [];
 
  page.append(el('p', { class: 'wiki-opening' }, hasClaims ? WIKI_OPENING : WIKI_EMPTY));
 
@@ -2384,6 +2579,7 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[
    });
    section.append(block);
   }
+  sections.push({ heading: group.heading, el: section });
   page.append(section);
  }
 
@@ -2418,6 +2614,7 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[
    }
    section.append(exhibit);
   }
+  sections.push({ heading: 'Two things held at once', el: section });
   page.append(section);
  }
 
@@ -2440,6 +2637,19 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[
  );
  foot.append(lens);
  page.append(foot);
+
+ // The sidebar is a table of contents for the page: the facet headings it
+ // shows, each a link that scrolls its section into view. Only the heading
+ // words themselves — no counts, no status words.
+ sidebar.innerHTML = '';
+for (const s of sections) {
+ const link = el('a', { class: 'nav-link' }, s.heading);
+ link.addEventListener('click', (ev) => {
+  ev.preventDefault();
+  s.el.scrollIntoView({ behavior: 'smooth' });
+ });
+ sidebar.append(link);
+}
 }
 
 /**
@@ -2553,21 +2763,29 @@ function pieceWait(container: HTMLElement, label: string): { end(): void; fail(c
 function renderMaterial() {
  clear();
  state.screen = 'material';
+ renderShell();
 
  const div = el('div', { class: 'screen active material-surface' });
 
  const nav = el('div', { class: 'material-nav' });
- const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
- backBtn.addEventListener('click', () => navTo('mode'));
  // One margin word, present only while at least one paragraph is lit.
  const compose = el('button', { class: 'nav-link' }, 'compose');
  compose.hidden = true;
- nav.append(backBtn, ' \u00b7 ', compose);
+ nav.append(compose);
  div.append(nav);
+
+ // The library's two tabs: the material stack and the dated piece lines.
+ const tabs = el('div', { class: 'library-tabs' });
+ const snippetsTab = el('button', { class: 'nav-link library-tab here' }, 'snippets');
+ const piecesTab = el('button', { class: 'nav-link library-tab' }, 'pieces');
+ snippetsTab.dataset.tab = 'snippets';
+ piecesTab.dataset.tab = 'pieces';
+ tabs.append(snippetsTab, ' \u00b7 ', piecesTab);
+ div.append(tabs);
 
  const column = el('div', { class: 'material-column' });
  div.append(column);
- main.append(div);
+ surface.append(div);
 
  const selected = new Set<string>();
 
@@ -2592,7 +2810,7 @@ function renderMaterial() {
     api<{ pieces: PieceLite[] }>('/api/pieces'),
    ]);
    wait.end();
-   paintMaterial(column, snippetsRes.snippets, piecesRes.pieces, selected, compose);
+   paintMaterial(column, snippetsRes.snippets, piecesRes.pieces, selected, compose, tabs);
   } catch (e) {
    wait.fail(e);
   }
@@ -2605,33 +2823,20 @@ function paintMaterial(
  pieces: PieceLite[],
  selected: Set<string>,
  compose: HTMLButtonElement,
+ tabs: HTMLElement,
 ) {
  column.innerHTML = '';
 
- // Existing pieces as dated lines, clearly separate above the material.
- if (pieces.length > 0) {
-  const block = el('div', { class: 'material-pieces' });
-  block.append(el('h2', { class: 'waiting-heading' }, 'pieces'));
-  for (const p of pieces) {
-   const line = el('button', { class: 'nav-link material-piece-line' }, readableDate(p.created));
-   line.addEventListener('click', () => {
-    currentPieceId = p.id;
-    navTo('piece');
-   });
-   block.append(line);
-  }
-  column.append(block);
- }
-
- // The material as a stack: dated paragraphs, most recent first. The server
+ // The snippets tab: the material as a stack — dated paragraphs, most
+ // recent first — under a filter that hides lines as you type. The server
  // carries no sitting date here, so captured order stands in — a known
  // presentational deviation, recorded by the driver; the load-bearing
  // sitting order happens server-side at pinning time (Q-59).
+ const snippetsArea = el('div', { class: 'library-snippets' });
+ const filter = el('input', { class: 'library-filter', type: 'text', placeholder: 'filter your words\u2026' });
+ snippetsArea.append(filter);
  const stacked = [...snippets].sort((a, b) => b.captured.localeCompare(a.captured));
- if (stacked.length === 0) {
-  column.append(el('p', { class: 'empty-msg' }, 'nothing here yet'));
-  return;
- }
+ const rows: { para: HTMLElement; prose: string }[] = [];
  const list = el('div', { class: 'material-snippets' });
  for (const s of stacked) {
   const para = el('div', { class: 'material-snippet' });
@@ -2654,8 +2859,55 @@ function paintMaterial(
    compose.textContent = `compose ${selected.size}`;
   });
   list.append(para);
+  rows.push({ para, prose: s.prose });
  }
- column.append(list);
+ snippetsArea.append(
+  stacked.length === 0 ? el('p', { class: 'empty-msg' }, 'nothing here yet') : list,
+ );
+
+ // The pieces tab: dated lines, one per piece, with the first pin's
+ // opening words as a preview when it has any.
+ const piecesArea = el('div', { class: 'material-pieces' });
+ if (pieces.length === 0) {
+  piecesArea.append(el('p', { class: 'empty-msg' }, 'nothing here yet'));
+ } else {
+  for (const p of pieces) {
+   const firstPin = p.arrangement?.entries.find((e) => e.kind === 'pin');
+   const prose = firstPin?.kind === 'pin' ? firstPin.prose : undefined;
+   let text = readableDate(p.created);
+   if (prose) {
+    const preview = prose.replace(/\s+/g, ' ').trim();
+    text += ' \u2014 ' + (preview.length > 48 ? preview.slice(0, 48) + '\u2026' : preview);
+   }
+   const line = el('button', { class: 'nav-link material-piece-line' }, text);
+   line.addEventListener('click', () => {
+    currentPieceId = p.id;
+    navTo('piece');
+   });
+   piecesArea.append(line);
+  }
+ }
+
+ // Both tabs stay rendered in the column, so the selection and the filter
+ // survive a switch; the tabs only move which region is visible.
+ column.append(snippetsArea);
+ column.append(piecesArea);
+ piecesArea.hidden = true;
+
+ const tabButtons = tabs.querySelectorAll<HTMLButtonElement>('.library-tab');
+ for (const btn of tabButtons) {
+  btn.addEventListener('click', () => {
+   for (const other of tabButtons) other.classList.remove('here');
+   btn.classList.add('here');
+   snippetsArea.hidden = btn.dataset.tab !== 'snippets';
+   piecesArea.hidden = btn.dataset.tab !== 'pieces';
+  });
+ }
+
+ filter.addEventListener('input', () => {
+  const q = filter.value.trim().toLowerCase();
+  for (const row of rows) row.para.hidden = q !== '' && !row.prose.toLowerCase().includes(q);
+ });
 }
 
 /* ── the piece screen: the arrangement is the page ── */
@@ -2668,17 +2920,24 @@ function renderPiece() {
   navTo('material');
   return;
  }
+ renderShell();
  // An explicit string binding: function declarations below do not inherit
  // the narrowing of `id` (only arrow closures do), so name it once, plainly.
  const pieceId: string = id;
  // The arrangement being viewed: a candidate the person switched to, or the
  // current one. Viewing never chooses (Q-38); `keep this order` does.
  let viewedArrangementId: string | null = null;
+ // The trailing seam of the arrangement under the eye, for the toolbar's
+ // add-question word; null until the page has painted a seam.
+ let seamRef: { seam: HTMLElement; aid: string; after: string | undefined } | null = null;
 
  const div = el('div', { class: 'screen active piece-surface' });
 
- const nav = el('div', { class: 'piece-nav' });
- const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
+ const nav = el('div', { class: 'piece-toolbar' });
+ const navLeft = el('div', { class: 'piece-toolbar-left' });
+ const navCenter = el('div', { class: 'piece-toolbar-center' });
+ const navRight = el('div', { class: 'piece-toolbar-right' });
+ const backBtn = el('button', { class: 'nav-link' }, '\u2190 library');
  backBtn.addEventListener('click', () => navTo('material'));
  // Pass 2's margin words (Q-38): `other orders?` requests the
  // acceptance-time generation and hides once the piece holds its bound of
@@ -2689,30 +2948,26 @@ function renderPiece() {
  const keepOrder = el('button', { class: 'nav-link' }, 'keep this order');
  const ordersSwitcher = el('span', { class: 'piece-orders' });
  // Margin words, dimmed until the page is focused: set down (or pick up,
- // when the Piece is set down) and export. Q-41's verbs, never a flag.
+ // when the Piece is set down), export, and the seam's add-question word.
+ // Q-41's verbs, never a flag.
  const setDown = el('button', { class: 'nav-link' }, 'set down');
  const pickUp = el('button', { class: 'nav-link' }, 'pick up');
  const exportBtn = el('button', { class: 'nav-link' }, 'export');
- nav.append(
-  backBtn,
-  ' \u00b7 ',
-  otherOrders,
-  ' \u00b7 ',
-  ordersSwitcher,
-  ' \u00b7 ',
-  keepOrder,
-  ' \u00b7 ',
-  setDown,
-  ' \u00b7 ',
-  pickUp,
-  ' \u00b7 ',
-  exportBtn,
- );
+ const addQuestion = el('button', { class: 'nav-link' }, 'add question');
+ addQuestion.addEventListener('click', () => {
+  if (seamRef === null) return;
+  seamRef.seam.scrollIntoView({ behavior: 'smooth' });
+  openGapEditor(seamRef.seam, seamRef.aid, ulid(), seamRef.after);
+ });
+ navLeft.append(backBtn);
+ navCenter.append(otherOrders, ' \u00b7 ', ordersSwitcher, ' \u00b7 ', keepOrder);
+ navRight.append(addQuestion, ' \u00b7 ', exportBtn, ' \u00b7 ', setDown, ' \u00b7 ', pickUp);
+ nav.append(navLeft, navCenter, navRight);
  div.append(nav);
 
  const doc = el('div', { class: 'piece-doc' });
  div.append(doc);
- main.append(div);
+ surface.append(div);
 
  setDown.addEventListener('click', () => {
   api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/set-down`)
@@ -2821,11 +3076,12 @@ function renderPiece() {
 
   for (const entry of arrangement.entries) {
    if (entry.kind === 'pin') {
-    // The paragraph itself is the drag target — no handle, no grip, no
-    // border on hover. A pinned version is immutable, so there is no text
-    // editing to fight the drag (Q-5).
+    // The paragraph itself is the drag target, with a dimmed handle glyph
+    // that appears on hover. A pinned version is immutable, so there is no
+    // text editing to fight the drag (Q-5).
     const para = el('p', { class: 'piece-para', draggable: 'true' }, entry.prose ?? '');
     para.dataset.entry = entry.id;
+    para.prepend(el('span', { class: 'piece-handle' }, '\u283f'));
     para.addEventListener('dragstart', (ev) => {
      dragEntryId = entry.id;
      if (ev.dataTransfer) {
@@ -2900,6 +3156,7 @@ function renderPiece() {
   // a client-minted id and the entry it follows (the last one). A new gap
   // lands at the end, and the paragraph drag places it anywhere.
   const seam = el('div', { class: 'piece-gap' });
+  seamRef = { seam, aid: arrangement.id, after: entryIds.length > 0 ? entryIds[entryIds.length - 1]! : undefined };
   const seamRule = el('div', { class: 'piece-gap-rule' });
   seamRule.append(el('span', { class: 'piece-gap-ask' }, 'ask me?'));
   seam.append(seamRule);
@@ -3054,7 +3311,7 @@ function renderPiece() {
 (async () => {
  // First paint waits on two calls. If they are quick the page just appears;
  // if they are not, the page says it is starting rather than sitting blank.
- const wait = beginWait(main, 'starting…', 400);
+ const wait = beginWait(surface, 'starting…', 400);
  try {
   // Check if password needs to be set (no auth file; we are on loopback)
   let needsSetup = false;
@@ -3074,7 +3331,9 @@ function renderPiece() {
   // Auth file exists — check if we have a valid session
   try {
    await api<QueueData>('/api/queue');
-   renderMode(false);
+   // The hash names a screen; empty or unknown takes the default boot.
+   const fromHash = screenFromHash();
+   if (fromHash) navTo(fromHash); else renderMode(false);
   } catch {
    renderLogin();
   }
