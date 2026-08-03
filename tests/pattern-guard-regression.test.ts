@@ -22,14 +22,19 @@ describe('isNearDuplicate masks quoted spans (ticket 111)', () => {
     expect(isNearDuplicate(question, [prior])).toBe(false);
   });
 
-  it('still flags questions with different quotes but similar frames', () => {
-    // Different Episodes are quoted, but the frame is the same question.
-    // Masking leaves the frames identical, so the guard still fires.
+  it('does NOT flag different quotes under a shared frame — that is the ladder', () => {
+    // Corrected after the Sounding regression: the descent reuses one frame
+    // while every rung quotes fresh material, so frame-similarity alone may
+    // not convict (sounding-e2e closed descents by convergence before their
+    // cap when it did). A repeated THICK frame around new quotes is real
+    // fatigue, but it is pattern-rotation's problem (Q-82: drawn not chosen,
+    // exposure-controlled), not the duplicate guard's — the guard cannot
+    // tell a tiresome frame from a licensed instrument's frame.
     const prior =
       'How does the story of "The Boy Who Cried Wolf" teach about honesty and consequences?';
     const question =
       'How does the story of "The Goose with the Golden Eggs" teach about honesty and consequences?';
-    expect(isNearDuplicate(question, [prior])).toBe(true);
+    expect(isNearDuplicate(question, [prior])).toBe(false);
   });
 
   it('passes when the frame alone is too small to compare', () => {

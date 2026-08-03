@@ -130,9 +130,20 @@ describe('derivation patterns e2e', () => {
     expect(isNearDuplicate(q1, [q2])).toBe(false);
   });
 
-  test('near-duplicate: different quotes, similar frame → duplicate', () => {
+  // Corrected after the Sounding regression: a duplicate needs BOTH the
+  // frame and the quoted material to match. Same frame around new words is
+  // the descent's ladder — every rung quotes fresh material inside one
+  // recurring frame, and calling that a duplicate closed descents by
+  // convergence before their cap (sounding-e2e caught it).
+  test('near-duplicate: different quotes, similar frame → FRESH (the ladder)', () => {
     const q1 = 'You wrote: "the pull." What does that feel like?';
     const q2 = 'You wrote: "the ache." What does that feel like?';
+    expect(isNearDuplicate(q1, [q2])).toBe(false);
+  });
+
+  test('near-duplicate: same quote, similar frame → duplicate', () => {
+    const q1 = 'You wrote: "the pull of the tide." What does that feel like?';
+    const q2 = 'You wrote: "the pull of the tide." What is that feeling like?';
     expect(isNearDuplicate(q1, [q2])).toBe(true);
   });
 

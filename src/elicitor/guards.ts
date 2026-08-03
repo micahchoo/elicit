@@ -262,24 +262,41 @@ function maskQuoted(text: string): string {
  * masked first (ticket 111): re-quoting the same Episode with a different
  * frame is a fresh question, not a duplicate.
  */
+/** Word-set Jaccard over normalized text; 0 when either side is too thin. */
+function jaccard(a: string, b: string): number {
+ const aWords = new Set(normalizeQuestion(a).split(' ').filter((w) => w.length > 1));
+ const bWords = new Set(normalizeQuestion(b).split(' ').filter((w) => w.length > 1));
+ if (aWords.size < 2 || bWords.size < 2) return 0;
+ const intersection = new Set([...aWords].filter((w) => bWords.has(w)));
+ const union = new Set([...aWords, ...bWords]);
+ return union.size === 0 ? 0 : intersection.size / union.size;
+}
+
+/** The quoted material of a question, joined — what maskQuoted removes. */
+function quotedContent(text: string): string {
+ return quotedSpans(text)
+  .map((s) => text.slice(s.start, s.end))
+  .join(' ');
+}
+
 export function isNearDuplicate(question: string, asked: string[]): boolean {
- const normQ = normalizeQuestion(maskQuoted(question));
- const qWords = new Set(normQ.split(' ').filter((w) => w.length > 1));
- if (qWords.size < 2) return false;
-
  for (const prior of asked) {
-  const normA = normalizeQuestion(maskQuoted(prior));
-  const aWords = new Set(normA.split(' ').filter((w) => w.length > 1));
-  if (aWords.size < 2) continue;
-
-  const intersection = new Set([...qWords].filter((w) => aWords.has(w)));
-  const union = new Set([...qWords, ...aWords]);
-  if (union.size === 0) continue;
-
-  const similarity = intersection.size / union.size;
-  if (similarity >= 0.5) return true;
+  // Both sides quote something: a duplicate needs BOTH the frame and the
+  // quoted material to match. Frame-only similarity is the Sounding's
+  // ladder (same frame, each rung quoting new words — fresh); quote-only
+  // similarity is re-quoting an Episode under a new frame (ticket 111 —
+  // fresh). Either alone must pass.
+  const qQuoted = quotedContent(question);
+  const aQuoted = quotedContent(prior);
+  if (qQuoted.length > 0 && aQuoted.length > 0) {
+   const frameSim = jaccard(maskQuoted(question), maskQuoted(prior));
+   const quoteSim = jaccard(qQuoted, aQuoted);
+   if (frameSim >= 0.5 && quoteSim >= 0.5) return true;
+   continue;
+  }
+  // At least one side quotes nothing — the pre-111 whole-text comparison.
+  if (jaccard(question, prior) >= 0.5) return true;
  }
-
  return false;
 }
 

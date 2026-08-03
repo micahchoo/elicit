@@ -77,6 +77,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'gazetteer-frontier-minted', detail: 'minted=2', reads: 'minted 2 frontier questions from the gazetteer' },
  { kind: 'gazetteer-frontier-failed', detail: 'boom', reads: 'could not run the gazetteer frontier sweep' },
  { kind: 'pulse-answered', detail: '', reads: 'answered the opening pulse' },
+ { kind: 'pattern-decompose-rejection', detail: 'reason=presupposition pattern=scenario question-preview=When you...', reads: 'pattern question refused: presupposition' },
 {
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',

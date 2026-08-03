@@ -888,12 +888,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'shadow', shadowKind: 'gazetteer-frontier-shadow', reason: 'selection mechanism (Q-35 shadow-first): mints frontier questions only when shadow record earns it' },
 // ── src/patterns/ (111 — derivation patterns) ──
 { module: 'src/patterns/registry', name: 'loadPatterns', status: 'live', reason: 'pure, no I/O side effects beyond disk reads — loaded at composition time (111 T2)' },
-{ module: 'src/patterns/registry', name: 'clearPatternCache', status: 'live', reason: 'test seam only; no production caller but the mechanism is a loader, not a selection mechanism (111 T2)' },
-{ module: 'src/patterns/registry', name: 'patternById', status: 'live', reason: 'pure lookup; used by composition paths (111 T2)' },
+{ module: 'src/patterns/registry', name: 'clearPatternCache', status: 'unwired', reason: 'no production caller — test seam only (111 T2, corrected by dispatcher verification)' },
+{ module: 'src/patterns/registry', name: 'patternById', status: 'unwired', reason: 'no production caller yet — lookup awaits the docket wiring of composeWithPattern (111 remainder)' },
 { module: 'src/patterns/license', name: 'licensePattern', status: 'live', reason: 'pure predicate; gating what patterns are available (111 T2)' },
 { module: 'src/patterns/select', name: 'selectPattern', status: 'live', reason: 'caller-side shadow gate via threshold — the selection mechanism is shadow-first, the function ships live (111 T2)' },
 { module: 'src/patterns/select', name: 'selectCheapPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
-{ module: 'src/patterns/select', name: 'selectDeepPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
+{ module: 'src/patterns/select', name: 'selectDeepPattern', status: 'unwired', reason: 'no production caller yet — the Sounding consent gate passes a pattern in when deep integration wires up (111 remainder)' },
+{ module: 'src/clerk/composed', name: 'findQuotedFragment', status: 'live', reason: 'exported by 111 for the decomposition guard; long-standing internal caller set unchanged' },
+{ module: 'src/elicitor/guards', name: 'quotedSpans', status: 'live', reason: 'exported by 111 for the decomposition guard and quote masking' },
 { module: 'src/patterns/decompose', name: 'decomposeDerived', status: 'live', reason: 'pure predicate with no I/O — the Q-81 boundary guard; callers outside tests do not yet exist (111 T4)' },
 // ── src/clerk/compose-pattern.ts (111 — pattern-aware composition) ──
 { module: 'src/clerk/compose-pattern', name: 'composeWithPattern', status: 'live', reason: 'LLM-calling composition path with decomposition guard — shadow gate in caller, function ships live (111 T5)' },
