@@ -32,10 +32,8 @@ export function licensePattern(pattern: Pattern, ctx: LicensingContext): boolean
 
   if (matching.length < pattern.derivesFrom.minSnippets) return false;
 
-  // Every required facet must have at least one snippet
-  for (const facet of pattern.derivesFrom.facets) {
-    if (!matching.some((s) => s.facet === facet)) return false;
-  }
+  // facets are OR — any matching facet qualifies. The count check above
+  // already verifies enough material exists.
 
   // Every alsoNeeds facet must have at least one snippet (anywhere in the set)
   if (pattern.derivesFrom.alsoNeeds) {

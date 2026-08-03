@@ -51,17 +51,13 @@ describe('pattern licensing', () => {
     expect(licensePattern(p, c)).toBe(false);
   });
 
-  test('rejects when a required facet is missing', () => {
+  test('licenses when at least one required facet matches (OR semantics)', () => {
     const p = pattern({
       id: 'instance-testing',
       derivesFrom: { minSnippets: 1, facets: ['construct', 'causal-theory'] },
     });
-    const c = ctx({
-      availableSnippets: [
-        { id: 's1', version: 1, facet: 'construct' },
-      ],
-    });
-    expect(licensePattern(p, c)).toBe(false);
+    const c = ctx({ availableSnippets: [{ id: 's1', version: 1, facet: 'construct' }] });
+    expect(licensePattern(p, c)).toBe(true);
   });
 
   test('licenses when alsoNeeds is satisfied', () => {
