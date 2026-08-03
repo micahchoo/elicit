@@ -631,11 +631,11 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  },
 
  // ── src/sounding/budget.ts ──
-{ module: 'src/sounding/budget', name: 'rungAllowance', status: 'unwired', reason: 'wired by 012 T8: the accept route and the consent ask' },
+{ module: 'src/sounding/budget', name: 'rungAllowance', status: 'live', reason: 'wired by 012 T6: enterSounding computes the allowance from it' },
 { module: 'src/sounding/budget', name: 'expectedLengthSentence', status: 'unwired', reason: 'wired by 012 T8: the consent ask renders it' },
 
 // ── src/sounding/convergence.ts ──
-{ module: 'src/sounding/convergence', name: 'descentEnd', status: 'unwired', reason: 'wired by 012 T6: userTurn calls it after every rung' },
+{ module: 'src/sounding/convergence', name: 'descentEnd', status: 'live', reason: 'wired by 012 T6: userTurn and applyGate call it' },
 
 // ── src/index/lexical.ts (soundings slice Task 2 — the license's word API) ──
 { module: 'src/index/lexical', name: 'contentWordsOf', status: 'live' },
@@ -648,4 +648,13 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/sounding/park', name: 'writeLadder', status: 'unwired', reason: 'wired by 012 T8: the turn and gate routes persist finished ladders' },
 { module: 'src/sounding/park', name: 'readLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding reads it' },
 { module: 'src/sounding/park', name: 'parkPointer', status: 'unwired', reason: 'wired by 012 T8: the gate route mints the pointer' },
+
+// ── src/sounding/ladder.ts (012 Task 6 — the descent ladder) ──
+{ module: 'src/sounding/ladder', name: 'enterSounding', status: 'unwired', reason: 'wired by 012 T8: the accept route calls it' },
+{ module: 'src/sounding/ladder', name: 'addRung', status: 'live' },
+{ module: 'src/sounding/ladder', name: 'gateStateFor', status: 'live' },
+{ module: 'src/sounding/ladder', name: 'applyGate', status: 'unwired', reason: 'wired by 012 T8: the gate route calls it' },
+
+// ── src/clerk/sounding-rung.ts (012 Task 6 — rung composition) ──
+{ module: 'src/clerk/sounding-rung', name: 'composeRung', status: 'live' },
 ];

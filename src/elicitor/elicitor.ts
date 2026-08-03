@@ -6,7 +6,9 @@ import type {
  QuestionForm,
  QuestionProvenance,
  QuestionSource,
+ ParkedLadder,
  SessionState,
+ SoundingEnd,
  Target,
  Turn,
  Vault,
@@ -31,6 +33,9 @@ import { quotablePhrase, resonateHybrid, type SemanticIndex } from '../index/sem
 import { isContentFree } from './answer-shape.js';
 import { isWeakForm } from '../queue/bank-filter.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
+import { composeRung } from '../clerk/sounding-rung.js';
+import { addRung, gateStateFor } from '../sounding/ladder.js';
+import { descentEnd } from '../sounding/convergence.js';
 import { checkQuestion, type GuardVerdict } from './guards.js';
 import { facetIntentForRedLight } from './facet-intent.js';
 import type { RandomizerDraw } from '../randomizer/randomizer.js';
@@ -262,6 +267,25 @@ function emitClosingDoor(s: SessionState): Probe {
 }
 
 /**
+ * Close a descent. The order of the four steps is the whole point — it clears
+ * `s.sounding`, so anything that does not hand the ladder off first loses it.
+ * `s.finishedSounding` is the ONLY carrier (T1's type): set BEFORE clearing,
+ * read by the route, which persists the ladder and clears the field. This
+ * helper writes nothing to disk itself — elicitor.ts has no vault root and
+ * src/sounding/park.ts (Task 7) is the persister.
+ */
+function closeDescent(s: SessionState, endedBy: SoundingEnd): Probe {
+ // 1. Stamp the live state into a finished ladder.
+ const finished: ParkedLadder = { ...s.sounding!, ended: new Date().toISOString(), endedBy };
+ // 2. Hand it to the route BEFORE clearing anything. This is the only carrier.
+ s.finishedSounding = finished;
+ // 3. The descent is over; the sitting is not.
+ delete s.sounding;                    // `delete`, never `= undefined` — exactOptionalPropertyTypes
+ // 4. The two close moves survive every ending (Q-20, Q-47).
+ return emitClosingDoor(s);
+}
+
+/**
  * The guard choke point. Every model-composed question passes here, whichever
  * priority produced it — juxtaposition and red-light follow-ups used to return
  * unchecked, and repeated themselves within one session (eval 2026-08-02 #4).
@@ -300,7 +324,7 @@ export async function userTurn(
  s: SessionState,
  text: string,
  spoken?: boolean,
-): Promise<Probe | { kind: 'saturated' }> {
+): Promise<Probe | { kind: 'saturated' } | { kind: 'checkpoint' }> {
  const now = new Date().toISOString();
  const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
@@ -348,6 +372,27 @@ export async function userTurn(
  // At budget-2, trigger the close sequence
  if (s.questionCount >= budget - 2) {
   return emitClosingDoor(s);
+ }
+
+ // ── The descent (soundings): a live Sounding suspends ordinary selection ──
+ // The four priorities below are untouched and unreachable while a descent is
+ // live — a descent answers only rung questions (plan Task 6, Step 6).
+ if (s.sounding) {
+  const pending = s.sounding.pendingQuestion!;   // set at enter, and after every rung
+  s.sounding = addRung(s.sounding, pending.text, pending.foothold, text, now);
+
+  // The end check runs HERE, on the answer path, before anything is composed.
+  // Cap and convergence close the descent whether or not the gate is touched.
+  const end = descentEnd(s.sounding);
+  if (end) return closeDescent(s, end);
+
+  // The checkpoint blocks: no next question until a gate word arrives.
+  if (gateStateFor(s.sounding).checkpoint) return { kind: 'checkpoint' as const };
+
+  const next = await composeRung(text, s.deps.complete, (q) => guardQuestion(s, q));
+  if (!next) return closeDescent(s, 'convergence');   // no foothold — the chain cannot continue
+  s.sounding.pendingQuestion = next;
+  return emitProbe(s, next.text, 'deliberative', 'composed');
  }
 
  // ── Pivot rule (ticket 020): content-free closed answers get a fresh draw ──
