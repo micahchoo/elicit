@@ -1133,6 +1133,10 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    sessionId: state.id,
    question: opener.text,
    target,
+  // The opening pulse (ticket 105): a rotated momentary-state prompt.
+  // The client shows it as a one-line input before the first question;
+  // skipping leaves no record — the prompt never reaches the transcript.
+  pulsePrompt: PULSE_PROMPTS[Math.floor(Math.random() * PULSE_PROMPTS.length)],
    ...(draw && draw.question === opener.text
     ? {
      source: draw.provenance,
@@ -1147,6 +1151,44 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
 
 // GET /api/anniversary — the on-this-day card for the Waiting Surface (ticket 107).
 // Returns a draw when a snippet's wroteAt month+day matches today; null otherwise.
+
+ // POST /api/session/:id/pulse {text, prompt} → {ok} (ticket 105)
+ // The opening pulse: one momentary-state line at sitting start.
+ // Harvested like any prose — an agent turn (the prompt, tagged 'pulse')
+ // and a user turn (the answer) are inserted before the existing opener.
+ // Skipping calls nothing; the prompt rotates but the skip is invisible.
+ app.post('/api/session/:id/pulse', async (c) => {
+  const sessionId = c.req.param('id');
+  const state = sessions.get(sessionId);
+  if (!state) return c.json({ error: 'session not found' }, 404);
+  const body = await c.req.json<{ text: string; prompt: string }>();
+  const text = (body.text ?? '').trim();
+  if (!text) return c.json({ ok: true }); // empty answer = skip equivalent
+  const now = new Date().toISOString();
+  // Insert the pulse turns after the existing opener in transcript order.
+  // The opener was written first — pulse turns follow. findElicitingProbe
+  // still maps correctly: user turn 0 (pulse answer) → pulse prompt,
+  // user turn 1 (real answer) → opener.
+  const agentTurn: Turn = {
+   role: 'agent',
+   text: body.prompt,
+   at: now,
+   questionProvenance: 'pulse',
+  };
+  const userTurn: Turn = {
+   role: 'user',
+   text,
+   at: now,
+  };
+  state.turns.push(agentTurn);
+  state.turns.push(userTurn);
+  state.questionCount++;
+  // Append both to the transcript file
+  deps.vault.appendTurn(sessionId, agentTurn);
+  deps.vault.appendTurn(sessionId, userTurn);
+  serverEmit(deps.vaultRoot, 'elicitor', 'pulse-answered', `chars=${text.length}`);
+  return c.json({ ok: true });
+ });
 // An offer under Q-62: the surface requests it, the user declines with one tap.
 app.get('/api/anniversary', (c) => {
   const now = new Date();

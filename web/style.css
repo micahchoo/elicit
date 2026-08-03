@@ -254,6 +254,37 @@ main {
 
 /* ── exchange ── */
 
+
+/* ── Pulse (ticket 105): the inner-weather line at sitting start ── */
+.pulse-block {
+ display: flex;
+ flex-direction: column;
+ gap: 1rem;
+ padding: 2rem 0;
+}
+.pulse-prompt {
+ font-size: 1.15rem;
+ color: var(--fg);
+ line-height: 1.5;
+}
+.pulse-input {
+ width: 100%;
+ background: transparent;
+ border: none;
+ border-bottom: 1px dashed var(--line);
+ color: var(--fg);
+ font: inherit;
+ font-size: 1rem;
+ padding: 0.35rem 0;
+ outline: none;
+}
+.pulse-input:focus {
+ border-bottom-color: var(--fg-dim);
+}
+.pulse-actions {
+ display: flex;
+ gap: 1rem;
+}
 .exchange-header {
  display: flex;
  flex-direction: column;

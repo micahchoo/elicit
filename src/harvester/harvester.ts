@@ -624,6 +624,7 @@ export async function propose(
     // The Gap the eliciting question asked to fill, copied off the probe
     // turn (hop 3, Q-39) — the same crossing `questionSource` makes.
     ...(probe?.gap ? { gap: probe.gap } : {}),
+    ...(probe?.questionProvenance ? { questionProvenance: probe.questionProvenance } : {}),
     ...(ctx !== undefined ? { context: ctx } : {}),
    });
   }
@@ -711,6 +712,7 @@ export function decide(
    ...(proposal.gap ? { gap: proposal.gap } : {}),
    ...(proposal.context !== undefined ? { context: proposal.context } : {}),
    ...(channel !== undefined ? { channel } : {}),
+   ...(proposal.questionProvenance ? { questionProvenance: proposal.questionProvenance } : {}),
   };
 
   switch (decision.action) {
@@ -754,6 +756,7 @@ export function decide(
      // Not optional here: a restated answer to a gap question is still an
      // answer to that gap (hop 4, Q-39).
      ...(proposal.gap ? { gap: proposal.gap } : {}),
+    ...(proposal.questionProvenance ? { questionProvenance: proposal.questionProvenance } : {}),
      ...(decision.channel !== undefined ? { channel: decision.channel } : {}),
     };
     // Restatement is a NEW snippet — no reading created

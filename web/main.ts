@@ -29,6 +29,8 @@ interface SessionResponse {
  /** Display-only lineage of a resurfaced opener (080) — never part of the question. */
  snippetQuestion?: string;
  context?: string;
+ /** The rotated pulse prompt (ticket 105): present when the server wants a momentary-state line. */
+ pulsePrompt?: string;
 }
 
 interface TurnData {
@@ -197,6 +199,10 @@ interface AppState {
  soundingOffer: { construct: string; allowance: number; sentence: string } | null;
 /** The Coach page's slug (090 T11): set by navTo('coach', { slug }). */
  coachSlug: string | null;
+ /** The pulse prompt text to show before the first question (ticket 105). */
+ pulsePrompt: string | null;
+ /** The first question held while the pulse is shown (ticket 105). */
+ pendingQuestion: string | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -217,6 +223,8 @@ const state: AppState = {
  sounding: null,
  soundingOffer: null,
  coachSlug: null,
+ pulsePrompt: null,
+ pendingQuestion: null,
 };
 
 const main = $('main')!;
@@ -740,13 +748,22 @@ function renderMode(showSetupHint?: boolean) {
     shuffle ? { mode, shuffle: true } : { mode },
    );
    state.sessionId = res.sessionId;
-   state.question = res.question;
    state.lineageQuestion = res.snippetQuestion ?? null;
    state.lineageContext = res.context ?? null;
    // The clock counts down from the declared minutes; the deadline is set
    // once, here, so re-rendering the exchange screen does not reset it.
    state.sessionMinutes = mode.minutes;
    state.sessionDeadline = Date.now() + mode.minutes * 60_000;
+   // Pulse prompt present (ticket 105): hold the question, show pulse first
+   if (res.pulsePrompt) {
+    state.pulsePrompt = res.pulsePrompt;
+    state.pendingQuestion = res.question;
+    state.question = null;
+   } else {
+    state.pulsePrompt = null;
+    state.pendingQuestion = null;
+    state.question = res.question;
+   }
    wait.done();
    renderExchange();
   } catch (e) {
@@ -1097,6 +1114,63 @@ function wireDictation(opts: {
  * sentence to its transcript — so the exchange renders it itself. The
  * wording announces the descent closing, never the person stopping (Q-46).
  */
+
+/**
+ * The opening pulse (ticket 105): a one-line inner-weather input shown
+ * before the first question. Skippable with no record of the skip.
+ */
+function pulseExchange(container: HTMLElement) {
+ const pulsePrompt = state.pulsePrompt!;
+ const pendingQuestion = state.pendingQuestion!;
+
+ const pulseBlock = el('div', { class: 'pulse-block' });
+ const prompt = el('div', { class: 'pulse-prompt' }, pulsePrompt);
+ const input = el('input', {
+  class: 'pulse-input',
+  type: 'text',
+  placeholder: '\u2026',
+ });
+ const actions = el('div', { class: 'pulse-actions' });
+ const sendWord = el('button', { class: 'nav-link', type: 'button' }, 'send');
+ const skipWord = el('button', { class: 'nav-link', type: 'button' }, 'skip');
+ actions.append(sendWord, skipWord);
+ pulseBlock.append(prompt, input, actions);
+ container.append(pulseBlock);
+
+ // Focus the input on render
+ requestAnimationFrame(() => input.focus());
+
+ async function submit() {
+  const text = input.value.trim();
+  if (!text) return;
+  input.disabled = true;
+  sendWord.disabled = true;
+  skipWord.disabled = true;
+  try {
+   await api(`/api/session/${state.sessionId}/pulse`, { text, prompt: pulsePrompt });
+  } catch {
+   // Pulse is never load-bearing; a failure just shows the opener.
+  }
+  // Proceed to the normal exchange
+  state.pulsePrompt = null;
+  state.question = pendingQuestion;
+  state.pendingQuestion = null;
+  renderExchange();
+ }
+
+ function skip() {
+  state.pulsePrompt = null;
+  state.question = pendingQuestion;
+  state.pendingQuestion = null;
+  renderExchange();
+ }
+
+ sendWord.addEventListener('click', submit);
+ skipWord.addEventListener('click', skip);
+ input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submit();
+ });
+}
 const DOOR_QUESTION = "Anything else we didn't touch?";
 
 function renderExchange() {
@@ -1139,6 +1213,15 @@ function renderExchange() {
  state.soundingOffer = null;
 
  const div = el('div', { class: 'screen active' });
+
+ // ── Opening pulse (ticket 105): a one-line inner-weather input ──
+ // Shown when the server includes a pulsePrompt; skipped with no record.
+ if (state.pulsePrompt) {
+  pulseExchange(div);
+  surface.append(div);
+  return;
+ }
+
 
  const header = el('div', { class: 'exchange-header' });
  const openerLineage = lineageBlock(
