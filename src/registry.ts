@@ -794,4 +794,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/coach/license', name: 'evaluateOffer', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
 { module: 'src/coach/license', name: 'licenseState', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
 { module: 'src/coach/license', name: 'somethingNew', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
+
+// ── src/coach/reflection.ts (090 T6 — the reflection follow-ups) ──
+{ module: 'src/coach/reflection', name: 'mintReflections', status: 'unwired', reason: 'caller is the return route (T10)' },
 ];
