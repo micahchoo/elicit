@@ -542,6 +542,19 @@ export interface ClaimStore {
    * (Q-29), and the recompute maps this flag on its next pass.
    */
   attest(id: string): Claim | null;
+  /**
+   * The user's correcting verb (Q-33's family): replace a claim's body with
+   * the person's own words, mark it attested, and append the cite to the
+   * Snippet holding those words verbatim (CONTEXT — Propagation). `status`
+   * is untouched — recomputed mechanically (Q-29), exactly as `attest`.
+   *
+   * The ONLY body rewrite on an existing claim. No ClerkOp reaches it: the
+   * op vocabulary has no verb for it, and the validator rejects the one
+   * UPDATE that tries (ops.ts). The person's words stay theirs; the agent
+   * may contest them, never rewrite them. Null for an unknown id, the same
+   * not-found answer `readClaim` gives.
+   */
+  edit(id: string, body: string, cite: string): Claim | null;
 }
 
 /**

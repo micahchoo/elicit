@@ -289,6 +289,18 @@ function validate(
     case 'UPDATE': {
       const target = liveClaim(rec['claim'], store);
       if (!target.ok) return reject(target.reason, readingId);
+      // The claim-edit verb (Q-33) owns an attested claim's statement. The
+      // Clerk may add evidence or open a Contradiction against it, never
+      // rewrite its words or its range: an UPDATE carrying either for an
+      // attested claim is rejected by name, the way `status` and `attested`
+      // themselves are. SUPERSEDE is the way past one — a new claim, the
+      // attested words left on disk.
+      if (target.claim.attested && rec['body'] !== undefined) {
+        return reject('attested-body-not-model-writable', readingId);
+      }
+      if (target.claim.attested && rec['range'] !== undefined) {
+        return reject('attested-range-not-model-writable', readingId);
+      }
       // Not in the plan's rule 7, and here anyway: a fabricated cite entering
       // through `addCites` is the same fabrication rule 7 exists to stop, and
       // validate-before-write is a property of the boundary, not of one op.
@@ -318,6 +330,14 @@ function validate(
       // 9. Every named claim is live and non-archived.
       const into = liveClaim(rec['into'], store);
       if (!into.ok) return reject(into.reason, readingId);
+      // The claim-edit verb (Q-33) owns an attested claim's statement. A
+      // MERGE rewrites its `into` claim's body and range, so an attested
+      // claim is not a legal `into`: the Clerk may add evidence or open a
+      // Contradiction against it, never rewrite its words. SUPERSEDE is the
+      // way past one — a new claim, the attested words left on disk.
+      if (into.claim.attested) {
+        return reject('attested-into-not-model-writable', readingId);
+      }
       const from = asStringArray(rec['from']);
       if (!from) return reject('merge-from-malformed', readingId);
       if (from.length === 0) return reject('merge-from-empty', readingId);
@@ -570,19 +590,16 @@ export function recomputeStatus(touched: string[], deps: ApplyDeps, now: string)
   const push = (id: string): void => {
     if (!targets.includes(id)) targets.push(id);
   };
-  // NOTE, added after T15 measured it: this propagation is currently a NO-OP.
-  // The only claims it adds are members of an OPEN Contradiction, and
-  // `computeStatus` rule 1 returns `contested` for exactly those — which is
-  // already their status — so the `live === claim.status` guard below skips
-  // every one. Deleting the two `push` calls leaves the whole suite green.
-  //
-  // It is kept rather than deleted because it is a correctness guard against a
-  // FUTURE status rule, not dead weight today: the moment any rule makes a
-  // contradiction member's status depend on something other than membership,
-  // the partner must recompute or it goes stale. But nothing may claim it does
-  // work now — an earlier commit message of mine said this version "propagates
-  // to a contradiction's partner claim, which the local one did not", and that
-  // was wrong.
+  // The contradiction-partner propagation. NOT a no-op: when a member's
+  // stored status is stale — the state the ops suite builds by writing an
+  // open Contradiction and touching only one member — the partner is
+  // recomputed ONLY because these pushes add it. T12's two open paths
+  // recompute both members at open time, so in the ordinary run the guard
+  // is idle; it exists for any path that writes a Contradiction without
+  // recomputing its members, and for any future status rule that makes
+  // membership less than the whole answer. The claim-edit verb rewrites a
+  // member's body and attested flag without touching its partner — the
+  // partner's status must never depend on when the member was recomputed.
   const isTouched = new Set(touched);
   for (const k of after.contradictions) {
     if (k.status !== 'open') continue;

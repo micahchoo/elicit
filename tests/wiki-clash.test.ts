@@ -130,6 +130,7 @@ function fakeStore(candidates: ClashCandidate[]): ClaimStore {
   writeClaim: no('writeClaim') as (c: Claim) => void,
   readClaim: no('readClaim') as (id: string) => Claim | null,
   attest: no('attest') as (id: string) => Claim | null,
+  edit: no('edit') as (id: string, body: string, cite: string) => Claim | null,
   writeContradiction: no('writeContradiction') as (c: Contradiction) => void,
   listContradictions: no('listContradictions') as () => Contradiction[],
   writeCandidate: no('writeCandidate') as (c: ClashCandidate) => void,

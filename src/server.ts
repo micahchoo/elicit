@@ -2084,8 +2084,12 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
 
  // ── The wiki, as a page (Q-21, Q-23, Q-25) ──
  //
- // Both routes are READ routes. Nothing a client can send edits a claim; the
- // read-log write below records a reading, not an edit.
+ // The GET route below is a READ route. The POST verbs beneath it are the
+ // user's (the read-log records a reading; attest and the claim edit are
+ // user verbs, Q-33) and the agent's (challenge asks a question). The edit
+ // is the ONE route that rewrites a claim's body, and it is a user verb:
+ // the op vocabulary has no word for it, and the validator rejects the one
+ // UPDATE that tries (Q-29's shapes are the guard, not this comment).
  //
  // The shaping happens HERE, not in the client. Two tickets stand behind that
  // rule: 038 closed because the activity stream leaked identifiers onto a
@@ -2207,6 +2211,41 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   const id = c.req.param('id');
   const claim = claimStore.attest(id);
   if (!claim) return c.json({ error: 'unknown claim' }, 404);
+  return c.json({ ok: true });
+ });
+
+ // POST /api/wiki/claim/:id/edit — the user's correcting verb (Q-33's family)
+ //
+ // The ONE route that rewrites a claim's body, and it is a user verb: no
+ // ClerkOp may reach it. The claim's words become the person's, marked
+ // attested (the same state family as attest), and those words are captured
+ // VERBATIM as a Snippet the claim then cites (CONTEXT — Propagation): the
+ // claim stays falsifiable, and the agent may question it, never rewrite it.
+ // The text is trimmed once — the harvest path's trim for user prose — and
+ // nothing else is normalized.
+ app.post('/api/wiki/claim/:id/edit', async (c) => {
+  const id = c.req.param('id');
+  if (!claimStore.readClaim(id)) return c.json({ error: 'unknown claim' }, 404);
+
+  let body: unknown;
+  try {
+   body = (await c.req.json<{ body?: unknown }>()).body;
+  } catch {
+   return c.json({ error: 'claim body is required' }, 400);
+  }
+  if (typeof body !== 'string' || body.trim().length === 0) {
+   return c.json({ error: 'claim body is required' }, 400);
+  }
+
+  const text = body.trim();
+  const s = deps.vault.saveSnippet(text, {
+   kind: 'unprompted',
+   session: '',
+   question: '',
+   questionForm: 'deliberative',
+  });
+  const updated = claimStore.edit(id, text, `${s.id}@${s.version}`);
+  if (!updated) return c.json({ error: 'unknown claim' }, 404);
   return c.json({ ok: true });
  });
 

@@ -2450,6 +2450,7 @@ let correctingClaim: HTMLElement | null = null;
 let correctingKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function releaseCorrectingMode(): void {
+ closeClaimEditor();
  if (correctingPage) correctingPage.classList.remove('correcting');
  if (correctingClaim) correctingClaim.classList.remove('focused');
  correctingPage = null;
@@ -2460,13 +2461,25 @@ function releaseCorrectingMode(): void {
  }
 }
 
-function focusClaim(page: HTMLElement, block: HTMLElement, claimId: string): void {
+/** The open claim editor's elements, or null. One per page; releaseCorrectingMode closes it. */
+let claimEditorEls: HTMLElement[] | null = null;
+
+function closeClaimEditor(): void {
+ if (!claimEditorEls) return;
+ for (const el of claimEditorEls) el.remove();
+ claimEditorEls = null;
+}
+
+function focusClaim(page: HTMLElement, block: HTMLElement, cl: Claim): void {
  releaseCorrectingMode();
  correctingPage = page;
  correctingClaim = block;
  page.classList.add('correcting');
  block.classList.add('focused');
 
+ // A released mode leaves its chrome dimmed behind; a fresh focus starts
+ // clean.
+ block.querySelector('.claim-verbs')?.remove();
  const verbs = el('div', { class: 'claim-verbs' });
  // The verbs' own clicks must not toggle the mode off through the block
  // handler, so the row swallows them.
@@ -2474,7 +2487,7 @@ function focusClaim(page: HTMLElement, block: HTMLElement, claimId: string): voi
 
  const attest = el('button', { class: 'nav-link' }, 'that’s me exactly');
  attest.addEventListener('click', () => {
-  api(`/api/wiki/claim/${encodeURIComponent(claimId)}/attest`)
+  api(`/api/wiki/claim/${encodeURIComponent(cl.id)}/attest`)
    .then(() => {
     // No status word: the flag's ink arrives when the Clerk next reads
     // (Q-33), and the line says that and no more.
@@ -2485,14 +2498,17 @@ function focusClaim(page: HTMLElement, block: HTMLElement, claimId: string): voi
 
  const challenge = el('button', { class: 'nav-link' }, 'not quite — ask me');
  challenge.addEventListener('click', () => {
-  api(`/api/wiki/claim/${encodeURIComponent(claimId)}/challenge`)
+  api(`/api/wiki/claim/${encodeURIComponent(cl.id)}/challenge`)
    .then(() => {
     verbs.replaceWith(marginNote('a question is on its way to your queue'));
    })
    .catch((e: unknown) => console.error(e));
  });
 
- verbs.append(attest, challenge);
+ const correct = el('button', { class: 'nav-link' }, 'correct this');
+ correct.addEventListener('click', () => openClaimEditor(block, verbs, cl));
+
+ verbs.append(attest, correct, challenge);
  block.append(verbs);
 
  if (!correctingKeyHandler) {
@@ -2501,6 +2517,55 @@ function focusClaim(page: HTMLElement, block: HTMLElement, claimId: string): voi
   };
   document.addEventListener('keydown', correctingKeyHandler);
  }
+}
+
+function openClaimEditor(block: HTMLElement, verbs: HTMLElement, cl: Claim): void {
+ // Correcting is the diff grammar (the verb-grammar rule): the constraint
+ // visible, commit and cancel explicit, and blur inert — leaving the editor
+ // never commits and never discards. The verbs row leaves while the editor
+ // is open and returns on cancel, never interleaved at rest.
+ verbs.remove();
+ const editor = el('textarea', { class: 'claim-edit-editor' }, cl.body) as HTMLTextAreaElement;
+ const constraint = el('p', { class: 'claim-edit-constraint' },
+  'this sentence becomes your words — the Clerk may question it, never rewrite it');
+ const commit = el('button', { class: 'nav-link' }, 'commit');
+ const cancel = el('button', { class: 'nav-link' }, 'cancel');
+ const actions = el('div', { class: 'claim-edit-actions' });
+ actions.append(commit, cancel);
+ block.append(editor, constraint, actions);
+ claimEditorEls = [editor, constraint, actions];
+ // The editor's own clicks must not toggle the mode off through the block
+ // handler, the way the verbs row swallows them.
+ for (const el of [editor, constraint, actions]) {
+  el.addEventListener('click', (e) => e.stopPropagation());
+ }
+ editor.focus();
+
+ const valid = (): boolean => editor.value.trim() !== '';
+ editor.addEventListener('input', () => {
+  const ok = valid();
+  commit.disabled = !ok;
+  editor.classList.toggle('invalid', !ok);
+ });
+
+ commit.addEventListener('click', () => {
+  // The live check disables commit on an empty body; the guard refuses to
+  // commit, never silently reverting the person's edit.
+  if (!valid()) return;
+  api(`/api/wiki/claim/${encodeURIComponent(cl.id)}/edit`, { body: editor.value })
+   .then(() => {
+    closeClaimEditor();
+    const sentence = block.querySelector<HTMLElement>('.claim-sentence');
+    if (sentence) sentence.textContent = claimSentence(editor.value.trim(), cl.range);
+    block.append(marginNote('your words stand here — your ink joins this sentence when the Clerk next reads'));
+   })
+   .catch((e: unknown) => console.error(e));
+ });
+
+ cancel.addEventListener('click', () => {
+  closeClaimEditor();
+  block.append(verbs);
+ });
 }
 
 /* ── Typesetting helpers ── */
@@ -2673,7 +2738,7 @@ function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, 
     if (correctingClaim === block) {
      releaseCorrectingMode();
     } else {
-     focusClaim(page, block, cl.id);
+     focusClaim(page, block, cl);
     }
    });
    section.append(block);

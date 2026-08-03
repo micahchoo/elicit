@@ -1545,6 +1545,42 @@ main {
  font-size: 0.75rem;
 }
 
+/* the claim's correcting verb (093): the diff grammar — constraint visible,
+   commit and cancel explicit, blur inert. Mirrors the trim editor's quiet
+   box; the warn border marks an empty body. */
+.claim-edit-editor {
+ width: 100%;
+ min-height: 3rem;
+ font-family: var(--font-mono);
+ font-size: 0.85rem;
+ line-height: 1.5;
+ background: transparent;
+ border: 1px solid var(--border);
+ border-radius: 3px;
+ padding: 0.4rem;
+ color: var(--fg);
+ outline: none;
+ resize: vertical;
+ margin-top: 0.4rem;
+}
+.claim-edit-editor:focus {
+ border-color: var(--fg);
+}
+.claim-edit-editor.invalid {
+ border-color: var(--warn);
+}
+.claim-edit-constraint {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ margin-top: 0.3rem;
+}
+.claim-edit-actions {
+ display: flex;
+ gap: 0.75rem;
+ margin-top: 0.4rem;
+}
+
 /* ── the review surface: the piece whole, cuts marked in place ── */
 
 .import-review {

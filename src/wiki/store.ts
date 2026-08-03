@@ -614,6 +614,28 @@ class ClaimStoreImpl implements ClaimStore {
     this.writeClaim(updated);
     return updated;
   }
+
+  /**
+   * The user's correcting verb (Q-33's family): the person's own words
+   * replace the claim's body, the claim is marked attested, and the cite to
+   * the Snippet holding those words verbatim is appended (CONTEXT —
+   * Propagation). `status` is NOT touched — recomputed mechanically (Q-29),
+   * exactly as `attest`. Read-modify-write through `readClaim`/`writeClaim`,
+   * the `attest` idiom. An unknown id returns null.
+   */
+  edit(id: string, body: string, cite: string): Claim | null {
+    const claim = this.readClaim(id);
+    if (!claim) return null;
+    const updated = {
+      ...claim,
+      body,
+      attested: true,
+      cites: [...claim.cites, cite],
+      updated: new Date().toISOString(),
+    };
+    this.writeClaim(updated);
+    return updated;
+  }
 }
 
 // ── The sweep deferral and still-true cursor (075) ──

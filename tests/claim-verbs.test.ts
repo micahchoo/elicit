@@ -1,7 +1,10 @@
 /**
- * Wave 3, tasks 3.1-3.2: the two user verbs on a claim — attest, which sets
- * the one flag only a user verb may set (Q-33), and challenge, which enqueues
- * a question and never touches the claim (the agent may ask, never decide).
+ * Wave 3, tasks 3.1-3.2, and ticket 093: the user verbs on a claim — attest,
+ * which sets the one flag only a user verb may set (Q-33); challenge, which
+ * enqueues a question and never touches the claim (the agent may ask, never
+ * decide); and edit, the correcting verb, which replaces the claim's body
+ * with the person's own words — the edit becomes a verbatim Snippet the
+ * claim cites (the agent may question, never rewrite).
  *
  * Every assertion goes through `createApp` and `app.fetch`, never through a
  * hand-built handler, because the failure this suite exists to catch is the
@@ -10,10 +13,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
+import matter from 'gray-matter';
 
 import { createVault } from '../src/vault/vault.js';
 import { createQueueStore } from '../src/queue/queue.js';
@@ -178,5 +182,61 @@ describe('the claim verbs — attest and challenge', () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'unknown claim' });
     expect(queue.list({ source: 'claim-challenged' })).toHaveLength(0);
+  });
+
+  // ── POST /api/wiki/claim/:id/edit (093) ──
+
+  it('edit replaces the body with the person\'s words, marks the claim attested, and cites a new Snippet holding them verbatim', async () => {
+    const before = createClaimStore(root).readClaim('c-snow')!;
+    const res = await post('/api/wiki/claim/c-snow/edit', { body: 'The snow is gone, and the ridge is dry.' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    // The claim: the attested flag, the new body, and the appended cite —
+    // the Propagation, read from disk.
+    const stored = createClaimStore(root).readClaim('c-snow')!;
+    expect(stored.attested).toBe(true);
+    expect(stored.body).toBe('The snow is gone, and the ridge is dry.');
+    expect(stored.cites).toHaveLength(before.cites.length + 1);
+    const cite = stored.cites[stored.cites.length - 1]!;
+    expect(cite).toMatch(/@1$/);
+
+    // The new Snippet holds the edit VERBATIM, provenance kind 'unprompted'
+    // (the person's own words, nothing asked for them).
+    const snippetId = cite.split('@')[0]!;
+    const parsed = matter.read(join(root, 'snippets', snippetId, 'v1.md'));
+    expect(parsed.content.trim()).toBe('The snow is gone, and the ridge is dry.');
+    expect((parsed.data as { provenance: { kind: string } }).provenance.kind).toBe('unprompted');
+
+    // Status is untouched — arithmetic owns it (Q-29), exactly as attest.
+    expect(stored.status).toBe(before.status);
+  });
+
+  it('trims the edit once and keeps the interior verbatim', async () => {
+    const res = await post('/api/wiki/claim/c-snow/edit', { body: '  The snow is gone,   and the ridge is dry.  ' });
+    expect(res.status).toBe(200);
+    const stored = createClaimStore(root).readClaim('c-snow')!;
+    expect(stored.body).toBe('The snow is gone,   and the ridge is dry.');
+  });
+
+  it('answers 400 for a missing, empty, or non-string body — and writes no Snippet', async () => {
+    const snippetsBefore = readdirSync(join(root, 'snippets')).length;
+    await post('/api/wiki/claim/c-snow/edit');
+    for (const body of ['', '   ', 42]) {
+      const res = await post('/api/wiki/claim/c-snow/edit', { body });
+      expect(res.status).toBe(400);
+    }
+    const stored = createClaimStore(root).readClaim('c-snow')!;
+    expect(stored.body).toBe('A sentence about c-snow.');
+    expect(stored.attested).toBe(false);
+    expect(readdirSync(join(root, 'snippets')).length).toBe(snippetsBefore);
+  });
+
+  it('answers 404 for an edit on a claim that is not there, and writes no Snippet', async () => {
+    const snippetsBefore = readdirSync(join(root, 'snippets')).length;
+    const res = await post('/api/wiki/claim/nosuchclaim/edit', { body: 'Anything.' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown claim' });
+    expect(readdirSync(join(root, 'snippets')).length).toBe(snippetsBefore);
   });
 });

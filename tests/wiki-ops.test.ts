@@ -380,6 +380,59 @@ describe('applyOps — validation rejects with a named reason and writes nothing
     expect(rejection?.actor).toBe('clerk');
     expect(rejection?.detail).toContain('status-not-model-writable');
   });
+  it('rejects an UPDATE carrying a body for an attested claim — the person\'s words are not model-writable', () => {
+    store.writeClaim(claim({ attested: true }));
+    const result = run(
+      [{ op: 'UPDATE', reading: READING_A, claim: '01KCLAIMAAAAAAAAAAAAAAAAAA', body: 'A rewritten sentence.' }],
+      [READING_A],
+    );
+    expect(result.applied).toHaveLength(0);
+    expect(result.rejected[0]?.reason).toContain('attested-body-not-model-writable');
+    expect(matter.read(join(root, 'wiki', 'claims', '01KCLAIMAAAAAAAAAAAAAAAAAA.md')).content.trimEnd()).toBe('He treats a deadline as a promise made to another person.');
+  });
+
+  it('rejects an UPDATE carrying a range for an attested claim', () => {
+    store.writeClaim(claim({ attested: true }));
+    const result = run(
+      [{ op: 'UPDATE', reading: READING_A, claim: '01KCLAIMAAAAAAAAAAAAAAAAAA', range: 'a narrower range' }],
+      [READING_A],
+    );
+    expect(result.applied).toHaveLength(0);
+    expect(result.rejected[0]?.reason).toContain('attested-range-not-model-writable');
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').range).toBe('when he is talking about work he was hired for');
+  });
+
+  it('still lets an UPDATE add evidence to an attested claim — the Clerk adds, never rewrites', () => {
+    store.writeClaim(claim({ attested: true }));
+    const result = run(
+      [{ op: 'UPDATE', reading: READING_A, claim: '01KCLAIMAAAAAAAAAAAAAAAAAA', addCites: [`${SNIP_B}@1`] }],
+      [READING_A],
+    );
+    expect(result.applied).toHaveLength(1);
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').cites).toEqual([`${SNIP_A}@1`, `${SNIP_B}@1`]);
+  });
+
+  it('rejects a MERGE into an attested claim — MERGE rewrites the into claim\'s words', () => {
+    store.writeClaim(claim({ attested: true }));
+    store.writeClaim(claim({ id: '01KCLAIMBBBBBBBBBBBBBBBBBB' }));
+    const result = run(
+      [
+        {
+          op: 'MERGE',
+          reading: READING_A,
+          into: '01KCLAIMAAAAAAAAAAAAAAAAAA',
+          from: ['01KCLAIMBBBBBBBBBBBBBBBBBB'],
+          body: 'The merged sentence.',
+          range: 'a merged range',
+        },
+      ],
+      [READING_A],
+    );
+    expect(result.applied).toHaveLength(0);
+    expect(result.rejected[0]?.reason).toContain('attested-into-not-model-writable');
+    expect(matter.read(join(root, 'wiki', 'claims', '01KCLAIMAAAAAAAAAAAAAAAAAA.md')).content.trimEnd()).toBe('He treats a deadline as a promise made to another person.');
+  });
+
 });
 
 // ── Isolation and totality ──
