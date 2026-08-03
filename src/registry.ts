@@ -438,6 +438,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
  // ── src/queue/queue.ts ──
  { module: 'src/queue/queue', name: 'createQueueStore', status: 'live' },
+ { module: 'src/queue/queue', name: 'isUserDeclaredWeight', status: 'live' },
 
  // ── src/queue/source-label.ts ──
  { module: 'src/queue/source-label', name: 'sourceLabel', status: 'live' },

@@ -621,6 +621,9 @@ export async function propose(
     question: probe?.text ?? '',
     questionForm: probe?.questionForm ?? 'deliberative',
     ...(probe?.questionSource ? { questionSource: probe.questionSource } : {}),
+    // The Gap the eliciting question asked to fill, copied off the probe
+    // turn (hop 3, Q-39) — the same crossing `questionSource` makes.
+    ...(probe?.gap ? { gap: probe.gap } : {}),
     ...(ctx !== undefined ? { context: ctx } : {}),
    });
   }
@@ -704,6 +707,8 @@ export function decide(
    question: proposal.question,
    questionForm: proposal.questionForm,
    ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
+   // The Gap this snippet answered, kept from the cut (hop 4, Q-39).
+   ...(proposal.gap ? { gap: proposal.gap } : {}),
    ...(proposal.context !== undefined ? { context: proposal.context } : {}),
    ...(channel !== undefined ? { channel } : {}),
   };
@@ -746,6 +751,9 @@ export function decide(
      question: proposal.question,
      questionForm: proposal.questionForm,
      ...(proposal.questionSource ? { questionSource: proposal.questionSource } : {}),
+     // Not optional here: a restated answer to a gap question is still an
+     // answer to that gap (hop 4, Q-39).
+     ...(proposal.gap ? { gap: proposal.gap } : {}),
      ...(decision.channel !== undefined ? { channel: decision.channel } : {}),
     };
     // Restatement is a NEW snippet — no reading created

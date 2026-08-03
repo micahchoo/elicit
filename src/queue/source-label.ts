@@ -30,18 +30,24 @@ import type { LintFinding } from '../wiki/contract.js';
 /**
  * Where a waiting question came from, in words.
  *
- * All but `user-declared` say the same thing, and that is the requirement
- * rather than an oversight (S3). `contradiction-remeasure`, `lint-still-true`
- * and `lint-undiscriminated-range` are the literals the Clerk slice adds, and
- * a re-measure or a discrimination question that announces itself as one is
- * the verification Q-15 forbids — so they read as the ordinary question
- * `composed` is. Only `user-declared` differs, because the person parked
- * that one themselves and knows it.
+ * All but the two person-parked sources say the same thing, and that is the
+ * requirement rather than an oversight (S3). `contradiction-remeasure`,
+ * `lint-still-true` and `lint-undiscriminated-range` are the literals the
+ * Clerk slice adds, and a re-measure or a discrimination question that
+ * announces itself as one is the verification Q-15 forbids — so they read as
+ * the ordinary question `composed` is. Only `user-declared` and its sibling
+ * `gap-declared` differ, because the person parked those themselves and
+ * knows it. `gap-fill` reads like the rest: a model-marked gap's question
+ * quotes an adjacent paragraph verbatim, so the words ARE the person's own.
+ * Q-15 governs all of it — nothing may accuse, and neither gap source may
+ * announce itself as a gap.
  */
 const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  composed: 'from your own words',
  'still-true': 'from your own words',
  'user-declared': 'you set this aside',
+ 'gap-declared': 'you set this aside',
+ 'gap-fill': 'from your own words',
  'contradiction-remeasure': 'from your own words',
  'lint-still-true': 'from your own words',
  'lint-undiscriminated-range': 'from your own words',
@@ -88,6 +94,8 @@ const LINT_NOTES: Record<LintFinding['kind'], string> = {
  'god-node-facet': 'this section has grown large enough to be worth dividing',
  'merge-candidate': 'two names here may turn out to be one',
  'undiscriminated-range': 'two descriptions here may be one situation with a boundary not yet drawn',
+ 'occasionless-range': 'this holds everywhere, and nowhere in particular',
+ 'weak-evidence': 'the single piece of evidence behind this points at something said elsewhere',
 };
 
 export function lintNote(k: LintFinding['kind']): string {

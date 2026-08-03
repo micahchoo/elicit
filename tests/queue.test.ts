@@ -276,6 +276,52 @@ describe('QueueStore', () => {
   expect(remaining[0]!.source).toBe('composed');
  });
 
+ // ── the gap sources (Q-39): weight, rung 2, expiry, round-trip ──
+
+ it('a gap-declared entry outranks composed, like user-declared (Q-39)', () => {
+  // The gap-declared entry is the OLDEST of the four: only weight can put it
+  // first, so this fails exactly when the source stops weighing as the
+  // person's own declaration.
+  vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+  const declared = store.add(makeDraft({ source: 'gap-declared', question: 'GD' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C1' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C2' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C3' }));
+  vi.useRealTimers();
+
+  vi.spyOn(Math, 'random').mockReturnValue(0);
+  const first = store.draw(makeMode(), 'opening');
+  expect(first).not.toBeNull();
+  expect(first!.source).toBe('gap-declared');
+  expect(first!.id).toBe(declared.id);
+  vi.restoreAllMocks();
+ });
+
+ it('a gap-fill entry does not outrank composed — it draws as any mint (Q-39)', () => {
+  // The gap-fill entry is the OLDEST: with the correct weight it falls last
+  // by recency and never reaches the top-3; with the person's-own weight it
+  // would be drawn first.
+  vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+  store.add(makeDraft({ source: 'gap-fill', question: 'GF' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C1' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C2' }));
+  vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
+  store.add(makeDraft({ source: 'composed', question: 'C3' }));
+  vi.useRealTimers();
+
+  vi.spyOn(Math, 'random').mockReturnValue(0);
+  const first = store.draw(makeMode(), 'opening');
+  expect(first).not.toBeNull();
+  expect(first!.source).toBe('composed');
+  expect(first!.question).toBe('C3');
+  vi.restoreAllMocks();
+ });
+
  // ── durability: files survive new instance ──
 
  it('entries persist across fresh QueueStore instances', () => {
@@ -389,6 +435,27 @@ describe('QueueStore', () => {
   const all = store2.list();
   expect(all[0]!.status).toBe('pending');
   expect(all[0]!.source).toBe('user-declared');
+ });
+
+ it('expires pending entries of either gap source at 30 days, like any agent-minted entry (Q-41)', () => {
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+  const declared = store.add(makeDraft({ source: 'gap-declared', question: 'GD old' }));
+  const fill = store.add(makeDraft({ source: 'gap-fill', question: 'GF old' }));
+  const ud = store.add(makeDraft({ source: 'user-declared', question: 'UD old' }));
+
+  // The gap sources expire on the normal rule; only a hand-typed declaration
+  // is immune — the asymmetry is the whole point (Q-41).
+  vi.setSystemTime(new Date('2026-08-15T00:00:00Z'));
+  const store2 = createQueueStore(root);
+  const count = store2.expire(30);
+
+  vi.useRealTimers();
+
+  expect(count).toBe(2);
+  const all = store2.list();
+  expect(all.find((e) => e.id === declared.id)!.status).toBe('expired');
+  expect(all.find((e) => e.id === fill.id)!.status).toBe('expired');
+  expect(all.find((e) => e.id === ud.id)!.status).toBe('pending');
  });
 
  // ── markAnswered / defer status transitions ──
@@ -787,6 +854,26 @@ describe('QueueStore', () => {
    expect('claims' in rawFrontmatter()).toBe(false);
    expect('claims' in createQueueStore(root).list()[0]!).toBe(false);
   });
+
+  it('gap roundtrips for both gap sources, and answering an entry keeps it', () => {
+   const gapId = '01GAP000000000000000000000A';
+   const declared = store.add(makeDraft({ source: 'gap-declared', gap: gapId }));
+   let reloaded = createQueueStore(root).list().find((x) => x.id === declared.id)!;
+   expect(reloaded.source).toBe('gap-declared');
+   expect(reloaded.gap).toBe(gapId);
+   expect('gap' in rawFrontmatter()).toBe(true);
+
+   const fill = store.add(makeDraft({ source: 'gap-fill', gap: gapId }));
+   const reloaded2 = createQueueStore(root).list().find((x) => x.id === fill.id)!;
+   expect(reloaded2.source).toBe('gap-fill');
+   expect(reloaded2.gap).toBe(gapId);
+  });
+
+  it('an entry added without a gap reads back with the key absent', () => {
+   store.add(makeDraft());
+   expect('gap' in rawFrontmatter()).toBe(false);
+   expect('gap' in createQueueStore(root).list()[0]!).toBe(false);
+  });
  });
 
  // ── the degradation ladder: two rungs and a composing floor (Q-55) ──
@@ -907,6 +994,33 @@ describe('QueueStore', () => {
    // Newest first: the roll of 0 takes U4, and the roll of 0.99 reaches the
    // far end of what is left. The rung constrains, chance chooses.
    expect([first.question, last.question].sort()).toEqual(['U1', 'U4']);
+  });
+
+  it('re-admits a gap-declared entry the sharpness filter excluded', () => {
+   const gd = store.add(
+    makeDraft({ source: 'gap-declared', question: 'the gap bookmark', sharpness: 'sharp' }),
+   );
+
+   const drawn = store.draw(makeMode(), 'opening');
+
+   expect(drawn).not.toBeNull();
+   expect(drawn!.id).toBe(gd.id);
+   expect(store.list().find((e) => e.id === gd.id)!.status).toBe('asked');
+
+   expect(rungs()).toHaveLength(1);
+   expect(rungs()[0]!.detail).toContain('rung=2');
+   expect(rungs()[0]!.detail).toContain('relaxed=sharpness');
+   expect(floors()).toHaveLength(0);
+  });
+
+  it('never re-admits a gap-fill entry the sharpness filter excluded', () => {
+   store.add(makeDraft({ source: 'gap-fill', question: 'model-marked gap', sharpness: 'sharp' }));
+
+   expect(store.draw(makeMode(), 'opening')).toBeNull();
+
+   expect(rungs()).toHaveLength(0);
+   expect(floors()).toHaveLength(1);
+   expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
   });
 
   // ── never relaxed: status, Target, horizon ──

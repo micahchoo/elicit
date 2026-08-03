@@ -16,6 +16,8 @@ const SOURCES: QueueEntry['source'][] = [
  'composed',
  'still-true',
  'user-declared',
+ 'gap-declared',
+ 'gap-fill',
  'contradiction-remeasure',
  'lint-still-true',
  'lint-undiscriminated-range',
@@ -53,6 +55,13 @@ describe('sourceLabel', () => {
   }
   expect(labels).not.toContain('contradiction-remeasure');
   expect(labels).not.toContain('lint-still-true');
+ });
+
+ /** Q-15 + the gap link: neither gap source may announce itself as a gap. */
+ it('lets no label announce a gap (Q-15)', () => {
+  for (const s of SOURCES) {
+   expect(sourceLabel(s), `label for ${s} contains 'gap'`).not.toMatch(/gap/i);
+  }
  });
 
  /** Q-15: the Clerk sources read as the ordinary question `composed` is. */

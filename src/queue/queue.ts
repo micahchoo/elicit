@@ -19,6 +19,17 @@ export function createQueueStore(root: string): QueueStore {
  return new QueueStoreImpl(root);
 }
 
+/**
+ * The two ways a question can be the person's own: typed in by hand, or
+ * placed as a gap to fill. Everything else — including a model-marked gap
+ * fill — is the system's material and weighs the same as any mint. This is
+ * what `draw`'s priority sort and rung 2 test; `expire` deliberately does
+ * NOT use it (Q-41, see the guard there).
+ */
+export function isUserDeclaredWeight(e: QueueEntry): boolean {
+ return e.source === 'user-declared' || e.source === 'gap-declared';
+}
+
 const ENERGY_LEVEL: Record<NonNullable<Mode['energy']>, number> = {
  low: 0,
  medium: 1,
@@ -125,7 +136,7 @@ function runChain(
  for (const f of filters) {
   if (pool.length === 0) break;
   pool = pool.filter(
-   (e) => f.keep(e) || (relaxUserDeclared && f.relaxable && e.source === 'user-declared'),
+   (e) => f.keep(e) || (relaxUserDeclared && f.relaxable && isUserDeclaredWeight(e)),
   );
   if (pool.length === 0) {
    emptiedBy = f.name;
@@ -191,6 +202,9 @@ class QueueStoreImpl implements QueueStore {
    // The Claim a lint-minted still-true question is about. Read back
    // because the still-true dedupe keys on it across restarts (Q-31).
    ...(data.claim ? { claim: data.claim as string } : {}),
+   // The Gap this entry was minted to fill. Read back because the gap link
+   // has to survive a restart: the mint wrote it, the draw read it (Q-39).
+   ...(data.gap ? { gap: data.gap as string } : {}),
    // The pair an undiscriminated-range question stands between (ticket
    // 060). Read back because the pair is the dedupe key and the answer's
    // routing address, across restarts.
@@ -233,6 +247,7 @@ class QueueStoreImpl implements QueueStore {
   // write is lost.
   if (entry.answeredAt) fm.answeredAt = entry.answeredAt;
   if (entry.claim) fm.claim = entry.claim;
+  if (entry.gap) fm.gap = entry.gap;
   if (entry.claims) fm.claims = entry.claims;
   if (entry.cites) fm.cites = entry.cites;
   if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;
@@ -317,10 +332,10 @@ class QueueStoreImpl implements QueueStore {
    candidates = relaxed.pool;
   }
 
-  // Step 3: sort — user-declared first, then recency (newest first)
+  // Step 3: sort — the person's own questions first, then recency (newest first)
   candidates.sort((a, b) => {
-   const aUd = a.source === 'user-declared' ? 0 : 1;
-   const bUd = b.source === 'user-declared' ? 0 : 1;
+   const aUd = isUserDeclaredWeight(a) ? 0 : 1;
+   const bUd = isUserDeclaredWeight(b) ? 0 : 1;
    if (aUd !== bUd) return aUd - bUd;
    return b.created.localeCompare(a.created);
   });
@@ -501,6 +516,9 @@ class QueueStoreImpl implements QueueStore {
 
   for (const entry of all) {
    if (entry.status !== 'pending') continue;
+   // Q-41: gap questions expire on the normal queue rule — the asymmetry is
+   // the whole point. Only a question the person typed in by hand survives
+   // the sweep; the literal below is deliberate and must not grow.
    if (entry.source === 'user-declared') continue;
    const createdMs = new Date(entry.created).getTime();
    if (createdMs < cutoff) {

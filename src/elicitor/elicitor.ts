@@ -160,6 +160,9 @@ export function startSession(
    text: queueDraw.question,
    at: started,
    questionForm: queueDraw.questionForm,
+   // The drawn entry names the Gap it was minted to fill; the asking turn
+   // carries it so the harvest can put it on the snippet (hop 2, Q-39).
+   ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
   };
  } else {
   const opener = pickOpener(bank, normalizedMode.topic);
@@ -228,15 +231,18 @@ function emitProbe(
  text: string,
  questionForm: QuestionForm,
  provenance: QuestionProvenance,
- opts?: { source?: QuestionSource; targetFacet?: Facet },
+ opts?: { source?: QuestionSource; targetFacet?: Facet; gap?: string },
 ): Probe {
- const agentTurn: Turn = {
-  role: 'agent',
-  text,
-  at: new Date().toISOString(),
-  questionForm,
-  ...(opts?.source ? { questionSource: opts.source } : {}),
- };
+const agentTurn: Turn = {
+ role: 'agent',
+ text,
+ at: new Date().toISOString(),
+ questionForm,
+ ...(opts?.source ? { questionSource: opts.source } : {}),
+ // The gap the drawn question answers — `gap` follows `source` exactly:
+ // both are provenance the probe rides with (hop 2, Q-39).
+ ...(opts?.gap ? { gap: opts.gap } : {}),
+};
  s.deps.vault.appendTurn(s.id, agentTurn);
  s.turns.push(agentTurn);
  s.questionCount++;
@@ -494,6 +500,7 @@ function drawFallback(s: SessionState): Probe | null {
   s.openQueueEntryId = queueDraw.id;
   return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank', {
    ...(queueDraw.targetFacet ? { targetFacet: queueDraw.targetFacet } : {}),
+   ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
   });
  }
 

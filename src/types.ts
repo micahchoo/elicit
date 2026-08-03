@@ -107,6 +107,12 @@ export type Turn = {
  questionForm?: QuestionForm;
  /** Source provenance when this is a bank-drawn question */
  questionSource?: QuestionSource;
+ /**
+  * The Gap this question was asked to fill, when it was drawn from a
+  * gap-sourced queue entry (hop 2 of the gap link, Q-39). Absent means
+  * the question did not come from a gap.
+  */
+ gap?: string;
  /** Set in memory when the user skips this agent turn — never persisted to disk */
  skipped?: true;
  /** True when this user turn included dictated (STT) text — evidence tag only */
@@ -127,6 +133,11 @@ export type CutProposal = {
  /** Copied from the eliciting probe's Turn.questionForm */
  questionForm: QuestionForm;
  questionSource?: QuestionSource;
+ /**
+  * The Gap this cut answers, copied from the eliciting probe's turn (hop 3
+  * of the gap link, Q-39). Absent means the cut did not answer a gap.
+  */
+ gap?: string;
  /** Preceding sentences from the source turn — mechanically extracted, display-only */
  context?: string;
 };
@@ -151,8 +162,11 @@ export type HarvestDecision = {
 };
 
 export type Provenance = {
- /** 'unprompted' — the user wrote or pasted the material with no eliciting question */
- kind: 'harvest' | 'restatement' | 'unprompted';
+ /**
+  * 'composition' — the prose was written inside a Piece (Q-40); 'unprompted'
+  * — the user wrote or pasted the material with no eliciting question
+  */
+ kind: 'harvest' | 'restatement' | 'unprompted' | 'composition';
  session: string;
  /** Empty string when kind is 'unprompted' — nothing asked for these words */
  question: string;
@@ -160,6 +174,19 @@ export type Provenance = {
  /** Source span in the transcript (harvest only) */
  span?: { start: number; end: number };
  questionSource?: QuestionSource;
+ /**
+  * The Piece the prose was written in (Q-40). Optional, and absent means
+  * the prose did not come from a Piece — never a guessed one (Q-60).
+  * Never written on any other path.
+  */
+ piece?: string;
+ /**
+  * The Gap question this snippet answered (hop 4 of the gap link, Q-39).
+  * Optional, and absent means the words did not answer a gap — never read
+  * as anything else, nothing filters on it, no model sees it. The link
+  * lives in Provenance frontmatter, never in the Snippet body (Q-4).
+  */
+ gap?: string;
  /**
   * The sentence(s) immediately preceding the cut in its source turn —
   * verbatim, mechanically extracted by offset math with no model call.
@@ -256,19 +283,20 @@ export type RedLight = {
 export type QueueEntry = {
  id: string;
  status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired';
- /**
- * Which situation licensed the question. Nothing switches over this union —
- * `draw` and `expire` test it for equality against `'user-declared'` only —
- * so the Clerk sources buy no exhaustiveness check and were checked by
- * hand instead: `draw` treats anything that is not `'user-declared'` alike,
- * and `expire` only ever expires entries whose status is `'pending'`, which
- * means the Clerk sources expire at 30 days if never drawn and never expire
- * once drawn.
+/**
+ * Which situation licensed the question. The person's own declarations —
+ * typed in directly, or placed as a gap to fill — are the only two that
+ * weigh differently (`isUserDeclaredWeight`), and `expire` tests the literal
+ * 'user-declared' only. `src/queue/source-label.ts` keys a `Record` by this
+ * union, so a new member fails to COMPILE until it has a label — the same
+ * exhaustiveness obligation a switch would impose, by a different mechanism.
  */
- source:
+source:
  | 'composed'
  | 'still-true'
  | 'user-declared'
+ | 'gap-declared'
+ | 'gap-fill'
  | 'contradiction-remeasure'
  | 'lint-still-true'
  | 'lint-undiscriminated-range';
@@ -286,6 +314,14 @@ export type QueueEntry = {
   * resting on one stale snippet suppress each other's question.
   */
  claim?: string;
+ /**
+  * The Gap this entry was minted to fill. Optional, because only
+  * gap-sourced entries carry one — and load-bearing, because the snippet
+  * that answers it has to name the Gap it came from. Exactly the shape of
+  * `claim`, which exists for the same reason: a join key from the entry to
+  * the thing that licensed it, across restarts (Q-39).
+  */
+ gap?: string;
  /**
   * The two Claims an `undiscriminated-range` question stands between
   * (ticket 060). Optional, because only `lint-undiscriminated-range` entries
