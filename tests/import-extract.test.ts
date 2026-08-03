@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,8 +9,10 @@ import { bodyHash } from '../src/import/scan.js';
 import { clean, dropCitedParagraphs, toTurns } from '../src/import/body.js';
 import { runImportExtraction, type ExtractionDeps } from '../src/import/extract.js';
 import { quotedSpans } from '../src/harvester/admissibility.js';
+import { SYSTEM_PROMPT } from '../src/harvester/harvester.js';
 import { makeScriptedComplete } from './fakes.js';
 import type { Complete } from '../src/types.js';
+import type { RegionRecord } from '../src/import/contract.js';
 
 /**
  * The committed fixture. These tests NEVER mutate it — the records point at
@@ -41,6 +43,31 @@ type ScriptedCut = {
   stance: string;
   reading: string;
   standalone: boolean;
+};
+
+/** The first sentence of dated-essay.md's body, verbatim — used identically in tests/import-commit.test.ts. */
+const EXACT = 'I wrote this essay in September 2018, and I still stand by most of it.';
+
+/** A region the person declared they did not write (Q-70). */
+const otherRegion: RegionRecord = {
+  slug: 'journals-abc123',
+  root: '/c/journals',
+  dating: { kind: 'filename', pattern: 'YYYY-MM-DD' },
+  authorship: 'other',
+  declared: '2026-08-02T00:00:00.000Z',
+};
+
+/** The authored variant — `authored` is the only value that may carry an avowal. */
+const authoredRegion: RegionRecord = { ...otherRegion, authorship: 'authored' };
+
+/** The model returning an avowal anyway — the prompt clause is not the gate. */
+const avowalCut: ScriptedCut = {
+  text: EXACT,
+  sourceTurn: 0,
+  facet: 'value',
+  stance: 'avowal',
+  reading: 'the person states a position they hold',
+  standalone: true,
 };
 
 const cut = (text: string): ScriptedCut => ({
@@ -209,5 +236,53 @@ describe('import extraction (the real harvest path, ahead of review)', () => {
     await runImportExtraction(deps(makeScriptedComplete(datedResponses())));
     expect(existsSync(join(root, 'snippets'))).toBe(false);
     expect(existsSync(join(root, 'transcripts'))).toBe(false);
+  });
+
+  it('sends the kept-not-written clause for a region declared other', async () => {
+    store.admit([fixtureItems[0]!]);
+    const spy = vi.fn(makeScriptedComplete(datedResponses()));
+    await runImportExtraction({ ...deps(spy), regionFor: () => otherRegion });
+    // The override is an append, not a fork: the clause carries the baseline
+    // with it, and the first call's system prompt names the keeping.
+    expect(spy.mock.calls[0]![0]).toContain('kept');
+    expect(spy.mock.calls[0]![0]).toContain(SYSTEM_PROMPT);
+  });
+
+  it('sends the unmodified prompt for a region declared authored', async () => {
+    store.admit([fixtureItems[0]!]);
+    const spy = vi.fn(makeScriptedComplete(datedResponses()));
+    await runImportExtraction({ ...deps(spy), regionFor: () => authoredRegion });
+    expect(spy.mock.calls[0]![0]).toBe(SYSTEM_PROMPT);
+  });
+
+  it('coerces an avowal the model returned anyway — the prompt is not the gate', async () => {
+    store.admit([fixtureItems[0]!]);
+    // dated-essay.md prepares four turns, so four responses: the first carries
+    // the avowal cut, the rest answer honestly with nothing.
+    const scripted = [response(avowalCut), response(), response(), response()];
+    await runImportExtraction({ ...deps(makeScriptedComplete(scripted)), regionFor: () => otherRegion });
+    expect(store.get(datedHash)!.cuts![0]!.stance).toBe('report-of-fact');
+  });
+
+  it('leaves an avowal alone in a region declared authored', async () => {
+    store.admit([fixtureItems[0]!]);
+    const scripted = [response(avowalCut), response(), response(), response()];
+    await runImportExtraction({ ...deps(makeScriptedComplete(scripted)), regionFor: () => authoredRegion });
+    expect(store.get(datedHash)!.cuts![0]!.stance).toBe('avowal');
+  });
+
+  it('treats machine-assisted as non-authored', async () => {
+    store.admit([fixtureItems[0]!]);
+    const scripted = [response(avowalCut), response(), response(), response()];
+    const machineRegion: RegionRecord = { ...otherRegion, authorship: 'machine-assisted' };
+    await runImportExtraction({ ...deps(makeScriptedComplete(scripted)), regionFor: () => machineRegion });
+    expect(store.get(datedHash)!.cuts![0]!.stance).not.toBe('avowal');
+  });
+
+  it('leaves a record with no region exactly as it is today', async () => {
+    store.admit([fixtureItems[0]!]);
+    const spy = vi.fn(makeScriptedComplete(datedResponses()));
+    await runImportExtraction(deps(spy));
+    expect(spy.mock.calls[0]![0]).toBe(SYSTEM_PROMPT);
   });
 });

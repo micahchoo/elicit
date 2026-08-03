@@ -400,6 +400,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'set aside 1 cut from quoted.md: it sits inside a quotation in the source file',
  },
  {
+  kind: 'import-stance-coerced',
+  detail: 'path=vault/journals/2019/2019-11-02.md cuts=1',
+  reads: "rewrote 1 cut as kept-and-not-held: a region declared someone else's words",
+ },
+ {
   kind: 'import-excluded',
   detail: 'path=vault/posts/co-authored.md',
   reads: 'co-authored.md refused whole, with the reason recorded',

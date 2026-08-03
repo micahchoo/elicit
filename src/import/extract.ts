@@ -45,9 +45,9 @@
 import matter from 'gray-matter';
 
 import { clean, dropCitedParagraphs, toTurns } from './body.js';
-import type { ImportCut, ImportRecord } from './contract.js';
+import type { ImportCut, ImportRecord, RegionRecord } from './contract.js';
 import type { ImportStore } from './store.js';
-import { propose } from '../harvester/harvester.js';
+import { propose, SYSTEM_PROMPT } from '../harvester/harvester.js';
 import { isQuotedFromSource, quotedSpans } from '../harvester/admissibility.js';
 import type { Complete } from '../types.js';
 import type { LogFn } from '../wiki/contract.js';
@@ -61,9 +61,32 @@ export type ExtractionDeps = {
   budget?: number;
   /** Attempts before an item is failed; default 3. */
   attemptsBeforeFailed?: number;
+  /** Injected, not imported: the region store, so a test hands one region.
+   *  Injection site: runImportJobsNow's ExtractionDeps construction in
+   *  src/server.ts (seeding Task 12 Step 3). Until that lands this is inert
+   *  on every real run — an optional parameter no caller passes. */
+  regionFor?: (sourcePath: string) => RegionRecord | null;
 };
 
 export type ExtractionResult = { extracted: number; remaining: number; failed: number };
+
+/**
+ * The prompt clause for a region whose words the person did not compose
+ * (seeding Task 7): the words were kept and NOT composed by the person, so no
+ * cut may wear `stance: 'avowal'` — an avowal asserts the person holds the
+ * claim, and here the claim is not theirs to hold — and the reading describes
+ * the keeping. `propose()` replaces its whole system prompt when an override
+ * is passed, so the clause carries the baseline with it: an append, not a
+ * fork. Not exported: an export would need a registry entry the plan does not
+ * declare.
+ */
+const KEPT_NOT_WRITTEN = `${SYSTEM_PROMPT}
+
+REGION AUTHORSHIP — the words in this message were kept and NOT composed by
+the person who filed them: the region's authorship is declared as someone
+else's. Never use stance 'avowal' for a cut from this message — the person
+did not hold the claim, they kept it. Describe the keeping in the reading:
+what the person chose to preserve, and why it was worth keeping.`;
 
 export async function runImportExtraction(deps: ExtractionDeps): Promise<ExtractionResult> {
   const budget = deps.budget ?? 5;
@@ -74,6 +97,7 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
   for (let processed = 0; processed < budget; processed++) {
     const record = deps.store.nextPending();
     if (record === null) break;
+    const region = deps.regionFor?.(record.sourcePath) ?? null;
 
     // Trace model-call throws that `propose()` swallows per turn, so a run
     // where every call failed reads as a failed item rather than an empty one.
@@ -99,7 +123,12 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
 
       // 3. The session id is provisional — the committed sitting takes its
       // own id when review lands (T7).
-      const { proposals } = await propose(`import-${record.hash}`, turns, tracingComplete);
+      const { proposals } = await propose(
+        `import-${record.hash}`,
+        turns,
+        tracingComplete,
+        region !== null && region.authorship !== 'authored' ? KEPT_NOT_WRITTEN : undefined,
+      );
 
       if (lastCallError !== null && proposals.length === 0) throw lastCallError;
 
@@ -132,7 +161,21 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
         });
       }
 
-      // 6. Write the record back, extracted, with the prepared prose.
+      // 6. The authorship guard (seeding Task 7). The prompt clause shapes;
+      // this enforces, whatever the model returned: a region declared not
+      // the person's may not carry `stance: 'avowal'` — the words were KEPT,
+      // not held, and an avowal asserts the person holds the claim.
+      let coerced = 0;
+      if (region !== null && region.authorship !== 'authored') {
+        for (const c of cuts) {
+          if (c.stance === 'avowal') {
+            c.stance = 'report-of-fact';
+            coerced++;
+          }
+        }
+      }
+
+      // 7. Write the record back, extracted, with the prepared prose.
       deps.store.put({ ...record, status: 'extracted', cuts }, prepared);
       extracted++;
       deps.log({
@@ -141,6 +184,14 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
         kind: 'import-extracted',
         detail: `path=${record.sourcePath} cuts=${cuts.length}`,
       });
+      if (coerced > 0) {
+        deps.log({
+          at: new Date().toISOString(),
+          actor: 'clerk',
+          kind: 'import-stance-coerced',
+          detail: `path=${record.sourcePath} cuts=${coerced}`,
+        });
+      }
       if (quotedDropped > 0) {
         deps.log({
           at: new Date().toISOString(),
