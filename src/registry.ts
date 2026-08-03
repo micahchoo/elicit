@@ -633,4 +633,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/sounding/budget.ts ──
 { module: 'src/sounding/budget', name: 'rungAllowance', status: 'unwired', reason: 'wired by 012 T8: the accept route and the consent ask' },
 { module: 'src/sounding/budget', name: 'expectedLengthSentence', status: 'unwired', reason: 'wired by 012 T8: the consent ask renders it' },
+
+// ── src/sounding/convergence.ts ──
+{ module: 'src/sounding/convergence', name: 'descentEnd', status: 'unwired', reason: 'wired by 012 T6: userTurn calls it after every rung' },
 ];
