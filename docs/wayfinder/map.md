@@ -501,6 +501,12 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Build: Gap-fill question source](tickets/027-gapfill-source.md)
+  — Buds and half-Constructs now mint their questions: one zero-LLM docket
+  job, verbatim-quoting templates, ever-minted dedupe (dormancy is signal —
+  expiry never re-offers), cap 3/run live per Q-56 with the held-back
+  backlog reported truthfully. CONTEXT's "default source" finally exists.
+
 - [Build: model-resolved referent annotation](tickets/074-resolved-referent-annotation.md)
   — measured before shipped, threshold pre-stated: precision 32/34 = 0.941,
   silence 24/25 on the unresolvable set, 0 false annotations on
