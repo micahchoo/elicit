@@ -83,8 +83,8 @@ interface HarvestResponse {
 }
 
 interface QueueData {
- pending: QueueEntry[];
- open: QueueEntry[];
+ pending: Array<QueueEntry & { rungsKept?: number }>;
+ open: Array<QueueEntry & { rungsKept?: number }>;
 }
 
 interface ActivityEvent {
@@ -1356,10 +1356,11 @@ function renderHarvest() {
   closeBtn.addEventListener('click', () => navTo('mode'));
   div.append(closeBtn);
  } else {
+  const progress = el('p', { class: 'harvest-progress' }, `0 of ${state.proposals.length} decided`);
   const submitRow = el('div', { style: 'margin-top: 1.5rem' });
-  const submitBtn = el('button', { class: 'submit-btn' }, 'save');
+  const submitBtn = el('button', { class: 'submit-btn' }, 'save decisions');
   submitRow.append(submitBtn);
-  div.append(submitRow);
+  div.append(progress, submitRow);
 
   submitBtn.addEventListener('click', async () => {
    if (state.decisions.length < state.proposals.length) {
@@ -1446,12 +1447,17 @@ function renderProposal(idx: number, container: HTMLElement) {
 
  let editorActive = false;
  let editorEl: HTMLTextAreaElement | null = null;
+ let constraintEl: HTMLParagraphElement | null = null;
  let confirmEl: HTMLButtonElement | null = null;
 
  function clearEditor() {
   if (editorEl) {
    editorEl.remove();
    editorEl = null;
+  }
+  if (constraintEl) {
+   constraintEl.remove();
+   constraintEl = null;
   }
   if (confirmEl) {
    confirmEl.remove();
@@ -1466,6 +1472,8 @@ function renderProposal(idx: number, container: HTMLElement) {
   if (text !== undefined) d.text = text;
   if (channel !== undefined) d.channel = channel;
   state.decisions.push(d);
+  const progress = document.querySelector('.harvest-progress');
+  if (progress) progress.textContent = `${state.decisions.length} of ${state.proposals.length} decided`;
   const all = [approveBtn, trimBtn, discardBtn, restateBtn];
   for (const b of all) b.style.opacity = '0.4';
   const active =
@@ -1495,25 +1503,36 @@ function renderProposal(idx: number, container: HTMLElement) {
   clearEditor();
   editorActive = true;
   editorEl = el('textarea', { class: 'trim-editor' }, p.text) as HTMLTextAreaElement;
+  constraintEl = el(
+   'p',
+   { class: 'trim-constraint' },
+   'a trim keeps one continuous span of your words \u2014 cut, don\'t rewrite',
+  );
   confirmEl = el(
    'button',
    { class: 'proposal-action', style: 'margin-top: 0.3rem' },
    'confirm trim',
   );
-  block.append(editorEl, confirmEl);
+  block.append(editorEl, constraintEl, confirmEl);
   editorEl.focus();
   editorEl.style.height = 'auto';
   editorEl.style.height = editorEl.scrollHeight + 'px';
+  const validTrim = (): boolean => {
+   const v = editorEl!.value;
+   return v.trim() !== '' && (p.text.includes(v) || v === p.text);
+  };
   editorEl.addEventListener('input', () => {
    editorEl!.style.height = 'auto';
    editorEl!.style.height = editorEl!.scrollHeight + 'px';
+   const ok = validTrim();
+   confirmEl!.disabled = !ok;
+   editorEl!.classList.toggle('invalid', !ok);
   });
   confirmEl.addEventListener('click', () => {
    const v = editorEl!.value;
-   if (!p.text.includes(v) && v !== p.text) {
-    editorEl!.value = p.text;
-    return;
-   }
+   // The live check disables confirm on invalid text; the guard refuses
+   // to commit, never overwriting the person's edit.
+   if (!validTrim()) return;
    setDecision('trim', v);
    clearEditor();
   });
@@ -1707,6 +1726,15 @@ function renderWaiting() {
  const expList = el('div', { class: 'expedition-list' });
  expSection.append(expHeading, expList);
 
+ // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
+ // Dormancy is signal, never debt (Q-24): each row shows the last rung's
+ // question and how many rungs are kept, with no age colouring and nothing
+ // that reads as owed work. The section stays hidden when nothing is parked.
+ const parkedSection = el('div', { class: 'waiting-section parked-section' });
+ const parkedHeading = el('h2', { class: 'waiting-heading' }, 'parked');
+ const parkedList = el('div', { class: 'parked-list' });
+ parkedSection.append(parkedHeading, parkedList);
+
  // Queue section — entries with horizon 'session' waiting to be drawn
  const queueSection = el('div', { class: 'waiting-section' });
  const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
@@ -1747,7 +1775,7 @@ function renderWaiting() {
 
  // Append in order: cadence, expeditions, questions, activity
  // Activity appended last so the layout flows correctly
- div.append(backRow, cadenceLine, expSection, queueSection, activitySection);
+ div.append(backRow, cadenceLine, expSection, parkedSection, queueSection, activitySection);
  main.append(div);
 
  // Age helper: compact relative-time display (e.g. "2d ago", "just now")
@@ -1770,9 +1798,13 @@ function renderWaiting() {
    wait.done();
    queueList.innerHTML = '';
    expList.innerHTML = '';
+   parkedList.innerHTML = '';
 
    const expeditions = data.open.filter((e) => e.horizon === 'days');
-   const pending = data.open.filter((e) => e.horizon !== 'days');
+   // The parked pointers arrive inside `open` (horizon 'session'); the source
+   // filter keeps them out of the questions list so nothing appears twice.
+   const parked = data.open.filter((e) => e.source === 'parked-sounding');
+   const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
 
    if (expeditions.length > 0) {
     for (const entry of expeditions) {
@@ -1782,6 +1814,45 @@ function renderWaiting() {
      row.append(question, age);
      expList.append(row);
     }
+   }
+
+   if (parked.length > 0) {
+    for (const entry of parked) {
+     const row = el('div', { class: 'parked-entry' });
+     const question = el('span', { class: 'parked-question' }, entry.question);
+     const meta = el('span', { class: 'parked-meta' }, `${entry.rungsKept ?? 0} rungs kept`);
+     const pickUp = el('button', { class: 'nav-link', type: 'button' }, 'pick it up');
+     row.append(question, meta, pickUp);
+     pickUp.addEventListener('click', async () => {
+      if (!state.sessionId) {
+       // A sitting must be under way to resume into (the plan's upstream
+       // contract); the mode screen is where one begins.
+       navTo('mode');
+       return;
+      }
+      pickUp.disabled = true;
+      const wait = beginWait(row, 'picking it up\u2026');
+      try {
+       const res = await api<TurnData>(
+        `/api/session/${state.sessionId}/sounding/resume`,
+        { queueEntryId: entry.id },
+       );
+       wait.done();
+       if (res.kind === 'probe') {
+        state.question = res.text!;
+        navTo('exchange');
+       }
+      } catch (e) {
+       pickUp.disabled = false;
+       wait.failed(e);
+      }
+     });
+     parkedList.append(row);
+    }
+   } else {
+    // Nothing parked: the section stays quiet — no empty heading, no count
+    // of how long anything has sat (Q-24).
+    parkedSection.hidden = true;
    }
 
    if (pending.length === 0) {
@@ -2693,9 +2764,12 @@ function renderPiece() {
   // The trailing composer: one blank line at the end of the column, same
   // serif, same size, no label, no border — a textarea that grows, exactly
   // like .blank-page. It reads as the next paragraph, because that is what
-  // it is about to become. Leaving it commits it; an empty leave does nothing.
+  // it is about to become. It commits on an explicit act, never on leaving.
   const composer = el('textarea', { class: 'piece-composer' }) as HTMLTextAreaElement;
   doc.append(composer);
+  const addPara = el('button', { class: 'nav-link piece-composer-add' }, 'add paragraph');
+  addPara.hidden = true;
+  doc.append(addPara);
   // A dragged paragraph must not land inside the composer: its drop would
   // paste the entry id into the draft. The composer is the one editable
   // thing on the page, and nothing here is both draggable and editable.
@@ -2703,8 +2777,9 @@ function renderPiece() {
   composer.addEventListener('input', () => {
    composer.style.height = 'auto';
    composer.style.height = `${composer.scrollHeight}px`;
+   addPara.hidden = composer.value.trim() === '';
   });
-  composer.addEventListener('blur', () => {
+  addPara.addEventListener('click', () => {
    const text = composer.value.trim();
    if (!text) return;
    composer.disabled = true;
@@ -2787,7 +2862,7 @@ function renderPiece() {
     .then(refresh)
     .catch((e: unknown) => { committing = false; console.error(e); });
   });
-  input.addEventListener('blur', () => { if (!committing) input.remove(); });
+  input.addEventListener('blur', () => { if (!committing && input.value.trim() === '') input.remove(); });
  }
 
  const wait = pieceWait(doc, 'reading\u2026');

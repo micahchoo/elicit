@@ -31,7 +31,8 @@ import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations }
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
-import { composeRung } from './clerk/sounding-rung.js';
+import { composeFromCompacted, composeRung } from './clerk/sounding-rung.js';
+import { loadLadderSummary } from './clerk/sounding-summary.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { proposeArrangements } from './clerk/arrangements.js';
 import { createImportStore } from './import/store.js';
@@ -49,7 +50,8 @@ import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/co
 import { licenseSounding } from './sounding/license.js';
 import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
 import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
-import { parkPointer, writeLadder } from './sounding/park.js';
+import { parkPointer, readLadder, writeLadder } from './sounding/park.js';
+import { resumeSounding } from './sounding/resume.js';
 import {
  createClaimStore,
  appendSweepDeferral,
@@ -1352,9 +1354,14 @@ app.post('/api/session/:id/sounding/gate', async (c) => {
  return c.json({ kind: 'descent-closed', endedBy: end!, soundingId: finished.id, phase: 'closing-door' });
  });
 
-// POST /api/session/:id/sounding/resume {queueEntryId} → 501 (shell)
-// T12 owns the body: this validates the request and says so, keeping all
-// four sounding routes in one reviewable place.
+// POST /api/session/:id/sounding/resume {queueEntryId} → probe | 404 | 503
+// Picking a parked descent back up (T12): the pointer names the ladder, the
+// ladder is the truth, and the resumed question is composed FRESH at resume
+// time (Q-45) — nothing pre-composed is ever read off disk. The allowance is
+// recomputed from THIS sitting's remaining budget, never restored from the
+// parked ladder (Q-47). A resume that cannot compose is a failed call, not a
+// closed descent — the pointer stays live for another try (the plan's
+// asymmetry note: do not unify with mid-descent convergence).
 app.post('/api/session/:id/sounding/resume', async (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
@@ -1366,8 +1373,43 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   return c.json({ error: 'queueEntryId is required' }, 400);
  }
 
- // TODO(T12): fill once src/sounding/resume.ts exists
- return c.json({ error: 'not implemented yet' }, 501);
+ const entry = deps.queue
+  .list({ source: 'parked-sounding' })
+  .find((e) => e.id === queueEntryId);
+ if (!entry) return c.json({ error: 'no parked descent with that id' }, 404);
+
+ const summary = loadLadderSummary(deps.vaultRoot, entry.soundingId ?? '');
+ const resumed = resumeSounding(deps.vaultRoot, entry, state.mode, state.questionCount, summary);
+ if (!resumed) {
+  // A dead pointer is a 404, never a crash: the ladder file is gone but the
+  // sitting is fine, so the person stays in it.
+  return c.json({ error: 'this descent is no longer on disk' }, 404);
+ }
+
+ const guard = (question: string) =>
+  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) });
+ const q = await composeFromCompacted(resumed.compacted, clerkComplete, guard);
+ if (!q) {
+  // A resume that cannot compose is a failed call, not a closed descent.
+  return c.json({ error: 'could not compose the next question — try again' }, 503);
+ }
+
+ deps.queue.markAnswered(entry.id);
+ state.sounding = { ...resumed.state, pendingQuestion: q };
+ state.soundingOffer = 'entered';
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'sounding-resumed',
+  `sounding=${resumed.state.id} rungs=${resumed.state.rungs.length} verbatim=${resumed.compacted.verbatim.length}`,
+ );
+ return c.json({
+  kind: 'probe',
+  text: q.text,
+  questionForm: 'deliberative',
+  phase: state.phase,
+  sounding: gateStateFor(state.sounding),
+ });
  });
 
  /**
@@ -1746,7 +1788,15 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   const open = all.filter(
    (e) => e.status === 'pending' && (e.horizon === 'days' || e.horizon === 'session'),
   );
-  return c.json({ pending, open });
+  // Parked-sounding pointers carry the rung count so the waiting surface can
+  // say how many rungs are kept (T12 recorded deviation — the plan's UI
+  // contract has no other wire source inside the ownership map). Every other
+  // entry passes through untouched.
+  const enrich = (e: QueueEntry) =>
+   e.source === 'parked-sounding'
+    ? { ...e, rungsKept: readLadder(deps.vaultRoot, e.soundingId ?? '')?.rungs.length ?? 0 }
+    : e;
+  return c.json({ pending: pending.map(enrich), open: open.map(enrich) });
  });
 
  // GET /api/cadence → the record, as a sentence (ticket 056)

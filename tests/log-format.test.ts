@@ -585,6 +585,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: `sounding=${SECOND_ULID} rungs=4 endedBy=cap`,
   reads: 'the descent closed: cap',
 },
+{
+  kind: 'sounding-resumed',
+  detail: `sounding=${SECOND_ULID} rungs=4 verbatim=2`,
+  reads: 'picked a parked descent back up',
+},
 // The ladder summary (plan Task 11): written once per finished descent by
 // the clerk model; the failure kind guards the docket job. Neither line
 // names the descent, the model, or an identifier — the summary is
@@ -746,6 +751,7 @@ describe('formatEvent', () => {
    ev('sounding-gate', `sounding=${SECOND_ULID} rung=4 choice=park`, 'elicitor'),
    ev('sounding-parked', `sounding=${SECOND_ULID} rungs=4 entry=${ULID}`, 'elicitor'),
    ev('sounding-ended', `sounding=${SECOND_ULID} rungs=4 endedBy=cap`, 'elicitor'),
+   ev('sounding-resumed', `sounding=${SECOND_ULID} rungs=4 verbatim=2`, 'elicitor'),
   ];
  }
 

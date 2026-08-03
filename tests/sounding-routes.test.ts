@@ -317,10 +317,10 @@ describe('sounding routes', () => {
   expect(res.status).toBe(400);
  });
 
- it('resume is a shell until T12', async () => {
+ it('resume 404s on a pointer that is not a parked descent', async () => {
   const { app } = await makeApp([]);
   const id = await newSession(app);
   const res = await postRaw(app, `/api/session/${id}/sounding/resume`, { queueEntryId: 'x' });
-  expect(res.status).toBe(501);
+  expect(res.status).toBe(404);
  });
 });

@@ -692,6 +692,7 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  'sounding-rung': (f) => `asked rung ${num(f, 'rung')} of ${num(f, 'of')}`,
  'sounding-gate': (f) => `the gate word ${f.choice ?? '?'} was pressed at rung ${num(f, 'rung')}`,
  'sounding-parked': (f) => `parked a descent with ${count(num(f, 'rungs'), 'rung')} kept`,
+ 'sounding-resumed': () => 'picked a parked descent back up',
  'sounding-ended': (f) => `the descent closed: ${f.endedBy ?? 'a gate word'}`,
 // The ladder summary (plan Task 11): one line standing for the rungs a
 // compaction drops (T10), written in the background by the clerk model —

@@ -646,7 +646,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/sounding/park.ts (012 Task 7 — the only sounding module that touches disk) ──
 { module: 'src/sounding/park', name: 'writeLadder', status: 'live', reason: 'wired by 012 T8: finishDescent persists every finished ladder' },
-{ module: 'src/sounding/park', name: 'readLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding reads it' },
+{ module: 'src/sounding/park', name: 'readLadder', status: 'live', reason: 'wired by 012 T12: resumeSounding and the queue enrichment read it' },
 { module: 'src/sounding/park', name: 'parkPointer', status: 'live', reason: 'wired by 012 T8: the gate route mints the pointer on park' },
 
 // ── src/sounding/ladder.ts (012 Task 6 — the descent ladder) ──
@@ -659,7 +659,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/clerk/sounding-rung', name: 'composeRung', status: 'live' },
 
 // ── src/sounding/compaction.ts (012 Task 10 — the resume's short view) ──
-{ module: 'src/sounding/compaction', name: 'compactLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding composes from it' },
+{ module: 'src/sounding/compaction', name: 'compactLadder', status: 'live', reason: 'wired by 012 T12: resumeSounding composes from it' },
 
 // ── src/clerk/sounding-summary.ts (012 Task 11 — the ladder's one line, clerk model, marginalia) ──
 { module: 'src/clerk/sounding-summary', name: 'summarizeLadder', status: 'live' },
@@ -667,8 +667,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 {
  module: 'src/clerk/sounding-summary',
  name: 'loadLadderSummary',
- status: 'unwired',
- reason: 'wired by 012 T12: resumeSounding reads the line for compactLadder',
+ status: 'live',
+ reason: 'wired by 012 T12: the resume route reads the line for compactLadder',
 },
 { module: 'src/clerk/sounding-summary', name: 'runLadderSummaries', status: 'live' },
+
+// ── src/sounding/resume.ts (012 Task 12 — picking a parked descent back up) ──
+{ module: 'src/sounding/resume', name: 'resumeSounding', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
+
+// ── src/clerk/sounding-rung.ts (012 Task 12 — the resumed rung's composition) ──
+{ module: 'src/clerk/sounding-rung', name: 'composeFromCompacted', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
 ];
