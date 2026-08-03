@@ -1,6 +1,6 @@
 # The Soundings Slice Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A Sounding runs as working software. Late in a sitting, on a thread that has already held for three turns, the agent offers one descent and states how long it will take; the person accepts or declines in a word, and a decline is never asked again. Inside the descent every question is built from a verbatim phrase of the *previous* answer, three quiet margin words sit under every rung, a counter-driven checkpoint interrupts at the halfway rung, and the descent ends because a counter ran out or because code found the answers echoing — never because a model said so. Parking writes the whole ladder to disk and puts a pointer in the Queue; picking it up composes a fresh question from a compacted view of the ladder, not from the whole thing.
 
@@ -235,7 +235,7 @@ This repo has had cross-agent collisions, and the working tree was being modifie
 - **Behavioral invariant (the one every task depends on):** `Rung.foothold` is a verbatim substring of the **preceding** answer — `SoundingState.licensingAnswer` for `rungs[0]`, and `rungs[n-1].answer` for `rungs[n]`. It is NOT a substring of the answer in its own rung. `licensingAnswer` exists on `SoundingState` for exactly this reason: rung 0's half of the invariant is otherwise unenforceable, because the licensing turn lives in the transcript and the ladder cannot reach it. T6 enforces this in code; T13 asserts it end to end against the file on disk.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, test } from 'vitest';
@@ -266,23 +266,23 @@ test('the three gate words are the only gate words', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-types.test.ts`
 Expected: FAIL — `Rung` is not exported from `src/types.ts`.
 
-- [ ] **Step 3: Add the types**
+- [x] **Step 3: Add the types**
 
 Append the `// ── Soundings ──` block to `src/types.ts`. Add `'parked-sounding'` to the `QueueEntry['source']` union, `soundingId?: string` to `QueueEntry`, and the three fields to `SessionState`. Every optional field carries a comment saying what its absence means — the file's existing convention (see `QueueEntry.target`, `types.ts:260-269`): absent `sounding` means no descent is running, absent `soundingOffer` means none has been offered yet (a different fact from `'declined'`), and absent `finishedSounding` means no descent ended on this turn.
 
 Nothing outside `src/types.ts` changes in this task. `Probe` is not touched — see the carrier note in the contract — so `src/elicitor/elicitor.ts` has exactly one owner in this plan, which is T6.
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
 
 Run: `npx vitest run && npx tsc --noEmit -p tsconfig.json`
 Expected: PASS, and no new type errors. `QueueEntry['source']` is a union nothing switches over (`types.ts:238-245` says so and says why), so widening it must not break `src/queue/queue.ts`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/types.ts tests/sounding-types.test.ts
@@ -319,7 +319,7 @@ git commit -m "sounding: types for the ladder, the gate, and the parked pointer"
 - Behavioral invariant: `tokenize` and `extractContentWords` stay private and stay byte-identical. The Resonance path must behave the same after this task as before it, which its own tests are what prove.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, test } from 'vitest';
@@ -369,19 +369,19 @@ test('an accepted offer is not re-licensed either', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-license.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/license.js`.
 
-- [ ] **Step 3: Add the lexical wrapper**
+- [x] **Step 3: Add the lexical wrapper**
 
 Add `contentWordsOf` and export `jaccard` in `src/index/lexical.ts`. Do not change `tokenize` or `extractContentWords`.
 
 Run: `npx vitest run tests/lexical.test.ts tests/semantic-resonance.test.ts tests/resonance-paraphrase.test.ts`
 Expected: PASS — unchanged behaviour, including the recorded 0/8 paraphrase recall fixture.
 
-- [ ] **Step 4: Write the license**
+- [x] **Step 4: Write the license**
 
 Four checks, all mechanical:
 
@@ -399,12 +399,12 @@ const sustained = meanAdjacentJaccard(lastThreeUserTurns) >= SUSTAINED_THRESHOLD
 
 Nothing in this file asks a model anything, and nothing in it reads emotional state.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-license.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/sounding/license.ts src/index/lexical.ts tests/sounding-license.test.ts
@@ -433,7 +433,7 @@ git commit -m "sounding: the entry license — late, energetic, three turns on o
 - Behavioral invariant: the two close moves are NEVER inside the allowance. `rungAllowance` computes from `budget - 2 - questionCount` and the caller adds nothing back.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test('a long remaining budget is capped at twelve rungs', () => {
@@ -462,12 +462,12 @@ test('the consent sentence states a number the person can hold', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-budget.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/budget.js`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 ```ts
 const MIN_RUNGS = 8;
@@ -483,12 +483,12 @@ export function rungAllowance(mode: Mode, questionCount: number) {
 
 **The floor at 8 is ruled, not inferred — Q-63.** When a Sounding is licensed with fewer than 8 questions of budget remaining, the allowance floors at 8 and the sitting grows past its declared minutes. Q-63 takes "a Sounding becomes the rest of the sitting" literally: the descent *is* the sitting from that point, the two close moves stay reserved beyond the allowance, and the consent ask states the real expected length, which is what keeps the overrun consented rather than suffered. The rival reading — license requires ≥8 remaining — was declined, because it makes late-sitting offers rare in exactly the short Modes where a held thread is most worth descending. So `MIN_RUNGS = 8` is a ruled constant: do not make it configurable, and do not add a guard in `src/sounding/license.ts` that refuses to license a short sitting. `expectedLengthSentence` says the number plainly and promises nothing about what the descent will find.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-budget.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sounding/budget.ts tests/sounding-budget.test.ts
@@ -516,7 +516,7 @@ git commit -m "sounding: remaining budget becomes the rung allowance, close rese
 - Behavioral invariant: `'cap'` is checked first, so a ladder that is both full and echoing reports the cap — the simpler, more checkable reason.
 </contracts>
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Note the fourth test name: `resonate` returns `[]` for any query under three tokens (`src/index/lexical.ts:222`), so an answer of one or two words can never register as an echo however many times it repeats. That is a real floor on this mechanism and the test name records it rather than leaving a later reader to rediscover it.
 
@@ -561,12 +561,12 @@ test('a short ladder never converges — there is nothing to echo yet', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run tests/sounding-convergence.test.ts`
 Expected: FAIL — cannot resolve `../src/sounding/convergence.js`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Three checks in order:
 
@@ -576,12 +576,12 @@ Three checks in order:
 
 **The adapter, and the hazard in it.** `buildIndex` takes `Snippet[]` (`src/index/lexical.ts:174`), and rung answers are not Snippets — they have not passed admissibility, they are not evidence, and none of them is ever written to `vault/snippets/`. Write a local `rungsAsIndexInput(rungs): Snippet[]` inside `convergence.ts` with a comment saying exactly that, and give the synthetic ids a `rung:` prefix so a stray one is obvious in a debugger. If a later reader finds these values escaping this module, that is a bug, not a feature.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run tests/sounding-convergence.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sounding/convergence.ts tests/sounding-convergence.test.ts
@@ -599,7 +599,7 @@ git commit -m "sounding: structural end conditions — cap, lexical echo, conten
 **Files:**
 - Read only: `web/main.ts`, `src/server.ts`, `src/elicitor/elicitor.ts`, `src/log/format.ts`, `tests/emitted-kinds.ts`
 
-- [ ] **Step 1: Answer six questions in writing**
+- [x] **Step 1: Answer six questions in writing**
 
 1. Does `renderExchange()` still build its controls as `harvestBtn` / `skipBtn` / `laterBtn` plus a `deferRow`, appended to `answerArea` (was `web/main.ts:685-698`)? If the control row has been restructured, record the new shape — T9 appends to it.
 2. Does `setControlsBusy(busy)` still exist in `renderExchange` (was `web/main.ts:798-804`)? T9's gate controls must join it or they will race a call in flight.
@@ -608,7 +608,7 @@ git commit -m "sounding: structural end conditions — cap, lexical echo, conten
 5. Does `tests/log-format.test.ts` still fail bidirectionally on kind drift — an unrendered emit AND a rendering for an unemitted kind? Record exactly how, because the *Activity Log kinds* rule above depends on it. Both that file and `src/log/format.ts` were modified in the working tree at plan time.
 6. Does `userTurn` still run the close branches, then `isContentFree`, then juxtaposition → red-light → generic probe (was `src/elicitor/elicitor.ts:284-396`)? T6 inserts the descent branch after the close branches and before `isContentFree`. Also grep for every caller that switches on `userTurn`'s return `kind`, because T6 widens that union.
 
-- [ ] **Step 2: Report**
+- [x] **Step 2: Report**
 
 Run: `npx vitest run && npx tsc --noEmit -p tsconfig.json`
 Expected: the suite's current state recorded as the baseline Wave 2 is measured against. If it is already red, say which tests and stop — Wave 2 must not start on a red tree.
@@ -1597,3 +1597,4 @@ Stated plainly, because they were true at read time on 2026-08-02 and build agen
 | 2026-08-02 | author | Q-62, Q-63, Q-64 ruled | Micah ruled three of the four blocking questions, all three confirming the plan's reading, so no task changed shape — only its citation and its certainty. **Q-62** (Q-35's second amendment: offer-shaped mechanisms ship live and log every evaluation; acting mechanisms stay shadow-first; Q-49 retroactively re-grounded so Q-35 carries no named exception): the escalation framing and the user-initiated-fallback branch are deleted from the plan, T2 gained an explicit "no shadow flag, no env gate, no would-have-offered branch" instruction, and the per-evaluation `sounding-license` emit is kept and made mandatory rather than advisory — it is what will re-tune `0.15`. The *Activity Log kinds* note now cites Q-62 instead of Q-56. **Q-63** (allowance floors at 8; the sitting grows past declared minutes): `MIN_RUNGS = 8` is baked in as a ruled constant, with T3 instructed not to make it configurable and not to add a compensating ≥8-remaining guard in the license. **Q-64** ("another day" mints no pointer; "park, depth kept" is the only pointer-minting word): T7's invariant is now cited rather than proposed, with the three-words-three-outcomes reasoning inline. The Open Questions section gained a *Ruled* subsection recording all three beside the questions that provoked them; the Blocking subsection now holds exactly one question — whether the gate blocks every rung — and says so. Q-Reference rows added for Q-62, Q-63, Q-64; Q-35, Q-43, Q-44, Q-47 and Q-56 rows updated to match. |
 | 2026-08-02 | author | Blocking Question 4 resolved by deduction | The gate-blocking question is ruled and the plan's design stands: ordinary rungs do not block, `continue` renders as a reading, the halfway checkpoint blocks. Recorded as a **deduction from Q-44** rather than as a preference, with the argument written out in *The gate is a control* — Q-44's "**plus** a mechanical checkpoint" makes the checkpoint an addition that must differ from the margin words; its "**breaks answering-momentum**" requires momentum to exist at ordinary rungs; its "**always-available** … stopping never requires being noticed" is a claim about availability, not compulsion. Press-to-advance voids all three and produces the endurance test Q-47's rationale names. **No `Q-N` minted** — applying Q-44 is not making a new decision. One correction to the reasoning as it was handed to me: the phrase "stops being three quiet words in the margin and becomes the thing on the screen" is this plan's own gloss, not Q-44's text, so the written deduction rests only on Q-44's actual wording; a plan quoted back at itself is not a warrant. Blocking Open Questions now reads "None remain"; T14 step 4 is re-aimed from deciding the mechanism to testing the margin words' wording and weight. |
 | 2026-08-02 | author | Review round 2, two issues | (1) `soundingId?: string` added to the turn response's declared fields — it is the cap-and-convergence path, where no gate is pressed and the response is the only thing that can say which ladder closed; T13's Test A could not otherwise read what it caused to be written. (2) The finished ladder now has a named carrier: **`SessionState.finishedSounding?: ParkedLadder`**, chosen over "closeDescent returns the ladder beside the probe" because `elicitor.ts` already uses exactly this handoff shape for `openQueueEntryId` (set by the elicitor, consumed downstream, `delete`d — `elicitor.ts:276-279`), and because a whole `ParkedLadder` on `Probe` would fatten a lean type. T1 declares it, T6's `closeDescent` is now written out in full with its four steps ordered so the handoff happens *before* `s.sounding` is cleared, and T8 reads, persists, emits, and clears it in one shared helper both the turn route and the gate route call. **Deliberate deviation:** taking that option made `Probe.descentClosed` redundant — the route reads `endedBy` off the ladder it already holds — so it is dropped, T1 no longer touches `elicitor.ts`, and T6 is that file's sole owner. The client-facing `descentClosed` field is unchanged and is built by the route. Advisories: the stale `Probe` line reference is gone with the edit that needed it; T8's gate contract now says the checkpoint-continue probe composes from `state.sounding.rungs.at(-1)!.answer` (the gate carries a choice word, never prose, so the foothold must come off the ladder); and T6 now marks the T12-503-vs-T6-convergence difference as deliberate, with the reason each is right where it is. |
+| 2026-08-02 | author (T5 spike) | Six seams re-verified, plan-time anchors re-resolved | (1) `renderExchange` controls unchanged: harvestBtn/skipBtn/laterBtn at web/main.ts:794-796, deferRow 799-804, `answerArea.append` 807 — T9 gate row lands after deferRow. (2) `setControlsBusy` exists at web/main.ts:928-934, disables all five controls — gate controls join it or they race. (3) `sessions` Map at src/server.ts:763; ServerDeps 94-150; turn route at 953. (4) turn response `{kind, text, questionForm, phase, juxtaposition?}` at 1021-1027; `userTurn` has ONE caller (994) and ONE kind-switch (the saturated if at 1005) — T6's `checkpoint` widening requires the route touch, which is T8's, landed back to back. (5) log-kind drift enforced three ways at tests/log-format.test.ts:710-789 (unrendered emit, unsampled emit, stale sample), set derived from src/ at test time via tests/emitted-kinds.ts; both format.ts and the test were committed post-plan (82d662c, eebb5cc). (6) `userTurn` order intact at 299-466 (bookmark 325-337, door 340-343, budget 346-351, pivot 354-358, juxtaposition 363-394, red-light 397-413, generic 416-465); the descent branch slots between lines 351 and 353. Baseline green: 83 files / 1689 passed / 3 skipped, tsc clean. One transient red during the wave (registry.ts mid-append) cleared on re-run. |
