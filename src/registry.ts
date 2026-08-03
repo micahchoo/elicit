@@ -788,4 +788,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // ── src/coach/store.ts (090 T3 — the coach store) ──
 { module: 'src/coach/store', name: 'createCoachStore', status: 'unwired', reason: 'callers land with the coach routes (T9/T10)' },
 { module: 'src/coach/store', name: 'readSittingTags', status: 'unwired', reason: 'callers land with the coach routes (T9/T10)' },
+
+// ── src/coach/license.ts (090 T5 — the licence) ──
+{ module: 'src/coach/license', name: 'relevantClaims', status: 'live', reason: 'live from birth: evaluateOffer calls it in this same module (T5)' },
+{ module: 'src/coach/license', name: 'evaluateOffer', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
+{ module: 'src/coach/license', name: 'licenseState', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
+{ module: 'src/coach/license', name: 'somethingNew', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
 ];

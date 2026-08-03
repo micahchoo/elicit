@@ -182,6 +182,20 @@ export const THRESHOLDS = {
   graduatesWhen:
    'The shadow record shows the note firing on claims whose only cite is one of the 96 labelled danglers (docs/dangler-labels-2026-08-02.md), and that a human agrees the single cited snippet cannot carry the claim alone (ticket 087, mode 1 of the 085 review).',
  },
+ 'coach.offerMinClaims': {
+  name: 'coach.offerMinClaims',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-62 — the mechanism only OFFERS, nothing happens on silence (declining costs a word, silence costs nothing), and every evaluation is logged. PROVISIONAL value: the coach-offer log record resizes it.',
+ },
+ 'coach.reflectionCap': {
+  name: 'coach.reflectionCap',
+  value: 2,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a cap protecting the Queue acts from day one; every clip is logged through shadowDecision(clips=true).',
+ },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;
