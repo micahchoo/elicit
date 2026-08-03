@@ -874,6 +874,24 @@ describe('QueueStore', () => {
    expect('gap' in rawFrontmatter()).toBe(false);
    expect('gap' in createQueueStore(root).list()[0]!).toBe(false);
   });
+
+  it('soundingId roundtrips for a parked-sounding pointer (soundings)', () => {
+   const ladder = '01K0000000000000000000000B';
+   const e = store.add(makeDraft({ source: 'parked-sounding', soundingId: ladder }));
+   expect(createQueueStore(root).list()[0]!.soundingId).toBe(ladder);
+   expect(createQueueStore(root).list()[0]!.source).toBe('parked-sounding');
+
+   store.markAnswered(e.id);
+   const reloaded = createQueueStore(root).list()[0]!;
+   expect(reloaded.soundingId).toBe(ladder);
+   expect(reloaded.status).toBe('answered');
+  });
+
+  it('an entry added without a soundingId reads back with the key absent', () => {
+   store.add(makeDraft());
+   expect('soundingId' in rawFrontmatter()).toBe(false);
+   expect('soundingId' in createQueueStore(root).list()[0]!).toBe(false);
+  });
  });
 
  // ── the degradation ladder: two rungs and a composing floor (Q-55) ──

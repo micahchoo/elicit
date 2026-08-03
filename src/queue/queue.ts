@@ -230,6 +230,10 @@ class QueueStoreImpl implements QueueStore {
    ...(data.direction
     ? { direction: data.direction as NonNullable<QueueEntry['direction']> }
     : {}),
+   // The ladder a parked-sounding pointer names. Read back because the
+   // resume route keys on it across restarts (Q-3: the ladder file is the
+   // truth, the pointer only points).
+   ...(data.soundingId ? { soundingId: data.soundingId as string } : {}),
   };
  }
 
@@ -261,6 +265,7 @@ class QueueStoreImpl implements QueueStore {
   if (entry.targetFacet) fm.targetFacet = entry.targetFacet;
   if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
   if (entry.direction) fm.direction = entry.direction;
+ if (entry.soundingId) fm.soundingId = entry.soundingId;
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#dir(), `${entry.id}.md`), content, 'utf-8');
  }
