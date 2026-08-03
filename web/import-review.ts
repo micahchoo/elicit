@@ -61,6 +61,18 @@ export interface ImportReviewDeps {
    * callers use a conditional spread).
    */
   region?: string;
+  /**
+   * A node path the survey map should open at, scrolled to and expanded
+   * (plan Tasks 13/14): the reach offer's `reach it` lands here. The review
+   * ignores it; the map renders it.
+   */
+  focus?: string;
+  /**
+   * The folder the reach offer surveyed (014 T14): the map needs it to open
+   * AT the focused region — an offer carries only a path relative to the
+   * survey root. Absent on a plain visit: the person types the folder.
+   */
+  folder?: string;
 }
 
 /** The next-item path, inside the region when one is open (plan Task 13). */

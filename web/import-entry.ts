@@ -111,6 +111,9 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
     placeholder: '/absolute/path/to/the/folder',
     style: 'min-width: 16rem',
   });
+  // The reach offer's landing (014 T14): the survey root it named is the
+  // folder to open — the map needs it to render the offered region.
+  if (deps.folder !== undefined) folderInput.value = deps.folder;
   const scanBtn = el('button', { class: 'submit-btn' }, 'scan this folder');
   prompt.append(folderInput, scanBtn);
   surface.append(prompt);
@@ -132,6 +135,9 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
       api,
       navTo: (s) => navTo(s),
       folder: folderInput.value.trim(),
+      // The reach offer's focus (014 T14): open the map at the region it
+      // named, expanded and scrolled to. Absent on a plain visit.
+      ...(deps.focus !== undefined ? { focus: deps.focus } : {}),
     });
   };
   renderMap();

@@ -1856,12 +1856,15 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
 
  // ── Seeding routes (014 T12) ──
 
- // GET /api/import/survey?folder=… → { survey }
+ // GET/POST /api/import/survey?folder=… → { survey }
  // The coarse, model-free map of a folder: per-node counts of files /
  // harvested / refused / unread, computed from the import store, snapshotted
  // to vault/imports/survey.json (a rebuildable cache — Q-3 — the one file in
  // imports/ that may be deleted without loss).
- app.get('/api/import/survey', async (c) => {
+ // Registered for GET and POST: the web client's api() helper POSTs any path
+ // outside its read list, and the survey map (014 T13) calls through it.
+ // Read-only under both methods — nothing here reads a body or writes corpus.
+ const importSurvey = async (c: Context): Promise<Response> => {
   const folder = c.req.query('folder') ?? '';
   if (folder.length === 0) {
    return c.json({ error: 'folder is required' }, 400);
@@ -1874,7 +1877,9 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   }
   writeSurvey(deps.vaultRoot, survey);
   return c.json({ survey });
- });
+ };
+ app.get('/api/import/survey', importSurvey);
+ app.post('/api/import/survey', importSurvey);
 
  // POST /api/import/region {root, dating, authorship} → {slug}
  // The ONLY writer of a region record, and it validates before it writes
@@ -1914,11 +1919,14 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   return c.json({ slug: record.slug });
  });
 
- // GET /api/reach → { offer: ReachOffer | null }
+ // GET /api/reach → { offer: ReachOffer | null, root: string | null }
  // Read-only and cheap: reads the survey snapshot and the pending queue,
  // never the folder — a route that re-walked 5,000 files on every waiting-
  // surface render is a route the person would feel. Offer-only (Q-62):
- // silence does nothing, and every evaluation is logged.
+ // silence does nothing, and every evaluation is logged. `root` is the
+ // survey root the offer's path is relative to — the waiting surface needs
+ // it to open the map AT the offered region (014 T14); null when never
+ // surveyed.
  app.get('/api/reach', (c) => {
   const survey = readSurvey(deps.vaultRoot);
   const pending = deps.queue.list({ status: 'pending' });
@@ -1938,7 +1946,7 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
    declined: (p) => reachDeclines(deps.vaultRoot).get(p) ?? null,
    log,
   });
-  return c.json({ offer });
+  return c.json({ offer, root: survey?.root ?? null });
  });
 
  // POST /api/reach/decline {path} → {ok: true}

@@ -15,6 +15,7 @@ import type { AnnotationRecord } from '../src/clerk/annotation-store.js';
 import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
 import { renderImportEntry } from './import-entry.js';
+import { declinePath, offerSentence, reachItNav, type ReachOfferLine } from './reach-line.js';
 import { ulid } from 'ulid';
 
 /* ─── API types ─── */
@@ -221,7 +222,7 @@ main.append(surface);
 
 /* ─── Navigation ─── */
 
-function navTo(screen: Screen) {
+function navTo(screen: Screen, opts?: { focus?: string; folder?: string }) {
  const target = '#/' + screen;
  if (location.hash !== target) location.hash = target;
  state.screen = screen;
@@ -243,7 +244,17 @@ function navTo(screen: Screen) {
   // The seam widens navTo: the entry module takes `(screen: string)`, this
   // app's screens are the Screen union, and the entry only ever asks for
   // screens the union contains.
-  case 'import': renderShell(); renderImportEntry({ main: surface, el, api, beginWait, navTo: (s: string) => navTo(s as Screen) }); break;
+  // The opts seam (014 T14): the reach offer's `reach it` lands the map on
+  // the region it named, carrying the survey root it was relative to — the
+  // parameters are optional, so every other call site is untouched, and they
+  // are forwarded only where the map renders.
+  case 'import': renderShell(); renderImportEntry({
+    main: surface, el, api, beginWait,
+    navTo: (s: string) => navTo(s as Screen),
+    // exactOptionalPropertyTypes: absent means absent, never present-undefined.
+    ...(opts?.focus !== undefined ? { focus: opts.focus } : {}),
+    ...(opts?.folder !== undefined ? { folder: opts.folder } : {}),
+   }); break;
   case 'wiki': renderWiki(false); break;
   case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
@@ -316,7 +327,12 @@ function isReadPath(path: string): boolean {
  // The piece paths are matched exactly, the way /api/wiki is: the GET reads
  // are one piece and its export, while every verb beneath /api/piece/:id/ is
  // a POST (reorder, prose, gap, gap/accept, set-down, pick-up).
+ // /api/reach is matched the same exact way, not by prefix: the GET is the
+ // offer itself, while /api/reach/decline sits under the same path and is
+ // the one POST the reach surface makes — a prefix match would send the
+ // decline out as a GET and 404 it (seeding pre-dispatch finding, 014 T14).
  return path === '/api/wiki' || path.startsWith('/api/wiki?')
+  || path === '/api/reach' || path.startsWith('/api/reach?')
   || /^\/api\/piece\/[^/]+$/.test(path)
   || /^\/api\/piece\/[^/]+\/export$/.test(path);
 }
@@ -2121,6 +2137,37 @@ function renderWaiting() {
  renderShell();
 
  const div = el('div', { class: 'screen active waiting-surface' });
+
+ // The Reach offer (014 T14): one dimmed line, nothing on silence. The
+ // cadence line's idiom exactly — the record, offered, and nothing acts on
+ // it (Q-37, Q-62): `offer: null` renders nothing at all, `not now` costs
+ // one click and records a decline, and `reach it` lands the map on the
+ // region the offer named. One line, one region, never a list (Q-24).
+ const reachLine = el('p', { class: 'reach-offer' }, '');
+ div.append(reachLine);
+ api<{ offer: ReachOfferLine | null; root: string | null }>('/api/reach')
+  .then((r) => {
+   if (r.offer === null) return; // silence renders nothing
+   reachLine.textContent = offerSentence(r.offer) ?? '';
+   const reachIt = el('button', { class: 'reach-action', type: 'button' }, 'reach it');
+   const notNow = el('button', { class: 'reach-action', type: 'button' }, 'not now');
+   reachIt.addEventListener('click', () => {
+    const nav = reachItNav(r.offer!.path);
+    navTo(nav.screen, { focus: nav.focus, ...(r.root !== null ? { folder: r.root } : {}) });
+   });
+   notNow.addEventListener('click', async () => {
+    try {
+     await api(declinePath(), { path: r.offer!.path });
+    } catch {
+     // The offer stays; a failed record must not put a second line anywhere.
+    }
+    reachLine.replaceChildren(); // gone for this render — :empty hides it
+   });
+   reachLine.append(' ', reachIt, ' · ', notNow);
+  })
+  .catch(() => {
+   /* the offer is not load-bearing; a failed read shows nothing */
+  });
 
  // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
  // Dormancy is signal, never debt (Q-24): each row shows the last rung's

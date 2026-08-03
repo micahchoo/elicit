@@ -2198,3 +2198,27 @@ main {
 .survey-start {
  margin-top: 0.4rem;
 }
+
+/* The reach offer line (014 T14): the cadence line's idiom exactly — the
+   record, offered, and nothing acts on it (Q-37). One dimmed line; silence
+   renders nothing and :empty hides it. */
+.reach-offer {
+ margin: 0 0 1.75rem;
+ font-size: 0.9rem;
+ opacity: 0.55;
+ font-family: var(--font-ui);
+}
+
+.reach-offer:empty {
+ display: none;
+}
+
+.reach-action {
+ background: none;
+ border: none;
+ padding: 0;
+ font: inherit;
+ color: inherit;
+ text-decoration: underline;
+ cursor: pointer;
+}
