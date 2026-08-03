@@ -13,3 +13,25 @@ local:/
 # Embedding evals — derived vectors, rebuildable (Q-3)
 /data/eval-007/
 /data/eval-053/
+
+# Personal material — the owner's corpus, reviews, and process notes.
+# Lives on disk, never in git: git tracks only what a public tree may hold.
+/HANDOFF.md
+/docs/superpowers/
+/docs/wayfinder/
+/docs/ideal-state-board.md
+/docs/claim-review-*.md
+/docs/dangler-labels-*.md
+/docs/eval-2026-*.md
+/docs/ingest-review-*.md
+/docs/ingest-triage-*.md
+/research-codex-lessons.md
+/tools/claim-review/dataset.json
+/tools/claim-review/notes.jsonl
+/tools/claim-review/server.log
+/data/eval-074-annotate/
+/data/eval-087-mint/
+/data/annotations/
+/scripts/ingest-posts.ts
+/src/import/prior-ingest.ts
+/src/import/prior-ingest.local.ts
