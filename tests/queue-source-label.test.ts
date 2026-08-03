@@ -22,6 +22,7 @@ const SOURCES: QueueEntry['source'][] = [
 'lint-still-true',
 'lint-undiscriminated-range',
 'import-repair',
+'quest-reflection',
 ];
 
 const LINT_KINDS: LintFinding['kind'][] = [
@@ -75,6 +76,11 @@ describe('sourceLabel', () => {
  /** Q-15: a repair question reads as the ordinary question `composed` is. */
  it('reads a repair question as the words composed gets — Q-15', () => {
   expect(sourceLabel('import-repair')).toBe(sourceLabel('composed'));
+ });
+
+ /** Q-75: a quest-tagged question reads as the ordinary question `composed` is. */
+ it('reads a quest-reflection question as the words composed gets — Q-75', () => {
+  expect(sourceLabel('quest-reflection')).toBe(sourceLabel('composed'));
  });
 
  it('is exhaustive by type — a missing member does not compile', () => {

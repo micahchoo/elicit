@@ -207,6 +207,9 @@ class QueueStoreImpl implements QueueStore {
    // The Claim a lint-minted still-true question is about. Read back
    // because the still-true dedupe keys on it across restarts (Q-31).
    ...(data.claim ? { claim: data.claim as string } : {}),
+   // The quest a reflection question follows. Read back because the
+   // (quest, session) pair is the dedupe key across restarts (Q-75).
+   ...(data.quest ? { quest: data.quest as string } : {}),
    // The Gap this entry was minted to fill. Read back because the gap link
    // has to survive a restart: the mint wrote it, the draw read it (Q-39).
    ...(data.gap ? { gap: data.gap as string } : {}),
@@ -264,6 +267,7 @@ class QueueStoreImpl implements QueueStore {
   // write is lost.
   if (entry.answeredAt) fm.answeredAt = entry.answeredAt;
   if (entry.claim) fm.claim = entry.claim;
+ if (entry.quest) fm.quest = entry.quest;
   if (entry.gap) fm.gap = entry.gap;
   if (entry.bud) fm.bud = entry.bud;
   if (entry.failure) fm.failure = entry.failure;

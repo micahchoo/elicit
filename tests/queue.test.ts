@@ -892,6 +892,24 @@ describe('QueueStore', () => {
    expect('soundingId' in rawFrontmatter()).toBe(false);
    expect('soundingId' in createQueueStore(root).list()[0]!).toBe(false);
   });
+
+  it('quest roundtrips for a quest-reflection entry, and answering keeps it', () => {
+   const questId = '01Q0000000000000000000000A';
+   const e = store.add(makeDraft({ source: 'quest-reflection', quest: questId }));
+   expect(createQueueStore(root).list()[0]!.quest).toBe(questId);
+   expect('quest' in rawFrontmatter()).toBe(true);
+
+   store.markAnswered(e.id);
+   const reloaded = createQueueStore(root).list()[0]!;
+   expect(reloaded.quest).toBe(questId);
+   expect(reloaded.status).toBe('answered');
+  });
+
+  it('an entry added without a quest reads back with the key absent', () => {
+   store.add(makeDraft());
+   expect('quest' in rawFrontmatter()).toBe(false);
+   expect('quest' in createQueueStore(root).list()[0]!).toBe(false);
+  });
  });
 
  // ── the degradation ladder: two rungs and a composing floor (Q-55) ──

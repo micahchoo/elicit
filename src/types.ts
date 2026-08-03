@@ -309,7 +309,8 @@ source:
  | 'lint-undiscriminated-range'
  | 'parked-sounding'
  | 'claim-challenged'
- | 'import-repair';
+ | 'import-repair'
+ | 'quest-reflection';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -324,6 +325,13 @@ source:
   * resting on one stale snippet suppress each other's question.
   */
  claim?: string;
+ /**
+  * The quest a reflection question follows (Q-75). Optional, because only
+  * 'quest-reflection' entries carry one — and load-bearing, because the
+  * (quest, session) pair is the dedupe key: without it a second return
+  * would re-mint the same two questions forever.
+  */
+ quest?: string;
  /**
   * The Gap this entry was minted to fill. Optional, because only
   * gap-sourced entries carry one — and load-bearing, because the snippet
