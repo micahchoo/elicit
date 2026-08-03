@@ -2,7 +2,7 @@
 title: "Build: Gap-fill question source — Buds and half-Constructs mint questions"
 labels: [wayfinder:task]
 status: open
-assignee: 
+assignee: claude (omp wave 8)
 blocked_by: [008-build-clerk]
 ---
 
