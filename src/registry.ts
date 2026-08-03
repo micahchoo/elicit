@@ -636,4 +636,11 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/sounding/convergence.ts ──
 { module: 'src/sounding/convergence', name: 'descentEnd', status: 'unwired', reason: 'wired by 012 T6: userTurn calls it after every rung' },
+
+// ── src/index/lexical.ts (soundings slice Task 2 — the license's word API) ──
+{ module: 'src/index/lexical', name: 'contentWordsOf', status: 'live' },
+{ module: 'src/index/lexical', name: 'jaccard', status: 'live' },
+
+// ── src/sounding/license.ts ──
+{ module: 'src/sounding/license', name: 'licenseSounding', status: 'unwired', reason: 'wired by 012 T8: the turn route calls it on every turn' },
 ];

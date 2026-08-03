@@ -61,8 +61,13 @@ function extractContentWords(tokens: Token[]): Set<string> {
  );
 }
 
+/** Content words of a text string, for callers that hold no token stream. */
+export function contentWordsOf(text: string): Set<string> {
+ return extractContentWords(tokenize(text));
+}
+
 /** Jaccard similarity: |A ∩ B| / |A ∪ B| */
-function jaccard(a: Set<string>, b: Set<string>): number {
+export function jaccard(a: Set<string>, b: Set<string>): number {
  if (a.size === 0 && b.size === 0) return 0;
  let intersection = 0;
  for (const item of a) {
