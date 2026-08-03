@@ -313,6 +313,7 @@ async function apiRaw(path: string): Promise<Response> {
 
 function clear() {
  releaseReadWatch();
+ releaseCorrectingMode();
  main.innerHTML = '';
 }
 
@@ -524,15 +525,19 @@ function renderMode(showSetupHint?: boolean) {
  });
 
  const navRow = el('div', { class: 'mode-nav' });
- const waitingLink = el('button', { class: 'nav-link' }, 'waiting surface');
+ const waitingLink = el('button', { class: 'nav-link' }, 'open questions');
  waitingLink.addEventListener('click', () => navTo('waiting'));
  const writeLink = el('button', { class: 'nav-link' }, 'just write');
  writeLink.addEventListener('click', () => navTo('unprompted'));
- const wikiLink = el('button', { class: 'nav-link' }, 'what the clerk has written');
+ const wikiLink = el('button', { class: 'nav-link' }, 'the wiki');
  wikiLink.addEventListener('click', () => navTo('wiki'));
+ // Your words are a hub destination now (the verb-grammar rule): composing
+ // has its own surface, reached from the mode page like the others.
+ const wordsLink = el('button', { class: 'nav-link' }, 'your words');
+ wordsLink.addEventListener('click', () => navTo('material'));
  const importLink = el('button', { class: 'nav-link' }, 'import');
  importLink.addEventListener('click', () => navTo('import'));
- navRow.append(waitingLink, writeLink, wikiLink, importLink);
+ navRow.append(waitingLink, writeLink, wikiLink, wordsLink, importLink);
 
  // A quiet count of finished harvests awaiting review — offer-only (Q-62):
  // it sits in the nav row of a surface the person opened, never outbound.
@@ -833,6 +838,13 @@ function renderExchange() {
  const plainWord = el('button', { class: 'defer-need' }, 'just later');
  deferRow.append(deferPrompt, timeWord, energyWord, plainWord);
 
+ // The writing grammar allows one hint line: how Enter behaves, in dim ink.
+ const answerHint = el('div', { class: 'answer-hint' }, 'Enter sends \u00b7 Shift+Enter for a new line');
+ // Leaving is not harvesting: the transcript already lives server-side, so
+ // this word only navigates — it must never call /api/session/:id/end.
+ const leaveWord = el('button', { class: 'nav-link exchange-leave' }, 'leave \u2014 your words keep');
+ leaveWord.addEventListener('click', () => navTo('mode'));
+
 // ── The sounding offer (012 T9): one sentence, two words, in the margin ──
 // Shown once per sitting, below the question block. Both words are one
 // click and spent on the click: declining never asks why and never returns
@@ -1036,7 +1048,7 @@ parkWord.addEventListener('click', () => pressGate('park'));
 anotherDayWord.addEventListener('click', () => pressGate('another-day'));
 
  answerRow.append(textarea, micBtn, micStatus);
- answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow, gateRow);
+ answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow, answerHint, leaveWord, gateRow);
 
 
  div.append(header, transcript, answerArea);
@@ -1323,10 +1335,16 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
 
 /* ── Harvest screen ── */
 
+/**
+ * The queue grammar promises leaving costs nothing: this map is that
+ * promise, per session, for this page load.
+ */
+const harvestDrafts = new Map<string, HarvestDecision[]>();
+
 function renderHarvest() {
  clear();
  state.screen = 'harvest';
- state.decisions = [];
+ state.decisions = harvestDrafts.get(state.sessionId!) ?? [];
 
  const div = el('div', { class: 'screen active' });
 
@@ -1356,11 +1374,20 @@ function renderHarvest() {
   closeBtn.addEventListener('click', () => navTo('mode'));
   div.append(closeBtn);
  } else {
-  const progress = el('p', { class: 'harvest-progress' }, `0 of ${state.proposals.length} decided`);
+  const progress = el('p', { class: 'harvest-progress' }, `${state.decisions.length} of ${state.proposals.length} decided`);
   const submitRow = el('div', { style: 'margin-top: 1.5rem' });
   const submitBtn = el('button', { class: 'submit-btn' }, 'save decisions');
   submitRow.append(submitBtn);
-  div.append(progress, submitRow);
+  // The queue grammar lets a sitting rest: decisions stay in hand, and the
+  // review list is where the person left it.
+  const backRow = el('div', { class: 'waiting-nav' });
+  const finishLater = el('button', { class: 'nav-link' }, '\u2190 finish later');
+  finishLater.addEventListener('click', () => {
+   harvestDrafts.set(state.sessionId!, state.decisions);
+   navTo('reviews');
+  });
+  backRow.append(finishLater);
+  div.append(progress, submitRow, backRow);
 
   submitBtn.addEventListener('click', async () => {
    if (state.decisions.length < state.proposals.length) {
@@ -1379,6 +1406,7 @@ function renderHarvest() {
      { decisions: state.decisions },
     );
     wait.done();
+    harvestDrafts.delete(state.sessionId!);
     renderDone();
    } catch (e) {
     wait.failed(e);
@@ -1466,14 +1494,7 @@ function renderProposal(idx: number, container: HTMLElement) {
   editorActive = false;
  }
 
- function setDecision(action: HarvestDecision['action'], text?: string, channel?: CaptureChannel) {
-  state.decisions = state.decisions.filter((d) => d.proposal !== idx);
-  const d: HarvestDecision = { proposal: idx, action };
-  if (text !== undefined) d.text = text;
-  if (channel !== undefined) d.channel = channel;
-  state.decisions.push(d);
-  const progress = document.querySelector('.harvest-progress');
-  if (progress) progress.textContent = `${state.decisions.length} of ${state.proposals.length} decided`;
+ function applyDecisionVisual(action: HarvestDecision['action']) {
   const all = [approveBtn, trimBtn, discardBtn, restateBtn];
   for (const b of all) b.style.opacity = '0.4';
   const active =
@@ -1486,6 +1507,20 @@ function renderProposal(idx: number, container: HTMLElement) {
       : restateBtn;
   active.style.opacity = '1';
   active.style.fontWeight = '500';
+ }
+
+ function setDecision(action: HarvestDecision['action'], text?: string, channel?: CaptureChannel) {
+  state.decisions = state.decisions.filter((d) => d.proposal !== idx);
+  const d: HarvestDecision = { proposal: idx, action };
+  if (text !== undefined) d.text = text;
+  if (channel !== undefined) d.channel = channel;
+  state.decisions.push(d);
+  // The draft map holds the same decisions, so a "finish later" and a
+  // re-open of the same sitting agree on what was already decided.
+  harvestDrafts.set(state.sessionId!, state.decisions);
+  const progress = document.querySelector('.harvest-progress');
+  if (progress) progress.textContent = `${state.decisions.length} of ${state.proposals.length} decided`;
+  applyDecisionVisual(action);
  }
 
  approveBtn.addEventListener('click', () => {
@@ -1581,6 +1616,9 @@ function renderProposal(idx: number, container: HTMLElement) {
 
  block.append(textWrapper, actions);
  container.append(block);
+ // A drafted decision (a "finish later" re-open) renders exactly like a
+ // clicked one: the same visual path, taken when the block is built.
+ const seeded = state.decisions.find((d) => d.proposal === idx); if (seeded) applyDecisionVisual(seeded.action);
 }
 
 /* ── Review queue: finished harvests awaiting a decision ── */
@@ -1645,9 +1683,34 @@ function renderReviews() {
     reviewPollTimer = poll;
    }
 
+   // The one decision in the reviewing grammar: opening an entry loads its
+   // record and hands the screen to the harvest. Shared by the row click
+   // and the single-entry shortcut, so both paths stay identical.
+   async function openEntry(sessionId: string): Promise<boolean> {
+    try {
+     const rec = await api<HarvestQueueRecord>(`/api/harvest-queue/${sessionId}`);
+     state.sessionId = rec.sessionId;
+     state.proposals = rec.proposals;
+     state.pendingReviewSession = null;
+     renderHarvest();
+     return true;
+    } catch (e) {
+     console.error(e);
+     return false;
+    }
+   }
+
    if (data.pending.length === 0 && pending === null) {
     list.append(el('p', { class: 'empty-msg' }, 'nothing awaiting review'));
     return;
+   }
+
+   // One waiting harvest and nothing being polled: open it directly instead
+   // of painting a one-row list (the verb-grammar rule — a queue with one
+   // item is already decided). On failure, fall back to the list.
+   const only = data.pending[0];
+   if (data.pending.length === 1 && pending === null && only) {
+    if (await openEntry(only.sessionId)) return;
    }
 
    for (const entry of data.pending) {
@@ -1661,16 +1724,10 @@ function renderReviews() {
     row.append(date, meta);
     row.addEventListener('click', async () => {
      row.disabled = true;
-     try {
-      const rec = await api<HarvestQueueRecord>(`/api/harvest-queue/${entry.sessionId}`);
-      state.sessionId = rec.sessionId;
-      state.proposals = rec.proposals;
-      state.pendingReviewSession = null;
-      renderHarvest();
-     } catch (e) {
+     const ok = await openEntry(entry.sessionId);
+     if (!ok) {
       row.disabled = false;
       list.append(el('p', { class: 'empty-msg' }, 'that harvest did not load'));
-      console.error(e);
      }
     });
     list.append(row);
@@ -1701,7 +1758,7 @@ function renderDone() {
  main.append(div);
 }
 
-/* ── Waiting surface ── */
+/* ── Open questions surface ── */
 
 function renderWaiting() {
  clear();
@@ -1713,11 +1770,7 @@ function renderWaiting() {
  const backRow = el('div', { class: 'waiting-nav' });
  const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
  backBtn.addEventListener('click', () => navTo('mode'));
- // ── Piece surface ──
- const pieceWord = el('button', { class: 'nav-link' }, 'piece');
- pieceWord.addEventListener('click', () => navTo('material'));
- backRow.append(backBtn, ' \u00b7 ', pieceWord);
- // ── end Piece surface ──
+ backRow.append(backBtn);
  div.append(backRow);
 
  // Expedition section — entries with horizon 'days' waiting to go out
@@ -1773,10 +1826,36 @@ function renderWaiting() {
   .then((r) => { cadenceLine.textContent = r.sentence; })
   .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
 
- // Append in order: cadence, expeditions, questions, activity
+ // The review queue, as a sentence below the cadence (the verb-grammar
+ // rule): what waits is said, with one control word at the point of
+ // attention. The `:empty` rule keeps it off the page until a harvest
+ // actually waits.
+ const reviewsLine = el('p', { class: 'waiting-reviews-line' });
+
+ // Append in order: cadence, reviews, expeditions, questions, activity
  // Activity appended last so the layout flows correctly
- div.append(backRow, cadenceLine, expSection, parkedSection, queueSection, activitySection);
+ div.append(backRow, cadenceLine, reviewsLine, expSection, parkedSection, queueSection, activitySection);
  main.append(div);
+
+ // What wants the person, as a sentence with one word in it — the same
+ // call renderMode makes for its count. A failed read shows nothing.
+ (async () => {
+  try {
+   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+   if (state.screen !== 'waiting') return;
+   if (data.pending.length === 0) return;
+   const n = data.pending.length;
+   const readWord = el('button', { class: 'nav-link' }, 'read them');
+   readWord.addEventListener('click', () => navTo('reviews'));
+   reviewsLine.append(
+    document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
+    readWord,
+    document.createTextNode('.'),
+   );
+  } catch {
+   // The review queue is offer-only; a failed read just means no line.
+  }
+ })();
 
  // Age helper: compact relative-time display (e.g. "2d ago", "just now")
  function ageString(created: string): string {
@@ -1938,8 +2017,11 @@ function renderWaiting() {
  *    the person's quoted words in the darkest — so darkness reads as "more of
  *    your own words stand under this", and a page entirely in light ink reads
  *    as early evidence rather than as failure (Q-21, Q-27).
- * 2. **No verbs, no buttons on a claim.** The only two controls are a back
- *    link and one sentence at the foot that widens the reading.
+ * 2. **Verbs exist, but only in correcting mode** (the verb-grammar rule,
+ *    `docs/interface-references.md`): a click on a claim dims the page
+ *    around it and brings two margin words. The reading page carries none
+ *    at rest — the only two controls are a back link and one sentence at
+ *    the foot that widens the reading.
  * 3. **No numbers.** No counts, no confidence, no progress (Q-21, Q-24).
  */
 
@@ -2060,6 +2142,73 @@ function watchReads(root: HTMLElement) {
   for (const target of [...timers.keys()]) cancel(target);
  };
  document.addEventListener('visibilitychange', readVisibilityHandler);
+}
+
+/* ── Correcting mode (the verb-grammar rule) ──
+ *
+ * The wiki's dominant verb is reading, so the page at rest carries nothing
+ * but prose and two quiet controls. Correcting enters as an explicit mode
+ * shift: one claim focused, the page dimmed around it, two margin words
+ * inside the claim. Clicking the focused claim again, clicking another
+ * claim, or pressing Escape leaves the mode — chrome arrives on entry and
+ * leaves on exit, never interleaved at rest.
+ */
+let correctingPage: HTMLElement | null = null;
+let correctingClaim: HTMLElement | null = null;
+let correctingKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function releaseCorrectingMode(): void {
+ if (correctingPage) correctingPage.classList.remove('correcting');
+ if (correctingClaim) correctingClaim.classList.remove('focused');
+ correctingPage = null;
+ correctingClaim = null;
+ if (correctingKeyHandler) {
+  document.removeEventListener('keydown', correctingKeyHandler);
+  correctingKeyHandler = null;
+ }
+}
+
+function focusClaim(page: HTMLElement, block: HTMLElement, claimId: string): void {
+ releaseCorrectingMode();
+ correctingPage = page;
+ correctingClaim = block;
+ page.classList.add('correcting');
+ block.classList.add('focused');
+
+ const verbs = el('div', { class: 'claim-verbs' });
+ // The verbs' own clicks must not toggle the mode off through the block
+ // handler, so the row swallows them.
+ verbs.addEventListener('click', (e) => e.stopPropagation());
+
+ const attest = el('button', { class: 'nav-link' }, 'that’s me exactly');
+ attest.addEventListener('click', () => {
+  api(`/api/wiki/claim/${encodeURIComponent(claimId)}/attest`)
+   .then(() => {
+    // No status word: the flag's ink arrives when the Clerk next reads
+    // (Q-33), and the line says that and no more.
+    verbs.replaceWith(marginNote('noted — your ink joins this sentence when the Clerk next reads'));
+   })
+   .catch((e: unknown) => console.error(e));
+ });
+
+ const challenge = el('button', { class: 'nav-link' }, 'not quite — ask me');
+ challenge.addEventListener('click', () => {
+  api(`/api/wiki/claim/${encodeURIComponent(claimId)}/challenge`)
+   .then(() => {
+    verbs.replaceWith(marginNote('a question is on its way to your queue'));
+   })
+   .catch((e: unknown) => console.error(e));
+ });
+
+ verbs.append(attest, challenge);
+ block.append(verbs);
+
+ if (!correctingKeyHandler) {
+  correctingKeyHandler = (e) => {
+   if (e.key === 'Escape') releaseCorrectingMode();
+  };
+  document.addEventListener('keydown', correctingKeyHandler);
+ }
 }
 
 /* ── Typesetting helpers ── */
@@ -2223,6 +2372,16 @@ function paintWiki(page: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[
     const s = byId.get(snippetId);
     if (s) block.append(quoteBlock(s.prose, s.captured, s.provenance, s.annotation?.kind === 'annotation' ? s.annotation : undefined));
    }
+   // The verb-grammar rule: correcting is an explicit mode shift. A click
+   // on the claim dims the page around it and brings two margin words;
+   // clicking it again, another claim, or pressing Escape leaves the mode.
+   block.addEventListener('click', () => {
+    if (correctingClaim === block) {
+     releaseCorrectingMode();
+    } else {
+     focusClaim(page, block, cl.id);
+    }
+   });
    section.append(block);
   }
   page.append(section);
@@ -2399,7 +2558,7 @@ function renderMaterial() {
 
  const nav = el('div', { class: 'material-nav' });
  const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
- backBtn.addEventListener('click', () => navTo('waiting'));
+ backBtn.addEventListener('click', () => navTo('mode'));
  // One margin word, present only while at least one paragraph is lit.
  const compose = el('button', { class: 'nav-link' }, 'compose');
  compose.hidden = true;
@@ -2492,6 +2651,7 @@ function paintMaterial(
     para.classList.add('lit');
    }
    compose.hidden = selected.size === 0;
+   compose.textContent = `compose ${selected.size}`;
   });
   list.append(para);
  }
@@ -2646,6 +2806,19 @@ function renderPiece() {
 
   const entryIds = arrangement.entries.map((e) => e.id);
 
+  // Viewing a candidate never chooses it (Q-38): the dimmed line says the
+  // order under the eye is not the standing one, and names the word that
+  // would make it so.
+  if (arrangement.id !== piece.current) {
+   doc.append(
+    el(
+     'p',
+     { class: 'piece-candidate-line' },
+     'viewing a candidate order \u2014 "keep this order" makes it the one that stands',
+    ),
+   );
+  }
+
   for (const entry of arrangement.entries) {
    if (entry.kind === 'pin') {
     // The paragraph itself is the drag target — no handle, no grip, no
@@ -2671,14 +2844,17 @@ function renderPiece() {
     });
     doc.append(para);
    } else {
-    // A gap is a thin rule across the measure, carrying the dimmed words
-    // ask me? — a box would be the admin panel returning. Its question was
-    // already minted (or withheld, on a set-down Piece), so the rule itself
-    // is a marker, never an editor: touching it changes nothing.
-    const gap = el('div', { class: 'piece-gap' });
+    // A gap is a thin rule across the measure carrying the question it was
+    // minted with — a box would be the admin panel returning. A minted gap
+    // is a marker, never an editor (Q-39): no pointer, no hover; only the
+    // trailing seam opens a line. When the question is withheld (a set-down
+    // Piece) the rule says so instead of pretending to ask.
+    const gap = el('div', { class: 'piece-gap piece-gap-inert' });
     gap.dataset.entry = entry.id;
     const rule = el('div', { class: 'piece-gap-rule' });
-    rule.append(el('span', { class: 'piece-gap-ask' }, 'ask me?'));
+    rule.append(
+     el('span', { class: 'piece-gap-question' }, entry.question ?? 'waiting for its question'),
+    );
     gap.append(rule);
     // An answered gap carries its offer in the margin: the harvested
     // sentence, dimmed, beside the rule. Nothing renders when the join is

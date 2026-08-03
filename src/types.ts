@@ -300,7 +300,8 @@ source:
  | 'contradiction-remeasure'
  | 'lint-still-true'
  | 'lint-undiscriminated-range'
- | 'parked-sounding';
+ | 'parked-sounding'
+ | 'claim-challenged';
  license: string;
  question: string;
  questionForm: QuestionForm;

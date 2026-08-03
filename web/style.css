@@ -7,6 +7,7 @@
  --dim: #999;
  --border: #e0e0dc;
  --accent: #555;
+ --warn: #9a4b38;
  --font-serif: 'Charter', 'Georgia', serif;
  --font-mono: 'SF Mono', 'Consolas', monospace;
  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -371,6 +372,14 @@ main {
  color: var(--fg);
 }
 
+/* The writing grammar allows one hint line: how Enter behaves, in dim ink.
+   Plain text, always present — it is not a control. */
+.answer-hint {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
 /* ── sounding offer (012 T9) — one sentence, two words, in the margin ── */
 .sounding-offer {
  display: flex;
@@ -511,6 +520,12 @@ main {
  gap: 1rem;
 }
 
+.harvest-progress {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+}
+
 .proposal-block {
  border-bottom: 1px solid var(--border);
  padding-bottom: 1rem;
@@ -581,7 +596,7 @@ main {
 }
 
 .proposal-action.discard {
- color: #c44;
+ color: var(--warn);
  border-color: transparent;
 }
 
@@ -608,6 +623,16 @@ main {
 
 .trim-editor:focus {
  border-color: var(--fg);
+}
+
+.trim-constraint {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+.trim-editor.invalid {
+ border-color: var(--warn);
 }
 
 /* restate editor */
@@ -917,10 +942,25 @@ main {
 
 /* Draws left to right, holds, then withdraws off the right edge. */
 @keyframes wait-sweep {
- 0% { left: 0; right: 100%; }
- 45% { left: 0; right: 0; }
- 55% { left: 0; right: 0; }
- 100% { left: 100%; right: 0; }
+ 0% {
+  left: 0;
+  right: 100%;
+ }
+
+ 45% {
+  left: 0;
+  right: 0;
+ }
+
+ 55% {
+  left: 0;
+  right: 0;
+ }
+
+ 100% {
+  left: 100%;
+  right: 0;
+ }
 }
 
 .wait-label,
@@ -1099,8 +1139,23 @@ main {
   font-size: 0.9rem;
   opacity: 0.55;
 }
+
 .cadence-line:empty {
   display: none;
+}
+
+/* The review queue, as one sentence with a control word below the cadence
+   (the verb-grammar rule). Same weight as the cadence line; the negative
+   top margin nests it under the cadence so the two read as one paragraph.
+   The empty rule keeps it off the page until a harvest actually waits. */
+.waiting-reviews-line {
+ margin: -1.75rem 0 1.75rem;
+ font-size: 0.9rem;
+ opacity: 0.55;
+}
+
+.waiting-reviews-line:empty {
+ display: none;
 }
 
 /* ── the wiki: a page of prose (task 19) ──
@@ -1279,6 +1334,7 @@ main {
 }
 
 @media (max-width: 480px) {
+
  .claim-sentence,
  .exhibit-pole {
   font-size: 1rem;
@@ -1292,6 +1348,33 @@ main {
  .wiki-exhibit[data-ink='facing'] {
   margin-left: 0;
  }
+}
+
+/* ── correcting mode: verbs enter on a click, and leave with it ──
+ *
+   The verb-grammar rule applied to the wiki: the reading page carries no
+   verbs at rest. A click on a claim dims the page around it and brings a
+   margin row of two quiet words; the dimming is the mode. The focus
+   transition is short so the shift reads as a change of attention, not a
+   new page. */
+.wiki-page.correcting .wiki-claim:not(.focused),
+.wiki-page.correcting .wiki-facet > h2 {
+ opacity: 0.3;
+}
+
+.wiki-claim,
+.wiki-facet > h2 {
+ transition: opacity 150ms ease;
+}
+
+.claim-verbs {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ margin-top: 0.5rem;
+}
+
+.claim-verbs .nav-link {
+ font-size: 0.75rem;
 }
 
 /* ── the review surface: the piece whole, cuts marked in place ── */
@@ -1386,7 +1469,8 @@ main {
 
 .import-para {
  margin: 0;
- white-space: pre-wrap; /* paragraph text is verbatim — nothing reflowed */
+ white-space: pre-wrap;
+ /* paragraph text is verbatim — nothing reflowed */
 }
 
 /* A proposed cut: underlined in place, no other emphasis. */
@@ -1600,6 +1684,12 @@ main {
  color: var(--fg);
 }
 
+/* the touch invites before it is made: hover lifts the ink one step to the
+   accent; lit is the second and final step to full ink (Q-58) */
+.material-snippet:not(.lit):hover .material-prose {
+ color: var(--accent);
+}
+
 /* the piece: the arrangement is the page */
 .piece-doc {
  display: flex;
@@ -1612,7 +1702,8 @@ main {
  font-size: 1.05rem;
  line-height: var(--line);
  color: var(--fg);
- white-space: pre-wrap; /* a pinned version is verbatim — nothing reflowed */
+ white-space: pre-wrap;
+ /* a pinned version is verbatim — nothing reflowed */
  cursor: grab;
 }
 
@@ -1628,7 +1719,6 @@ main {
 .piece-gap-rule {
  border-top: 1px solid var(--border);
  padding-top: 0.3rem;
- cursor: pointer;
 }
 
 .piece-gap-ask {
@@ -1637,8 +1727,32 @@ main {
  color: var(--dim);
 }
 
-.piece-gap-rule:hover .piece-gap-ask {
+/* the seam opens a line; a minted gap is a marker and takes no pointer */
+.piece-gap:not(.piece-gap-inert) .piece-gap-rule {
+ cursor: pointer;
+}
+
+.piece-gap-inert .piece-gap-rule {
+ cursor: default;
+}
+
+.piece-gap:not(.piece-gap-inert) .piece-gap-rule:hover .piece-gap-ask {
  color: var(--accent);
+}
+
+/* a minted gap: the question it carries, dimmed like the seam's ask */
+.piece-gap-question {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+/* a viewed candidate: one dimmed line before the entries, naming what the
+   word `keep this order` would do — the way the cadence line speaks (Q-38) */
+.piece-candidate-line {
+ margin: 0 0 1.75rem;
+ font-size: 0.9rem;
+ opacity: 0.55;
 }
 
 /* the one line the rule opens into */
@@ -1707,6 +1821,7 @@ main {
 }
 
 @media (max-width: 600px) {
+
  .material-prose,
  .piece-para,
  .piece-composer {

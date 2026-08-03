@@ -56,3 +56,24 @@ Consequences the board (`elicit-interface`) now encodes:
 - Time is a scrollbar: dragging back re-renders the essay as it stood then
   (the re-reading surface is the wiki under a time lens, not a separate
   room).
+
+## The verb-grammar rule (added 2026-08-02)
+
+The document rule is the display grammar of two verbs — writing and
+reading — and had been over-applied to all five verbs. Each verb earns its
+own surface:
+
+- **writing/dictating** = the void (full-bleed input, context dimmed, no
+  feedback until done).
+- **reading** = the essay (hierarchy, ink as evidence, navigation only).
+- **reviewing** = the queue (verdict state per item, progress count,
+  consequence-weighted verbs).
+- **correcting** = the diff (before/after co-visible, constraint stated,
+  live validation, explicit commit and cancel).
+- **composing** = the board (overview plus detail, drag affordances, draft
+  vs committed visible).
+
+The rule: a surface renders its dominant verb's grammar; secondary verbs
+enter as explicit mode shifts — chrome arrives on entry and leaves on exit,
+never interleaved at rest. The exchange's focus dimming and the defer-row
+reveal are the existing precedents.

@@ -595,6 +595,25 @@ class ClaimStoreImpl implements ClaimStore {
     if (!claim) throw new Error(`Cannot record a read: claim ${claimId} is missing or malformed`);
     this.writeClaim({ ...claim, readLog: [...claim.readLog, { at, surface }] });
   }
+
+  /**
+   * The one user verb the store executes (Q-33): mark a claim as attested by
+   * the person it is about. `status` is NOT touched here — it is recomputed
+   * mechanically from the graph (Q-29), and the recompute maps this flag on
+   * its next pass.
+   *
+   * Read-modify-write through `readClaim`/`writeClaim`, the `recordRead`
+   * idiom: a claim gone malformed on disk is never silently rewritten from a
+   * partial parse, and the validations run again on the way out. An unknown
+   * id returns null, the same not-found answer the by-id reads give.
+   */
+  attest(id: string): Claim | null {
+    const claim = this.readClaim(id);
+    if (!claim) return null;
+    const updated = { ...claim, attested: true, updated: new Date().toISOString() };
+    this.writeClaim(updated);
+    return updated;
+  }
 }
 
 // ── The sweep deferral and still-true cursor (075) ──

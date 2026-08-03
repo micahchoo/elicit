@@ -35,14 +35,15 @@ import type { LintFinding } from '../wiki/contract.js';
  * `lint-still-true` and `lint-undiscriminated-range` are the literals the
  * Clerk slice adds, and a re-measure or a discrimination question that
  * announces itself as one is the verification Q-15 forbids — so they read as
- * the ordinary question `composed` is. Only `user-declared` and its sibling
- * `gap-declared` differ, because the person parked those themselves and
- * knows it. `gap-fill` reads like the rest: a Bud question quotes the
- * held fragment verbatim, a half-Construct question quotes the pole, and
- * a model-marked gap's question quotes an adjacent paragraph verbatim —
- * in every case the words ARE the person's own (ticket 027).
- * Q-15 governs all of it — nothing may accuse, and no gap-fill question
- * announces itself as one.
+ * the ordinary question `composed` is. Only the sources the person
+ * performed differ: `user-declared` and its sibling `gap-declared` because
+ * the person parked those themselves and knows it, and `claim-challenged`
+ * because the person pushed back and the label says so. `gap-fill` reads
+ * like the rest: a Bud question quotes the held fragment verbatim, a
+ * half-Construct question quotes the pole, and a model-marked gap's
+ * question quotes an adjacent paragraph verbatim — in every case the words
+ * ARE the person's own (ticket 027). Q-15 governs all of it — nothing may
+ * accuse, and no gap-fill question announces itself as one.
  */
 const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  composed: 'from your own words',
@@ -54,6 +55,7 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'lint-still-true': 'from your own words',
  'lint-undiscriminated-range': 'from your own words',
  'parked-sounding': 'from your own words',
+ 'claim-challenged': 'you pushed back on the wiki',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {
