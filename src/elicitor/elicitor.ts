@@ -505,11 +505,11 @@ export async function userTurn(
    // twice and must never reach the person.
    emitGuardFloor(s, verdict);
    const floorText = getProtocol(s.protocol)?.floorProbe ?? DEFAULT_FLOOR_PROBE;
-   return emitProbe(s, floorText, defaultQuestionForm, 'probe');
+   return emitProbe(s, floorText, protocolDef?.questionForm ?? defaultQuestionForm, 'probe');
   }
  }
 
- return emitProbe(s, probeText, defaultQuestionForm, 'probe');
+ return emitProbe(s, probeText, protocolDef?.questionForm ?? defaultQuestionForm, 'probe');
 }
 
 /**

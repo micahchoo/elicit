@@ -33,7 +33,7 @@ describe('protocol registry', () => {
     const defs = registry.loadProtocolDefinitions();
     const r = defs.get('reflective')!;
     expect(r.targets).toEqual(['self']);
-    expect(r.questionForm).toBe('deliberative');
+    expect(r.questionForm).toBe('theoretical');
     expect(r.prompt.length).toBeGreaterThan(100);
   });
 

@@ -70,6 +70,7 @@ const STANCES: Record<Stance, true> = {
   commitment: true,
   'uncertainty-marked': true,
   superseded: true,
+  'role-taking': true,
 };
 
 const isFacet = (s: string): s is Facet => Object.hasOwn(FACETS, s);

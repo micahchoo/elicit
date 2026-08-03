@@ -71,6 +71,8 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
   markAnswered: () => { },
   defer: () => { },
   expire: () => 0,
+  expireTailBeyond: () => 0,
+  markExpired: () => { },
   _adds: adds,
  };
 }
@@ -183,7 +185,7 @@ describe('elicitor', () => {
   expect(result.kind).toBe('probe');
   if (result.kind === 'probe') {
    expect(result.text).toBe('What makes you say that?');
-   expect(result.questionForm).toBe('deliberative');
+   expect(result.questionForm).toBe('theoretical');
   }
  });
 
@@ -697,6 +699,8 @@ describe('guards', () => {
    markAnswered: () => { },
    defer: () => { },
    expire: () => 0,
+   expireTailBeyond: () => 0,
+   markExpired: () => { },
   };
   const idx = makeFakeIndex();
   const session = startSession(
@@ -981,6 +985,8 @@ describe('the open queue entry — which question the next turn answers (041)', 
    markAnswered: (id) => { answered.push(id); },
    defer: () => { },
    expire: () => 0,
+   expireTailBeyond: () => 0,
+   markExpired: () => { },
    answered,
   };
  }

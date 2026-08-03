@@ -3,7 +3,7 @@ name: reflective
 targets:
   - self
 prerequisites: []
-questionForm: deliberative
+questionForm: theoretical
 # The fixed probe served when the guard rejects twice and every fallback is
 # empty (ticket 079): one sentence, no conversation reference, no placeholders.
 floorProbe: "What would it cost you to be wrong about that?"
