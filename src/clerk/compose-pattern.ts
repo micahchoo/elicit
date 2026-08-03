@@ -111,22 +111,24 @@ export async function composeWithPattern(
     log?: (e: { at: string; actor: string; kind: string; detail: string }) => void;
   },
   sitting?: SittingContext,
+  /** When provided, skip pattern selection and use this pattern directly. */
+  pattern?: Pattern,
 ): Promise<QueueDraft | null> {
   const patterns = loadPatterns();
-  if (patterns.length === 0) return null;
+  if (patterns.length === 0 && !pattern) return null;
 
-  const pattern = selectCheapPattern(patterns, ctx, ctx.log);
-  if (!pattern) return null;
+  const selected = pattern ?? selectCheapPattern(patterns, ctx, ctx.log);
+  if (!selected) return null;
 
   const sources = snippets.map((s) => ({ prose: s.prose, captured: s.captured }));
-  const prompt = patternPrompt(pattern, sources);
+  const prompt = patternPrompt(selected, sources);
 
   const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
   const question = stripFences(raw).trim();
   if (!question) return null;
 
   const sourceRefs = snippets.map((s) => ({ id: s.id, version: s.version, prose: s.prose }));
-  const result = decomposeDerived(question, pattern, sourceRefs);
+  const result = decomposeDerived(question, selected, sourceRefs);
 
   if (!result.ok) {
     if (ctx.log) {
@@ -134,18 +136,18 @@ export async function composeWithPattern(
         at: new Date().toISOString(),
         actor: 'clerk',
         kind: 'pattern-decompose-rejection',
-        detail: `reason=${result.reason} pattern=${pattern.id} question-preview=${question.slice(0, 80)}`,
+        detail: `reason=${result.reason} pattern=${selected.id} question-preview=${question.slice(0, 80)}`,
       });
     }
-    console.warn(`ComposePattern: rejected (${result.reason}) for ${pattern.id}`);
+    console.warn(`ComposePattern: rejected (${result.reason}) for ${selected.id}`);
     return null;
   }
 
   const guardVerdict = checkQuestion(question, { asked: [] });
   if (guardVerdict !== 'ok') {
-    console.warn(`ComposePattern: guard rejected (${guardVerdict}) for ${pattern.id}`);
+    console.warn(`ComposePattern: guard rejected (${guardVerdict}) for ${selected.id}`);
     return null;
   }
 
-  return buildPatternDraft(question, pattern, result.quotedSpans, result.operatorsUsed, sitting);
+  return buildPatternDraft(question, selected, result.quotedSpans, result.operatorsUsed, sitting);
 }
