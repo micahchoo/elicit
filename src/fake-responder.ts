@@ -44,7 +44,24 @@ export function makeFakeComplete(): RecordingFakeComplete {
   const s = system.toLowerCase();
 
   if (s.includes('red light')) {
-   return '{"lights": []}';
+   // The Soundings descent runs on this responder (plan T9 step 6): a rung
+   // needs a red light whose phrase is a verbatim substring of the turn, or
+   // composeRung can never build rung 0. First three words of the turn keep
+   // the phrase deterministic; an empty turn gets no lights (the elicitor's
+   // content-free pivot never reaches redLights with one, but stay honest).
+   const words = (turns.at(-1)?.text ?? '').trim().split(/\s+/);
+   const phrase = words.slice(0, 3).join(' ');
+   if (!phrase) return '{"lights": []}';
+   return JSON.stringify({ lights: [{ kind: 'unexplored-referent', phrase }] });
+  }
+
+  // composeFollowUp (the rung composer's second call): the prompt names the
+  // required phrase; quote it back inside quotation marks so checkAroundPhrase
+  // passes on the first try, and ask a question around it (Q-12).
+  if (s.includes('triggered a concern') && s.includes('inside quotation marks')) {
+   const m = /inside quotation marks: "([^"]+)"/.exec(s);
+   const phrase = m?.[1] ?? '';
+   return phrase ? `What did you mean by "${phrase}"?` : 'What did you mean by that?';
   }
 
   if (s.includes('harvesting agent')) {
