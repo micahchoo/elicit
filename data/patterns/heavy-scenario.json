@@ -1,0 +1,14 @@
+{
+  "id": "heavy-scenario",
+  "name": "Heavy scenario / vignette",
+  "tier": "deep",
+  "operators": ["suppose"],
+  "derivesFrom": {
+    "minSnippets": 3,
+    "facets": ["episode", "construct"]
+  },
+  "requiredQuotes": ["the named episode — exact phrase", "the construct poles — exact substrings"],
+  "questionForm": "theoretical",
+  "contaminationRisk": "high",
+  "graduation": "shadow"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "instance-testing",
+  "name": "Instance testing",
+  "tier": "cheap",
+  "operators": ["instance-of"],
+  "derivesFrom": {
+    "minSnippets": 2,
+    "facets": ["construct", "value", "causal-theory"],
+    "alsoNeeds": ["episode"]
+  },
+  "requiredQuotes": ["general-claim", "specific-instance"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}

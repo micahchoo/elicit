@@ -1,0 +1,14 @@
+{
+  "id": "anniversary-framing",
+  "name": "Anniversary framing",
+  "tier": "cheap",
+  "operators": ["anniversary-frame", "time-shift"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["episode", "intention", "value", "construct", "fact", "causal-theory"]
+  },
+  "requiredQuotes": ["the snippet text — exact quote, dated by its writing timestamp"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}

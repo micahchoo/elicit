@@ -3,6 +3,7 @@
 
 import type { SemanticIndex } from './index/semantic.js';
 import type { DRMState, DRMParkedState } from './drm/types.js';
+import type { PatternId, Operator } from './patterns/types.js';
 
 export type Facet =
  | 'episode'
@@ -26,7 +27,8 @@ export type Stance =
  | 'pole-preference'
  | 'commitment'
  | 'uncertainty-marked'
- | 'superseded';
+ | 'superseded'
+ | 'role-taking';
 
 export type QuestionForm = 'deliberative' | 'theoretical' | 'why';
 export type QuestionSource = {
@@ -492,6 +494,26 @@ atlasRegion?: string;
  * about this entity; a later frontier sweep reads it to avoid re-asking.
  */
 subjects?: string[];
+/** Ticket 113 — other-minds expedition: the errand names a person and a question to carry. */
+errandKind?: 'other-minds';
+/** The person's own word for the named other in a role-taking or other-minds context. */
+errandPerson?: string;
+/**
+ * The derivation pattern that composed this question, when one was used.
+ * Absent on non-pattern-derived entries (ticket 111, Q-81/Q-82).
+ */
+patternId?: PatternId;
+/**
+ * Snippet@version refs for the elements the pattern recombined
+ * (Q-81, Q-18's name-what-you-shuffled applied to composition).
+ * Absent on non-pattern-derived entries.
+ */
+derivedFrom?: string[];
+/**
+ * The operators the pattern applied, from its registered set.
+ * Absent on non-pattern-derived entries.
+ */
+operatorsUsed?: Operator[];
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -759,3 +781,10 @@ export type {
  DRMState,
 } from './drm/types.js';
 export { DRM_PROBE_QUESTIONS, DRM_AFFECT_NUDGE } from './drm/types.js';
+
+// ── Derivation patterns (ticket 111) ──
+
+export type { PatternId, Operator } from './patterns/types.js';
+// PatternId and Operator are re-exported so QueueEntry can carry them
+// without every consumer importing from src/patterns/. The full Pattern
+// type lives in src/patterns/types.ts — import it directly when needed.

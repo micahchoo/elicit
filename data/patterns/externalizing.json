@@ -1,0 +1,14 @@
+{
+  "id": "externalizing",
+  "name": "Externalizing (narrative therapy)",
+  "tier": "deep",
+  "operators": ["externalize"],
+  "derivesFrom": {
+    "minSnippets": 3,
+    "facets": ["construct", "causal-theory"]
+  },
+  "requiredQuotes": ["the problem's name — the exact term they have used consistently", "every trait attributed to the character — exact quotes"],
+  "questionForm": "theoretical",
+  "contaminationRisk": "high",
+  "graduation": "shadow"
+}

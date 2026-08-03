@@ -1,0 +1,14 @@
+{
+  "id": "counterfactual",
+  "name": "Counterfactual twist",
+  "tier": "cheap",
+  "operators": ["counterfactual-twist"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["episode", "causal-theory"]
+  },
+  "requiredQuotes": ["the episode phrase", "the altered variable — an element they named"],
+  "questionForm": "theoretical",
+  "contaminationRisk": "moderate",
+  "graduation": "shadow"
+}

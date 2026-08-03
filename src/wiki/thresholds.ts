@@ -182,6 +182,13 @@ export const THRESHOLDS = {
   graduatesWhen:
    'The shadow record shows the note firing on claims whose only cite is one of the 96 labelled danglers (docs/dangler-labels-2026-08-02.md), and that a human agrees the single cited snippet cannot carry the claim alone (ticket 087, mode 1 of the 085 review).',
  },
+ 'stillTrue.formSelection': {
+  name: 'stillTrue.formSelection',
+  value: true,
+  live: false,
+  graduatesWhen:
+   'When the shadow log shows >20 still-true questions would have changed form, with >50% producing self-observation stances that yielded snippets distinct from their avowal counterparts.',
+ },
  'coach.offerMinClaims': {
   name: 'coach.offerMinClaims',
   value: 3,
@@ -195,6 +202,13 @@ export const THRESHOLDS = {
   live: true,
   graduatesWhen:
    'LIVE at birth under Q-56 — a cap protecting the Queue acts from day one; every clip is logged through shadowDecision(clips=true).',
+ },
+ 'patternSelection': {
+  name: 'patternSelection',
+  value: 0,
+  live: false,
+  graduatesWhen:
+   'Shadow record over ≥50 composed turns shows at least one pattern-derived question per sitting on average, and the guard pipeline catches every QR-2 fixture across all nine patterns.',
  },
 } satisfies Record<string, Threshold>;
 

@@ -1,0 +1,14 @@
+{
+  "id": "clean-language",
+  "name": "Clean Language frames",
+  "tier": "cheap",
+  "operators": ["clean-language-frame"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["episode", "construct", "fact", "value", "causal-theory", "intention"]
+  },
+  "requiredQuotes": ["the person's exact metaphor or image — every noun and verb not part of the fixed frame"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}

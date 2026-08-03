@@ -1,0 +1,14 @@
+{
+  "id": "sentence-stems",
+  "name": "Sentence stems",
+  "tier": "cheap",
+  "operators": ["sentence-completion"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["construct", "value", "causal-theory", "intention"]
+  },
+  "requiredQuotes": ["the stem — a truncation of their sentence at a natural boundary"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}

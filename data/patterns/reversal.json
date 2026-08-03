@@ -1,0 +1,14 @@
+{
+  "id": "reversal",
+  "name": "Question reversal",
+  "tier": "cheap",
+  "operators": ["reversal"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["intention", "value", "causal-theory", "construct", "fact"]
+  },
+  "requiredQuotes": ["the person's stated question, topic, or curiosity — exact wording"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}

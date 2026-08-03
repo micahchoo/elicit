@@ -1,0 +1,14 @@
+{
+  "id": "miracle-question",
+  "name": "Miracle / exception / scaling questions",
+  "tier": "deep",
+  "operators": ["miracle", "suppose"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["construct", "causal-theory", "intention"]
+  },
+  "requiredQuotes": ["the problem, pattern, or desired-state phrase — exact wording"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "moderate",
+  "graduation": "shadow"
+}

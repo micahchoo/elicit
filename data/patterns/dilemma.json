@@ -1,0 +1,14 @@
+{
+  "id": "dilemma",
+  "name": "Dilemma from their own poles",
+  "tier": "cheap",
+  "operators": ["dilemma-construct"],
+  "derivesFrom": {
+    "minSnippets": 1,
+    "facets": ["construct"]
+  },
+  "requiredQuotes": ["pole A — exact substring", "pole B — exact substring"],
+  "questionForm": "deliberative",
+  "contaminationRisk": "low",
+  "graduation": "shadow"
+}
