@@ -79,7 +79,7 @@ function facts(overrides?: Partial<CoachFacts>): CoachFacts {
   queueEntries: [],
   claims: cookingClaims(),
   snippetSessions: new Map(),
-  advice: null,
+  advice: new Map(),
   snippets: [],
   ...overrides,
  };

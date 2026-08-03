@@ -74,15 +74,16 @@ export function buildCoachPage(facts: CoachFacts, snippets: Snippet[], slug: str
  }
  entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
+ const note = facts.advice.get(slug);
  return {
   slug,
   name: direction.name,
   log: entries,
-  advice: facts.advice
+  advice: note
    ? {
-    mintedAt: facts.advice.mintedAt,
-    unread: facts.advice.readAt === undefined,
-    options: facts.advice.options.map((o) => ({ id: o.id, text: o.text })),
+    mintedAt: note.mintedAt,
+    unread: note.readAt === undefined,
+    options: note.options.map((o) => ({ id: o.id, text: o.text })),
    }
    : null,
   opening: entries.length === 0 ? 'nothing here yet — this page fills as you act' : '',

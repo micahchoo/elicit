@@ -59,7 +59,7 @@ function facts(overrides?: Partial<CoachFacts>): CoachFacts {
   queueEntries: [],
   claims: [],
   snippetSessions: new Map(),
-  advice: null,
+  advice: new Map(),
   snippets: [],
   ...overrides,
  };
@@ -77,7 +77,7 @@ function fullFacts(): CoachFacts {
    { id: 'a1', direction: 'cooking', pointer: '/home/me/notes/secret.pdf', name: 'the kitchen log', sentenceSession: 's1', declaredAt: '2026-08-03T11:00:00.000Z' },
   ],
   sittingTags: [tag('sess-r', '2026-08-03T10:30:00.000Z', { quest: 'q1', direction: 'cooking' })],
-  advice: note(),
+  advice: new Map([['cooking', note()]]),
  });
 }
 
@@ -145,7 +145,7 @@ describe('buildCoachPage (090 T8)', () => {
     { id: 'opt-2', text: 'Write down your knife setup' },
    ],
   });
-  const read = buildCoachPage(facts({ directions: [direction()], advice: note({ readAt: '2026-08-03T09:00:00.000Z' }) }), [], 'cooking')!;
+  const read = buildCoachPage(facts({ directions: [direction()], advice: new Map([['cooking', note({ readAt: '2026-08-03T09:00:00.000Z' })]]) }), [], 'cooking')!;
   expect(read.advice!.unread).toBe(false);
   const none = buildCoachPage(facts({ directions: [direction()] }), [], 'cooking')!;
   expect(none.advice).toBeNull();
@@ -182,7 +182,7 @@ describe('waitingLines (090 T8)', () => {
  it('is empty when nothing is new', () => {
   const f = facts({
    directions: [direction({ lastVisit: '2026-08-03T12:00:00.000Z' })],
-   advice: note({ mintedAt: '2026-08-03T08:00:00.000Z', readAt: '2026-08-03T09:00:00.000Z' }),
+   advice: new Map([['cooking', note({ mintedAt: '2026-08-03T08:00:00.000Z', readAt: '2026-08-03T09:00:00.000Z' })]]),
   });
   expect(waitingLines(f)).toEqual([]);
   expect(somethingNew(f, 'cooking')).toBe(false);
@@ -204,7 +204,10 @@ describe('waitingLines (090 T8)', () => {
     direction({ slug: 'cooking', name: 'Cooking', lastVisit: '2026-08-03T06:00:00.000Z' }),
     direction({ slug: 'banjo', name: 'Banjo', lastVisit: '2026-08-03T12:00:00.000Z' }),
    ],
-   advice: note({ mintedAt: '2026-08-03T08:00:00.000Z' }),
+   advice: new Map([
+    ['cooking', note({ mintedAt: '2026-08-03T08:00:00.000Z' })],
+    ['banjo', note({ direction: 'banjo', mintedAt: '2026-08-03T08:00:00.000Z' })],
+   ]),
   });
   expect(waitingLines(f)).toEqual([
    { slug: 'banjo', sentence: 'something new waits where you are learning Banjo' },
@@ -215,7 +218,7 @@ describe('waitingLines (090 T8)', () => {
  it('never lines up an un-coached Direction', () => {
   const f = facts({
    directions: [direction({ coached: false, lastVisit: '2026-08-03T06:00:00.000Z' })],
-   advice: note(),
+   advice: new Map([['cooking', note()]]),
   });
   expect(waitingLines(f)).toEqual([]);
  });

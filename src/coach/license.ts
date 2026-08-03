@@ -23,11 +23,11 @@ import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresho
 
 /**
  * The disk facts every licence decision is recomputed from (Q-3). `advice`
- * is the Direction's one note — the unread-note predicate (Q-76) cannot be
- * answered without it, and one file per Direction is a store invariant, so
- * the type carries it like every other record. `snippets` carries the
- * return prose the advice prompt quotes (Q-75) — the person's words, never
- * an artifact pointer (Q-78).
+ * holds each Direction's one note, keyed by slug — waitingLines evaluates
+ * several Directions at once, and the unread-note predicate (Q-76) needs
+ * every note in one snapshot. One file per Direction is a store invariant.
+ * `snippets` carries the return prose the advice prompt quotes (Q-75) —
+ * the person's words, never an artifact pointer (Q-78).
  */
 export type CoachFacts = {
  directions: DirectionRecord[];
@@ -38,8 +38,8 @@ export type CoachFacts = {
  claims: { id: string; body: string; range: string; cites: string[]; archived?: boolean }[];
  /** "snippetId@version"-id part → provenance.session — resolves a cite to its sitting. */
  snippetSessions: Map<string, string>;
- /** The Direction's current advice note, or null when none has ever been minted. */
- advice: AdviceNote | null;
+ /** slug → the Direction's current advice note; absent slug means never minted. */
+ advice: Map<string, AdviceNote>;
  /** The corpus the coach may quote — return prose only (Q-78: names, never pointers). */
  snippets: Snippet[];
 };
@@ -144,7 +144,7 @@ export function licenseState(
 ): { event: CoachLicenseEvent; at: string } | null {
  const direction = facts.directions.find((d) => d.slug === slug);
  if (!direction) return null;
- const baseline = facts.advice ? facts.advice.mintedAt : direction.coachedAt;
+ const baseline = facts.advice.get(slug)?.mintedAt ?? direction.coachedAt;
  if (baseline === undefined) return null;
 
  const events: { event: CoachLicenseEvent; at: string }[] = [];
@@ -183,7 +183,7 @@ export function licenseState(
 export function somethingNew(facts: CoachFacts, slug: string): boolean {
  const direction = facts.directions.find((d) => d.slug === slug);
  if (!direction) return false;
- const note = facts.advice;
+ const note = facts.advice.get(slug);
  if (note && note.readAt === undefined) return true;
  const since = direction.lastVisit;
  if (since === undefined) return false;

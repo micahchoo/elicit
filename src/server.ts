@@ -89,6 +89,10 @@ import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
 import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
+import { createCoachStore, readSittingTags } from './coach/store.js';
+import { evaluateOffer, type CoachFacts } from './coach/license.js';
+import { waitingLines, coachOfferSentence } from './coach/page.js';
+import type { AdviceNote } from './coach/contract.js';
 import type {
  Vault,
  Complete,
@@ -2676,6 +2680,86 @@ app.post('/api/piece/:id/choose', async (c) => {
   }
  }
  return c.json(enrichPiece(pieces.get(pieceId) ?? piece));
+});
+
+// ── Coach (ticket 090) ──
+// Coached state and the waiting offer. Nothing here acts on its own
+// judgment: the person declares, un-coaches and declines (Q-73, Q-43); the
+// offer is one dimmed line evaluated on every waiting read and logged on
+// every call (Q-62). Every coach record is markdown under vault/coach/ and
+// every decision is recomputed from disk (Q-3).
+const coachStore = createCoachStore(deps.vaultRoot);
+
+/** One CoachFacts snapshot from disk — the store reads, the sitting tags,
+ * the claim graph, the queue, and the session map for cite resolution. */
+function buildCoachFacts(): CoachFacts {
+ const snippets = Object.values(deps.vault.rebuildIndex().snippets);
+ const snippetSessions = new Map<string, string>();
+ for (const s of snippets) snippetSessions.set(s.id, s.provenance.session);
+ const advice = new Map<string, AdviceNote>();
+ for (const d of coachStore.listDirections()) {
+  const note = coachStore.readAdvice(d.slug);
+  if (note) advice.set(d.slug, note);
+ }
+ return {
+  directions: coachStore.listDirections(),
+  quests: coachStore.listQuests(),
+  artifacts: coachStore.listArtifacts(),
+  sittingTags: readSittingTags(deps.vaultRoot),
+  queueEntries: deps.queue.list(),
+  claims: claimStore.loadSlice().claims,
+  snippetSessions,
+  advice,
+  snippets,
+ };
+}
+
+// POST /api/coach/direction { name } — the ONLY door (Q-73): accepting the
+// offer calls this same route. The person's declaration, nothing else.
+app.post('/api/coach/direction', async (c) => {
+ const body = await c.req.json<{ name?: unknown }>();
+ if (typeof body?.name !== 'string' || body.name.trim().length === 0) {
+  return c.json({ error: 'name is required' }, 400);
+ }
+ const direction = coachStore.declareCoached(body.name.trim());
+ serverEmit(deps.vaultRoot, 'elicitor', 'direction-coached', `slug=${direction.slug}`);
+ return c.json({ direction });
+});
+
+// POST /api/coach/direction/:slug/uncoach — the lens off, archives nothing (Q-73).
+app.post('/api/coach/direction/:slug/uncoach', (c) => {
+ const slug = c.req.param('slug');
+ const record = coachStore.uncoach(slug);
+ if (!record) return c.json({ error: 'unknown direction' }, 404);
+ serverEmit(deps.vaultRoot, 'elicitor', 'direction-uncoached', `slug=${slug}`);
+ return c.json({ ok: true });
+});
+
+// POST /api/coach/direction/:slug/decline-offer — recorded, never re-asked (Q-43, Q-77).
+app.post('/api/coach/direction/:slug/decline-offer', (c) => {
+ const slug = c.req.param('slug');
+ coachStore.recordOfferDeclined(slug);
+ serverEmit(deps.vaultRoot, 'elicitor', 'coach-offer-declined', `slug=${slug}`);
+ return c.json({ ok: true });
+});
+
+// GET /api/coach/waiting — the live offer evaluation (Q-62): every call is
+// logged, offered=null on the empty corpus (090's data note), and silence
+// renders nothing.
+app.get('/api/coach/waiting', (c) => {
+ const facts = buildCoachFacts();
+ const evaluation = evaluateOffer(facts, (e) => appendEvent(deps.vaultRoot, e as ActivityEvent));
+ const offered = evaluation.offered;
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'coach-offer',
+  `directions=${evaluation.evaluated.length} qualified=${evaluation.qualified.length} offered=${offered ? offered.slug : 'none'}`,
+ );
+ return c.json({
+  offer: offered ? { slug: offered.slug, name: offered.name, sentence: coachOfferSentence(offered) } : null,
+  lines: waitingLines(facts),
+ });
 });
 
 // Static fallback: serve web/dist when it exists

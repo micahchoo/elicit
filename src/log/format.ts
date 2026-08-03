@@ -352,6 +352,18 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  },
  'unprompted-entry': (f) => `wrote ${count(num(f, 'chars'), 'character')} unprompted`,
 
+// ── Coach (ticket 090) ──
+// The offer line is one sentence per EVALUATION (Q-62), so the qualified
+// count decides which half reads true; the other half is the empty-corpus
+// case (090's data note), asserted by name in the route suite.
+'coach-offer': (f) =>
+ (num(f, 'qualified') > 0
+  ? 'offered coaching where enough has gathered'
+  : 'looked for a direction ready for coaching and found none yet'),
+'direction-coached': () => 'you took up coaching on a direction',
+'direction-uncoached': () => 'you set a coaching direction down',
+'coach-offer-declined': () => 'you declined a coaching offer',
+
  // ── The queue's degradation ladder (Q-55) ──
 
  'queue-rung': (f) =>

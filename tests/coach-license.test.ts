@@ -70,7 +70,7 @@ function facts(overrides?: Partial<CoachFacts>): CoachFacts {
   queueEntries: [],
   claims: [],
   snippetSessions: new Map(),
-  advice: null,
+  advice: new Map(),
   snippets: [],
   ...overrides,
  };
@@ -226,7 +226,7 @@ describe('licenseState (T5)', () => {
     tag('sess-r', '2026-08-03T09:00:00.000Z', { quest: 'q1', direction: 'carpentry' }),
     tag('sess-s', '2026-08-03T11:00:00.000Z', { direction: 'carpentry' }),
    ],
-   advice: note({ mintedAt: '2026-08-03T08:00:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T08:00:00.000Z' })]]),
   });
   const got = licenseState(f, 'carpentry');
   expect(got).toEqual({ event: 'page-opened', at: '2026-08-03T12:00:00.000Z' });
@@ -236,7 +236,7 @@ describe('licenseState (T5)', () => {
   const f = facts({
    directions: [direction()],
    queueEntries: [queueEntry({ direction: 'carpentry', status: 'answered', answeredAt: '2026-08-03T09:30:00.000Z' })],
-   advice: note({ mintedAt: '2026-08-03T08:00:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T08:00:00.000Z' })]]),
   });
   const got = licenseState(f, 'carpentry');
   expect(got).toEqual({ event: 'sitting-touched', at: '2026-08-03T09:30:00.000Z' });
@@ -248,7 +248,7 @@ describe('licenseState (T5)', () => {
    artifacts: [
     { id: 'a1', direction: 'carpentry', pointer: '/x', name: 'the plan', sentenceSession: 's1', declaredAt: '2026-08-03T09:00:00.000Z' },
    ],
-   advice: note({ mintedAt: '2026-08-03T10:00:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T10:00:00.000Z' })]]),
   });
   expect(licenseState(f, 'carpentry')).toBeNull();
  });
@@ -273,7 +273,7 @@ describe('somethingNew (T5)', () => {
  it('true on unread advice', () => {
   const f = facts({
    directions: [direction({ coached: true, lastVisit: '2026-08-03T12:00:00.000Z' })],
-   advice: note({ mintedAt: '2026-08-03T08:00:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T08:00:00.000Z' })]]),
   });
   expect(somethingNew(f, 'carpentry')).toBe(true);
  });
@@ -284,7 +284,7 @@ describe('somethingNew (T5)', () => {
    artifacts: [
     { id: 'a1', direction: 'carpentry', pointer: '/x', name: 'the plan', sentenceSession: 's1', declaredAt: '2026-08-03T10:00:00.000Z' },
    ],
-   advice: note({ mintedAt: '2026-08-03T09:00:00.000Z', readAt: '2026-08-03T11:00:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T09:00:00.000Z', readAt: '2026-08-03T11:00:00.000Z' })]]),
   });
   expect(somethingNew(f, 'carpentry')).toBe(false);
  });
@@ -294,7 +294,7 @@ describe('somethingNew (T5)', () => {
    directions: [direction({ coached: true, lastVisit: '2026-08-03T10:00:00.000Z' })],
    quests: [quest('q1')],
    sittingTags: [tag('sess-r', '2026-08-03T11:00:00.000Z', { quest: 'q1', direction: 'carpentry' })],
-   advice: note({ mintedAt: '2026-08-03T09:00:00.000Z', readAt: '2026-08-03T09:30:00.000Z' }),
+   advice: new Map([['carpentry', note({ mintedAt: '2026-08-03T09:00:00.000Z', readAt: '2026-08-03T09:30:00.000Z' })]]),
   });
   expect(somethingNew(f, 'carpentry')).toBe(true);
  });

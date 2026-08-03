@@ -786,12 +786,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/coach/contract', name: 'normalizeOption', status: 'live', reason: 'live from birth: adviceGuard calls it in this same module' },
 
 // ── src/coach/store.ts (090 T3 — the coach store) ──
-{ module: 'src/coach/store', name: 'createCoachStore', status: 'unwired', reason: 'callers land with the coach routes (T9/T10)' },
-{ module: 'src/coach/store', name: 'readSittingTags', status: 'unwired', reason: 'callers land with the coach routes (T9/T10)' },
+{ module: 'src/coach/store', name: 'createCoachStore', status: 'live', reason: 'live: the coach routes build it in src/server.ts (T9)' },
+{ module: 'src/coach/store', name: 'readSittingTags', status: 'live', reason: 'live: buildCoachFacts in src/server.ts reads the sitting tags (T9)' },
 
 // ── src/coach/license.ts (090 T5 — the licence) ──
 { module: 'src/coach/license', name: 'relevantClaims', status: 'live', reason: 'live from birth: evaluateOffer calls it in this same module (T5)' },
-{ module: 'src/coach/license', name: 'evaluateOffer', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
+{ module: 'src/coach/license', name: 'evaluateOffer', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9)' },
 { module: 'src/coach/license', name: 'licenseState', status: 'unwired', reason: 'callers are the coach routes (T9/T10) and the page module (T8)' },
 { module: 'src/coach/license', name: 'somethingNew', status: 'live', reason: 'live: waitingLines (src/coach/page.ts) calls it (T8)' },
 
@@ -804,6 +804,6 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/coach/page.ts (090 T8 — the page and the quiet lines) ──
 { module: 'src/coach/page', name: 'buildCoachPage', status: 'unwired', reason: 'callers are the coach routes (T9/T10)' },
-{ module: 'src/coach/page', name: 'waitingLines', status: 'unwired', reason: 'caller is the waiting route (T9)' },
-{ module: 'src/coach/page', name: 'coachOfferSentence', status: 'unwired', reason: 'caller is the waiting route (T9); named to dodge web/reach-line.ts offerSentence (090 T8)' },
+{ module: 'src/coach/page', name: 'waitingLines', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9)' },
+{ module: 'src/coach/page', name: 'coachOfferSentence', status: 'live', reason: 'live: the waiting route calls it in src/server.ts (T9); named to dodge web/reach-line.ts offerSentence (090 T8)' },
 ];

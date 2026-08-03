@@ -121,6 +121,13 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'session-harvested', detail: 'kept=1 budded=0', reads: 'kept 1, budded 0' },
  { kind: 'transcribed', detail: '820ms 47chars', reads: 'transcribed 47 characters of speech' },
  { kind: 'unprompted-entry', detail: `session=${ULID} chars=412`, reads: 'wrote 412 characters unprompted' },
+ // Coach (ticket 090): the offer line is one sentence per EVALUATION — the
+ // qualified count decides which half reads true (Q-62).
+ { kind: 'coach-offer', detail: 'directions=3 qualified=1 offered=cooking', reads: 'offered coaching where enough has gathered' },
+ { kind: 'coach-offer', detail: 'directions=0 qualified=0 offered=none', reads: 'looked for a direction ready for coaching and found none yet' },
+ { kind: 'direction-coached', detail: 'slug=cooking', reads: 'you took up coaching on a direction' },
+ { kind: 'direction-uncoached', detail: 'slug=cooking', reads: 'you set a coaching direction down' },
+ { kind: 'coach-offer-declined', detail: 'slug=cooking', reads: 'you declined a coaching offer' },
 
  // The degradation ladder (Q-55). `before=0` holds at every rung by
  // construction, so what the reader needs is what relaxing recovered.
