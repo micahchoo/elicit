@@ -98,6 +98,8 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
    _expireCalls.push(olderThanDays);
    return 0;
   },
+  expireTailBeyond() { return 0; },
+  markExpired() { },
  };
 }
 

@@ -157,10 +157,11 @@ describe.runIf(existsSync(PLAN_PATH))('conformance with the plan that specified 
       const liveCell = (cells[2] ?? '').trim();
       const name = /`([^`]+)`/.exec(nameCell)?.[1];
       if (!name) throw new Error(`unparseable threshold row: ${line}`);
-      // Cells read "3 content words", "0.85", "`true` (on)" — the value is
-      // always the leading token, the rest is the unit in prose.
+      // Cells read "3 content words", "0.85", "`true` (on)", "`false` (off)"
+      // — the value is always the leading token, the rest is the unit in prose.
       let value: number | boolean;
       if (valueCell.startsWith('`true`')) value = true;
+      else if (valueCell.startsWith('`false`')) value = false;
       else {
         const num = /^(\d+(?:\.\d+)?)/.exec(valueCell);
         if (!num?.[1]) throw new Error(`unparseable value for ${name}: ${valueCell}`);

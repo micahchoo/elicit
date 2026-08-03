@@ -778,6 +778,8 @@ describe('the draw reaches a sitting', () => {
       markAnswered: () => {},
       defer: () => {},
       expire: () => 0,
+      expireTailBeyond: () => 0,
+      markExpired: () => {},
     };
     return { turns, drawCalls, vault, queue };
   }

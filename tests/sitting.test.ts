@@ -147,6 +147,8 @@ function fakeQueue(): QueueStore & { _entries: QueueEntry[] } {
     markAnswered() {},
     defer() {},
     expire() { return 0; },
+    expireTailBeyond() { return 0; },
+    markExpired() {},
   };
 }
 

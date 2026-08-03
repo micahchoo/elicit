@@ -68,6 +68,8 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
   markAnswered: () => { },
   defer: () => { },
   expire: () => 0,
+  expireTailBeyond: () => 0,
+  markExpired: () => { },
   _adds: adds,
  };
 }

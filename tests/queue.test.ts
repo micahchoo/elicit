@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { ulid } from 'ulid';
 import matter from 'gray-matter';
 import { createQueueStore } from '../src/queue/queue.js';
+import { readEvents } from '../src/log/activity.js';
 import type { QueueStore, QueueDraft, QueueEntry, Mode } from '../src/types.js';
 
 let root: string;
@@ -458,7 +459,116 @@ describe('QueueStore', () => {
   expect(all.find((e) => e.id === ud.id)!.status).toBe('pending');
  });
 
- // ── markAnswered / defer status transitions ──
+ // ── expireTailBeyond (QR-6): the flood bound's tail expiry ──
+
+/** Write an entry with a chosen creation time directly, like the expire tests above. */
+function writeDatedEntry(created: string, overrides: Partial<QueueEntry> = {}) {
+ const queueDir = join(root, 'queue');
+ mkdirSync(queueDir, { recursive: true });
+ const entry: QueueEntry = {
+  id: ulid(),
+  status: 'pending',
+  source: 'composed',
+  license: 'test',
+  question: 'Q?',
+  questionForm: 'deliberative',
+  sharpness: 'weak',
+  horizon: 'days',
+  created,
+  ...overrides,
+ };
+ const { id, status, source, ...rest } = entry;
+ const content = matter.stringify('', { id, status, source, ...rest });
+ writeFileSync(join(queueDir, `${id}.md`), content, 'utf-8');
+ return entry;
+}
+
+it('expireTailBeyond keeps the newest keep open entries and expires the tail', () => {
+ const oldest = writeDatedEntry('2026-01-01T00:00:00.000Z');
+ const older = writeDatedEntry('2026-02-01T00:00:00.000Z');
+ const middle = writeDatedEntry('2026-03-01T00:00:00.000Z', { horizon: 'session' });
+ const newer = writeDatedEntry('2026-04-01T00:00:00.000Z');
+ const newest = writeDatedEntry('2026-05-01T00:00:00.000Z', { horizon: 'session' });
+
+ const count = store.expireTailBeyond(2);
+
+ expect(count).toBe(3);
+ const all = store.list();
+ expect(all.find((e) => e.id === newest.id)!.status).toBe('pending');
+ expect(all.find((e) => e.id === newer.id)!.status).toBe('pending');
+ expect(all.find((e) => e.id === middle.id)!.status).toBe('expired');
+ expect(all.find((e) => e.id === older.id)!.status).toBe('expired');
+ expect(all.find((e) => e.id === oldest.id)!.status).toBe('expired');
+});
+
+it('expireTailBeyond never expires a user-declared entry, even beyond keep', () => {
+ const ud = writeDatedEntry('2026-01-01T00:00:00.000Z', { source: 'user-declared' });
+ const fill = writeDatedEntry('2026-02-01T00:00:00.000Z', { source: 'gap-fill' });
+ const composed = writeDatedEntry('2026-03-01T00:00:00.000Z', { source: 'composed' });
+
+ const count = store.expireTailBeyond(1);
+
+ // The default filter is the open pool MINUS user-declared entries, so the
+ // user-declared entry is not even a candidate: it survives whatever the
+ // cap says. Of the two agent entries, one slot is kept (newest first).
+ expect(count).toBe(1);
+ const all = store.list();
+ expect(all.find((e) => e.id === ud.id)!.status).toBe('pending');
+ expect(all.find((e) => e.id === composed.id)!.status).toBe('pending');
+ expect(all.find((e) => e.id === fill.id)!.status).toBe('expired');
+});
+
+it('expireTailBeyond default filter is the open pool: horizon now entries are not candidates', () => {
+ const nowHorizon = writeDatedEntry('2026-01-01T00:00:00.000Z', { horizon: 'now' });
+ const dayHorizon = writeDatedEntry('2026-02-01T00:00:00.000Z', { horizon: 'days' });
+
+ const count = store.expireTailBeyond(0);
+
+ expect(count).toBe(1);
+ const all = store.list();
+ expect(all.find((e) => e.id === nowHorizon.id)!.status).toBe('pending');
+ expect(all.find((e) => e.id === dayHorizon.id)!.status).toBe('expired');
+});
+
+it('expireTailBeyond honours a custom filter: only matching entries are candidates', () => {
+ const gap = writeDatedEntry('2026-01-01T00:00:00.000Z', { source: 'gap-fill' });
+ const composed = writeDatedEntry('2026-02-01T00:00:00.000Z', { source: 'composed' });
+
+ const count = store.expireTailBeyond(0, (e) => e.source === 'gap-fill');
+
+ expect(count).toBe(1);
+ const all = store.list();
+ expect(all.find((e) => e.id === gap.id)!.status).toBe('expired');
+ expect(all.find((e) => e.id === composed.id)!.status).toBe('pending');
+});
+
+it('expireTailBeyond logs one summary line to the Activity Log and is idempotent', () => {
+ writeDatedEntry('2026-01-01T00:00:00.000Z');
+ writeDatedEntry('2026-02-01T00:00:00.000Z');
+
+ const first = store.expireTailBeyond(1);
+ const second = store.expireTailBeyond(1);
+
+ expect(first).toBe(1);
+ // Nothing left pending in the open pool: the second call expires nothing.
+ expect(second).toBe(0);
+
+ const events = readEvents(root).filter((e) => e.kind === 'queue-tail-expired');
+ expect(events).toHaveLength(1);
+ expect(events[0]!.detail).toContain('expired=1');
+});
+
+it('markExpired sets one entry to expired and writes it back; unknown id is a no-op', () => {
+ const entry = store.add(makeDraft({ horizon: 'days' }));
+
+ store.markExpired(entry.id);
+ store.markExpired('no-such-id');
+
+ const reread = store.list().find((e) => e.id === entry.id);
+ expect(reread!.status).toBe('expired');
+});
+
+// ── markAnswered / defer status transitions ──
 
  it('markAnswered transitions pending → answered', () => {
   const e = store.add(makeDraft());

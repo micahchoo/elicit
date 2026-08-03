@@ -317,6 +317,8 @@ function makeQueueStore(entries: QueueEntry[] = []): import('../src/types.js').Q
     markAnswered: vi.fn(),
     defer: vi.fn(),
     expire: vi.fn().mockReturnValue(0),
+    expireTailBeyond: vi.fn().mockReturnValue(0),
+    markExpired: vi.fn(),
   };
 }
 

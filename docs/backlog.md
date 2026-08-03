@@ -86,3 +86,26 @@ decision it extends. Nothing here is licensed to ship without its slice.
 - Vector/server retrieval infrastructure below ~500 pages (Q-3, Q-17 staging).
 - Hand-maintained index files (Q-3: the index is a query).
 - Fine-tuning as memory (weights cannot cite snippet versions).
+- Conversation-rollout question selection (SparkMe-style utility
+  estimation) — the clever selector at maximum cost (Q-82, 2026-08-03).
+- Exhibits — documents-of-action as a citable evidence class (Q-80,
+  2026-08-03). Self-authored documents already have the import door
+  (Q-57/Q-58); everything else stays behind Q-78's never-open rule,
+  scoped to the Coach as designed. No typed-citation schema for
+  artifact refs.
+
+## KTG territory ontology (ticket 094, 2026-08-03)
+
+- **Territory gap-fill sweep** (094 P3): live — mints frontier questions
+  for unprobed KTG nodes adjacent to evidenced ones, and common-failure
+  probes for evidenced nodes. Zero-LLM (template questions around node
+  oneLine). Bounded by TERRITORY_MINT_CAP = 2 per docket run.
+- **Coach checkpoint quests** (094 P5): deferred — adviceGuard requires
+  every option to cite existing claim ids; territory-minted quests have
+  no claim behind them. A clean resolution that does not weaken the
+  guard is still open.
+- **Coverage derivation from sittings** (094 P2): deferred — the
+  sittingOf resolver is stubbed to null in the server wiring because
+  Snippets carry no sittingId. Reading status is explicit rather than
+  derived. When the vault gets a snippet→sitting mapping, coverageForNode
+  with a real resolver can replace the explicit status reads.

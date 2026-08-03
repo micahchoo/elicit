@@ -192,6 +192,8 @@ function fakeQueue(seed: QueueEntry[] = []): FakeQueue {
     markAnswered: () => {},
     defer: () => {},
     expire: () => 0,
+    expireTailBeyond: () => 0,
+    markExpired: () => {},
   };
 }
 
