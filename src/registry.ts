@@ -629,4 +629,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
   reason: 'called by the scan route (src/server.ts, T9) before admission — the one-off keeps and refusals',
  },
+
+ // ── src/sounding/budget.ts ──
+{ module: 'src/sounding/budget', name: 'rungAllowance', status: 'unwired', reason: 'wired by 012 T8: the accept route and the consent ask' },
+{ module: 'src/sounding/budget', name: 'expectedLengthSentence', status: 'unwired', reason: 'wired by 012 T8: the consent ask renders it' },
 ];
