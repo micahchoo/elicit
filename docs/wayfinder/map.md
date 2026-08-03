@@ -501,6 +501,14 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Build: model-resolved referent annotation](tickets/074-resolved-referent-annotation.md)
+  — measured before shipped, threshold pre-stated: precision 32/34 = 0.941,
+  silence 24/25 on the unresolvable set, 0 false annotations on
+  non-danglers. Ships as agent-plane margin notes ("expression" → referent),
+  persistence outside the vault, docket job 7 capped at 5 calls/run, Q-34
+  lazy re-annotation. Never a gate. Question-anaphora bucket still 0 by
+  construction — re-measure when conversational snippets accumulate.
+
 - [Fix: god-node fan-out measured referents, not corpus size](tickets/089-godnode-fanout-measures-corpus.md)
   — the shadow record convicted the facet reading (fact 15→49 across eight
   passes, four findings per pass, pure corpus-size echo); re-scoped to
