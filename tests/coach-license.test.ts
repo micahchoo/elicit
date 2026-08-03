@@ -71,6 +71,7 @@ function facts(overrides?: Partial<CoachFacts>): CoachFacts {
   claims: [],
   snippetSessions: new Map(),
   advice: null,
+  snippets: [],
   ...overrides,
  };
 }

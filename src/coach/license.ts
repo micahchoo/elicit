@@ -18,14 +18,16 @@ import {
  type Quest,
 } from './contract.js';
 import type { SittingTag } from './store.js';
-import type { QueueEntry } from '../types.js';
+import type { QueueEntry, Snippet } from '../types.js';
 import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
 
 /**
  * The disk facts every licence decision is recomputed from (Q-3). `advice`
  * is the Direction's one note — the unread-note predicate (Q-76) cannot be
  * answered without it, and one file per Direction is a store invariant, so
- * the type carries it like every other record.
+ * the type carries it like every other record. `snippets` carries the
+ * return prose the advice prompt quotes (Q-75) — the person's words, never
+ * an artifact pointer (Q-78).
  */
 export type CoachFacts = {
  directions: DirectionRecord[];
@@ -38,6 +40,8 @@ export type CoachFacts = {
  snippetSessions: Map<string, string>;
  /** The Direction's current advice note, or null when none has ever been minted. */
  advice: AdviceNote | null;
+ /** The corpus the coach may quote — return prose only (Q-78: names, never pointers). */
+ snippets: Snippet[];
 };
 
 /**

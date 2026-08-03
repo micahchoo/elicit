@@ -782,7 +782,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/coach/contract.ts (090 T2 — the coach contract) ──
 { module: 'src/coach/contract', name: 'directionSlugFor', status: 'live', reason: 'live: createCoachStore (src/coach/store.ts) slugs every declared Direction' },
-{ module: 'src/coach/contract', name: 'adviceGuard', status: 'unwired', reason: 'wired by the coach store (T3) and advise (T7); routes land in T9/T10' },
+{ module: 'src/coach/contract', name: 'adviceGuard', status: 'live', reason: 'live: runCoachAdvice (src/coach/advise.ts) gates every mint through it (T7)' },
 { module: 'src/coach/contract', name: 'normalizeOption', status: 'live', reason: 'live from birth: adviceGuard calls it in this same module' },
 
 // ── src/coach/store.ts (090 T3 — the coach store) ──
@@ -797,4 +797,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/coach/reflection.ts (090 T6 — the reflection follow-ups) ──
 { module: 'src/coach/reflection', name: 'mintReflections', status: 'unwired', reason: 'caller is the return route (T10)' },
+
+// ── src/coach/advise.ts (090 T7 — the one model call) ──
+{ module: 'src/coach/advise', name: 'buildAdviceInput', status: 'live', reason: 'live from birth: runCoachAdvice calls it in this same module (T7)' },
+{ module: 'src/coach/advise', name: 'runCoachAdvice', status: 'unwired', reason: 'caller is the return and read routes (T10)' },
 ];
