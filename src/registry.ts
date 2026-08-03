@@ -657,4 +657,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/clerk/sounding-rung.ts (012 Task 6 — rung composition) ──
 { module: 'src/clerk/sounding-rung', name: 'composeRung', status: 'live' },
+
+// ── src/sounding/compaction.ts (012 Task 10 — the resume's short view) ──
+{ module: 'src/sounding/compaction', name: 'compactLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding composes from it' },
 ];
