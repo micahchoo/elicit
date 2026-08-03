@@ -41,10 +41,59 @@ body {
 /* ── layout ── */
 
 main {
+ min-height: 100vh;
+}
+
+#surface {
  max-width: var(--max-w);
  margin: 0 auto;
  padding: 3rem var(--pad) 6rem;
- min-height: 100vh;
+}
+
+/* ── the shell: the persistent top nav ── */
+
+.topnav {
+ position: sticky;
+ top: 0;
+ z-index: 10;
+ display: flex;
+ align-items: baseline;
+ gap: 1.25rem;
+ padding: 0.75rem var(--pad);
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ background: var(--bg);
+ border-bottom: 1px solid var(--border);
+}
+
+.topnav a {
+ color: inherit;
+}
+
+.topnav .wordmark {
+ color: var(--fg);
+ text-decoration: none;
+}
+
+.topnav a.here {
+ color: var(--fg);
+ text-decoration: none;
+}
+
+.topnav-count {
+ color: var(--warn);
+ font-size: 0.7rem;
+ vertical-align: super;
+ margin-left: 0.25rem;
+}
+
+/* The session clock: the exchange's declared minutes, quiet in the shell. */
+.session-clock {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ margin-left: auto;
 }
 
 .screen {
@@ -178,6 +227,31 @@ main {
  padding-top: 0.5rem;
 }
 
+/* ── home dashboard: three regions, one surface ── */
+
+.home-heading {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ font-weight: 500;
+ color: var(--dim);
+ text-transform: uppercase;
+ letter-spacing: 0.08em;
+ margin-bottom: 0.75rem;
+}
+
+.home-section {
+ display: flex;
+ flex-direction: column;
+ gap: 0.75rem;
+ padding-top: 1.5rem;
+ border-top: 1px solid var(--border);
+}
+
+/* the parked-descents word, quiet under the lists */
+.parked-link {
+ align-self: flex-start;
+}
+
 /* ── exchange ── */
 
 .exchange-header {
@@ -308,6 +382,28 @@ main {
  cursor: default;
 }
 
+/* the send word, submit-btn register at small size */
+.send-btn {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--bg);
+ background: var(--fg);
+ border: none;
+ border-radius: 4px;
+ padding: 0.35rem 0.6rem;
+ cursor: pointer;
+ flex-shrink: 0;
+}
+
+.send-btn:hover {
+ opacity: 0.85;
+}
+
+.send-btn:disabled {
+ opacity: 0.3;
+ cursor: default;
+}
+
 .mic-status {
  font-family: var(--font-ui);
  font-size: 0.7rem;
@@ -335,6 +431,18 @@ main {
 .harvest-now:disabled {
  opacity: 0.3;
  cursor: default;
+}
+
+/* the end-of-sitting words, grouped under a hairline, right-aligned */
+.action-row {
+ display: flex;
+ justify-content: flex-end;
+ flex-wrap: wrap;
+ gap: 0.5rem 1rem;
+ width: 100%;
+ border-top: 1px solid var(--border);
+ padding-top: 0.6rem;
+ margin-top: 0.4rem;
 }
 
 /* defer — margin words, revealed only when 'later' is touched */
@@ -845,6 +953,12 @@ main {
  opacity: 0.7;
 }
 
+/* the fold word under the activity stream */
+.activity-more {
+ font-size: 0.7rem;
+ align-self: flex-start;
+}
+
 .empty-msg {
  font-size: 0.85rem;
  color: var(--dim);
@@ -1017,7 +1131,7 @@ main {
 /* ── phone-width pass (Q-26) ── */
 
 @media (max-width: 600px) {
- main {
+ #surface {
   padding: 1.5rem 1rem 4rem;
  }
 
@@ -1085,6 +1199,14 @@ main {
 
  .mic-status {
   font-size: 0.8rem;
+ }
+
+ .send-btn {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
  }
 
  .gate-word,
@@ -1192,6 +1314,52 @@ main {
 .wiki-page {
  display: flex;
  flex-direction: column;
+}
+
+/* the shell: the facet sidebar beside the page, the page keeping its
+   measure. `#surface:has` widens the column only while the shell exists. */
+.wiki-shell {
+ display: flex;
+ align-items: flex-start;
+ gap: 2rem;
+}
+
+.wiki-sidebar {
+ flex: 0 0 9rem;
+ position: sticky;
+ top: 3rem;
+ display: flex;
+ flex-direction: column;
+ gap: 0.35rem;
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+}
+
+#surface:has(.wiki-shell) {
+ max-width: 52rem;
+}
+
+/* narrow viewports: the sidebar collapses to a wrapped word row above the
+   page, and the essay column returns to the app measure */
+@media (max-width: 60rem) {
+
+ #surface:has(.wiki-shell) {
+  max-width: var(--max-w);
+ }
+
+ .wiki-shell {
+  flex-direction: column;
+  gap: 0.6rem;
+ }
+
+ .wiki-sidebar {
+  position: static;
+  flex: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+ }
 }
 
 .wiki-opening {
@@ -1606,6 +1774,13 @@ main {
  font-style: italic;
 }
 
+/* Step headings over the entry sentences: dimmed ui labels, nothing else. */
+.import-step {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+}
+
 .import-back {
  font-family: var(--font-ui);
  font-size: 0.75rem;
@@ -1624,8 +1799,24 @@ main {
 */
 
 .material-nav,
-.piece-nav {
+.piece-toolbar {
  padding-bottom: 0.25rem;
+}
+
+.piece-toolbar {
+ display: flex;
+ align-items: baseline;
+ justify-content: space-between;
+ flex-wrap: wrap;
+ gap: 0.25rem 1rem;
+}
+
+.piece-toolbar-left,
+.piece-toolbar-center,
+.piece-toolbar-right {
+ display: flex;
+ align-items: baseline;
+ flex-wrap: wrap;
 }
 
 .material-surface,
@@ -1690,6 +1881,52 @@ main {
  color: var(--accent);
 }
 
+/* ── the library: two tabs over the material ── */
+
+.library-tabs {
+ display: flex;
+ align-items: baseline;
+ gap: 0.5rem;
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ padding-bottom: 0.25rem;
+}
+
+.library-tabs .here {
+ color: var(--fg);
+ text-decoration: none;
+}
+
+.library-filter {
+ width: 100%;
+ max-width: 16rem;
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--fg);
+ background: none;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ padding: 0.15rem 0;
+ margin-bottom: 0.75rem;
+}
+
+.library-filter:focus {
+ outline: none;
+ border-bottom-color: var(--fg);
+}
+
+.library-filter::placeholder {
+ color: var(--dim);
+}
+
+/* the pieces tab is a panel now: the tab row carries the separation */
+.material-pieces {
+ padding-bottom: 0;
+ margin-bottom: 0;
+ border-bottom: none;
+}
+
 /* the piece: the arrangement is the page */
 .piece-doc {
  display: flex;
@@ -1701,6 +1938,7 @@ main {
  padding: 0.35rem 0;
  font-size: 1.05rem;
  line-height: var(--line);
+ position: relative;
  color: var(--fg);
  white-space: pre-wrap;
  /* a pinned version is verbatim — nothing reflowed */
@@ -1709,6 +1947,21 @@ main {
 
 .piece-para:active {
  cursor: grabbing;
+}
+
+/* the drag glyph: one dimmed braille mark in the left margin, revealed by
+   hovering the paragraph — the paragraph stays the drag target (Q-5) */
+.piece-handle {
+ position: absolute;
+ left: -1.3rem;
+ top: 0.55rem;
+ color: var(--dim);
+ opacity: 0;
+}
+
+.piece-para:hover .piece-handle,
+.piece-para:active .piece-handle {
+ opacity: 1;
 }
 
 /* a gap: a thin rule across the measure, never a box */
@@ -1816,7 +2069,7 @@ main {
 }
 
 /* margin words: dimmed until the page is focused */
-.piece-surface:focus-within .piece-nav .nav-link {
+.piece-surface:focus-within .piece-toolbar .nav-link {
  color: var(--accent);
 }
 
