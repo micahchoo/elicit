@@ -384,8 +384,12 @@ describe('propose', () => {
 
     const { diagnostics } = await propose('sess-1', withJunk, spy);
 
+    // Ticket 091: the one harvestable turn rides with its eliciting question
+    // and the prior user turn's tail, typed-marked — never sent bare.
     expect(seen).toEqual([
-      'My father ran his shop the same way, and I learned the stubbornness from watching him.',
+      '<question>Where did the stubbornness come from?</question>\n' +
+      '<context>This question makes no sense.</context>\n' +
+      '<snippet>My father ran his shop the same way, and I learned the stubbornness from watching him.</snippet>',
     ]);
     expect(diagnostics.contentFreeSkips).toBe(2);
     expect(diagnostics.chunks).toBe(1);
@@ -670,6 +674,169 @@ describe('propose', () => {
       expect(proposals).toHaveLength(1);
       expect(proposals[0]!.context).toBe('Second sentence follows. Third before the cut.');
     });
+  });
+});
+
+// ===========================================================================
+// Ticket 091 — lineage rides the harvest payload, typed-marked
+// ===========================================================================
+//
+// The defect this ticket fixes, live from Micah's sitting: the question
+// "What does it mean to be alive to each other?" drew the answer "I think it
+// means to be responsive to each other in the ways that they live.", and the
+// reading said "the core meaning of **something**" — the referent sat in the
+// question, which the payload never carried. The shape below is the fixture:
+// question carries the referent, the answer uses a bare "it", and the
+// reading names the referent.
+
+describe('ticket 091 — lineage rides the harvest payload', () => {
+  const liveExample: Turn[] = [
+    {
+      role: 'agent',
+      text: 'What does it mean to be alive to each other?',
+      at: '2026-08-01T00:00:00.000Z',
+      questionForm: 'deliberative',
+    },
+    {
+      role: 'user',
+      text: 'I think it means to be responsive to each other in the ways that they live.',
+      at: '2026-08-01T00:00:10.000Z',
+    },
+  ];
+
+  it('sends the eliciting question typed-marked, so the reading can name the referent', async () => {
+    let payload = '';
+    const spy: Complete = async (_system, turns) => {
+      payload = turns[turns.length - 1]!.text;
+      return JSON.stringify({
+        cuts: [{
+          text: 'I think it means to be responsive to each other in the ways that they live.',
+          sourceTurn: 0,
+          facet: 'construct',
+          stance: 'avowal',
+          reading: 'The user asserts that mutual responsiveness in daily life constitutes the core meaning of being alive to each other',
+          standalone: true,
+        }],
+      });
+    };
+
+    const { proposals } = await propose('sess-1', liveExample, spy);
+
+    // The question rides the payload — without it, the model cannot name the
+    // referent and falls back to "something" (the defect).
+    expect(payload).toContain('<question>What does it mean to be alive to each other?</question>');
+    expect(payload).toContain('<snippet>I think it means to be responsive to each other in the ways that they live.</snippet>');
+    // No prior user turn, so no <context> block.
+    expect(payload).not.toContain('<context>');
+
+    // The reading names the referent instead of leaving it as "something".
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.reading).toContain('being alive to each other');
+  });
+
+  it('carries the prior user turn tail as a <context> block', async () => {
+    const turns: Turn[] = [
+      { role: 'agent', text: 'What happened last year?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.', at: '2026-08-01T00:00:10.000Z' },
+      { role: 'agent', text: 'What did that cost you?', at: '2026-08-01T00:00:20.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'The cost of holding that line was that I stopped being invited to the planning meetings.', at: '2026-08-01T00:00:30.000Z' },
+    ];
+    let payload = '';
+    const spy: Complete = async (_system, t) => {
+      payload = t[t.length - 1]!.text;
+      return JSON.stringify({ cuts: [] });
+    };
+
+    await propose('sess-1', turns, spy);
+
+    // The second turn's payload carries the first turn's tail — a later "it"
+    // can point back at it. The tail is the last up-to-two sentences, the
+    // same window the capture side stamps (ticket 073).
+    expect(payload).toContain('<question>What did that cost you?</question>');
+    expect(payload).toContain('<context>Last year my manager tried to reassign me without asking. I pushed back and kept my project.</context>');
+    expect(payload).toContain('<snippet>The cost of holding that line was that I stopped being invited to the planning meetings.</snippet>');
+  });
+
+  it('a user turn with no eliciting probe sends only the snippet block', async () => {
+    let payload = '';
+    const spy: Complete = async (_system, t) => {
+      payload = t[t.length - 1]!.text;
+      return JSON.stringify({ cuts: [] });
+    };
+    await propose('sess-1', [{ role: 'user', text: 'I think pushing back was the right call.', at: '2026-08-01T00:00:10.000Z' }], spy);
+    expect(payload).toBe('<snippet>I think pushing back was the right call.</snippet>');
+  });
+
+  it('LINEAGE-NOT-CORPUS: a cut from the <context> block is rejected by the verbatim gate', async () => {
+    // The invariant (073, unchanged): lineage is never corpus. The <context>
+    // block is prior-turn prose — present in the payload, absent from the
+    // current turn — so a model that cuts from it fails the exact-substring
+    // gate and the cut dies as fabrication. The model answers per chunk: the
+    // prior turn's own chunk is clean, and the bad cut comes back only on the
+    // turn whose payload carries it in <context>.
+    const turns: Turn[] = [
+      { role: 'agent', text: 'What happened last year?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.', at: '2026-08-01T00:00:10.000Z' },
+      { role: 'agent', text: 'What did that cost you?', at: '2026-08-01T00:00:20.000Z', questionForm: 'deliberative' },
+      { role: 'user', text: 'The cost was that I stopped being invited to the planning meetings.', at: '2026-08-01T00:00:30.000Z' },
+    ];
+    const badCut = JSON.stringify({
+      cuts: [{
+        // Verbatim in the <context> block, not in the current turn.
+        text: 'Last year my manager tried to reassign me without asking. I pushed back and kept my project.',
+        sourceTurn: 0,
+        facet: 'episode',
+        stance: 'avowal',
+        reading: 'An episode from the previous turn',
+        standalone: true,
+      }],
+    });
+    let call = 0;
+    const spy: Complete = async (_system) => (call++ === 0 ? JSON.stringify({ cuts: [] }) : badCut);
+
+    const { proposals, buds, diagnostics } = await propose('sess-1', turns, spy);
+
+    expect(proposals).toHaveLength(0);
+    expect(buds).toHaveLength(0);
+    expect(diagnostics.fabricationDrops).toBe(1);
+    expect(diagnostics.cutsSeen).toBe(1);
+  });
+
+  it('LINEAGE-NOT-CORPUS: a cut from the <question> block is rejected the same way', async () => {
+    const json = JSON.stringify({
+      cuts: [{
+        text: 'What does it mean to be alive to each other?',
+        sourceTurn: 0,
+        facet: 'fact',
+        stance: 'report-of-fact',
+        reading: 'The user asks this question',
+        standalone: true,
+      }],
+    });
+    const { proposals, diagnostics } = await propose('sess-1', liveExample, fakeComplete(json));
+    expect(proposals).toHaveLength(0);
+    expect(diagnostics.fabricationDrops).toBe(1);
+  });
+
+  it('the reading that names the referent survives propose → decide → vault', async () => {
+    const json = JSON.stringify({
+      cuts: [{
+        text: 'I think it means to be responsive to each other in the ways that they live.',
+        sourceTurn: 0,
+        facet: 'construct',
+        stance: 'avowal',
+        reading: 'The user asserts that mutual responsiveness in daily life constitutes the core meaning of being alive to each other',
+        standalone: true,
+      }],
+    });
+
+    const { proposals } = await propose('sess-1', liveExample, fakeComplete(json));
+    const vault = fakeVault();
+    decide('sess-1', proposals, [{ proposal: 0, action: 'approve' }], vault);
+
+    expect(vault._readings).toHaveLength(1);
+    expect(vault._readings[0]!.reading).toContain('being alive to each other');
+    expect(vault._snippets[0]!.provenance.question).toBe('What does it mean to be alive to each other?');
   });
 });
 

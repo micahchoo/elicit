@@ -501,6 +501,15 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Fix: the harvester reads each turn bare](tickets/091-reading-payload-blind-to-lineage.md)
+  — the payloads that interpret prose now carry the stored
+  `provenance.question`/`context`, typed-marked; lineage stays uncitable by
+  construction (verbatim gate + marker-bound scan + cite resolution).
+  Ratchet on qwen: parse 1.0 and fabrication 0 held; facet mix moved off
+  `fact` toward episodes — the direction 037 wants. Micah's live-caught
+  referent example is now a fixture. Remainder: re-count 085 mode 5 on the
+  next review pass.
+
 - [Fix: a quoted pole must be a complete clause](tickets/088-quoted-pole-complete-clause.md)
   — remeasure poles widen mechanically to the containing clause
   (`src/clerk/clause.ts`); verbatim invariant holds; juxtaposition path

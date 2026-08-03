@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { proposeOps, MINT_PAYLOAD_BUDGET } from '../src/clerk/mint.js';
+import { proposeOps, MINT_PAYLOAD_BUDGET, SNIPPET_FLOOR } from '../src/clerk/mint.js';
 import type { Claim } from '../src/wiki/contract.js';
 import type { Complete, Reading, Snippet, Turn } from '../src/types.js';
 
@@ -32,7 +32,12 @@ function makeReading(prose: string, cites: string[] = ['snipA@1']): Reading {
   };
 }
 
-function makeSnippet(id: string, prose: string, version = 1): Snippet {
+function makeSnippet(
+  id: string,
+  prose: string,
+  version = 1,
+  lineage: { question?: string; context?: string } = {},
+): Snippet {
   return {
     id,
     version,
@@ -40,8 +45,9 @@ function makeSnippet(id: string, prose: string, version = 1): Snippet {
     provenance: {
       kind: 'harvest',
       session: 'sitting-1',
-      question: 'What did you choose?',
+      question: lineage.question ?? 'What did you choose?',
       questionForm: 'deliberative',
+      ...(lineage.context !== undefined ? { context: lineage.context } : {}),
     },
     prose,
   };
@@ -427,6 +433,93 @@ describe('proposeOps — the reading id is derived, never trusted', () => {
   });
 });
 
+describe('proposeOps — ticket 091: lineage rides typed-marked, never citable', () => {
+  it('carries the snippet question and context as typed blocks around the prose', async () => {
+    const item: Item = {
+      reading: makeReading('The person resisted the reassignment.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'I pushed back and kept my project.', 1, {
+          context: 'Last year my manager tried to reassign me without asking.',
+        }),
+      },
+      relatedClaims: [],
+    };
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(item, complete);
+
+    const payload = calls[0]!.turns[0]!.text;
+    // The stored lineage rides along, typed-marked, so a bare "it" in the
+    // prose has a referent the model can read — and the boundary stays
+    // textual and greppable (074's discipline).
+    expect(payload).toContain('<question>What did you choose?</question>');
+    expect(payload).toContain('<context>Last year my manager tried to reassign me without asking.</context>');
+    expect(payload).toContain('<snippet>I pushed back and kept my project.</snippet>');
+  });
+
+  it('lineage sits before the prose, so a floor-cut loses prose tail, never the lineage', async () => {
+    // fitPayload slices a part to its floor from the start; snippetFloor
+    // sizes the floor as overhead + SNIPPET_FLOOR, so a truncated snippet
+    // keeps its header, its lineage blocks, its <snippet> opener and the
+    // floor's worth of prose — the prose tail is what the cut takes, exactly
+    // the degradation the floor already accepted.
+    const prose = 'y'.repeat(9000);
+    const item: Item = {
+      reading: makeReading('A short reading.'),
+      snippets: {
+        snipA: makeSnippet('snipA', prose, 1, {
+          context: 'The tail of the previous message.',
+        }),
+      },
+      relatedClaims: [],
+    };
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(item, complete);
+
+    const payload = calls[0]!.turns[0]!.text;
+    expect(payload).toContain('<question>What did you choose?</question>');
+    expect(payload).toContain('<context>The tail of the previous message.</context>');
+    expect(payload).toContain('<snippet>');
+    expect(payload).toContain('y'.repeat(SNIPPET_FLOOR));
+    expect(payload).not.toContain(prose);
+    expect(payload.length).toBeLessThanOrEqual(MINT_PAYLOAD_BUDGET);
+  });
+
+  it('an unprompted snippet with no context rides without lineage blocks', async () => {
+    const item: Item = {
+      reading: makeReading('A short reading.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'Words with no question behind them.', 1, { question: '' }),
+      },
+      relatedClaims: [],
+    };
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(item, complete);
+
+    const payload = calls[0]!.turns[0]!.text;
+    expect(payload).not.toContain('<question>');
+    expect(payload).not.toContain('<context>');
+    expect(payload).toContain('<snippet>Words with no question behind them.</snippet>');
+  });
+
+  it('the system prompt names lineage as context, never evidence', async () => {
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+    expect(calls[0]!.system).toContain('lineage');
+    expect(calls[0]!.system).toContain('Never quote them');
+  });
+
+  it('a cite that quotes the question text is rejected by cite resolution', async () => {
+    // The invariant's mint-side enforcement: even if the model tried to cite
+    // the question as evidence, the cite names no written snippet version
+    // and the op dies whole.
+    const { ops } = await proposeOps(
+      baseItem(),
+      recorder([JSON.stringify([mintOp({ cites: ['What did you choose?@1'] })])]).complete
+    );
+    expect(ops).toEqual([]);
+  });
+});
+
 describe('proposeOps — the oversized path costs no model call', () => {
   it('returns oversized without calling the model when the reading itself will not fit', async () => {
     const { complete, calls } = recorder(['never reached']);
@@ -470,8 +563,10 @@ describe('proposeOps — the oversized path costs no model call', () => {
   it('drops the related claims before it truncates the evidence', async () => {
     // Optional parts go first and whole; the snippet keeps every character it
     // had. `fitPayload` stops as soon as the payload fits, so a dropped claim
-    // is not also a truncated snippet.
-    const prose = 'z'.repeat(2250);
+    // is not also a truncated snippet. (2150 chars: the claim's ~95 chars are
+    // the difference between fitting and truncating once the lineage blocks
+    // ride along, ticket 091.)
+    const prose = 'z'.repeat(2150);
     const { complete, calls } = recorder([JSON.stringify([])]);
     await proposeOps(
       {
@@ -483,7 +578,9 @@ describe('proposeOps — the oversized path costs no model call', () => {
     );
     const payload = calls[0]!.turns[0]!.text;
     expect(payload).not.toContain('claim-1');
-    expect(payload).toContain(`SNIPPET snipA@1\n${prose}`);
+    expect(payload).toContain(
+      `SNIPPET snipA@1\n<question>What did you choose?</question>\n<snippet>${prose}</snippet>`
+    );
   });
 });
 

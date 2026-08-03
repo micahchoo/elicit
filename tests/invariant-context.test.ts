@@ -9,16 +9,23 @@ import { readFileSync } from 'node:fs';
  * This test verifies the structural contract: no file in clerk/, wiki/,
  * or index/ accesses `provenance.context` or destructures `context` from
  * a Provenance-bearing object.
+ *
+ * Ticket 091 opened one sanctioned read: mint.ts carries a snippet's
+ * provenance.question and provenance.context into the mint payload,
+ * typed-marked inside <question>/<context> blocks, so the model sees the
+ * referent the prose points at. The boundary is unchanged — lineage is
+ * context for interpretation, never citable material — so mint.ts leaves
+ * the protected list and gains a marker-bound check below.
  */
 describe('context invariant — lineage, not corpus', () => {
   // Files that must never read provenance.context. Kept as an explicit list
   // on purpose: if a protected file is renamed or deleted, this test fails
   // loudly instead of silently scanning fewer files.
+  // mint.ts was here until ticket 091 — see the marker-bound check below.
   const PROTECTED_FILES = [
     'src/clerk/composed.ts',
     'src/clerk/contradiction.ts',
     'src/clerk/docket.ts',
-    'src/clerk/mint.ts',
     'src/clerk/sitting.ts',
     'src/clerk/wiki-jobs.ts',
     'src/wiki/clash.ts',
@@ -35,12 +42,41 @@ describe('context invariant — lineage, not corpus', () => {
   ];
 
   // Files that legitimately carry the word "context" — the type declaration,
-  // the harvester capture, and the backfill script.
+  // the harvester capture, mint.ts's payload composition (ticket 091), and
+  // the backfill script.
   const ALLOWED_PATHS = [
     'src/types.ts',
     'src/harvester/harvester.ts',
+    'src/clerk/mint.ts',
     'scripts/backfill-context.ts',
   ];
+
+  it('mint.ts reads provenance lineage only on the typed-marker lines', () => {
+    // Ticket 091: mint.ts carries question and context into the payload as
+    // <question>/<context> blocks. That is the whole extent of the read — a
+    // `provenance.question` or `provenance.context` access anywhere else in
+    // the file (an op shape, a log line, a cite) would be minting from
+    // lineage and must fail here.
+    const content = readFileSync('src/clerk/mint.ts', 'utf-8');
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      // Skip comment-only lines (prose that mentions the word "context").
+      if (/^\s*(\/\/|\*|\/\*\*)/.test(line)) continue;
+      if (/\.question\b/.test(line) && !line.includes('<question>')) {
+        throw new Error(
+          `src/clerk/mint.ts:${i + 1} reads .question outside the typed-marker line — ${line.trim()}\n` +
+            'Lineage must reach the payload only as a <question> block (ticket 091).',
+        );
+      }
+      if (/\.context\b/.test(line) && !line.includes('<context>')) {
+        throw new Error(
+          `src/clerk/mint.ts:${i + 1} reads .context outside the typed-marker line — ${line.trim()}\n` +
+            'Lineage must reach the payload only as a <context> block (ticket 091).',
+        );
+      }
+    }
+  });
 
   it('no clerk/wiki/index file reads provenance.context', () => {
     for (const file of PROTECTED_FILES) {

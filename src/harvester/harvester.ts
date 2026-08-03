@@ -81,6 +81,13 @@ export const CUTS_RESPONSE_FORMAT: ResponseFormat = {
 // instead of emitting cuts (ticket 034, eval finding #1). Single-turn
 // extraction is the configuration measured to hold.
 //
+// Ticket 091: the single turn is not sent bare — it rides inside a <snippet>
+// block, with the eliciting question (<question>) and the prior user turn's
+// tail (<context>) ahead of it, typed-marked (074's discipline). The model
+// sees the referent a bare "it" or "that" points at. The verbatim gate in
+// propose() still checks against the raw turn, so lineage can inform the
+// reading and the labels and never widens what may be cut.
+//
 // The facet and stance lists were bare enum values until ticket 037. Eval
 // finding #7 measured what a bare list produces: `intention` on 5 of ~14 cuts
 // and correct on none of them, because an undefined label becomes the model's
@@ -91,8 +98,11 @@ export const CUTS_RESPONSE_FORMAT: ResponseFormat = {
 // against this baseline instead of a copy of it.
 export const SYSTEM_PROMPT = `You are a harvesting agent for Elicit. Your job: extract verbatim substrings from the user's message that could stand alone as independent Snippets.
 
-You are given ONE message from the user. Return a JSON object with a "cuts" array. Each cut has:
-- "text": exact substring of that message (verbatim, no edits — copy character-for-character)
+You are given ONE message from the user, wrapped in a <snippet> block. It may be preceded by a <question> block — the question that drew the message — and a <context> block — the tail of the user's previous message. They are the surrounding conversation, present so the message reads clearly.
+- Cut ONLY from the <snippet> block. The <question> and <context> blocks are lineage: they inform the reading, the facet and the stance, and they never widen what may be cut.
+
+Return a JSON object with a "cuts" array. Each cut has:
+- "text": exact substring of the <snippet> block (verbatim, no edits — copy character-for-character)
 - "sourceTurn": always 0
 - "facet": one value from the facet list below
 - "stance": one value from the stance list below
@@ -122,7 +132,7 @@ stance — how the person holds it:
 - "uncertainty-marked" — the person marks their own confidence as low.
 - "superseded" — a position named as no longer held. Any of "I used to think", "I no longer", "not any more", "at the time I thought", "I was wrong about", "I understand now", "I have since" forces this stance, whatever else the sentence does.
 
-Do not fabricate text. Every "text" must be an exact substring of the user's message.
+Do not fabricate text. Every "text" must be an exact substring of the <snippet> block.
 Return ONLY valid JSON. No markdown fences. No commentary.`;
 
 // ---------------------------------------------------------------------------
@@ -321,28 +331,20 @@ export type HarvestDiagnostics = {
 };
 
 /**
- * Extract up to two sentences immediately preceding the cut in its source turn.
- * Sentence split on `. `, `! `, `? ` followed by an uppercase letter.
- * Returns undefined when the cut opens the turn (no preceding sentence).
+ * Split text into sentences on `. `, `! ` or `? ` followed by a space and an
+ * uppercase letter. Separators stay attached to their own sentence; a
+ * trailing fragment that never closed a sentence is kept as one.
  */
-function extractContext(turnText: string, cutText: string): string | undefined {
- const idx = turnText.indexOf(cutText);
- if (idx < 0) return undefined;
-
- const before = turnText.slice(0, idx).trimEnd();
- if (before.length === 0) return undefined;
-
- // Split into sentences: . ! ? followed by space and uppercase
- // We reconstruct by scanning, keeping separators attached to their sentences
+function splitSentences(text: string): string[] {
  const sentences: string[] = [];
  let current = '';
- for (let i = 0; i < before.length; i++) {
-  const ch = before[i]!;
+ for (let i = 0; i < text.length; i++) {
+  const ch = text[i]!;
   current += ch;
   // Sentence boundary: punctuation + space + uppercase letter (or end)
   if (
    (ch === '.' || ch === '!' || ch === '?') &&
-   (i + 1 >= before.length || (before[i + 1] === ' ' && i + 2 < before.length && /[A-Z]/.test(before[i + 2]!)))
+   (i + 1 >= text.length || (text[i + 1] === ' ' && i + 2 < text.length && /[A-Z]/.test(text[i + 2]!)))
   ) {
    sentences.push(current);
    current = '';
@@ -352,13 +354,64 @@ function extractContext(turnText: string, cutText: string): string | undefined {
  if (current.trim().length > 0) {
   sentences.push(current);
  }
+ return sentences;
+}
 
+/**
+ * Extract up to two sentences immediately preceding the cut in its source turn.
+ * Returns undefined when the cut opens the turn (no preceding sentence).
+ */
+function extractContext(turnText: string, cutText: string): string | undefined {
+ const idx = turnText.indexOf(cutText);
+ if (idx < 0) return undefined;
+
+ const before = turnText.slice(0, idx).trimEnd();
+ if (before.length === 0) return undefined;
+
+ const sentences = splitSentences(before);
  if (sentences.length === 0) return undefined;
 
  // Take up to last 2 sentences
- const last = sentences.slice(-2);
- const result = last.join('').trim();
+ const result = sentences.slice(-2).join('').trim();
  return result.length > 0 ? result : undefined;
+}
+
+/**
+ * The final `n` sentences of a turn — the window a later turn's anaphora
+ * reaches back to. The same two-sentence window the capture side stamps as
+ * `Provenance.context` (ticket 073), applied to the PRIOR user turn so the
+ * model payload carries it (ticket 091). Undefined when the turn holds no
+ * sentence.
+ */
+function tailSentences(text: string, n: number): string | undefined {
+ const sentences = splitSentences(text.trimEnd());
+ if (sentences.length === 0) return undefined;
+ const result = sentences.slice(-n).join('').trim();
+ return result.length > 0 ? result : undefined;
+}
+
+/**
+ * One chunk's payload (ticket 091, 074's typed-marker discipline): the turn
+ * inside a <snippet> block — the only cuttable material — preceded by the
+ * eliciting probe in a <question> block and the prior user turn's tail in a
+ * <context> block when they exist. Lineage blocks are omitted for a turn
+ * with no antecedent.
+ *
+ * The verbatim gate in `propose()` checks against the raw turn, so a cut
+ * lifted from either lineage block fails the substring test by construction:
+ * lineage informs the reading, the facet and the stance, and never widens
+ * what may be cut from OTHER turns.
+ */
+function buildHarvestPayload(
+ turn: Turn,
+ probe: Turn | undefined,
+ priorTail: string | undefined,
+): string {
+ const blocks: string[] = [];
+ if (probe !== undefined) blocks.push(`<question>${probe.text}</question>`);
+ if (priorTail !== undefined) blocks.push(`<context>${priorTail}</context>`);
+ blocks.push(`<snippet>${turn.text}</snippet>`);
+ return blocks.join('\n');
 }
 
 export async function propose(
@@ -417,9 +470,22 @@ export async function propose(
  // Sequential: the local model is a single GPU, so parallel chunks buy
  // nothing and cost tail latency.
  for (const { turn, userIdx: derivedTurn } of harvestable) {
+  // Ticket 091: the chunk carries its lineage — the eliciting probe and the
+  // prior user turn's tail — typed-marked, so a bare "it" or "that" in the
+  // turn has a referent the model can read. The verbatim gate below still
+  // checks against the raw turn: lineage informs the reading and the labels,
+  // never widens what may be cut.
+  const probe = findElicitingProbe(transcript, derivedTurn);
+  const priorTurn = userTurns[derivedTurn - 1]?.turn;
+  const payload = buildHarvestPayload(
+   turn,
+   probe,
+   priorTurn === undefined ? undefined : tailSentences(priorTurn.text, 2)
+  );
+
   let raw: string;
   try {
-   raw = await complete(promptOverride ?? SYSTEM_PROMPT, [turn], { temperature: 0.1 });
+   raw = await complete(promptOverride ?? SYSTEM_PROMPT, [{ role: 'user', text: payload, at: turn.at }], { temperature: 0.1 });
   } catch (err) {
    // One chunk failing must not zero the whole harvest.
    chunkErrors++;
@@ -526,8 +592,6 @@ export async function propose(
      `Harvester: model sourceTurn=${cut.sourceTurn} corrected to actual=${derivedTurn}`
     );
    }
-
-   const probe = findElicitingProbe(transcript, derivedTurn);
 
    // ── Facet and stance, read off the text where the text says so ──
    const bareCut = normalize(cut.text);

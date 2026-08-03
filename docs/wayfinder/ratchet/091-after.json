@@ -1,0 +1,92 @@
+{
+  "mode": "harvest",
+  "prompt": "default (propose SYSTEM_PROMPT)",
+  "constrained": true,
+  "timeoutMs": 600000,
+  "role": "clerk",
+  "model": "qwen3.6:35b",
+  "baseUrl": "http://192.168.0.229:11434/v1",
+  "perExchange": [
+    {
+      "session": "eval-001-language-learning",
+      "totalCuts": 16,
+      "fabricatedCuts": 0,
+      "fabricationRate": 0,
+      "proposalCount": 15,
+      "facetDistribution": {
+        "general-event": 3,
+        "causal-theory": 3,
+        "episode": 5,
+        "construct": 4
+      },
+      "buds": 1,
+      "parseMode": "json",
+      "chunks": 3,
+      "chunksParsed": 3,
+      "chunkErrors": 0,
+      "parseRate": 1,
+      "returnedParseRate": 1
+    },
+    {
+      "session": "eval-002-teaching-practice",
+      "totalCuts": 15,
+      "fabricatedCuts": 0,
+      "fabricationRate": 0,
+      "proposalCount": 15,
+      "facetDistribution": {
+        "general-event": 4,
+        "construct": 9,
+        "fact": 1,
+        "episode": 1
+      },
+      "buds": 0,
+      "parseMode": "json",
+      "chunks": 3,
+      "chunksParsed": 3,
+      "chunkErrors": 0,
+      "parseRate": 1,
+      "returnedParseRate": 1
+    },
+    {
+      "session": "eval-003-writing-habit",
+      "totalCuts": 12,
+      "fabricatedCuts": 0,
+      "fabricationRate": 0,
+      "proposalCount": 9,
+      "facetDistribution": {
+        "construct": 3,
+        "general-event": 1,
+        "causal-theory": 1,
+        "episode": 2,
+        "value": 1,
+        "fact": 1
+      },
+      "buds": 3,
+      "parseMode": "json",
+      "chunks": 3,
+      "chunksParsed": 3,
+      "chunkErrors": 0,
+      "parseRate": 1,
+      "returnedParseRate": 1
+    }
+  ],
+  "aggregate": {
+    "totalCuts": 43,
+    "fabricationRate": 0,
+    "facetDistribution": {
+      "general-event": 8,
+      "causal-theory": 4,
+      "episode": 8,
+      "construct": 16,
+      "fact": 2,
+      "value": 1
+    },
+    "meanProposalCount": 13,
+    "parseRate": 1,
+    "returnedParseRate": 1,
+    "parseModes": {
+      "json": 3
+    }
+  },
+  "erroredExchanges": 0
+}

@@ -68,7 +68,7 @@ export const MINT_PAYLOAD_BUDGET = 2400;
  * the plan's own oversized test contradict each other; the test is the one
  * worth keeping.)
  */
-const SNIPPET_FLOOR = 400;
+export const SNIPPET_FLOOR = 400;
 const CLAIM_FLOOR = 200;
 
 /** Shown at most: three of each. More is budget spent on diminishing context. */
@@ -93,7 +93,7 @@ const MINT_TEMPERATURE = 0.2;
  */
 const SYSTEM_PROMPT = `You are the Clerk for Elicit. You maintain a wiki of Claims about one person, built only from that person's own words.
 
-You are given ONE reading — an earlier agent's one-line interpretation of the person — the snippets of their prose it rests on, and any existing claims that may already cover the same ground.
+You are given ONE reading — an earlier agent's one-line interpretation of the person — the snippets of their prose it rests on, and any existing claims that may already cover the same ground. Each snippet may carry the question that drew it and its antecedent context, wrapped in <question> and <context> blocks, so a bare "it" or "that" in the prose reads clearly.
 
 Decide what the wiki should do about this reading. Return a JSON array of operations covering that one reading, usually one operation.
 
@@ -110,6 +110,7 @@ Rules:
 - "body" is ONE sentence, in your own words, about the person. Never a quotation of them.
 - SUPERSEDE and ARCHIVE each need a "reason", in your own words.
 - Cite only the snippet versions listed below, copied exactly as they are written there.
+- <question> and <context> blocks are lineage, never evidence: they explain what the prose points at, but they are not the person's approved words. Never quote them, never cite them, never echo them into a body or a range.
 - "facet" is one of: episode, general-event, lifetime-period, fact, construct, intention, value, causal-theory.
 - MINT and UPDATE may carry "referents": [{"name":"...","kind":"person|project|place|pole|construct|other"}] — the people, projects, places and constructs the claim is about, named the way this person names them.
 
@@ -130,15 +131,48 @@ function readingPart(r: Reading): string {
 }
 
 /**
- * One cited snippet, labelled with the version whose PROSE is shown.
+ * One cited snippet, labelled with the version whose PROSE is shown, wrapped
+ * so the citable text is the <snippet> block and nothing else.
  *
  * The label and the text have to agree, or the model cites a version it never
  * read. `snippets` holds the latest version of each id (that is what
  * `vault.rebuildIndex()` returns), so an older cite on the reading resolves to
  * newer prose here, and the label says so.
+ *
+ * Ticket 091: the snippet's stored lineage — the question that drew it and
+ * the antecedent-context window (ticket 073) — rides along, typed-marked.
+ * LINEAGE, never corpus: the model may read it to name a referent a bare
+ * "it" points at, but only the <snippet> block is citable or quotable. The
+ * system prompt says so, `citeResolves` refuses a cite of anything that is
+ * not a written snippet version, and the payload's own labels keep the
+ * boundary textual and greppable (074's discipline).
+ *
+ * The lineage blocks sit BEFORE the prose because a part can be sliced to
+ * its floor under budget pressure — the slice keeps the head of the part, so
+ * lineage and the snippet's opener survive and only the prose tail is lost,
+ * which is the degradation `SNIPPET_FLOOR` already accepts.
  */
 function snippetPart(s: Snippet): string {
-  return `SNIPPET ${s.id}@${s.version}\n${s.prose}`;
+  // The lineage reads are folded onto the marker lines on purpose: the
+  // invariant test requires every provenance lineage access in this file to
+  // sit on a typed-marker line, so the read and the marker cannot drift.
+  return [
+    `SNIPPET ${s.id}@${s.version}`,
+    ...(s.provenance.question === '' ? [] : [`<question>${s.provenance.question}</question>`]),
+    ...(s.provenance.context === undefined || s.provenance.context === '' ? [] : [`<context>${s.provenance.context}</context>`]),
+    `<snippet>${s.prose}</snippet>`,
+  ].join('\n');
+}
+
+/**
+ * The snippet part's floor: `SNIPPET_FLOOR` prose characters plus the fixed
+ * overhead that keeps the part's typed markers intact. `fitPayload` slices a
+ * part to its floor from the START, so a truncated snippet keeps its header,
+ * its lineage blocks, its <snippet> opener, `SNIPPET_FLOOR` chars of prose
+ * and its closer — a closed block, never a cut mid-marker.
+ */
+function snippetFloor(s: Snippet): number {
+  return snippetPart(s).length - s.prose.length + SNIPPET_FLOOR;
 }
 
 /** An existing claim, WITHOUT its status — the model is not shown a field it must not write. */
@@ -475,7 +509,7 @@ export async function proposeOps(item: MintItem, complete: Complete): Promise<Mi
       name: `snippet:${s.id}`,
       text: snippetPart(s),
       required: true,
-      floor: SNIPPET_FLOOR,
+      floor: snippetFloor(s),
     })),
     ...item.relatedClaims.slice(0, MAX_RELATED_CLAIMS).map((c) => ({
       name: `claim:${c.id}`,

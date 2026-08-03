@@ -50,10 +50,25 @@ function cutFor(text: string): string {
  * A completer that answers each chunk from a script keyed by the user text it
  * receives. `perTurn` maps an answer index to the raw output for that chunk.
  */
+function decodeSnippet(payload: string): string {
+  const snippet = payload.match(/<snippet>([\s\S]*)<\/snippet>/)?.[1];
+  if (snippet === undefined) {
+    throw new Error(`decodeSnippet: payload did not carry a <snippet> block — ${payload.slice(0, 80)}`);
+  }
+  return snippet;
+}
+
+/**
+ * A completer that answers each chunk from a script keyed by the user text it
+ * receives. `perTurn` maps an answer index to the raw output for that chunk.
+ *
+ * Ticket 091: the payload wraps the turn in a <snippet> block (with
+ * <question>/<context> lineage blocks before it), so the answer is keyed off
+ * the decoded snippet content, never the raw payload.
+ */
 function scriptedComplete(perTurn: (answerIdx: number) => string): Complete {
   return async (_system: string, turns: Turn[]) => {
-    const text = turns[turns.length - 1]!.text;
-    const idx = ANSWERS.indexOf(text);
+    const idx = ANSWERS.indexOf(decodeSnippet(turns[turns.length - 1]!.text));
     return perTurn(idx);
   };
 }
@@ -61,7 +76,7 @@ function scriptedComplete(perTurn: (answerIdx: number) => string): Complete {
 // ===========================================================================
 
 describe('chunked harvest', () => {
-  it('sends one call per user turn, each carrying exactly that turn', async () => {
+  it('sends one call per user turn, each carrying exactly that turn, lineage-marked', async () => {
     const seen: Turn[][] = [];
     const spy: Complete = async (_system, turns) => {
       seen.push(turns);
@@ -75,7 +90,17 @@ describe('chunked harvest', () => {
       expect(turns).toHaveLength(1);
       expect(turns[0]!.role).toBe('user');
     }
-    expect(seen.map((t) => t[0]!.text)).toEqual(ANSWERS);
+    // Ticket 091: each turn rides inside a <snippet> block, preceded by its
+    // eliciting <question> and — from the second turn on — the previous
+    // turn's tail as <context>. Never bare, and never carrying another turn's
+    // cuttable material beyond that tail.
+    expect(seen.map((t) => t[0]!.text)).toEqual(
+      ANSWERS.map((text, i) =>
+        i === 0
+          ? `<question>Probe 0?</question>\n<snippet>${text}</snippet>`
+          : `<question>Probe ${i}?</question>\n<context>${ANSWERS[i - 1]}</context>\n<snippet>${text}</snippet>`
+      ),
+    );
   });
 
   it('yields cuts from multiple turns across a six-turn sitting', async () => {
@@ -186,7 +211,7 @@ describe('chunked harvest', () => {
 
   it('a throwing chunk is counted and the rest still harvest', async () => {
     const complete: Complete = async (_system, turns) => {
-      const idx = ANSWERS.indexOf(turns[turns.length - 1]!.text);
+      const idx = ANSWERS.indexOf(decodeSnippet(turns[turns.length - 1]!.text));
       if (idx === 3) throw new Error('model timeout');
       return cutFor(ANSWERS[idx]!);
     };
@@ -204,7 +229,7 @@ describe('chunked harvest', () => {
     const shared = 'I value autonomy';
     const longer = 'I value autonomy above all else at work';
     const complete: Complete = async (_system, turns) => {
-      const idx = ANSWERS.indexOf(turns[turns.length - 1]!.text);
+      const idx = ANSWERS.indexOf(decodeSnippet(turns[turns.length - 1]!.text));
       if (idx === 0) return cutFor(shared);
       return JSON.stringify({ cuts: [] });
     };
@@ -212,7 +237,7 @@ describe('chunked harvest', () => {
     expect(short).toHaveLength(1);
 
     const both: Complete = async (_system, turns) => {
-      const idx = ANSWERS.indexOf(turns[turns.length - 1]!.text);
+      const idx = ANSWERS.indexOf(decodeSnippet(turns[turns.length - 1]!.text));
       if (idx !== 0) return JSON.stringify({ cuts: [] });
       const parsed = JSON.parse(cutFor(shared)) as { cuts: unknown[] };
       const long = JSON.parse(cutFor(longer)) as { cuts: unknown[] };
