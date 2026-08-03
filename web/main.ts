@@ -392,6 +392,7 @@ function navWordOf(screen: Screen): string {
   case 'wiki': return 'wiki';
   case 'material':
   case 'library': return 'library';
+  case 'waiting': return 'waiting';
   case 'import': return 'import';
   case 'reviews':
   case 'inbox': return 'inbox';
@@ -413,6 +414,7 @@ function renderShell(): void {
    ['home', 'home'],
    ['wiki', 'wiki'],
    ['library', 'library'],
+   ['waiting', 'open questions'],
    ['import', 'import'],
    ['inbox', 'inbox'],
   ];
@@ -746,204 +748,8 @@ function renderMode(showSetupHint?: boolean) {
   if (e.key === 'Enter') submit.click();
  });
 
-// Region two — waits: what is open, under the sitting controls.
-const waitsSection = el('div', { class: 'home-section waits-section' });
-const waitsHeading = el('h2', { class: 'home-heading' }, 'waits for you');
-
-// Cadence — one sentence, at the top, above the lists (ticket 056).
-// The document rule: a line of text on a page, not a widget. It carries no
-// control, no colour and no comparison; a long gap reads exactly like a
-// short one, because dormancy is signal and never debt (Q-24). The wording
-// is composed server-side so it is testable — see src/log/cadence.ts.
-const cadenceLine = el('p', { class: 'cadence-line' }, '');
-api<{ sentence: string }>('/api/cadence')
- .then((r) => { cadenceLine.textContent = r.sentence; })
- .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
-
-// The review queue, as a sentence below the cadence (the verb-grammar
-// rule): what waits is said, with one control word at the point of
-// attention. The `:empty` rule keeps it off the page until a harvest
-// actually waits.
-const reviewsLine = el('p', { class: 'waiting-reviews-line' });
-
-// Expedition section — entries with horizon 'days' waiting to go out
-const expSection = el('div', { class: 'waiting-section expedition-section' });
-const expHeading = el('h2', { class: 'waiting-heading' }, 'out in the world');
-const expList = el('div', { class: 'expedition-list' });
-expSection.append(expHeading, expList);
-
-// Queue section — entries with horizon 'session' waiting to be drawn
-const queueSection = el('div', { class: 'waiting-section' });
-const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
-const queueList = el('div', { class: 'queue-list' });
-queueSection.append(queueHeading, queueList);
-
-// The parked pointers keep their own page at #/waiting (their section does
-// not move); a quiet word here points at them when any are kept.
-const parkedLink = el('button', { class: 'nav-link parked-link', type: 'button' }, 'parked descents');
-parkedLink.hidden = true;
-parkedLink.addEventListener('click', () => navTo('waiting'));
-
-waitsSection.append(waitsHeading, cadenceLine, reviewsLine, expSection, queueSection, parkedLink);
-
-// Region three — activity: the stream, folded to its newest lines.
-const activitySection = el('div', { class: 'home-section activity-section' });
-const activityHeading = el('h2', { class: 'home-heading' }, 'activity');
-const activityList = el('div', { class: 'activity-list' });
-const moreWord = el('button', { class: 'nav-link activity-more', type: 'button' }, 'more');
-moreWord.hidden = true;
-moreWord.addEventListener('click', () => {
- for (const l of activityList.querySelectorAll<HTMLElement>('.activity-line')) l.hidden = false;
- moreWord.hidden = true;
-});
-activitySection.append(activityHeading, activityList, moreWord);
-
-// No initial events yet — show a quiet empty message until the SSE
-// snapshot arrives (removed below when real events show up).
-let emptyMsg: HTMLParagraphElement | null = el('p', { class: 'empty-msg' }, 'nothing yet');
-activityList.append(emptyMsg);
-
-function syncEmptyActivity() {
- const hasLines = activityList.querySelector('.activity-line') !== null;
- if (hasLines && emptyMsg) {
-  emptyMsg.remove();
-  emptyMsg = null;
- } else if (activityList.children.length === 0) {
-  emptyMsg = el('p', { class: 'empty-msg' }, 'nothing yet');
-  activityList.append(emptyMsg);
- }
-}
-
-div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot, waitsSection, activitySection);
-surface.append(div);
-
-// What wants the person, as a sentence with one word in it — the same
-// call the old mode page made for its count. A failed read shows nothing.
-(async () => {
- try {
-  const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
-  if (state.screen !== 'mode') return;
-  if (data.pending.length === 0) return;
-  const n = data.pending.length;
-  const readWord = el('button', { class: 'nav-link' }, 'read them');
-  readWord.addEventListener('click', () => navTo('reviews'));
-  reviewsLine.append(
-   document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
-   readWord,
-   document.createTextNode('.'),
-  );
- } catch {
-  // The review queue is offer-only; a failed read just means no line.
- }
-})();
-
-// Age helper: compact relative-time display (e.g. "2d ago", "just now")
-function ageString(created: string): string {
- const ms = Date.now() - new Date(created).getTime();
- const mins = Math.floor(ms / 60000);
- if (mins < 1) return 'just now';
- if (mins < 60) return `${mins}m ago`;
- const hours = Math.floor(mins / 60);
- if (hours < 24) return `${hours}h ago`;
- const days = Math.floor(hours / 24);
- return `${days}d ago`;
-}
-
-// Load the lists
-(async () => {
- const wait = beginWait(queueList, 'looking…', 400);
- try {
-  const data = await api<QueueData>('/api/queue');
-  wait.done();
-  queueList.innerHTML = '';
-  expList.innerHTML = '';
-
-  const expeditions = data.open.filter((e) => e.horizon === 'days');
-  const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
-  if (data.open.some((e) => e.source === 'parked-sounding')) parkedLink.hidden = false;
-
-  if (expeditions.length > 0) {
-   for (const entry of expeditions) {
-    const row = el('div', { class: 'expedition-entry' });
-    const question = el('span', { class: 'expedition-question' }, entry.question);
-    const age = el('span', { class: 'expedition-age' }, ageString(entry.created));
-    row.append(question, age);
-    expList.append(row);
-   }
-  }
-
-  if (pending.length === 0) {
-   queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
-  } else {
-   for (const entry of pending) {
-    const row = el('div', { class: 'queue-entry' });
-    const question = el('span', { class: 'queue-question' }, entry.question);
-    // Where the question came from, in words. No queue `source` literal
-    // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
-    // re-measure is the verification Q-15 forbids.
-    const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
-    row.append(question, meta);
-    queueList.append(row);
-   }
-  }
- } catch (e) {
-  wait.done();
-  queueList.innerHTML = '';
-  queueList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
-  console.error(e);
- }
-})();
-
-// Connect activity SSE
-(async () => {
- try {
-  const resp = await fetch('/api/activity', {
-   method: 'GET',
-   headers: { Accept: 'text/event-stream' },
-  });
-  if (!resp.ok) throw new Error(`${resp.status}`);
-  if (!resp.body) return;
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-   const { done, value } = await reader.read();
-   if (done) break;
-   buffer += decoder.decode(value, { stream: true });
-
-   // Parse SSE events
-   const lines = buffer.split('\n');
-   buffer = lines.pop() ?? '';
-   let currentData = '';
-   for (const line of lines) {
-    if (line.startsWith('data: ')) {
-     currentData = line.slice(6);
-    } else if (line.startsWith(': heartbeat')) {
-     // Historical batch flushed — settle the empty state.
-     syncEmptyActivity();
-    } else if (line === '' && currentData) {
-     try {
-      const ev: ActivityEvent = JSON.parse(currentData);
-      const lineEl = el('div', { class: 'activity-line' });
-      const actor = el('span', { class: 'activity-actor' }, ev.actor);
-      const detail = el('span', { class: 'activity-detail' }, formatEvent(ev));
-      lineEl.append(actor, ' ', detail);
-      const age = relativeTime(ev.at);
-      if (age) lineEl.append(' ', el('span', { class: 'activity-age' }, age));
-      activityList.prepend(lineEl);
-      syncEmptyActivity();
-      // Keep the newest eight lines; fold the rest behind the more word.
-      const shown = activityList.querySelectorAll<HTMLElement>('.activity-line');
-      for (const old of Array.from(shown).slice(8)) old.hidden = true;
-      moreWord.hidden = shown.length <= 8;
-     } catch { /* skip malformed */ }
-     currentData = '';
-    }
-   }
-  }
- } catch { /* SSE connection failed silently */ }
-})();
+ div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot);
+ surface.append(div);
 }
 
 /* ── Unprompted entry: a blank page, no question ── */
@@ -2127,9 +1933,8 @@ function renderDone() {
 
 /* ── Parked descents surface ── */
 
-// The home surface absorbed the waiting lists; this page keeps only the
-// parked pointers, whose section the sounding no-touch zone does not allow
-// to move.
+// The waiting page: what is open, what is parked, and the activity stream.
+// Home keeps only the sitting controls.
 
 function renderWaiting() {
  clear();
@@ -2178,8 +1983,198 @@ function renderWaiting() {
  const parkedList = el('div', { class: 'parked-list' });
  parkedSection.append(parkedHeading, parkedList);
 
- div.append(parkedSection);
+// Region two — waits: what is open, under the sitting controls.
+const waitsSection = el('div', { class: 'home-section waits-section' });
+const waitsHeading = el('h2', { class: 'home-heading' }, 'waits for you');
+
+// Cadence — one sentence, at the top, above the lists (ticket 056).
+// The document rule: a line of text on a page, not a widget. It carries no
+// control, no colour and no comparison; a long gap reads exactly like a
+// short one, because dormancy is signal and never debt (Q-24). The wording
+// is composed server-side so it is testable — see src/log/cadence.ts.
+const cadenceLine = el('p', { class: 'cadence-line' }, '');
+api<{ sentence: string }>('/api/cadence')
+ .then((r) => { cadenceLine.textContent = r.sentence; })
+ .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
+
+// The review queue, as a sentence below the cadence (the verb-grammar
+// rule): what waits is said, with one control word at the point of
+// attention. The `:empty` rule keeps it off the page until a harvest
+// actually waits.
+const reviewsLine = el('p', { class: 'waiting-reviews-line' });
+
+// Expedition section — entries with horizon 'days' waiting to go out
+const expSection = el('div', { class: 'waiting-section expedition-section' });
+const expHeading = el('h2', { class: 'waiting-heading' }, 'out in the world');
+const expList = el('div', { class: 'expedition-list' });
+expSection.append(expHeading, expList);
+
+// Queue section — entries with horizon 'session' waiting to be drawn
+const queueSection = el('div', { class: 'waiting-section' });
+const queueHeading = el('h2', { class: 'waiting-heading' }, 'open questions');
+const queueList = el('div', { class: 'queue-list' });
+queueSection.append(queueHeading, queueList);
+
+
+waitsSection.append(waitsHeading, cadenceLine, reviewsLine, expSection, queueSection);
+
+// Region three — activity: the stream, folded to its newest lines.
+const activitySection = el('div', { class: 'home-section activity-section' });
+const activityHeading = el('h2', { class: 'home-heading' }, 'activity');
+const activityList = el('div', { class: 'activity-list' });
+const moreWord = el('button', { class: 'nav-link activity-more', type: 'button' }, 'more');
+moreWord.hidden = true;
+moreWord.addEventListener('click', () => {
+ for (const l of activityList.querySelectorAll<HTMLElement>('.activity-line')) l.hidden = false;
+ moreWord.hidden = true;
+});
+activitySection.append(activityHeading, activityList, moreWord);
+
+// No initial events yet — show a quiet empty message until the SSE
+// snapshot arrives (removed below when real events show up).
+let emptyMsg: HTMLParagraphElement | null = el('p', { class: 'empty-msg' }, 'nothing yet');
+activityList.append(emptyMsg);
+
+function syncEmptyActivity() {
+ const hasLines = activityList.querySelector('.activity-line') !== null;
+ if (hasLines && emptyMsg) {
+  emptyMsg.remove();
+  emptyMsg = null;
+ } else if (activityList.children.length === 0) {
+  emptyMsg = el('p', { class: 'empty-msg' }, 'nothing yet');
+  activityList.append(emptyMsg);
+ }
+}
+
+ div.append(waitsSection, parkedSection, activitySection);
  surface.append(div);
+
+// What wants the person, as a sentence with one word in it — the same
+// call the old mode page made for its count. A failed read shows nothing.
+(async () => {
+ try {
+  const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
+  if (state.screen !== 'waiting') return;
+  if (data.pending.length === 0) return;
+  const n = data.pending.length;
+  const readWord = el('button', { class: 'nav-link' }, 'read them');
+  readWord.addEventListener('click', () => navTo('reviews'));
+  reviewsLine.append(
+   document.createTextNode(`${n} harvest${n === 1 ? '' : 's'} wait for your review \u2014 `),
+   readWord,
+   document.createTextNode('.'),
+  );
+ } catch {
+  // The review queue is offer-only; a failed read just means no line.
+ }
+})();
+
+// Age helper: compact relative-time display (e.g. "2d ago", "just now")
+function ageString(created: string): string {
+ const ms = Date.now() - new Date(created).getTime();
+ const mins = Math.floor(ms / 60000);
+ if (mins < 1) return 'just now';
+ if (mins < 60) return `${mins}m ago`;
+ const hours = Math.floor(mins / 60);
+ if (hours < 24) return `${hours}h ago`;
+ const days = Math.floor(hours / 24);
+ return `${days}d ago`;
+}
+
+// Load the lists
+(async () => {
+ const wait = beginWait(queueList, 'looking…', 400);
+ try {
+  const data = await api<QueueData>('/api/queue');
+  wait.done();
+  queueList.innerHTML = '';
+  expList.innerHTML = '';
+
+  const expeditions = data.open.filter((e) => e.horizon === 'days');
+  const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
+
+  if (expeditions.length > 0) {
+   for (const entry of expeditions) {
+    const row = el('div', { class: 'expedition-entry' });
+    const question = el('span', { class: 'expedition-question' }, entry.question);
+    const age = el('span', { class: 'expedition-age' }, ageString(entry.created));
+    row.append(question, age);
+    expList.append(row);
+   }
+  }
+
+  if (pending.length === 0) {
+   queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
+  } else {
+   for (const entry of pending) {
+    const row = el('div', { class: 'queue-entry' });
+    const question = el('span', { class: 'queue-question' }, entry.question);
+    // Where the question came from, in words. No queue `source` literal
+    // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
+    // re-measure is the verification Q-15 forbids.
+    const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
+    row.append(question, meta);
+    queueList.append(row);
+   }
+  }
+ } catch (e) {
+  wait.done();
+  queueList.innerHTML = '';
+  queueList.append(el('p', { class: 'empty-msg' }, 'could not load what is waiting'));
+  console.error(e);
+ }
+})();
+
+// Connect activity SSE
+(async () => {
+ try {
+  const resp = await fetch('/api/activity', {
+   method: 'GET',
+   headers: { Accept: 'text/event-stream' },
+  });
+  if (!resp.ok) throw new Error(`${resp.status}`);
+  if (!resp.body) return;
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+   const { done, value } = await reader.read();
+   if (done) break;
+   buffer += decoder.decode(value, { stream: true });
+
+   // Parse SSE events
+   const lines = buffer.split('\n');
+   buffer = lines.pop() ?? '';
+   let currentData = '';
+   for (const line of lines) {
+    if (line.startsWith('data: ')) {
+     currentData = line.slice(6);
+    } else if (line.startsWith(': heartbeat')) {
+     // Historical batch flushed — settle the empty state.
+     syncEmptyActivity();
+    } else if (line === '' && currentData) {
+     try {
+      const ev: ActivityEvent = JSON.parse(currentData);
+      const lineEl = el('div', { class: 'activity-line' });
+      const actor = el('span', { class: 'activity-actor' }, ev.actor);
+      const detail = el('span', { class: 'activity-detail' }, formatEvent(ev));
+      lineEl.append(actor, ' ', detail);
+      const age = relativeTime(ev.at);
+      if (age) lineEl.append(' ', el('span', { class: 'activity-age' }, age));
+      activityList.prepend(lineEl);
+      syncEmptyActivity();
+      // Keep the newest eight lines; fold the rest behind the more word.
+      const shown = activityList.querySelectorAll<HTMLElement>('.activity-line');
+      for (const old of Array.from(shown).slice(8)) old.hidden = true;
+      moreWord.hidden = shown.length <= 8;
+     } catch { /* skip malformed */ }
+     currentData = '';
+    }
+   }
+  }
+ } catch { /* SSE connection failed silently */ }
+})();
 
 
  // Load the parked pointers
