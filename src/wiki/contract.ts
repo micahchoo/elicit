@@ -535,6 +535,13 @@ export interface ClaimStore {
   attemptCounts(): Map<string, number>;
   /** Q-21's read-log. Read-modify-write on one file, serialized by the implementation. */
   recordRead(claimId: string, at: string, surface: string): void;
+  /**
+   * The one user verb the store executes (Q-33): mark a claim attested.
+   * Null for an unknown id, the same not-found answer `readClaim` gives.
+   * `status` is untouched — it is recomputed mechanically from the graph
+   * (Q-29), and the recompute maps this flag on its next pass.
+   */
+  attest(id: string): Claim | null;
 }
 
 /**

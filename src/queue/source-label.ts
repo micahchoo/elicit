@@ -35,9 +35,11 @@ import type { LintFinding } from '../wiki/contract.js';
  * `lint-still-true` and `lint-undiscriminated-range` are the literals the
  * Clerk slice adds, and a re-measure or a discrimination question that
  * announces itself as one is the verification Q-15 forbids — so they read as
- * the ordinary question `composed` is. Only `user-declared` and its sibling
- * `gap-declared` differ, because the person parked those themselves and
- * knows it. `gap-fill` reads like the rest: a model-marked gap's question
+ * the ordinary question `composed` is. Only the sources the person
+ * performed differ: `user-declared` and its sibling `gap-declared` because
+ * the person parked those themselves and knows it, and `claim-challenged`
+ * because the person pushed back and the label says so. `gap-fill` reads
+ * like the rest: a model-marked gap's question
  * quotes an adjacent paragraph verbatim, so the words ARE the person's own.
  * Q-15 governs all of it — nothing may accuse, and neither gap source may
  * announce itself as a gap.
@@ -52,6 +54,7 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'lint-still-true': 'from your own words',
  'lint-undiscriminated-range': 'from your own words',
  'parked-sounding': 'from your own words',
+ 'claim-challenged': 'you pushed back on the wiki',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {

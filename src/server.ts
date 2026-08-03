@@ -1960,6 +1960,37 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
   return c.json({ ok: true });
  });
 
+ // POST /api/wiki/claim/:id/attest — the user's verb on a claim (Q-33)
+ //
+ // Sets the one flag only a user verb may set. `status` is not touched here:
+ // it is recomputed mechanically from the graph (Q-29), and the recompute
+ // maps the flag on its next pass.
+ app.post('/api/wiki/claim/:id/attest', async (c) => {
+  const id = c.req.param('id');
+  const claim = claimStore.attest(id);
+  if (!claim) return c.json({ error: 'unknown claim' }, 404);
+  return c.json({ ok: true });
+ });
+
+ // POST /api/wiki/claim/:id/challenge — a question, never a verdict
+ //
+ // The agent may ask, never decide (README): a challenge enqueues a question
+ // and leaves the claim untouched — no status change, no body edit, nothing.
+ app.post('/api/wiki/claim/:id/challenge', async (c) => {
+  const id = c.req.param('id');
+  const claim = claimStore.readClaim(id);
+  if (!claim) return c.json({ error: 'unknown claim' }, 404);
+  deps.queue.add({
+   source: 'claim-challenged',
+   license: 'user',
+   question: `You read "${claim.body}" and it did not sit right — what would you say instead?`,
+   questionForm: 'deliberative',
+   sharpness: 'weak',
+   horizon: 'session',
+  });
+  return c.json({ ok: true });
+ });
+
  // POST /api/transcribe — raw Float32 PCM body, returns {text}
  app.post('/api/transcribe', async (c) => {
   const client = getSttClient(deps);
