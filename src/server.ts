@@ -8,6 +8,8 @@ import { randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
+import { checkQuestion } from './elicitor/guards.js';
+import { CLOSING_DOOR_QUESTION } from './elicitor/protocol.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
 import { propose, decide, CUTS_RESPONSE_FORMAT, type HarvestDiagnostics } from './harvester/harvester.js';
 import {
@@ -29,6 +31,7 @@ import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations }
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
+import { composeRung } from './clerk/sounding-rung.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { proposeArrangements } from './clerk/arrangements.js';
 import { createImportStore } from './import/store.js';
@@ -43,6 +46,10 @@ import { commitImport } from './import/commit.js';
 import type { ImportDecision } from './import/contract.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
+import { licenseSounding } from './sounding/license.js';
+import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
+import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
+import { parkPointer, writeLadder } from './sounding/park.js';
 import {
  createClaimStore,
  appendSweepDeferral,
@@ -90,6 +97,8 @@ import type {
  Snippet,
  Turn,
  Target,
+ ParkedLadder,
+ SoundingEnd,
 } from './types.js';
 export interface ServerDeps {
  vault: Vault;
@@ -761,6 +770,14 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
 
  const app = new Hono();
  const sessions = new Map<string, SessionState>();
+/**
+ * The offer in flight per sitting (plan Task 8): the licensing answer that
+ * earned it and the construct it named. Same lifetime class as `sessions` —
+ * the plan leaves this carrier unnamed; it carries the construct as well so
+ * the consent route can enter the descent with the same word the offer used,
+ * even if more turns landed between the offer and the answer.
+ */
+ const soundingOffers = new Map<string, { text: string; construct: string }>();
  const sessionProposals = new Map<string, CutProposal[]>();
  /** Sessions whose material arrived unprompted — kept snippets carry that origin. */
  const unpromptedSessions = new Set<string>();
@@ -949,6 +966,38 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   });
  });
 
+/**
+ * The shared answer-path close (plan Task 8 contract): persist the finished
+ * ladder, consume the carrier, log the close. One copy for the turn route
+ * and the gate route, so the cap path and the park path can never write the
+ * ladder differently. Returns the wire fields both routes append.
+ */
+function finishDescent(state: SessionState): { descentClosed: SoundingEnd; soundingId: string } {
+ const finished = state.finishedSounding!;
+ writeLadder(deps.vaultRoot, finished);
+ delete state.finishedSounding;
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'sounding-ended',
+  `sounding=${finished.id} rungs=${finished.rungs.length} endedBy=${finished.endedBy}`,
+ );
+ return { descentClosed: finished.endedBy, soundingId: finished.id };
+}
+
+/**
+ * The gate route's descent-closed paths leave the sitting the way the
+ * elicitor's closeDescent does: phase closing-door, door question asked
+ * (Q-20, Q-47). Appended exactly as emitProbe appends it.
+ */
+function closeTheDoor(state: SessionState, at: string): void {
+ state.phase = 'closing-door';
+ const agentTurn: Turn = { role: 'agent', text: CLOSING_DOOR_QUESTION, at, questionForm: 'deliberative' };
+ state.deps.vault.appendTurn(state.id, agentTurn);
+ state.turns.push(agentTurn);
+ state.questionCount++;
+}
+
  // POST /api/session/:id/turn {text} → probe | saturated
  app.post('/api/session/:id/turn', async (c) => {
   const sessionId = c.req.param('id');
@@ -1006,6 +1055,28 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    return c.json({ kind: 'saturated' });
   }
 
+  // The descent is blocked at its checkpoint: no question until a gate
+  // word arrives. The gate reading rides the response so the client can
+  // render the rung it sits on.
+  if (result.kind === 'checkpoint') {
+   return c.json({ kind: 'checkpoint', sounding: gateStateFor(state.sounding!) });
+  }
+
+  // A descent that closed on this answer (cap or convergence) — persist
+  // the ladder and answer with its id before the ordinary probe block.
+  // The gate was never touched on this path; the response is the only
+  // carrier of the ladder's identity.
+  if (state.finishedSounding) {
+   return c.json({
+    kind: 'probe',
+    text: result.text,
+    questionForm: result.questionForm,
+    phase: state.phase,
+    ...(juxtaposition ? { juxtaposition } : {}),
+    ...finishDescent(state),
+   });
+  }
+
   // Activity: question-asked or juxtaposition-offered
   if (juxtaposition) {
    serverEmit(deps.vaultRoot, 'elicitor', 'juxtaposition-offered', `session=${sessionId} snippet=${hits[0]!.snippetId} source=juxtaposition`);
@@ -1018,12 +1089,47 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   // names the question this turn actually served.
   stampComposedServed(deps.vaultRoot, deps.queue, state.openQueueEntryId);
 
+  // The entry license (plan Task 8): evaluated once per sitting, after the
+  // turn so questionCount is current, and only while nothing was offered
+  // yet — a set soundingOffer is the end of licensing, whatever it says.
+  // Emitted on every evaluation, licensed or not (Q-62). A licensed offer
+  // stashes the answer that earned it for the consent route, and the
+  // response carries it exactly once.
+  let soundingOfferWire: { construct: string; allowance: number; sentence: string } | undefined;
+  if (state.soundingOffer === undefined) {
+   const lic = licenseSounding(state);
+   serverEmit(
+    deps.vaultRoot,
+    'elicitor',
+    'sounding-license',
+    `late=${lic.reasons.late} energy=${lic.reasons.energy} sustained=${lic.reasons.sustained} unoffered=${lic.reasons.unoffered} licensed=${lic.licensed}`,
+   );
+   if (lic.licensed) {
+    state.soundingOffer = 'offered';
+    soundingOffers.set(sessionId, { text: body.text, construct: lic.construct ?? 'the thread' });
+    const allowance = rungAllowance(state.mode, state.questionCount).allowance;
+    serverEmit(
+     deps.vaultRoot,
+     'elicitor',
+     'sounding-offered',
+     `session=${sessionId} rungs=${allowance}`,
+    );
+    soundingOfferWire = {
+     construct: lic.construct ?? 'the thread',
+     allowance,
+     sentence: expectedLengthSentence(allowance),
+    };
+   }
+  }
+
   return c.json({
    kind: 'probe',
    text: result.text,
    questionForm: result.questionForm,
    phase: state.phase,
    ...(juxtaposition ? { juxtaposition } : {}),
+   ...(state.sounding ? { sounding: gateStateFor(state.sounding) } : {}),
+   ...(soundingOfferWire ? { soundingOffer: soundingOfferWire } : {}),
   });
  });
 
@@ -1084,6 +1190,184 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
 
   const result = skipQuestion(state);
   return c.json(result);
+ });
+
+// POST /api/session/:id/sounding {accept} → probe | declined
+// The consent ask, one word in and one word out. Accepting enters the
+// descent and composes rung 0 from the answer that licensed the offer;
+// declining is recorded and never re-asked (Q-43).
+app.post('/api/session/:id/sounding', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+
+ let accept: unknown;
+ try {
+  accept = (await c.req.json<{ accept?: unknown }>()).accept;
+ } catch {
+  return c.json({ error: 'accept is required' }, 400);
+ }
+ if (typeof accept !== 'boolean') {
+  return c.json({ error: 'accept must be a boolean' }, 400);
+ }
+ if (state.soundingOffer !== 'offered') {
+  return c.json({ error: 'no offer on the table' }, 400);
+ }
+
+ if (!accept) {
+  state.soundingOffer = 'declined';
+  soundingOffers.delete(sessionId);
+  serverEmit(deps.vaultRoot, 'elicitor', 'sounding-declined', `session=${sessionId}`);
+  return c.json({ kind: 'declined' });
+ }
+
+ const stashed = soundingOffers.get(sessionId);
+ if (!stashed) {
+  // Unreachable by construction — the offer and its stash are one step —
+  // but a missing stash must not enter a descent with no licensing answer.
+  return c.json({ error: 'could not compose the first question — try again' }, 503);
+ }
+ soundingOffers.delete(sessionId);
+
+ state.soundingOffer = 'entered';
+ const now = new Date().toISOString();
+ const q = await composeRung(stashed.text, clerkComplete, (question) =>
+  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }));
+ if (!q) {
+  // Composition failed once; the offer goes back on the table so the
+  // person can decline it or accept again — the recorded choice for T8.
+  state.soundingOffer = 'offered';
+  soundingOffers.set(sessionId, stashed);
+  return c.json({ error: 'could not compose the first question — try again' }, 503);
+ }
+
+ state.sounding = enterSounding({
+  session: sessionId,
+  construct: stashed.construct,
+  licensingAnswer: stashed.text,
+  mode: state.mode,
+  questionCount: state.questionCount,
+  at: now,
+ });
+ state.sounding.pendingQuestion = q;
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'sounding-entered',
+  `session=${sessionId} sounding=${state.sounding.id} rungs=${state.sounding.allowance}`,
+ );
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'sounding-rung',
+  `sounding=${state.sounding.id} rung=0 of=${state.sounding.allowance}`,
+ );
+ return c.json({
+  kind: 'probe',
+  text: q.text,
+  questionForm: 'deliberative',
+  phase: state.phase,
+  sounding: gateStateFor(state.sounding),
+ });
+ });
+
+// POST /api/session/:id/sounding/gate {choice} → probe | descent-closed
+// The gate is a control, not a turn: the body carries a choice word and
+// nothing else, so a continued descent composes its next rung from the
+// ladder — the answer to the rung the checkpoint interrupted — never from
+// the request.
+app.post('/api/session/:id/sounding/gate', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+
+ let choice: unknown;
+ try {
+  choice = (await c.req.json<{ choice?: unknown }>()).choice;
+ } catch {
+  return c.json({ error: 'choice is required' }, 400);
+ }
+ if (choice !== 'continue' && choice !== 'park' && choice !== 'another-day') {
+  return c.json({ error: `invalid choice "${String(choice)}" — expected "continue", "park" or "another-day"` }, 400);
+ }
+ if (!state.sounding) return c.json({ error: 'no descent running' }, 400);
+
+ const { end } = applyGate(state.sounding, choice);
+ const now = new Date().toISOString();
+ const guard = (question: string) =>
+  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) });
+
+ if (choice === 'continue') {
+  if (end) {
+   // The counter or the echo check closed the descent while the gate was
+   // being asked — same stamp, shared close and door as the park path.
+   const finished: ParkedLadder = { ...state.sounding, ended: now, endedBy: end };
+   state.finishedSounding = finished;
+   delete state.sounding;
+   finishDescent(state);
+   closeTheDoor(state, now);
+   return c.json({ kind: 'descent-closed', endedBy: end, soundingId: finished.id });
+  }
+  const next = await composeRung(state.sounding.rungs.at(-1)!.answer, clerkComplete, guard);
+  if (!next) {
+   return c.json({ error: 'could not compose the next rung — try again' }, 503);
+  }
+  state.sounding.pendingQuestion = next;
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'sounding-rung',
+   `sounding=${state.sounding.id} rung=${state.sounding.rungs.length} of=${state.sounding.allowance}`,
+  );
+  return c.json({
+   kind: 'probe',
+   text: next.text,
+   questionForm: 'deliberative',
+   phase: state.phase,
+   sounding: gateStateFor(state.sounding),
+  });
+ }
+
+ // park | another-day: the choice is the end, whatever the counter says.
+ const finished: ParkedLadder = { ...state.sounding, ended: now, endedBy: end! };
+ state.finishedSounding = finished;
+ delete state.sounding;
+ serverEmit(
+  deps.vaultRoot,
+  'elicitor',
+  'sounding-gate',
+  `sounding=${finished.id} rung=${finished.rungs.length} choice=${choice}`,
+ );
+ if (choice === 'park') {
+  const entry = parkPointer(deps.queue, finished);
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'sounding-parked',
+   `sounding=${finished.id} rungs=${finished.rungs.length} entry=${entry.id}`,
+  );
+ }
+ finishDescent(state);
+ closeTheDoor(state, now);
+ return c.json({ kind: 'descent-closed', endedBy: end!, soundingId: finished.id, phase: 'closing-door' });
+ });
+
+// POST /api/session/:id/sounding/resume {queueEntryId} → 501 (shell)
+// T12 owns the body: this validates the request and says so, keeping all
+// four sounding routes in one reviewable place.
+app.post('/api/session/:id/sounding/resume', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+
+ const body = await c.req.json<{ queueEntryId?: unknown }>().catch(() => null);
+ const queueEntryId = body?.queueEntryId;
+ if (typeof queueEntryId !== 'string' || queueEntryId.trim() === '') {
+  return c.json({ error: 'queueEntryId is required' }, 400);
+ }
+
+ // TODO(T12): fill once src/sounding/resume.ts exists
+ return c.json({ error: 'not implemented yet' }, 501);
  });
 
  /**

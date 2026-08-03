@@ -632,7 +632,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
  // ── src/sounding/budget.ts ──
 { module: 'src/sounding/budget', name: 'rungAllowance', status: 'live', reason: 'wired by 012 T6: enterSounding computes the allowance from it' },
-{ module: 'src/sounding/budget', name: 'expectedLengthSentence', status: 'unwired', reason: 'wired by 012 T8: the consent ask renders it' },
+{ module: 'src/sounding/budget', name: 'expectedLengthSentence', status: 'live', reason: 'wired by 012 T8: the turn route renders the offer length' },
 
 // ── src/sounding/convergence.ts ──
 { module: 'src/sounding/convergence', name: 'descentEnd', status: 'live', reason: 'wired by 012 T6: userTurn and applyGate call it' },
@@ -642,18 +642,18 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/index/lexical', name: 'jaccard', status: 'live' },
 
 // ── src/sounding/license.ts ──
-{ module: 'src/sounding/license', name: 'licenseSounding', status: 'unwired', reason: 'wired by 012 T8: the turn route calls it on every turn' },
+{ module: 'src/sounding/license', name: 'licenseSounding', status: 'live', reason: 'wired by 012 T8: the turn route evaluates it on every turn' },
 
 // ── src/sounding/park.ts (012 Task 7 — the only sounding module that touches disk) ──
-{ module: 'src/sounding/park', name: 'writeLadder', status: 'unwired', reason: 'wired by 012 T8: the turn and gate routes persist finished ladders' },
+{ module: 'src/sounding/park', name: 'writeLadder', status: 'live', reason: 'wired by 012 T8: finishDescent persists every finished ladder' },
 { module: 'src/sounding/park', name: 'readLadder', status: 'unwired', reason: 'wired by 012 T12: resumeSounding reads it' },
-{ module: 'src/sounding/park', name: 'parkPointer', status: 'unwired', reason: 'wired by 012 T8: the gate route mints the pointer' },
+{ module: 'src/sounding/park', name: 'parkPointer', status: 'live', reason: 'wired by 012 T8: the gate route mints the pointer on park' },
 
 // ── src/sounding/ladder.ts (012 Task 6 — the descent ladder) ──
-{ module: 'src/sounding/ladder', name: 'enterSounding', status: 'unwired', reason: 'wired by 012 T8: the accept route calls it' },
+{ module: 'src/sounding/ladder', name: 'enterSounding', status: 'live', reason: 'wired by 012 T8: the accept route enters the descent' },
 { module: 'src/sounding/ladder', name: 'addRung', status: 'live' },
 { module: 'src/sounding/ladder', name: 'gateStateFor', status: 'live' },
-{ module: 'src/sounding/ladder', name: 'applyGate', status: 'unwired', reason: 'wired by 012 T8: the gate route calls it' },
+{ module: 'src/sounding/ladder', name: 'applyGate', status: 'live', reason: 'wired by 012 T8: the gate route applies the choice' },
 
 // ── src/clerk/sounding-rung.ts (012 Task 6 — rung composition) ──
 { module: 'src/clerk/sounding-rung', name: 'composeRung', status: 'live' },

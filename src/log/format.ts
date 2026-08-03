@@ -676,6 +676,23 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 // ids stay in the JSONL where the audit trail belongs.
 'arrangement-chosen': (f) =>
  `kept the ${f.principle ?? 'chronology'} order for the piece`,
+
+// ── The sounding slice (plan Task 8): the offer, the gate, the park ──
+
+// The license is an offer, never a verdict (Q-62): every evaluation is a
+// record, licensed or not, and the line reports what the four reasons
+// found — the record, never a judgment of the person.
+ 'sounding-license': (f) =>
+  `ran the entry license: late ${f.late ?? '?'}, energy ${f.energy ?? '?'}, ` +
+  `sustained ${f.sustained ?? '?'}, unoffered ${f.unoffered ?? '?'} — ` +
+  (f.licensed === 'true' ? 'licensed' : 'not licensed'),
+ 'sounding-offered': (f) => `offered a descent of ${num(f, 'rungs')} rungs`,
+ 'sounding-declined': () => 'the offer of a descent was declined',
+ 'sounding-entered': (f) => `began a descent of ${num(f, 'rungs')} rungs`,
+ 'sounding-rung': (f) => `asked rung ${num(f, 'rung')} of ${num(f, 'of')}`,
+ 'sounding-gate': (f) => `the gate word ${f.choice ?? '?'} was pressed at rung ${num(f, 'rung')}`,
+ 'sounding-parked': (f) => `parked a descent with ${count(num(f, 'rungs'), 'rung')} kept`,
+ 'sounding-ended': (f) => `the descent closed: ${f.endedBy ?? 'a gate word'}`,
 };
 
 /**

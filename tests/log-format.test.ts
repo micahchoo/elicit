@@ -542,6 +542,49 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'principle=argument',
   reads: 'kept the argument order for the piece',
 },
+// The sounding slice (plan Task 8): the offer, the gate, the park. These
+// lines report acts and counts — never how the descent went, and never an
+// identifier (the two T8 tests below sweep every sounding kind).
+{
+  kind: 'sounding-license',
+  detail: 'late=true energy=true sustained=true unoffered=true licensed=true',
+  reads: 'ran the entry license: late true, energy true, sustained true, unoffered true — licensed',
+},
+{
+  kind: 'sounding-offered',
+  detail: `session=${ULID} rungs=9`,
+  reads: 'offered a descent of 9 rungs',
+},
+{
+  kind: 'sounding-declined',
+  detail: `session=${ULID}`,
+  reads: 'the offer of a descent was declined',
+},
+{
+  kind: 'sounding-entered',
+  detail: `session=${ULID} sounding=${SECOND_ULID} rungs=9`,
+  reads: 'began a descent of 9 rungs',
+},
+{
+  kind: 'sounding-rung',
+  detail: `sounding=${SECOND_ULID} rung=3 of=10`,
+  reads: 'asked rung 3 of 10',
+},
+{
+  kind: 'sounding-gate',
+  detail: `sounding=${SECOND_ULID} rung=4 choice=park`,
+  reads: 'the gate word park was pressed at rung 4',
+},
+{
+  kind: 'sounding-parked',
+  detail: `sounding=${SECOND_ULID} rungs=4 entry=${ULID}`,
+  reads: 'parked a descent with 4 rungs kept',
+},
+{
+  kind: 'sounding-ended',
+  detail: `sounding=${SECOND_ULID} rungs=4 endedBy=cap`,
+  reads: 'the descent closed: cap',
+},
 ];
 
 describe('formatEvent', () => {
@@ -676,6 +719,29 @@ describe('formatEvent', () => {
   expect(() => formatEvent(ev('index-rebuilt', ''))).not.toThrow();
   expect(formatEvent(ev('index-rebuilt', ''))).toBe('rebuilt the index from 0 snippets');
   expect(formatEvent(ev('session-started', 'mode=garbage'))).toBe('started a sitting');
+ });
+
+ /** One event per sounding kind, with the detail shapes the routes emit. */
+ function everySoundingEvent(): FormattableEvent[] {
+  return [
+   ev('sounding-license', 'late=true energy=true sustained=true unoffered=true licensed=true', 'elicitor'),
+   ev('sounding-offered', `session=${ULID} rungs=9`, 'elicitor'),
+   ev('sounding-declined', `session=${ULID}`, 'elicitor'),
+   ev('sounding-entered', `session=${ULID} sounding=${SECOND_ULID} rungs=9`, 'elicitor'),
+   ev('sounding-rung', `sounding=${SECOND_ULID} rung=3 of=10`, 'elicitor'),
+   ev('sounding-gate', `sounding=${SECOND_ULID} rung=4 choice=park`, 'elicitor'),
+   ev('sounding-parked', `sounding=${SECOND_ULID} rungs=4 entry=${ULID}`, 'elicitor'),
+   ev('sounding-ended', `sounding=${SECOND_ULID} rungs=4 endedBy=cap`, 'elicitor'),
+  ];
+ }
+
+ it('no sounding line names a ULID', () => {
+  for (const e of everySoundingEvent()) expect(formatEvent(e)).not.toMatch(ULID_PATTERN);
+ });
+
+ it('no sounding line says anything about how it went', () => {
+  const forbidden = /hard|difficult|struggl|deep|failed|gave up|only/i;
+  for (const e of everySoundingEvent()) expect(formatEvent(e)).not.toMatch(forbidden);
  });
 });
 
