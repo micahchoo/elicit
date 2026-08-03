@@ -1,96 +1,82 @@
 # HANDOFF — Elicit
 
-Updated: 2026-08-03, after 010 T10/T13 landed and 089 shipped uncommitted (HEAD `1e4a1a3`).
+Updated: 2026-08-03, after 014 closed and 090 (Coach) dispatched.
 
 ## Right now
 
-**Tree is green at `1e4a1a3`: tsc clean, 76 files / 1625 tests pass at the
-010-T10 commit, vite build ok.** Ticket 087 landed (`f027392`) and its fence
-is committed. Ticket **074**'s annotation half is IN FLIGHT on this tree,
-uncommitted and foreign to every commit below: `src/clerk/annotate.ts`,
-`tests/annotate.test.ts`, `scripts/measure-074-annotate.ts`,
-`data/eval-074-annotate/`, plus edits to `src/registry.ts` and
-`tests/invariant-context.test.ts` — plus `tools/claim-review/server.log`
-(untracked on purpose). Never stash, revert, or rebase the 074 work; never
-`git add -A`. Ticket **089**'s fix ships uncommitted in this tree (see below).
+**One agent in flight: omp exec on ticket 090** (the Coach slice, plan
+`docs/superpowers/plans/2026-08-02-coach-slice.md`, per-task commits
+"coach: … (090 TN)"). Log: `/tmp/omp-wave6/090.log`. It commits per task;
+verify the finished slice against the tree, then close out.
 
-**010 composition slice: COMPLETE except T14.** Pass 1 and pass 2 are fully
-landed and green; the only open item is T14 (real-model run + RESULTS; Micah +
-real vault + live model — a human remainder). Commits: T1 `6410f38`, T2
-`11ba5e05`, T3 `e52e0c9`, T4 `b60c82b`, T5 `1930fbe`, T6 `d50528a` (routes +
-readVersion + ticket 081), T7 `219d7e4` (web surface, browser-verified), T8
-`985dbd1` (pass-1 e2e), T9 `05abe56`, registry chore `3c70694`, T11 `5171c71`
-(arrangements + ticket 082), T12 `9a9faa4` (routes + surface), **T10 `7f6741a`**
-(dormancy predicate, the two register entries + clerk-plan ledger rows, the two
-guarded zero-LLM docket jobs, the two runDocketNow thunks, the wave-3 log
-kinds, the through-createApp wiring test; stalePins registry entry flipped
-live; T12's `gapsPerCandidate: 3` literal switched to the register), **T13
-`1e4a1a3`** (pass-2 e2e append, additive). Full record in the ticket's
-Resolution and the plan file's checkboxes (T10/T13 ticked, T14 unticked).
+**The person's parallel work sits uncommitted — never touch or stage:**
+`README.md`, `docs/interface-references.md`, `web/style.css`,
+`data/annotations/` (live runtime store),
+`docs/superpowers/plans/2026-08-02-verb-grammar-collisions.md`,
+`tools/claim-review/server.log`. The `ia-redesign` branch was merged into
+main by the person (a36591b — persistent nav shell); a worktree lives at
+`.claude/worktrees/verb-redesign/` (vitest excludes it — bbdbd01).
 
-Two deliberate deviations recorded in the ticket: the material screen orders by
-`captured` (no sitting date on /api/snippets); `proposeArrangements` takes
-optional `log` + `modelName` params and `thresholds.gapsPerCandidate` is
-injected — T10 switched T12's literal to `THRESHOLDS['piece.gapsPerCandidate']`.
+**Server on :4517** runs from a task in this session's background; build at
+launch: `e2784d2` (pre-Seeding-final). Restart runbook:
+`docs/superpowers/plans/2026-08-02-the-clerk.RESULTS-runbook.md` §2 (direct
+tsx launch, tee to /tmp/t16-server.log, never watch mode). BEFORE any
+restart: tail `vault/log/<today>.jsonl` — if the last event is minutes old
+the person may be mid-sitting; ask first. The vault has REAL usage now:
+3 composed Pieces, imported post-* transcripts, 33 queue entries.
 
 ## Map state
 
-90 tickets charted, 78 closed, 12 open. Tracker: `docs/wayfinder/tickets/`,
-map at `docs/wayfinder/map.md`. Canon: Q-1..Q-78 in `docs/decisions/elicit.md`.
+93 tickets charted, 84 closed. Tracker `docs/wayfinder/tickets/`, map
+`docs/wayfinder/map.md`, canon Q-1..Q-78 in `docs/decisions/elicit.md`.
 
-Open tickets and their order:
+Open (9) and their order:
 
-- **074**-annotation half — IN FLIGHT, uncommitted on this tree (a peer
-  session's fence, listed under Right now). Never stash or revert it.
-- **089** godNodeFanout scoped to referents — DONE, shipped uncommitted in
-  this tree for driver verification (the whole part-2 file set: lint.ts,
-  contract.ts, source-label.ts, thresholds.ts + ledger, the four migrated
-  tests, scripts/measure-089-godnode.ts, the ticket closed with Resolution).
-  tsc clean, full suite green (77 files / 1641). Verify and commit; the
-  ticket's Resolution holds the before/after measurement with SOURCE lines.
-- **010** composition slice — T14 only (real-model run + RESULTS, human
-  remainder); ticket stays OPEN until it lands. **012** Soundings waits on 010
-  closing; **014** Seeding after 012 — 014's approved plan:
-  `docs/superpowers/plans/2026-08-02-seeding-slice.md`. Wave-3 gate there:
-  route-driven import must leave `provenance.authorship` on disk. Never skip
-  it. Pre-dispatch check (found by the Coach-plan review): its T14 calls
-  `api('/api/reach')`, and `web/main.ts#isReadPath` doesn't know that path —
-  the GET would go out as a POST. Verify/fix at that wave, same `/api/wiki`-
-  style exact-match shape.
-- **027** gap-fill docket seam — unblocked, but sequence with 010 (server.ts).
-- **090** build the Coach — plan-first, grilled canon is Q-73..Q-78.
-- **015** remainder and **033** — honestly data-bound, waiting on usage.
-- **065** EventKind union — deliberately last (sweeps all kinds).
+- **090** Coach — EXECUTING (above). Then:
+- **092** KTG decomposition into the Coach's compose prompts — small
+  prompt+tests task, blocked_by 090, dispatch right after it.
+- **093** claim edit + Propagation — from the 2026-08-03 CONTEXT audit:
+  no claim-edit surface exists (`server.ts` "Nothing a client can send
+  edits a claim") and `ops.ts:573` propagation is a documented NO-OP,
+  though CONTEXT calls it mandatory. Dispatchable anytime (server/web
+  after 090 lands). UI follows the person's verb-grammar plan (correcting
+  → diff grammar).
+- **094** restatement chains unread — capture exists, nothing consumes
+  chains. Count chains in the real vault FIRST; likely data-bound.
+- **065** EventKind union — LAST by design; cut the union only after 090+
+  092 stop minting kinds.
+- **010** composition — build done; open only for T14, the person's
+  real-model RESULTS run. Note: 3 real Pieces already exist in the vault;
+  the person's impressions + a RESULTS write-up close it.
+- **012** soundings — waves 1-3 done; open only for T14, the five-sitting
+  shadow walk (human).
+- **015** queue maturation remainder, **033** graph-bounded context —
+  honestly data-bound; usage is now genuinely accruing.
 
-## Verification discipline (learned the hard way, twice today)
+## Discipline (hard-won this session — memories exist for most)
 
-- Verify agents' work against the tree, never their report. The 060 agent left
-  its mechanism dead-wired inside the wrong loop filter (tsc TS2367 caught it),
-  a whole-file reindent of `contract.ts`, and a red gate-inventory test — all
-  found only by running `npx tsc --noEmit` + `npm test` after it exited.
-- The "wiring, not signatures" class: an optional dep or an appended block no
-  caller reaches ships inert. Demand a test that drives the new path end to end.
-- Cite line numbers only from fresh file reads, never inherited from reports.
+- Verify agents against the tree, never reports: run tsc + npm test +
+  vite yourself; check production wiring (the server actually passing the
+  dep — two agents shipped docket jobs the server never called).
+- Shared git index races: while an exec agent commits, use
+  `git commit -m msg -- <paths>` for tracked files; plumbing CAS
+  (GIT_INDEX_FILE + commit-tree + update-ref old-new) for untracked.
+- `omp -p "$(cat missing.md)"` launches an UNGUIDED agent: Write prompts
+  as their own step, gate with `test -s`, tail the log once after launch.
+- Whole-file reindents by agents hide one-line changes and break canon
+  greps — `git diff -w` first, revert reformat, keep the real change.
+- Never `git add -A` (vault is a separate repo; person's files dirty).
+- Local models only: elicitor bonsai-27b @192.168.0.229:8088/v1, clerk
+  qwen3.6:35b @192.168.0.229:11434/v1 (docker exec ollama …), embeddings
+  qwen3-embedding. Measurements ABOUT the clerk stay on qwen.
+- omp fix agents never commit; plan-exec agents commit per task.
+- Classifier denials are surfaced, never worked around.
 
-## Standing rules
+## Waiting on the person (none blocking)
 
-- Local models only (ADR-0001). Elicitor: bonsai-27b @192.168.0.229:8088/v1.
-  Clerk: qwen3.6:35b @192.168.0.229:11434/v1 (ollama in docker container
-  `ollama` — `docker exec ollama ollama ...`). Harness-mechanics tests may use
-  bonsai for both roles (map Notes); measurements ABOUT the clerk stay on qwen.
-- Bash cannot HTTP here — put fetches in a script file and run it.
-- Permission-classifier denials (e.g. process kills) are surfaced to Micah,
-  never worked around.
-- omp agents never commit; the session driver commits after verification.
-- Never stash concurrent agents' dirty work.
-
-## Waiting on Micah (all optional, none blocking)
-
-- 058's live scan of the 47-post corpus (expect "0 to import") and a browser
-  pass of the import-folder flow — needs a server restart onto current HEAD
-  first (the one on :4517 still runs build `38c4a8a`).
-- Pending harvest reviews in the queue on :4517.
-- 104 unreviewed claims in `tools/claim-review/` (second 085 pass after
-  087+091 land re-measures the mode counts — that is the point of it).
-- The re-measure question sits undrawn in his queue; his next sitting draws it
-  and produces the ratio the RESULTS wanted most.
+- 010 T14 RESULTS run (3 Pieces already composed — ask for impressions).
+- 012 T14 shadow walk (five sittings).
+- Second claim-review pass over the 104 unreviewed claims — re-measures
+  085's mode counts now that 087+091 landed; app at tools/claim-review/.
+- The re-measure question still undrawn in the queue.
+- 094's chain count may need their sense of what a chain is.
