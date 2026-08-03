@@ -282,7 +282,7 @@ export type LintFinding = {
   kind:
     | 'stale-citation'
     | 'orphan-claim'
-    | 'god-node-facet'
+    | 'god-node-referent'
     | 'merge-candidate'
     | 'undiscriminated-range'
     | 'occasionless-range'

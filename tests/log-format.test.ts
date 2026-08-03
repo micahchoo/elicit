@@ -223,8 +223,8 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  // emitter writes, so they pass through verbatim rather than being reworded.
  {
   kind: 'shadow-decision',
-  detail: 'mode=shadow threshold=lint.godNodeFanout value=6 would=note god-node on facet=value claims=9 over fanout=6',
-  reads: 'did not act on lint.godNodeFanout, set to 6 — it would note god-node on facet=value claims=9 over fanout=6',
+  detail: 'mode=shadow threshold=lint.godNodeFanout value=6 would=note god-node on referent=archie claims=9 over fanout=6',
+  reads: 'did not act on lint.godNodeFanout, set to 6 — it would note god-node on referent=archie claims=9 over fanout=6',
  },
  {
   kind: 'threshold-clipped',

@@ -91,7 +91,7 @@ export function facetHeading(f: Facet): string {
 const LINT_NOTES: Record<LintFinding['kind'], string> = {
  'stale-citation': 'the words behind this were written again since',
  'orphan-claim': 'nothing in the vault stands behind this any more',
- 'god-node-facet': 'this section has grown large enough to be worth dividing',
+ 'god-node-referent': 'one name now carries many claims',
  'merge-candidate': 'two names here may turn out to be one',
  'undiscriminated-range': 'two descriptions here may be one situation with a boundary not yet drawn',
  'occasionless-range': 'this holds everywhere, and nowhere in particular',

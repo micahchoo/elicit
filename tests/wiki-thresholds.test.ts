@@ -28,7 +28,7 @@ describe('shadowDecision (Q-35)', () => {
     const t = THRESHOLDS['lint.godNodeFanout'];
     const { events, log } = collector();
 
-    const acted = shadowDecision(t, 'note god-node on facet=construct', log);
+    const acted = shadowDecision(t, 'note god-node on referent=archie', log);
 
     expect(acted).toBe(false);
     expect(events).toHaveLength(1);
@@ -36,7 +36,7 @@ describe('shadowDecision (Q-35)', () => {
     expect(e.kind).toBe('shadow-decision');
     expect(e.actor).toBe('clerk');
     expect(e.detail).toContain('lint.godNodeFanout');
-    expect(e.detail).toContain('note god-node on facet=construct');
+    expect(e.detail).toContain('note god-node on referent=archie');
     expect(Number.isNaN(Date.parse(e.at))).toBe(false);
   });
 

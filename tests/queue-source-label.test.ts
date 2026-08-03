@@ -26,7 +26,7 @@ const SOURCES: QueueEntry['source'][] = [
 const LINT_KINDS: LintFinding['kind'][] = [
  'stale-citation',
  'orphan-claim',
- 'god-node-facet',
+ 'god-node-referent',
  'merge-candidate',
  'undiscriminated-range',
 ];
@@ -161,7 +161,7 @@ describe('lintNote', () => {
   const missing: Record<LintFinding['kind'], string> = {
    'stale-citation': 'a',
    'orphan-claim': 'b',
-   'god-node-facet': 'c',
+   'god-node-referent': 'c',
   };
   expect(Object.keys(missing)).toHaveLength(3);
  });

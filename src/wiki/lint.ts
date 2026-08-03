@@ -203,7 +203,15 @@ function citationFindings(
 }
 
 /**
- * `god-node-facet` — a facet carrying more claims than the fanout.
+ * `god-node-referent` — a registry referent named by more live claims than
+ * the fanout.
+ *
+ * Scoped to referents (ticket 089): a god-node is one registry entity named
+ * by many claims — the node-dominance hazard REFERENT_FANOUT_CAP bounds
+ * quadratically in src/wiki/clash.ts. The facet reading was dropped because it
+ * measured corpus size, not fan-out: facets are a closed vocabulary of eight,
+ * so the count on facet=fact climbed 15→49 as the corpus grew. A category
+ * with many members is not a god-node.
  *
  * Shadowed (Q-35): a fanout note that fires because the wiki is young says
  * nothing about the wiki, so the shadow record has to show it firing on a real
@@ -222,28 +230,32 @@ function godNodeFindings(
   // one is a count; anything else is not a fanout and is not acted on.
   if (typeof t.value !== 'number') return [];
 
-  const byFacet = new Map<Facet, string[]>();
+  const byReferent = new Map<string, string[]>();
   for (const c of graph.claims) {
     if (!isLive(c)) continue;
-    const ids = byFacet.get(c.facet);
-    if (ids) ids.push(c.id);
-    else byFacet.set(c.facet, [c.id]);
+    // Dedupe within the claim: a claim naming two referents contributes to
+    // both counts. A claim with no referents names no node and is no fan-out.
+    for (const slug of new Set(c.referents)) {
+      const ids = byReferent.get(slug);
+      if (ids) ids.push(c.id);
+      else byReferent.set(slug, [c.id]);
+    }
   }
 
   const findings: LintFinding[] = [];
   // Sorted, so the finding order does not depend on which claim happened to be
   // written first — the determinism invariant is about the whole return value.
-  for (const facet of [...byFacet.keys()].sort()) {
-    const ids = byFacet.get(facet) ?? [];
+  for (const slug of [...byReferent.keys()].sort()) {
+    const ids = byReferent.get(slug) ?? [];
     if (ids.length <= t.value) continue;
 
-    const would = `note god-node on facet=${facet} claims=${ids.length} over fanout=${t.value}`;
+    const would = `note god-node on referent=${slug} claims=${ids.length} over fanout=${t.value}`;
     if (!shadowDecision(t, would, log)) continue;
 
     findings.push({
-      kind: 'god-node-facet',
-      subject: facet,
-      detail: `${ids.length} live claims carry the ${facet} facet, over a fanout of ${t.value}`,
+      kind: 'god-node-referent',
+      subject: slug,
+      detail: `${ids.length} live claims name the ${slug} referent, over a fanout of ${t.value}`,
       refs: ids,
     });
   }

@@ -96,7 +96,7 @@ export const THRESHOLDS = {
   value: 12,
   live: false,
   graduatesWhen:
-   'The shadow record shows the note would fire on a real corpus, not only on a small one. A fanout note that fires because the wiki is young says nothing about the wiki.',
+   'Scoped to referents (ticket 089): a god-node is one registry entity named by many live claims — the node-dominance hazard REFERENT_FANOUT_CAP bounds quadratically in src/wiki/clash.ts. The facet reading was dropped because it measured corpus size, not fan-out: facets are a closed vocabulary of eight and the count on facet=fact climbed 15→49 as the corpus grew. A category with many members is not a god-node.',
  },
  'registry.mergeCandidateSimilarity': {
   name: 'registry.mergeCandidateSimilarity',
@@ -177,7 +177,7 @@ export type ThresholdName = keyof typeof THRESHOLDS;
  * true means the caller is licensed to act, false means it must not.
  *
  * ```
- * if (shadowDecision(THRESHOLDS['lint.godNodeFanout'], 'note god-node on facet=value', log)) {
+ * if (shadowDecision(THRESHOLDS['lint.godNodeFanout'], 'note god-node on referent=archie', log)) {
  *   …act…
  * }
  * ```
