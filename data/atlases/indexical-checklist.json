@@ -1,0 +1,48 @@
+{
+  "instrument": "indexical-checklist",
+  "label": "Indexical Checklist",
+  "description": "A deliberately crude map of what a life contains — the brute categories an interviewer checks to avoid leaving whole regions of the self unasked.",
+  "quarrelsWith": ["life-story-chapters"],
+  "provenance": {
+    "generator": "hand-authored-seed",
+    "generatedAt": "2026-08-03T00:00:00Z",
+    "instrument": "indexical-checklist"
+  },
+  "regions": [
+    {
+      "id": "indexical-checklist.people",
+      "label": "People",
+      "oneLine": "the people in your life — family, friends, mentors, the ones you've lost"
+    },
+    {
+      "id": "indexical-checklist.places",
+      "label": "Places Lived",
+      "oneLine": "the places you've lived and what each one meant"
+    },
+    {
+      "id": "indexical-checklist.body",
+      "label": "The Body",
+      "oneLine": "your relationship with your body — health, movement, illness, aging"
+    },
+    {
+      "id": "indexical-checklist.money",
+      "label": "Money",
+      "oneLine": "money in your life — earning, spending, saving, what it means to you"
+    },
+    {
+      "id": "indexical-checklist.obligations",
+      "label": "Obligations",
+      "oneLine": "the obligations you carry — the ones you chose and the ones you didn't"
+    },
+    {
+      "id": "indexical-checklist.dead",
+      "label": "The Dead",
+      "oneLine": "the people you've lost and how they stay present"
+    },
+    {
+      "id": "indexical-checklist.future",
+      "label": "The Future",
+      "oneLine": "what you see ahead — the shape of it, the fears, the things you're building toward"
+    }
+  ]
+}

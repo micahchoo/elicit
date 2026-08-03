@@ -1,0 +1,38 @@
+{
+  "instrument": "life-story-chapters",
+  "label": "Life-Story Chapters",
+  "description": "The narrative arc a person tells about their life — a few chapters that together form the story, deliberately quarreling with the indexical checklist's refusal to narrativize.",
+  "quarrelsWith": ["indexical-checklist", "time-use-grid"],
+  "provenance": {
+    "generator": "hand-authored-seed",
+    "generatedAt": "2026-08-03T00:00:00Z",
+    "instrument": "life-story-chapters"
+  },
+  "regions": [
+    {
+      "id": "life-story-chapters.high-point",
+      "label": "High Point",
+      "oneLine": "a high point in your life — a scene or season when things were at their best"
+    },
+    {
+      "id": "life-story-chapters.low-point",
+      "label": "Low Point",
+      "oneLine": "a low point — the hardest stretch you've come through"
+    },
+    {
+      "id": "life-story-chapters.turning-point",
+      "label": "Turning Point",
+      "oneLine": "a turning point — a moment or decision after which things were different"
+    },
+    {
+      "id": "life-story-chapters.earliest-memory",
+      "label": "Earliest Memory",
+      "oneLine": "your earliest memory — the first scene you can still see"
+    },
+    {
+      "id": "life-story-chapters.future-script",
+      "label": "Future Script",
+      "oneLine": "the chapter you haven't written yet — how you imagine the next part going"
+    }
+  ]
+}

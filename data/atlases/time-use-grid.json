@@ -1,0 +1,43 @@
+{
+  "instrument": "time-use-grid",
+  "label": "Time-Use Grid",
+  "description": "Where the hours go — a different grain from both the checklist and the narrative arc, deliberately quarreling with the idea that a life is best seen through episodes.",
+  "quarrelsWith": ["life-story-chapters"],
+  "provenance": {
+    "generator": "hand-authored-seed",
+    "generatedAt": "2026-08-03T00:00:00Z",
+    "instrument": "time-use-grid"
+  },
+  "regions": [
+    {
+      "id": "time-use-grid.morning",
+      "label": "Morning",
+      "oneLine": "how your mornings unfold — the first hour, the rhythm, what sets the tone"
+    },
+    {
+      "id": "time-use-grid.work-block",
+      "label": "Work Block",
+      "oneLine": "the core work hours — what focus looks like, what breaks it, what sustains it"
+    },
+    {
+      "id": "time-use-grid.evening",
+      "label": "Evening",
+      "oneLine": "how your evenings wind down — the border between work and rest"
+    },
+    {
+      "id": "time-use-grid.week-shape",
+      "label": "Week Shape",
+      "oneLine": "the shape of a week — which days feel different, where the seams are"
+    },
+    {
+      "id": "time-use-grid.season-patterns",
+      "label": "Season Patterns",
+      "oneLine": "how your rhythms shift with seasons — winter and summer selves"
+    },
+    {
+      "id": "time-use-grid.lost-time",
+      "label": "Lost Time",
+      "oneLine": "the time that disappears — what you reach the end of a day having not done"
+    }
+  ]
+}
