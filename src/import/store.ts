@@ -44,16 +44,16 @@ export type ImportStore = {
    * including refusals, because a second sitting with no `lastmod` is refused
    * here rather than at scan time, where the accepted records are not visible.
    */
-  admit(items: ScannedItem[]): AdmitResult;
+  admit(items: ScannedItem[], region?: string): AdmitResult;
   knows(hash: string): boolean;
   get(hash: string): ImportRecord | null;
   /** The prepared prose fed to the harvester. Body of the record file. */
   prepared(hash: string): string;
   put(record: ImportRecord, prepared?: string): void;
-  list(status?: ImportStatus): ImportRecord[];
+  list(status?: ImportStatus, region?: string): ImportRecord[];
   /** Oldest-first by date, so a corpus imports in the order it was written. */
-  nextExtracted(): ImportRecord | null;
-  nextPending(): ImportRecord | null;
+  nextExtracted(region?: string): ImportRecord | null;
+  nextPending(region?: string): ImportRecord | null;
 };
 
 export function createImportStore(vaultRoot: string): ImportStore {
@@ -77,6 +77,7 @@ export function createImportStore(vaultRoot: string): ImportStore {
       hash: record.hash,
       sourcePath: record.sourcePath,
       date: record.date,
+      ...(record.region !== undefined ? { region: record.region } : {}),
       ...(record.lastmod !== undefined ? { lastmod: record.lastmod } : {}),
       ...(record.title !== undefined ? { title: record.title } : {}),
       status: record.status,
@@ -90,13 +91,14 @@ export function createImportStore(vaultRoot: string): ImportStore {
     writeFileSync(fileFor(record.hash), matter.stringify(body, fm), 'utf-8');
   };
 
-  const list = (status?: ImportStatus): ImportRecord[] => {
+  const list = (status?: ImportStatus, region?: string): ImportRecord[] => {
     if (!existsSync(importsDir)) return [];
     const records = readdirSync(importsDir)
       .filter((f) => f.endsWith('.md'))
       .map((f) => readRecord(f.slice(0, -3)))
       .filter((r): r is ImportRecord => r !== null);
-    return status === undefined ? records : records.filter((r) => r.status === status);
+    const byStatus = status === undefined ? records : records.filter((r) => r.status === status);
+    return region === undefined ? byStatus : byStatus.filter((r) => r.region === region);
   };
 
   const knows = (hash: string): boolean => existsSync(fileFor(hash));
@@ -114,7 +116,7 @@ export function createImportStore(vaultRoot: string): ImportStore {
   const put = (record: ImportRecord, prepared: string = ''): void =>
     writeRecord(record, prepared);
 
-  const admit = (scanned: ScannedItem[]): AdmitResult => {
+  const admit = (scanned: ScannedItem[], region?: string): AdmitResult => {
     const added: string[] = [];
     const skipped: string[] = [];
     const refused: { sourcePath: string; reason: RefusalReason }[] = [];
@@ -145,6 +147,7 @@ export function createImportStore(vaultRoot: string): ImportStore {
             sourcePath: item.sourcePath,
             date: item.lastmod,
             lastmod: item.lastmod,
+            ...(region !== undefined ? { region } : {}),
             ...(item.title !== undefined ? { title: item.title } : {}),
             status: 'pending',
             attempts: 0,
@@ -159,6 +162,7 @@ export function createImportStore(vaultRoot: string): ImportStore {
           hash: item.hash,
           sourcePath: item.sourcePath,
           date: item.date,
+          ...(region !== undefined ? { region } : {}),
           ...(item.lastmod !== undefined ? { lastmod: item.lastmod } : {}),
           ...(item.title !== undefined ? { title: item.title } : {}),
           status: 'pending',
@@ -171,15 +175,15 @@ export function createImportStore(vaultRoot: string): ImportStore {
     return { added, skipped, refused };
   };
 
-  const nextByDate = (status: ImportStatus): ImportRecord | null => {
-    const records = list(status);
+  const nextByDate = (status: ImportStatus, region?: string): ImportRecord | null => {
+    const records = list(status, region);
     if (records.length === 0) return null;
     // ISO days sort lexicographically, so ascending date = oldest first.
     return records.slice().sort((a, b) => a.date.localeCompare(b.date))[0]!;
   };
 
-  const nextExtracted = (): ImportRecord | null => nextByDate('extracted');
-  const nextPending = (): ImportRecord | null => nextByDate('pending');
+  const nextExtracted = (region?: string): ImportRecord | null => nextByDate('extracted', region);
+  const nextPending = (region?: string): ImportRecord | null => nextByDate('pending', region);
 
   return { admit, knows, get, prepared, put, list, nextExtracted, nextPending };
 }

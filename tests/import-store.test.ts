@@ -119,4 +119,38 @@ describe('import store (staging)', () => {
     expect(store.nextExtracted()!.hash).toBe('aaaaaaaaaaaa');
     expect(store.nextPending()!.hash).toBe('bbbbbbbbbbbb');
   });
+
+  it('stamps the region on every admitted record', () => {
+    store.admit([items[0]!], 'journals-ab12cd');
+    expect(store.get(items[0]!.hash)!.region).toBe('journals-ab12cd');
+  });
+
+  it('hands the review only items from the chosen region', () => {
+    store.admit([items[0]!], 'journals-ab12cd');
+    store.admit([items[1]!], 'talks-99ffee');
+    store.put({ ...store.get(items[0]!.hash)!, status: 'extracted' });
+    store.put({ ...store.get(items[1]!.hash)!, status: 'extracted' });
+    expect(store.nextExtracted('journals-ab12cd')!.hash).toBe(items[0]!.hash);
+    expect(store.nextExtracted('talks-99ffee')!.hash).toBe(items[1]!.hash);
+  });
+
+  it('never hands a region filter an item that has no region', () => {
+    store.admit([items[2]!]); // the adopted-posts shape: no region at all
+    store.put({ ...store.get(items[2]!.hash)!, status: 'extracted' });
+    expect(store.nextExtracted('journals-ab12cd')).toBeNull();
+    expect(store.nextExtracted()!.hash).toBe(items[2]!.hash); // unfiltered still sees it
+  });
+
+  it('keeps oldest-first inside a region', () => {
+    store.admit([items[0]!], 'journals-ab12cd');
+    store.admit([items[1]!], 'journals-ab12cd');
+    store.put({ ...store.get(items[0]!.hash)!, status: 'extracted' });
+    store.put({ ...store.get(items[1]!.hash)!, status: 'extracted' });
+    expect(store.nextExtracted('journals-ab12cd')!.hash).toBe(items[1]!.hash);
+  });
+
+  it('round-trips region through a fresh store', () => {
+    store.admit([items[0]!], 'journals-ab12cd');
+    expect(createImportStore(root).get(items[0]!.hash)!.region).toBe('journals-ab12cd');
+  });
 });
