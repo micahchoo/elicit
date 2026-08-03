@@ -272,6 +272,13 @@ function validate(
       // a reading, which is exactly what it is not for.
       const reading = graph.readings[readingId];
       if (!reading) return reject(`reading-not-in-graph:${readingId}`, readingId);
+      // Q-84: role-taking snippets never evidence claims about the named other.
+      if (reading.stance === 'role-taking') {
+        const body = (rec['body'] as string).trim();
+        if (/^The user (is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
+          return reject('role-taking-cannot-evidence-self-trait', readingId);
+        }
+      }
       return {
         ok: true,
         op: {
@@ -366,6 +373,15 @@ function validate(
       if (!cites || cites.length === 0) return reject('cites-empty', readingId);
       const bad = unresolvedCite(cites, graph);
       if (bad) return reject(`cite-does-not-resolve:${bad}`, readingId);
+      const reading = graph.readings[readingId];
+      if (!reading) return reject(`reading-not-in-graph:${readingId}`, readingId);
+      // Q-84: role-taking snippets never evidence claims about the named other.
+      if (reading.stance === 'role-taking') {
+        const body = (rec['body'] as string).trim();
+        if (/^The user (is|was|has|does|feels|will|can|should|would|might|seems|appears)\b/.test(body)) {
+          return reject('role-taking-cannot-evidence-self-trait', readingId);
+        }
+      }
       // 8. The reason cannot be forgotten, only badly chosen.
       const reason = filled(rec['reason']);
       if (!reason) return reject('reason-missing', readingId);

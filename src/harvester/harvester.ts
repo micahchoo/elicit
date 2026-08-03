@@ -22,7 +22,7 @@ const FACETS: ReadonlySet<string> = new Set<Facet>([
 
 const STANCES: ReadonlySet<string> = new Set<Stance>([
  'avowal', 'self-observation', 'report-of-fact', 'pole-preference',
- 'commitment', 'uncertainty-marked', 'superseded',
+ 'commitment', 'uncertainty-marked', 'superseded', 'role-taking',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -133,6 +133,7 @@ stance — how the person holds it:
 - "commitment" — bound to a future action.
 - "uncertainty-marked" — the person marks their own confidence as low.
 - "superseded" — a position named as no longer held. Any of "I used to think", "I no longer", "not any more", "at the time I thought", "I was wrong about", "I understand now", "I have since" forces this stance, whatever else the sentence does.
+- "role-taking" — the person is writing AS their model of a named other; evidence of their model of the other, never of the other.
 
 Do not fabricate text. Every "text" must be an exact substring of the <snippet> block.
 Return ONLY valid JSON. No markdown fences. No commentary.`;
