@@ -24,6 +24,11 @@ export interface ProtocolDef {
   * Defaults to true; set false for user-declared-only instruments (Q-85).
   */
  rotation?: boolean;
+ /**
+  * Presentation hint for the sitting screen renderer (Q-84): how the
+  * protocol's elements should be laid out (e.g. 'triadic').
+  */
+ presentation?: string;
 }
 
 /**
@@ -81,6 +86,8 @@ function loadFromDisk(): Map<string, ProtocolDef> {
    typeof data.floorProbe === 'string' && data.floorProbe.trim().length > 0
     ? data.floorProbe.trim()
     : DEFAULT_FLOOR_PROBE;
+  const presentation =
+   typeof data.presentation === 'string' ? data.presentation : undefined;
   const def: ProtocolDef = {
    name,
    targets: parseTargets(data.targets),
@@ -90,6 +97,7 @@ function loadFromDisk(): Map<string, ProtocolDef> {
    floorProbe,
    // rotation defaults to true; false for user-declared-only instruments (Q-85)
    rotation: data.rotation !== false,
+   ...(presentation !== undefined ? { presentation } : {}),
   };
 
   if (def.name.length > 0) {
