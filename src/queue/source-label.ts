@@ -68,7 +68,7 @@ export function sourceLabel(s: QueueEntry['source']): string {
  * A facet as a section heading on the wiki.
  *
  * `docs/interface-references.md` makes facets the headings of the essay, and
- * three of the eight literals are hyphenated slugs. Each heading here is that
+ * six of the twelve literals are hyphenated slugs. Each heading here is that
  * facet's own definition from the harvest prompt (`src/harvester/harvester.ts`)
  * said in a reader's words, so the two cannot drift into different meanings.
  */

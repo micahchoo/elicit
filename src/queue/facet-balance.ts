@@ -38,7 +38,9 @@ export const FACETS: readonly Facet[] = [
  * exceed by crowding something out, which is precisely what it did.
  *
  * PROVISIONAL (Q-35): these weights are a hypothesis about a good corpus, not
- * a measurement. They graduate with the filter.
+ * a measurement. They graduate with the filter. The four craft facets
+ * (know-what, know-how, habit, know-why) entered at the floor (0.02) — a
+ * small claim, tuned up as the filter graduates.
  */
 export const BLUEPRINT: Record<Facet, number> = {
   episode: 0.3,
