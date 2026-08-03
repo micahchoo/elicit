@@ -631,6 +631,20 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
  if (f.surface === 'composed-question') return 'surfaced a snippet quoted in a composed question';
  return 'surfaced a claim or snippet';
 },
+
+// ── The piece routes (T6): compose, gap, set down, export ──
+
+'piece-started': (f) => `started a piece from ${count(num(f, 'snippets'), 'snippet')}`,
+'piece-prose-kept': (f) =>
+ `kept a paragraph written in a piece (${count(num(f, 'chars'), 'character')})`,
+'gap-inserted': () => 'inserted a gap into a piece',
+'gap-question-minted': (f) =>
+ `minted the gap's question (${count(num(f, 'chars'), 'character')}) into the queue`,
+'gap-cleared': () => 'cleared a gap by pinning its answer into the piece',
+'piece-exported': (f) =>
+ `exported a piece with ${count(num(f, 'paragraphs'), 'paragraph')}`,
+'piece-set-down': () => 'set the piece down',
+'piece-picked-up': () => 'picked the piece up again',
 };
 
 /**

@@ -30,6 +30,10 @@ import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
 import { createImportStore } from './import/store.js';
+import { chronological } from './piece/arrange.js';
+import { createPieceStore } from './piece/store.js';
+import { toMarkdown } from './piece/export.js';
+import type { Arrangement, ArrangementEntry, Gap, Piece } from './piece/contract.js';
 import { runImportExtraction } from './import/extract.js';
 import { scanFolder, bodyHash, type ScanResult } from './import/scan.js';
 import { adoptPriorIngest, type AdoptResult } from './import/adopt.js';
@@ -81,6 +85,7 @@ import type {
  LexicalIndex,
  DocketReport,
  QueueEntry,
+ Snippet,
  Turn,
  Target,
 } from './types.js';
@@ -333,6 +338,22 @@ function sessionStartedAt(root: string, sessionId: string): string {
  const started = matter(readFileSync(file, 'utf-8')).data.started;
  return typeof started === 'string' ? started : new Date().toISOString();
 }
+
+/**
+ * One snippet version's prose, by path. Older versions stay on disk (Q-5).
+ *
+ * `rebuildIndex()` reads only the newest `v<N>.md` per snippet and returns
+ * one Snippet per id, so it cannot answer a pin to an old version — and the
+ * pinned-version invariant is the highest-value line in the slice (Q-5,
+ * Q-39). This reads the file the pin names, by a path it already knows.
+ * `.trimEnd()` matches what `rebuildIndex` does, so a pin at the current
+ * version resolves byte-identically through either path.
+ */
+function readVersion(root: string, snippetId: string, version: number): string | null {
+ try {
+  return matter.read(join(root, 'snippets', snippetId, `v${version}.md`)).content.trimEnd();
+ } catch { return null; }
+}
 // ── Marks for the review surface (T9) ──
 
 /**
@@ -423,6 +444,10 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
 // The staging store the docket's extraction job reads: unreviewed files
 // live here until the run before the person sits down (T6).
 const importStore = createImportStore(deps.vaultRoot);
+
+// The PieceStore the piece routes write through (T6) — one binding shared
+// with T10's docket thunks. Every write passes the five guards.
+const pieces = createPieceStore(deps.vaultRoot);
 
  // ── The Clerk's wiki work, constructed once (Q-22) ──
  //
@@ -1624,9 +1649,337 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   const duration = Math.round(performance.now() - start);
   const chars = text.length;
 
-  serverEmit(deps.vaultRoot, 'system', 'transcribed', `${duration}ms ${chars}chars`);
+ serverEmit(deps.vaultRoot, 'system', 'transcribed', `${duration}ms ${chars}chars`);
 
-  return c.json({ text });
+ return c.json({ text });
+ });
+
+ // ── The piece routes (T6): compose, gap, set down, export ──
+ //
+ // Pass 1's verbs, behind the auth gate. Two invariants carry the slice:
+ // writing prose in a Piece creates a composition Snippet (Q-40), and
+ // inserting a Gap mints exactly ONE queued question (Q-39) — unless the
+ // Piece is set down, in which case the Gap is inserted and nothing is
+ // minted (Q-41). The enriched piece below is the surface T7 renders and
+ // T8 drives; every mutating route returns it directly, unwrapped.
+
+ /** The sitting `started` of one session, or null when no transcript exists (Q-59). */
+ const startedOfSession = (session: string): string | null =>
+  listSessions(deps.vaultRoot).find((s) => s.session === session)?.started ?? null;
+
+ /** One entry as the surface sees it: pins carry pinned prose and a sitting date; gaps carry their offers. */
+ function enrichEntry(entry: ArrangementEntry, snippets: Record<string, Snippet>): unknown {
+  if (entry.kind === 'pin') {
+   return {
+    ...entry,
+    prose: readVersion(deps.vaultRoot, entry.snippet, entry.version),
+    sittingDate: startedOfSession(snippets[entry.snippet]?.provenance.session ?? ''),
+   };
+  }
+  return {
+   ...entry,
+   question: entry.question ?? null,
+   pending: entry.pending ?? null,
+   // The exact join T1 threaded: every Snippet whose provenance names THIS
+   // gap's id. No scoring, no ranking — the client never searches (Q-39).
+   offers: Object.values(snippets).filter((s) => s.provenance.gap === entry.id),
+  };
+ }
+
+ function enrichArrangement(a: Arrangement): unknown {
+  const snippets = deps.vault.rebuildIndex().snippets;
+  return {
+   id: a.id,
+   principle: a.principle,
+   created: a.created,
+   model: a.model ?? null,
+   entries: a.entries.map((e) => enrichEntry(e, snippets)),
+   marginalia: a.marginalia.map((m) => ({ ...m, model: m.model ?? null })),
+  };
+ }
+
+ /** setDownAt/setDownBy are null in JSON when absent — never a missing key. */
+ function enrichPiece(p: Piece): unknown {
+  return {
+   id: p.id,
+   created: p.created,
+   current: p.current,
+   setDownAt: p.setDownAt ?? null,
+   setDownBy: p.setDownBy ?? null,
+   arrangements: p.arrangements.map(enrichArrangement),
+  };
+ }
+
+ /** The index to insert at: after the named entry, or the end. -1 when the anchor is unknown. */
+ const insertionIndex = (entries: ArrangementEntry[], after?: string): number => {
+  if (after === undefined) return entries.length;
+  const at = entries.findIndex((e) => e.id === after);
+  return at === -1 ? -1 : at + 1;
+ };
+
+ // POST /api/piece { snippets: string[] } — the pass-1 start: every chosen
+ // snippet pinned in sitting order (chronological, Q-59).
+ app.post('/api/piece', async (c) => {
+  const body = await c.req.json<{ snippets: string[] }>();
+  if (!Array.isArray(body.snippets)) return c.json({ error: 'snippets are required' }, 400);
+  const snippets = deps.vault.rebuildIndex().snippets;
+  const chosen = body.snippets
+   .map((id) => snippets[id])
+   .filter((s): s is Snippet => s !== undefined);
+  if (chosen.length !== body.snippets.length) {
+   return c.json({ error: 'unknown snippet id' }, 400);
+  }
+  const pins = chronological(chosen, startedOfSession);
+  const piece = pieces.create(pins);
+  serverEmit(deps.vaultRoot, 'clerk', 'piece-started', `snippets=${pins.length}`);
+  return c.json(enrichPiece(piece));
+ });
+
+ // GET /api/pieces — every piece with its current arrangement, for the chooser.
+ app.get('/api/pieces', (c) => {
+  const list = pieces.list().map((p) => {
+   const current = p.arrangements.find((a) => a.id === p.current) ?? p.arrangements[0];
+   return {
+    id: p.id,
+    created: p.created,
+    current: p.current,
+    setDownAt: p.setDownAt ?? null,
+    setDownBy: p.setDownBy ?? null,
+    arrangement: current === undefined ? null : enrichArrangement(current),
+   };
+  });
+  return c.json({ pieces: list });
+ });
+
+ // GET /api/piece/:id — one piece: entries in order, each pin resolved to
+ // its PINNED version's prose and its sitting date, plus Marginalia.
+ app.get('/api/piece/:id', (c) => {
+  const piece = pieces.get(c.req.param('id'));
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  return c.json(enrichPiece(piece));
+ });
+
+ // POST /api/piece/:id/reorder — a permutation of the on-disk entry ids, or
+ // 400: a reorder that adds or drops is not a reorder.
+ app.post('/api/piece/:id/reorder', async (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const body = await c.req.json<{ arrangement: string; entries: string[] }>();
+  const a = piece.arrangements.find((x) => x.id === body.arrangement);
+  if (!a) return c.json({ error: 'unknown arrangement' }, 400);
+  if (!Array.isArray(body.entries)) return c.json({ error: 'entries are required' }, 400);
+  const onDisk = a.entries.map((e) => e.id).sort();
+  const proposed = [...body.entries].sort();
+  if (onDisk.length !== proposed.length || onDisk.some((id, i) => id !== proposed[i])) {
+   return c.json({ error: "reorder must be a permutation of the arrangement's entries" }, 400);
+  }
+  const byId = new Map(a.entries.map((e) => [e.id, e]));
+  const entries = body.entries.map((id) => byId.get(id)!);
+  const updated = pieces.putArrangement(pieceId, { ...a, entries });
+  return c.json(enrichPiece(updated));
+ });
+
+ // POST /api/piece/:id/remove — the arrangement without one entry. A removed
+ // gap's question is LEFT in the Queue to expire on the normal rule (Q-41):
+ // there is no retract verb anywhere in this design and this slice does not
+ // invent one.
+ app.post('/api/piece/:id/remove', async (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const body = await c.req.json<{ arrangement: string; entry: string }>();
+  const a = piece.arrangements.find((x) => x.id === body.arrangement);
+  if (!a) return c.json({ error: 'unknown arrangement' }, 400);
+  if (!a.entries.some((e) => e.id === body.entry)) {
+   return c.json({ error: 'no such entry' }, 400);
+  }
+  const updated = pieces.putArrangement(pieceId, {
+   ...a,
+   entries: a.entries.filter((e) => e.id !== body.entry),
+  });
+  return c.json(enrichPiece(updated));
+ });
+
+ // POST /api/piece/:id/prose — the Q-40 path. The person's words become a
+ // composition Snippet in their own sitting (Q-50), pinned at v1. No model,
+ // no proposal, no substring check — one paragraph in, one Snippet out.
+ app.post('/api/piece/:id/prose', async (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const body = await c.req.json<{ arrangement: string; text: string; after?: string }>();
+  if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
+   return c.json({ error: 'text is required' }, 400);
+  }
+  const a = piece.arrangements.find((x) => x.id === body.arrangement);
+  if (!a) return c.json({ error: 'unknown arrangement' }, 400);
+  const at = insertionIndex(a.entries, body.after);
+  if (at === -1) return c.json({ error: 'no such entry' }, 400);
+
+  const text = body.text.trim();
+  const sessionId = ulid();
+  const atTime = new Date().toISOString();
+  // A composition act is its own sitting (Q-50): its cites are independent
+  // of the sittings that produced the paragraphs around it.
+  deps.vault.startTranscript(sessionId, {
+   mode: { minutes: 0, energy: 'medium', target: 'self' },
+   protocol: 'composition',
+   started: atTime,
+  });
+  deps.vault.appendTurn(sessionId, { role: 'user', text, at: atTime });
+  // `question` is the empty string exactly as the unprompted path uses it:
+  // nothing asked for these words. NO reading is written — the known hole
+  // ticket 081 tracks.
+  const s = deps.vault.saveSnippet(text, {
+   kind: 'composition',
+   session: sessionId,
+   question: '',
+   questionForm: 'deliberative',
+   piece: pieceId,
+  });
+
+  const pin: ArrangementEntry = { id: ulid(), kind: 'pin', snippet: s.id, version: 1 };
+  const entries: ArrangementEntry[] = [
+   ...a.entries.slice(0, at),
+   pin,
+   ...a.entries.slice(at),
+  ];
+  const updated = pieces.putArrangement(pieceId, { ...a, entries });
+
+  // Never log the text — only how much of it there was.
+  serverEmit(deps.vaultRoot, 'clerk', 'piece-prose-kept', `piece=${pieceId} chars=${text.length}`);
+  return c.json(enrichPiece(updated));
+ });
+
+ // POST /api/piece/:id/gap — the Q-39 path. `gap` is a client-minted ULID
+ // and the route is idempotent on it: a retried POST mints nothing.
+ app.post('/api/piece/:id/gap', async (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const body = await c.req.json<{ arrangement: string; gap: string; after?: string; question?: string }>();
+  const a = piece.arrangements.find((x) => x.id === body.arrangement);
+  if (!a) return c.json({ error: 'unknown arrangement' }, 400);
+  if (typeof body.gap !== 'string' || body.gap.length === 0) {
+   return c.json({ error: 'gap id is required' }, 400);
+  }
+  // Idempotency FIRST: the same request arriving twice is the same gap —
+  // mint nothing, insert nothing, return the Piece unchanged (200).
+  if (a.entries.some((e) => e.id === body.gap)) {
+   return c.json(enrichPiece(piece));
+  }
+  const at = insertionIndex(a.entries, body.after);
+  if (at === -1) return c.json({ error: 'no such entry' }, 400);
+
+  const gapEntry: Gap = { id: body.gap, kind: 'gap' };
+  let entries: ArrangementEntry[];
+  if (piece.setDownAt !== undefined) {
+   // Set down: the Gap exists, the Arrangement is editable, and nothing is
+   // minted (Q-41).
+   entries = [...a.entries.slice(0, at), gapEntry, ...a.entries.slice(at)];
+   const updated = pieces.putArrangement(pieceId, { ...a, entries });
+   serverEmit(deps.vaultRoot, 'clerk', 'gap-inserted', `piece=${pieceId} gap=${body.gap}`);
+   return c.json(enrichPiece(updated));
+  }
+  if (!body.question || typeof body.question !== 'string' || body.question.trim().length === 0) {
+   return c.json({ error: 'question is required' }, 400);
+  }
+  const question = body.question.trim();
+  // Exactly ONE QueueEntry — the only mint path in this slice. No target,
+  // no topic, no targetFacet: absent is not a guess (Q-60). The person's
+  // own words, so the composed-question quote gate does not apply (Q-12).
+  const entry = deps.queue.add({
+   source: 'gap-declared',
+   license: 'arrangement-gap',
+   question,
+   questionForm: 'deliberative',
+   sharpness: 'weak',
+   horizon: 'session',
+   gap: body.gap,
+  });
+  const minted: Gap = { id: body.gap, kind: 'gap', question: entry.id };
+  entries = [...a.entries.slice(0, at), minted, ...a.entries.slice(at)];
+  const updated = pieces.putArrangement(pieceId, { ...a, entries });
+  serverEmit(deps.vaultRoot, 'clerk', 'gap-inserted', `piece=${pieceId} gap=${body.gap}`);
+  serverEmit(deps.vaultRoot, 'clerk', 'gap-question-minted', `chars=${question.length}`);
+  return c.json(enrichPiece(updated));
+ });
+
+ // POST /api/piece/:id/gap/accept — how a Gap clears (Q-39). The body names
+ // a snippet; the route verifies that snippet's provenance names THIS gap
+ // (the link the person's own answer created) and rewrites the Arrangement
+ // with a Pin in the gap's position. Never auto-placed: nothing places
+ // without this POST, and the POST is the person's.
+ app.post('/api/piece/:id/gap/accept', async (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const body = await c.req.json<{ arrangement: string; gap: string; snippet: string; version: number }>();
+  const a = piece.arrangements.find((x) => x.id === body.arrangement);
+  if (!a) return c.json({ error: 'unknown arrangement' }, 400);
+  const at = a.entries.findIndex((e) => e.id === body.gap);
+  if (at === -1) return c.json({ error: 'no such gap' }, 400);
+  if (a.entries[at]!.kind !== 'gap') return c.json({ error: 'not a gap' }, 400);
+
+  const snippet = deps.vault.rebuildIndex().snippets[body.snippet];
+  if (!snippet) return c.json({ error: 'unknown snippet' }, 400);
+  // The route can only complete a link the person's own answer created.
+  if (snippet.provenance.gap !== body.gap) {
+   return c.json({ error: 'snippet did not answer this gap' }, 400);
+  }
+  if (readVersion(deps.vaultRoot, body.snippet, body.version) === null) {
+   return c.json({ error: 'version does not resolve' }, 400);
+  }
+
+  const pin: ArrangementEntry = { id: ulid(), kind: 'pin', snippet: body.snippet, version: body.version };
+  const entries: ArrangementEntry[] = [...a.entries.slice(0, at), pin, ...a.entries.slice(at + 1)];
+  const updated = pieces.putArrangement(pieceId, { ...a, entries });
+  // The gap's queue entry is already answered by the sitting that produced
+  // this snippet — nothing here touches the Queue.
+  serverEmit(deps.vaultRoot, 'clerk', 'gap-cleared', `piece=${pieceId} gap=${body.gap} snippet=${body.snippet} version=${body.version}`);
+  return c.json(enrichPiece(updated));
+ });
+
+ // POST /api/piece/:id/set-down and /pick-up — one verb and its undo (Q-41).
+ app.post('/api/piece/:id/set-down', (c) => {
+  const pieceId = c.req.param('id');
+  if (!pieces.get(pieceId)) return c.json({ error: 'piece not found' }, 404);
+  const updated = pieces.setDown(pieceId, 'user');
+  serverEmit(deps.vaultRoot, 'clerk', 'piece-set-down', `piece=${pieceId}`);
+  return c.json(enrichPiece(updated));
+ });
+
+ app.post('/api/piece/:id/pick-up', (c) => {
+  const pieceId = c.req.param('id');
+  if (!pieces.get(pieceId)) return c.json({ error: 'piece not found' }, 404);
+  const updated = pieces.pickUp(pieceId);
+  serverEmit(deps.vaultRoot, 'clerk', 'piece-picked-up', `piece=${pieceId}`);
+  return c.json(enrichPiece(updated));
+ });
+
+ // GET /api/piece/:id/export — the person's sentences, in order, and
+ // nothing else (Q-1). Pins resolve through readVersion, so a stale pin
+ // exports the OLD words on purpose (Q-5); an unresolvable pin fails the
+ // export rather than silently missing a paragraph.
+ app.get('/api/piece/:id/export', (c) => {
+  const pieceId = c.req.param('id');
+  const piece = pieces.get(pieceId);
+  if (!piece) return c.json({ error: 'piece not found' }, 404);
+  const current = piece.arrangements.find((a) => a.id === piece.current) ?? piece.arrangements[0];
+  if (!current) return c.json({ error: 'piece has no arrangement' }, 404);
+  const markdown = toMarkdown(current, (snippet, version) =>
+   readVersion(deps.vaultRoot, snippet, version),
+  );
+  const pins = current.entries.filter((e) => e.kind === 'pin').length;
+  serverEmit(deps.vaultRoot, 'clerk', 'piece-exported', `paragraphs=${pins}`);
+  return new Response(markdown, {
+   status: 200,
+   headers: {
+    'Content-Type': 'text/markdown',
+    'Content-Disposition': `attachment; filename="piece-${pieceId}.md"`,
+   },
+  });
  });
 
  // Static fallback: serve web/dist when it exists

@@ -454,11 +454,55 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'surface=wiki',
   reads: 'surfaced a claim with its cited snippets on the wiki reading surface',
  },
- {
+{
   kind: 'surfaced',
   detail: 'surface=composed-question',
   reads: 'surfaced a snippet quoted in a composed question',
- },
+},
+
+// The piece routes (T6): compose, gap, set down, export. Every kind here is
+// emitted by src/server.ts's /api/piece family and renders without an
+// identifier — the piece and gap ids live only in the JSONL.
+{
+  kind: 'piece-started',
+  detail: 'snippets=3',
+  reads: 'started a piece from 3 snippets',
+},
+{
+  kind: 'piece-prose-kept',
+  detail: `piece=${ULID} chars=412`,
+  reads: 'kept a paragraph written in a piece (412 characters)',
+},
+{
+  kind: 'gap-inserted',
+  detail: `piece=${ULID} gap=${SECOND_ULID}`,
+  reads: 'inserted a gap into a piece',
+},
+{
+  kind: 'gap-question-minted',
+  detail: 'chars=47',
+  reads: "minted the gap's question (47 characters) into the queue",
+},
+{
+  kind: 'gap-cleared',
+  detail: `piece=${ULID} gap=${SECOND_ULID} snippet=${ULID} version=1`,
+  reads: 'cleared a gap by pinning its answer into the piece',
+},
+{
+  kind: 'piece-exported',
+  detail: 'paragraphs=3',
+  reads: 'exported a piece with 3 paragraphs',
+},
+{
+  kind: 'piece-set-down',
+  detail: `piece=${ULID}`,
+  reads: 'set the piece down',
+},
+{
+  kind: 'piece-picked-up',
+  detail: `piece=${ULID}`,
+  reads: 'picked the piece up again',
+},
 ];
 
 describe('formatEvent', () => {

@@ -356,7 +356,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/memory/cover', name: 'loadSummaries', status: 'live' },
 
  // ── src/piece/arrange.ts ──
- { module: 'src/piece/arrange', name: 'chronological', status: 'unwired', reason: 'wired by T6\'s POST /api/piece route (Wave 2)' },
+ { module: 'src/piece/arrange', name: 'chronological', status: 'live', reason: 'wired by T6: POST /api/piece pins the chosen snippets in sitting order' },
 
  // ── src/piece/contract.ts ──
  { module: 'src/piece/contract', name: 'noProse', status: 'live', reason: 'wired by T3: the store runs noProse/noTitle/pinsResolve before every write; T11 will use all five for the candidate gate' },
@@ -366,10 +366,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/piece/contract', name: 'distinctPrinciples', status: 'unwired', reason: 'guards are wired by T3 (the store) and T11 (the candidate gate); this wave declares them' },
 
  // ── src/piece/export.ts ──
- { module: 'src/piece/export', name: 'toMarkdown', status: 'unwired', reason: 'wired by T6\'s GET export route (Wave 2)' },
+ { module: 'src/piece/export', name: 'toMarkdown', status: 'live', reason: 'wired by T6: GET /api/piece/:id/export renders the arrangement' },
 
  // ── src/piece/store.ts ──
- { module: 'src/piece/store', name: 'createPieceStore', status: 'unwired', reason: 'wired by T6\'s piece routes (Wave 2)' },
+ { module: 'src/piece/store', name: 'createPieceStore', status: 'live', reason: 'wired by T6: the piece routes write through it' },
 
  // ── src/protocols/registry.ts ──
  { module: 'src/protocols/registry', name: 'loadProtocolDefinitions', status: 'live' },
