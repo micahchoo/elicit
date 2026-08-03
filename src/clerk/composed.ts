@@ -519,8 +519,15 @@ function tryBuildStillTrue(
 ): StillTrueResult {
  if (
   question.length === 0 ||
-  question === snippet.provenance.question ||
-  question.includes(snippet.provenance.question)
+  // An imported snippet's provenance.question is '' (nothing asked for these
+  // words), and `question.includes('')` is vacuously true — without the
+  // length guard, every imported snippet would be rejected here and the
+  // still-true licence could never serve the material Seeding exists to
+  // date (seeding Finding 2's whole point). An empty original cannot be
+  // repeated; only a non-empty one can.
+  (snippet.provenance.question.length > 0 &&
+   (question === snippet.provenance.question ||
+    question.includes(snippet.provenance.question)))
  ) {
   return { ok: false, rejection: 'repeats-original' };
  }

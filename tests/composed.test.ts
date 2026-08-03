@@ -568,4 +568,32 @@ describe('composeStillTrue', () => {
       'Is "deep work over shallow productivity" still where your hours go?',
     );
   });
+
+  it('accepts an imported snippet whose provenance question is empty (seeding Finding 2)', async () => {
+    // An imported snippet's question is '' — nothing asked for these words.
+    // `question.includes('')` is vacuously true, so without the length guard
+    // every imported snippet was rejected as 'repeats-original' and the
+    // still-true licence could never serve the material Seeding dates.
+    const imported: Snippet = {
+      id: 'import-1',
+      version: 1,
+      captured: new Date().toISOString(),
+      provenance: {
+        kind: 'unprompted',
+        session: 'import-x',
+        question: '',
+        questionForm: 'deliberative',
+      },
+      prose: 'This is the week everything changed.',
+    };
+    const complete = fakeComplete(
+      'Is "This is the week everything changed." still true for you?',
+    );
+
+    const result = await composeStillTrue(imported, complete);
+
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe('still-true');
+    expect(result!.cites).toEqual(['import-1@1']);
+  });
 });
