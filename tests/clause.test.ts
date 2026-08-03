@@ -18,7 +18,7 @@ describe('isCompleteClause', () => {
    'I keep my weekends completely free of work',
    'I worked through both days last weekend',
    'the mechanism worked',
-   'the archival object looked',
+   'the field recording sounded',
    'there was a problem',
    "I'm working on it",
    'she kept the archive organised',
@@ -35,7 +35,7 @@ describe('isCompleteClause', () => {
    'worked on making',
    'keep my weekends completely free of work',
    'worked through both days last weekend',
-   'annotating an archival object',
+   'labelling a field recording',
    'making a mechanism',
    'completely free of work',
   ]) {
@@ -66,9 +66,9 @@ describe('isCompleteClause', () => {
 
 // ── widenToClause: the widening, verbatim rule intact ───────────────────────
 
-// The RESULTS §16.5 fixture, verbatim from the T16 run.
+// Mirrors the RESULTS §16.5 fixture from the T16 run, same clause structure.
 const T16_PROSE =
- 'I worked on making a mechanism for annotating an archival object as well as how the archival object looked.';
+ 'I worked on making a mechanism for labelling a field recording as well as how the recording sounded.';
 
 describe('widenToClause', () => {
  it('widens the T16 fragment to its full clause inside the real sentence', () => {
@@ -80,7 +80,7 @@ describe('widenToClause', () => {
  });
 
  it('always returns an exact substring of the prose (verbatim rule intact)', () => {
-  for (const fragment of ['worked on making', 'making a mechanism', 'the archival object']) {
+  for (const fragment of ['worked on making', 'making a mechanism', 'a field recording']) {
    const widened = widenToClause(fragment, T16_PROSE);
    expect(T16_PROSE.includes(widened), `'${widened}' must be verbatim in the prose`).toBe(true);
   }

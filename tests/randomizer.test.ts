@@ -180,7 +180,7 @@ describe('deck storage', () => {
       join(dir, 'mornings.md'),
       matter.stringify(
         '# notes to self\n\n- What did you notice first today?\n- Which room did you avoid?\n',
-        { deck: 'mornings', curatedBy: 'micah', targetFacet: 'episode' },
+        { deck: 'mornings', curatedBy: 'hand', targetFacet: 'episode' },
       ),
       'utf-8',
     );
@@ -192,7 +192,7 @@ describe('deck storage', () => {
       'Which room did you avoid?',
     ]);
     expect(entries[0]!.deck).toBe('mornings');
-    expect(entries[0]!.curatedBy).toBe('micah');
+    expect(entries[0]!.curatedBy).toBe('hand');
     expect(entries[0]!.targetFacet).toBe('episode');
     // Each entry needs a stable key for the cooldown; position in the file is it.
     expect(entries.map((e) => e.blockId)).toEqual([1, 2]);
@@ -203,7 +203,7 @@ describe('deck storage', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, 'mornings.md'),
-      matter.stringify('- One question?\n', { deck: 'mornings', curatedBy: 'micah' }),
+      matter.stringify('- One question?\n', { deck: 'mornings', curatedBy: 'hand' }),
       'utf-8',
     );
 
@@ -223,7 +223,7 @@ describe('deck storage', () => {
     mkdirSync(vaultDeckDir, { recursive: true });
     writeFileSync(
       join(vaultDeckDir, 'mornings.md'),
-      matter.stringify('- I picked this.\n', { deck: 'mornings', curatedBy: 'micah' }),
+      matter.stringify('- I picked this.\n', { deck: 'mornings', curatedBy: 'hand' }),
       'utf-8',
     );
 
@@ -640,8 +640,8 @@ describe('stratification against the real corpus shape', () => {
   }
 
   it('splits the draw evenly across bands that hold 76 and 3 — a flat draw never reaches the 3', () => {
-    writeSitting('capstone', '2020-03-14T00:00:00.000Z');
-    for (let i = 0; i < 76; i++) writeSnippet(`deep${i}`, 'capstone', `Deep ${i}.`);
+    writeSitting('longform', '2020-03-14T00:00:00.000Z');
+    for (let i = 0; i < 76; i++) writeSnippet(`deep${i}`, 'longform', `Deep ${i}.`);
     writeSitting('recentish', daysAgo(5));
     for (let i = 0; i < 3; i++) writeSnippet(`new${i}`, 'recentish', `New ${i}.`);
 
@@ -656,8 +656,8 @@ describe('stratification against the real corpus shape', () => {
 
   it('splits a band evenly across its sittings, so one long document cannot own it', () => {
     // Both sittings are deep, so the band pick cannot be what separates them.
-    writeSitting('capstone', '2020-03-14T00:00:00.000Z');
-    for (let i = 0; i < 76; i++) writeSnippet(`deep${i}`, 'capstone', `Deep ${i}.`);
+    writeSitting('longform', '2020-03-14T00:00:00.000Z');
+    for (let i = 0; i < 76; i++) writeSnippet(`deep${i}`, 'longform', `Deep ${i}.`);
     writeSitting('letter', '2019-06-01T00:00:00.000Z');
     writeSnippet('one0', 'letter', 'The only thing written that year.');
 

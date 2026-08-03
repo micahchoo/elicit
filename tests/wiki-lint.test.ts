@@ -625,7 +625,7 @@ describe('occasionless-range (ticket 087, Q-35: shadowed)', () => {
     for (const range of [
       'at work',
       'when working with cheap devices',
-      'during their capstone project',
+      'during their first long project',
       'in 2021',
       "when describing the programme's objective",
       'in the mornings, since 2024',

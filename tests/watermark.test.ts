@@ -31,7 +31,7 @@ afterEach(() => {
 // ── git helper (tests 1-5) ──
 
 const CLERK = { name: 'elicit-clerk', email: 'clerk@localhost' };
-const OTHER = { name: 'Micah', email: 'micah@example.com' };
+const OTHER = { name: 'Robin', email: 'robin@example.com' };
 
 function git(...args: string[]): string {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();

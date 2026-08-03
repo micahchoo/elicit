@@ -124,13 +124,13 @@ describe('tier 1 — MINT: an unknown name is created freely (Q-32)', () => {
   it('writes the entry as vault markdown, with no key holding undefined (Q-3)', () => {
     const { registry } = fresh();
 
-    registry.resolve(ref('Design Beku', { kind: 'project' }));
+    registry.resolve(ref('Field Guild', { kind: 'project' }));
 
-    expect(registryFiles()).toEqual(['design-beku.md']);
-    const raw = readFileSync(join(root, 'wiki', 'registry', 'design-beku.md'), 'utf-8');
+    expect(registryFiles()).toEqual(['field-guild.md']);
+    const raw = readFileSync(join(root, 'wiki', 'registry', 'field-guild.md'), 'utf-8');
     const parsed = matter(raw);
-    expect(parsed.data.slug).toBe('design-beku');
-    expect(parsed.data.canonical).toBe('Design Beku');
+    expect(parsed.data.slug).toBe('field-guild');
+    expect(parsed.data.canonical).toBe('Field Guild');
     expect(parsed.data.kind).toBe('project');
     expect(parsed.data.aliases).toEqual([]);
     expect(parsed.data.model).toBe(MODEL);
@@ -178,11 +178,11 @@ describe('tier 1 — MINT: an unknown name is created freely (Q-32)', () => {
 
   it('reads the referents an earlier registry wrote, because the files are the truth (Q-3)', () => {
     const first = fresh();
-    first.registry.resolve(ref('Srishti'));
+    first.registry.resolve(ref('Northwind'));
 
     const second = fresh();
 
-    expect(second.registry.lookup('srishti')?.slug).toBe('srishti');
+    expect(second.registry.lookup('northwind')?.slug).toBe('northwind');
     expect(second.store.listReferents()).toHaveLength(1);
   });
 });
@@ -190,19 +190,19 @@ describe('tier 1 — MINT: an unknown name is created freely (Q-32)', () => {
 describe('lookup — exact canonical or alias, case-insensitive', () => {
   it('matches the canonical whatever the case, and an alias the same way', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Srishti'));
-    registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
+    registry.resolve(ref('Northwind'));
+    registry.resolve(ref('North', { aliasOf: 'Northwind' }));
 
-    expect(registry.lookup('SRISHTI')?.slug).toBe('srishti');
-    expect(registry.lookup('  sri  ')?.slug).toBe('srishti');
-    expect(registry.lookup('Sri')?.slug).toBe('srishti');
+    expect(registry.lookup('NORTHWIND')?.slug).toBe('northwind');
+    expect(registry.lookup('  north  ')?.slug).toBe('northwind');
+    expect(registry.lookup('North')?.slug).toBe('northwind');
   });
 
   it('returns null for an unknown name and for an empty one', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Srishti'));
+    registry.resolve(ref('Northwind'));
 
-    expect(registry.lookup('Srishtii')).toBeNull();
+    expect(registry.lookup('Northwindd')).toBeNull();
     expect(registry.lookup('')).toBeNull();
     expect(registry.lookup('   ')).toBeNull();
   });
@@ -211,35 +211,35 @@ describe('lookup — exact canonical or alias, case-insensitive', () => {
 describe('tier 2 — ALIAS: reversible linking, never a silent one (Q-32)', () => {
   it('adds the name to an existing canonical and returns that canonical', () => {
     const { store, registry, events } = fresh();
-    const canonical = registry.resolve(ref('Srishti'));
+    const canonical = registry.resolve(ref('Northwind'));
 
-    const linked = registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
+    const linked = registry.resolve(ref('North', { aliasOf: 'Northwind' }));
 
     expect(linked.slug).toBe(canonical.slug);
-    expect(linked.aliases).toEqual(['Sri']);
+    expect(linked.aliases).toEqual(['North']);
     expect(store.listReferents()).toHaveLength(1);
     // Reversible: the link is one line of the markdown, and deleting that line
     // undoes it completely.
-    const parsed = matter(readFileSync(join(root, 'wiki', 'registry', 'srishti.md'), 'utf-8'));
-    expect(parsed.data.aliases).toEqual(['Sri']);
+    const parsed = matter(readFileSync(join(root, 'wiki', 'registry', 'northwind.md'), 'utf-8'));
+    expect(parsed.data.aliases).toEqual(['North']);
     expect(events.filter((e) => e.kind === 'referent-aliased')).toHaveLength(1);
   });
 
   it('accepts the canonical named by its slug as well as by its name', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Design Beku', { kind: 'project' }));
+    registry.resolve(ref('Field Guild', { kind: 'project' }));
 
-    const linked = registry.resolve(ref('the studio', { kind: 'project', aliasOf: 'design-beku' }));
+    const linked = registry.resolve(ref('the studio', { kind: 'project', aliasOf: 'field-guild' }));
 
-    expect(linked.slug).toBe('design-beku');
+    expect(linked.slug).toBe('field-guild');
     expect(linked.aliases).toEqual(['the studio']);
   });
 
   it('refreshes the stamp and `updated` on the entry it links, and keeps `created`', () => {
     const { registry } = fresh();
-    const canonical = registry.resolve(ref('Srishti'));
+    const canonical = registry.resolve(ref('Northwind'));
 
-    const linked = registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
+    const linked = registry.resolve(ref('North', { aliasOf: 'Northwind' }));
 
     expect(linked.created).toBe(canonical.created);
     expect(linked.model).toBe(MODEL);
@@ -249,19 +249,19 @@ describe('tier 2 — ALIAS: reversible linking, never a silent one (Q-32)', () =
 
   it('adds an alias once, however many times it is proposed', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Srishti'));
+    registry.resolve(ref('Northwind'));
 
-    registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
-    const again = registry.resolve(ref('SRI', { aliasOf: 'Srishti' }));
+    registry.resolve(ref('North', { aliasOf: 'Northwind' }));
+    const again = registry.resolve(ref('NORTH', { aliasOf: 'Northwind' }));
 
-    expect(again.aliases).toEqual(['Sri']);
+    expect(again.aliases).toEqual(['North']);
   });
 
   it('does not record the canonical name as an alias of itself', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Srishti'));
+    registry.resolve(ref('Northwind'));
 
-    const same = registry.resolve(ref('srishti', { aliasOf: 'Srishti' }));
+    const same = registry.resolve(ref('northwind', { aliasOf: 'Northwind' }));
 
     expect(same.aliases).toEqual([]);
   });
@@ -273,45 +273,45 @@ describe('tier 2 — ALIAS: reversible linking, never a silent one (Q-32)', () =
     // wrongly link to, and the test would pass while the rule was broken.
     registry.resolve(ref('Dad'));
 
-    const minted = registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
+    const minted = registry.resolve(ref('North', { aliasOf: 'Northwind' }));
 
     // An unresolvable alias must never become a silent link: the proposal is
     // dropped, on the record, and the name stands on its own.
-    expect(minted.slug).toBe('sri');
+    expect(minted.slug).toBe('north');
     expect(minted.aliases).toEqual([]);
-    expect(store.listReferents().map((r) => r.slug).sort()).toEqual(['dad', 'sri']);
+    expect(store.listReferents().map((r) => r.slug).sort()).toEqual(['dad', 'north']);
     expect(store.listReferents().every((r) => r.aliases.length === 0)).toBe(true);
     const dropped = events.filter((e) => e.kind === 'referent-alias-unresolved');
     expect(dropped).toHaveLength(1);
-    expect(dropped[0]!.detail).toContain('Srishti');
+    expect(dropped[0]!.detail).toContain('Northwind');
   });
 
   it('REFUSES to alias a name that is already a referent of its own — that is a merge', () => {
     const { store, registry, events } = fresh();
-    const sri = registry.resolve(ref('Sri'));
-    const srishti = registry.resolve(ref('Srishti'));
+    const north = registry.resolve(ref('North'));
+    const northwind = registry.resolve(ref('Northwind'));
 
-    const returned = registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
+    const returned = registry.resolve(ref('North', { aliasOf: 'Northwind' }));
 
     // Folding one existing entry into another IS tier 3, whatever it is
     // called at the call site. Both entries survive, unlinked, and the
     // proposal becomes a note for a human (Q-32).
-    expect(returned).toEqual(sri);
+    expect(returned).toEqual(north);
     expect(store.listReferents()).toHaveLength(2);
-    expect(registry.lookup('Sri')?.slug).toBe('sri');
-    expect(registry.lookup('Srishti')?.slug).toBe('srishti');
-    expect(store.listReferents().find((r) => r.slug === srishti.slug)!.aliases).toEqual([]);
+    expect(registry.lookup('North')?.slug).toBe('north');
+    expect(registry.lookup('Northwind')?.slug).toBe('northwind');
+    expect(store.listReferents().find((r) => r.slug === northwind.slug)!.aliases).toEqual([]);
     const refused = events.filter((e) => e.kind === 'referent-alias-refused');
     expect(refused).toHaveLength(1);
-    expect(refused[0]!.detail).toContain('sri');
-    expect(refused[0]!.detail).toContain('srishti');
+    expect(refused[0]!.detail).toContain('north');
+    expect(refused[0]!.detail).toContain('northwind');
   });
 
   it('keeps the stored kind when a later reference proposes a different one', () => {
     const { registry, events } = fresh();
-    registry.resolve(ref('Design Beku', { kind: 'project' }));
+    registry.resolve(ref('Field Guild', { kind: 'project' }));
 
-    const again = registry.resolve(ref('Design Beku', { kind: 'place' }));
+    const again = registry.resolve(ref('Field Guild', { kind: 'place' }));
 
     // Rewriting the kind is a re-reading of an entity the user already
     // described. The disagreement goes on the record instead.
@@ -332,7 +332,7 @@ describe('tier 3 — MERGE: there is no path to it, at any level (Q-32)', () => 
     ]);
     // @ts-expect-error — there is no `merge`, and that absence is the contract
     // (Q-32). This line goes red the day someone adds one.
-    expect(() => registry.merge('sri', 'srishti')).toThrow();
+    expect(() => registry.merge('north', 'northwind')).toThrow();
   });
 
   it('exports nothing whose name promises a merge', () => {
@@ -343,7 +343,7 @@ describe('tier 3 — MERGE: there is no path to it, at any level (Q-32)', () => 
 
   it('never reduces the referent count across a randomized sequence of 50 resolves', () => {
     const { store, registry } = fresh();
-    const names = ['Sri', 'Srishti', 'Sarah Kim', 'sarah kim', 'Dad', 'Design Beku', 'my manager'];
+    const names = ['North', 'Northwind', 'Sarah Kim', 'sarah kim', 'Dad', 'Field Guild', 'my manager'];
     const kinds = ['person', 'project', 'place', 'pole', 'construct', 'other'] as const;
 
     // Seeded, so a failure is reproducible rather than a story about a run.
@@ -369,12 +369,12 @@ describe('tier 3 — MERGE: there is no path to it, at any level (Q-32)', () => 
 
   it('never deletes a registry file', () => {
     const { registry } = fresh();
-    registry.resolve(ref('Sri'));
-    registry.resolve(ref('Srishti'));
+    registry.resolve(ref('North'));
+    registry.resolve(ref('Northwind'));
     const before = registryFiles();
 
-    registry.resolve(ref('Sri', { aliasOf: 'Srishti' }));
-    registry.resolve(ref('Srishti', { aliasOf: 'Sri' }));
+    registry.resolve(ref('North', { aliasOf: 'Northwind' }));
+    registry.resolve(ref('Northwind', { aliasOf: 'North' }));
 
     expect(registryFiles()).toEqual(before);
   });
@@ -453,7 +453,7 @@ describe('mergeCandidates — pairs to look at, and nothing else (Q-35 shadow)',
     // red the day the two drift. If they ever disagree, lint's is the note the
     // user sees (see the header of src/wiki/lint.ts).
     const { registry: writer, store } = fresh();
-    for (const name of ['Sarah Kim', 'kim, SARAH', 'Dad', 'dad!', 'Design Beku', 'Sarah']) {
+    for (const name of ['Sarah Kim', 'kim, SARAH', 'Dad', 'dad!', 'Field Guild', 'Sarah']) {
       writer.resolve(ref(name));
     }
     const g = graphOf({ referents: store.listReferents() });
@@ -518,23 +518,23 @@ describe('claimsFor', () => {
     const { registry } = fresh();
     const g = graphOf({
       claims: [
-        claim('c1', ['srishti']),
-        claim('c2', ['design-beku']),
-        claim('c3', ['design-beku', 'srishti']),
+        claim('c1', ['northwind']),
+        claim('c2', ['field-guild']),
+        claim('c3', ['field-guild', 'northwind']),
       ],
     });
 
-    expect(registry.claimsFor('srishti', g).map((c) => c.id)).toEqual(['c1', 'c3']);
-    expect(registry.claimsFor('design-beku', g).map((c) => c.id)).toEqual(['c2', 'c3']);
+    expect(registry.claimsFor('northwind', g).map((c) => c.id)).toEqual(['c1', 'c3']);
+    expect(registry.claimsFor('field-guild', g).map((c) => c.id)).toEqual(['c2', 'c3']);
     expect(registry.claimsFor('nobody', g)).toEqual([]);
   });
 
   it('mutates nothing', () => {
     const { registry } = fresh();
-    const g = graphOf({ claims: [claim('c1', ['srishti'])] });
+    const g = graphOf({ claims: [claim('c1', ['northwind'])] });
     const before = structuredClone(g);
 
-    registry.claimsFor('srishti', g);
+    registry.claimsFor('northwind', g);
 
     expect(g).toEqual(before);
   });

@@ -9,11 +9,11 @@ import {
 } from '../src/harvester/admissibility.js';
 
 // ---------------------------------------------------------------------------
-// The live evidence: every line below became a proposed Snippet with an agent
-// reading attached during Micah's own sitting, and again in the persona eval
-// (docs/eval-2026-08-02-personas.md, Persona 1). Each is paired with real
-// material that must survive the same filter — a filter that eats the second
-// column is worse than no filter at all.
+// The live evidence: every line below matches the shape of a line that became
+// a proposed Snippet with an agent reading attached during real sittings and
+// the persona eval. Each is paired with real material that must survive the
+// same filter — a filter that eats the second column is worse than no filter
+// at all.
 // ---------------------------------------------------------------------------
 
 const EVIDENCE: { junk: string; real: string }[] = [
@@ -170,21 +170,22 @@ describe('lacksProposition', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Ticket 037. Every string below is a real cut from the 2026-08-02 harvest of
-// Micah's published writing, with his own mark on it
-// (docs/ingest-triage-2026-08-02.md). The left column is what he dropped as
-// `frag`; the right is what he kept from the same run.
+// Ticket 037. Each string below reproduces the grammatical shape of a real
+// cut from the 2026-08-02 harvest of published prose, hand-marked by its
+// reader (the mark record lives with the corpus, outside the repo). The left
+// column mirrors what was dropped as `frag`; the right mirrors the keeps
+// from the same run.
 // ---------------------------------------------------------------------------
 
 describe('startsMidSentence — the fragment router', () => {
   const FRAGMENTS = [
-    'systems-networks as I have come to understand through my practice in Srishti',
-    'we decided to respond to it',
-    'the move from liability to accountability',
-    'the arbitrary yet normative way that relationships have been formed.',
-    'how affordances on these digital publics drive and manipulate behaviour',
-    'platforms manufacture "truth" and "ignorance"',
-    'the team demos the tool, and I discuss the platform design with the participants.',
+    'systems of habit as I have come to understand them through my studio practice',
+    'we chose to wait a season',
+    'the move from renting to owning',
+    'the arbitrary yet normative way that schedules have been formed.',
+    'how notification patterns on these platforms steer and manipulate attention',
+    'platforms manufacture "urgency" and "consensus"',
+    'the team demos the tool, and I walk the visitors through the workflow.',
   ];
 
   for (const text of FRAGMENTS) {
@@ -194,10 +195,10 @@ describe('startsMidSentence — the fragment router', () => {
   }
 
   const WHOLE = [
-    'Reflecting on it, the experience demonstrated to me how important bodies are, as a vessel of knowledge and practice.',
-    'I am a writer too and I was constantly watching for my style overpowering her prose.',
-    'A form of visual protest and stimming, I find color bending to be quite fun',
-    'I am fairly sure the shape of the answer is something like this, and much less sure that this is it.',
+    'Reflecting on it, the experience demonstrated to me how much of a craft lives in the hands rather than the notes.',
+    'I am an editor too and I was constantly watching for my own voice crowding out the interview.',
+    'A form of quiet protest and play, I find slow walking to be quite fun',
+    'I am fairly sure the shape of the plan is right, and much less sure that this version is it.',
   ];
 
   for (const text of WHOLE) {
@@ -210,12 +211,12 @@ describe('startsMidSentence — the fragment router', () => {
     // Measured on the same 295 cuts: a leading bare pronoun or demonstrative
     // fires on 0 of the 9 fragments and on 25 of the 139 keeps. Real prose
     // opens on expletive "It was…" and discourse "This…" constantly, and all
-    // four of these are Micah's own keeps.
+    // four of these mirror real keeps.
     for (const keep of [
-      'It sparked the idea of being an active and partial participant rather than an impartial and distant observer.',
-      'This modularity would allow for more ways to annotate a voice clip or song.',
-      'These connections are of many types-some fragile, some symbiotic, some parasitic and most others a hybrid of these.',
-      'That got me thinking about how the differences between formal and informal language is often a story of imperialism or colonialism.',
+      'It sparked the idea of joining as a partial participant rather than watching as a distant observer.',
+      'This modularity would allow for more ways to annotate a recording.',
+      'These habits are of many kinds-some fragile, some durable, some costly and most others a hybrid of these.',
+      'That got me thinking about how the difference between formal and informal speech is often a story about who writes the rules.',
     ]) {
       expect(startsMidSentence(keep)).toBe(false);
     }
@@ -223,49 +224,49 @@ describe('startsMidSentence — the fragment router', () => {
 });
 
 describe('Q-51 at cut level — a quoted passage is not the person', () => {
-  // The capstone's closing paragraphs. Four Annemarie Mol sentences reached
-  // the 2026-08-02 review as Micah's prose because the paragraph-level
-  // citation filter could not see them.
+  // The closing paragraphs of a long essay, in shape: quoted sentences from
+  // a cited author reached a real review as the essayist's own prose because
+  // the paragraph-level citation filter could not see them.
   const SOURCE = [
-    'Care shifts the ground under all of this, and Mol puts it better than I can:',
+    'Slow practice shifts the ground under all of this, and the handbook puts it better than I can:',
     '',
-    '“The logic of care as I articulate it here is not something to solidify or cast in stone. Not at all! It is fluid and adaptable.”',
+    '“A routine as I describe it here is not something to fix in place or carve in stone. Not at all! It is fluid and adaptable.”',
     '',
-    'I think that is right, and I think it is also why the collectives keep going.',
+    'I think that is right, and I think it is also why the routines keep working.',
   ].join('\n');
 
   const spans = quotedSpans(SOURCE);
 
   it('finds the quotation as one span', () => {
     expect(spans).toHaveLength(1);
-    expect(spans[0]).toContain('not something to solidify or cast in stone');
+    expect(spans[0]).toContain('not something to fix in place or carve in stone');
   });
 
   it('excludes a cut lifted from inside it', () => {
-    const cut = 'The logic of care as I articulate it here is not something to solidify or cast in stone.';
+    const cut = 'A routine as I describe it here is not something to fix in place or carve in stone.';
     expect(isQuotedFromSource(cut, spans)).toBe(true);
     expect(admissible(cut, { source: SOURCE })).toEqual({ ok: false, reason: 'quoted' });
   });
 
   it('keeps the sentence the person wrote around it', () => {
-    const cut = 'I think that is right, and I think it is also why the collectives keep going.';
+    const cut = 'I think that is right, and I think it is also why the routines keep working.';
     expect(isQuotedFromSource(cut, spans)).toBe(false);
     expect(admissible(cut, { source: SOURCE })).toEqual({ ok: true });
   });
 
   it('admits the same words when nobody is being quoted', () => {
-    const plain = 'My practice is not something to solidify or cast in stone.';
+    const plain = 'My practice is not something to fix in place or carve in stone.';
     expect(admissible(plain, { source: plain })).toEqual({ ok: true });
   });
 
   it('does not run without a source, because a quotation is invisible alone', () => {
-    const cut = 'The logic of care as I articulate it here is not something to solidify or cast in stone.';
+    const cut = 'A routine as I describe it here is not something to fix in place or carve in stone.';
     expect(admissible(cut)).toEqual({ ok: true });
   });
 
   it('leaves straight quotes alone — those are scare quotes and coinages', () => {
-    // "the internal wall" is Micah's own term, in his own sentence.
-    const src = 'However, this often brought me up to an "internal wall" that I could not argue past.';
+    // "soft ceiling" is the writer's own coinage, in their own sentence.
+    const src = 'However, this often brought me up against a "soft ceiling" that I could not argue past.';
     expect(quotedSpans(src)).toEqual([]);
     expect(admissible(src, { source: src })).toEqual({ ok: true });
   });

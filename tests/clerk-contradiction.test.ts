@@ -431,7 +431,7 @@ describe('composeRemeasure', () => {
 // verbatim-valid (Q-46) and not a proposition. Widening inside the real
 // sentence must produce the full clause, quoted verbatim.
 const T16_PROSE =
- 'I worked on making a mechanism for annotating an archival object as well as how the archival object looked.';
+ 'I worked on making a mechanism for labelling a field recording as well as how the recording sounded.';
 const T16_CLAUSE = T16_PROSE;
 const T16_CANDIDATE = {
  a: CLAIM_A,

@@ -257,13 +257,13 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  },
  {
   kind: 'referent-minted',
-  detail: 'slug=micah-alex kind=person name="Micah Alex"',
-  reads: 'added Micah Alex to the registry as a person',
+  detail: 'slug=robin-hale kind=person name="Robin Hale"',
+  reads: 'added Robin Hale to the registry as a person',
  },
  {
   kind: 'referent-aliased',
-  detail: 'slug=micah-alex alias="Mike"',
-  reads: 'recorded "Mike" as another name for micah-alex',
+  detail: 'slug=robin-hale alias="Mike"',
+  reads: 'recorded "Mike" as another name for robin-hale',
  },
  {
   kind: 'referent-kind-differs',
@@ -273,16 +273,16 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  {
   kind: 'referent-alias-refused',
   detail:
-   'existing=micah-alex aliasOf=mike-a both names are already referents; ' +
+   'existing=robin-hale aliasOf=mike-a both names are already referents; ' +
    'only user attestation merges two identities',
   reads:
-   'refused to fold micah-alex into mike-a: both are already entries, ' +
+   'refused to fold robin-hale into mike-a: both are already entries, ' +
    'and only you can say they name the same thing',
  },
  {
   kind: 'referent-alias-unresolved',
-  detail: 'name="Mike" aliasOf="Micah Alex" stands as slug=mike',
-  reads: 'kept "Mike" as its own entry: nothing in the registry is called "Micah Alex"',
+  detail: 'name="Mike" aliasOf="Robin Hale" stands as slug=mike',
+  reads: 'kept "Mike" as its own entry: nothing in the registry is called "Robin Hale"',
  },
 
  // The contradiction channels (Q-52, Q-56). A clip record whose count is

@@ -366,7 +366,7 @@ describe('propose', () => {
   // Each rejection below is paired with material that must still get through.
 
   it('never sends a content-free turn for extraction', async () => {
-    // Live from Micah's sitting: each of these became a proposal with a reading.
+    // Mirrors a real sitting: each of these shapes became a proposal with a reading.
     const withJunk: Turn[] = [
       { role: 'agent', text: 'What do you value most in your work?', at: '2026-08-01T00:00:00.000Z', questionForm: 'deliberative' },
       { role: 'user', text: 'I am not sure.', at: '2026-08-01T00:00:10.000Z' },
@@ -681,10 +681,9 @@ describe('propose', () => {
 // Ticket 091 — lineage rides the harvest payload, typed-marked
 // ===========================================================================
 //
-// The defect this ticket fixes, live from Micah's sitting: the question
-// "What does it mean to be alive to each other?" drew the answer "I think it
-// means to be responsive to each other in the ways that they live.", and the
-// reading said "the core meaning of **something**" — the referent sat in the
+// The defect this ticket fixes, met in a real sitting: a "What does it mean
+// to …?" question drew an answer that leaned on a bare "it", and the reading
+// said "the core meaning of **something**" — the referent sat in the
 // question, which the payload never carried. The shape below is the fixture:
 // question carries the referent, the answer uses a bare "it", and the
 // reading names the referent.
@@ -693,13 +692,13 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
   const liveExample: Turn[] = [
     {
       role: 'agent',
-      text: 'What does it mean to be alive to each other?',
+      text: 'What does it mean to keep a promise to yourself?',
       at: '2026-08-01T00:00:00.000Z',
       questionForm: 'deliberative',
     },
     {
       role: 'user',
-      text: 'I think it means to be responsive to each other in the ways that they live.',
+      text: 'I think it means to treat the promise as real even when nobody is checking.',
       at: '2026-08-01T00:00:10.000Z',
     },
   ];
@@ -710,11 +709,11 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
       payload = turns[turns.length - 1]!.text;
       return JSON.stringify({
         cuts: [{
-          text: 'I think it means to be responsive to each other in the ways that they live.',
+          text: 'I think it means to treat the promise as real even when nobody is checking.',
           sourceTurn: 0,
           facet: 'construct',
           stance: 'avowal',
-          reading: 'The user asserts that mutual responsiveness in daily life constitutes the core meaning of being alive to each other',
+          reading: 'The user asserts that treating a promise as real without an audience constitutes the core meaning of keeping a promise to yourself',
           standalone: true,
         }],
       });
@@ -724,14 +723,14 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
 
     // The question rides the payload — without it, the model cannot name the
     // referent and falls back to "something" (the defect).
-    expect(payload).toContain('<question>What does it mean to be alive to each other?</question>');
-    expect(payload).toContain('<snippet>I think it means to be responsive to each other in the ways that they live.</snippet>');
+    expect(payload).toContain('<question>What does it mean to keep a promise to yourself?</question>');
+    expect(payload).toContain('<snippet>I think it means to treat the promise as real even when nobody is checking.</snippet>');
     // No prior user turn, so no <context> block.
     expect(payload).not.toContain('<context>');
 
     // The reading names the referent instead of leaving it as "something".
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]!.reading).toContain('being alive to each other');
+    expect(proposals[0]!.reading).toContain('keeping a promise to yourself');
   });
 
   it('carries the prior user turn tail as a <context> block', async () => {
@@ -805,7 +804,7 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
   it('LINEAGE-NOT-CORPUS: a cut from the <question> block is rejected the same way', async () => {
     const json = JSON.stringify({
       cuts: [{
-        text: 'What does it mean to be alive to each other?',
+        text: 'What does it mean to keep a promise to yourself?',
         sourceTurn: 0,
         facet: 'fact',
         stance: 'report-of-fact',
@@ -821,11 +820,11 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
   it('the reading that names the referent survives propose → decide → vault', async () => {
     const json = JSON.stringify({
       cuts: [{
-        text: 'I think it means to be responsive to each other in the ways that they live.',
+        text: 'I think it means to treat the promise as real even when nobody is checking.',
         sourceTurn: 0,
         facet: 'construct',
         stance: 'avowal',
-        reading: 'The user asserts that mutual responsiveness in daily life constitutes the core meaning of being alive to each other',
+        reading: 'The user asserts that treating a promise as real without an audience constitutes the core meaning of keeping a promise to yourself',
         standalone: true,
       }],
     });
@@ -835,8 +834,8 @@ describe('ticket 091 — lineage rides the harvest payload', () => {
     decide('sess-1', proposals, [{ proposal: 0, action: 'approve' }], vault);
 
     expect(vault._readings).toHaveLength(1);
-    expect(vault._readings[0]!.reading).toContain('being alive to each other');
-    expect(vault._snippets[0]!.provenance.question).toBe('What does it mean to be alive to each other?');
+    expect(vault._readings[0]!.reading).toContain('keeping a promise to yourself');
+    expect(vault._snippets[0]!.provenance.question).toBe('What does it mean to keep a promise to yourself?');
   });
 });
 
@@ -943,8 +942,8 @@ describe('facet: `intention` without a want, plan or goal is counted, never rewr
 describe('a label outside the vocabulary never reaches a Reading', () => {
   // Measured on 105 real cuts, 2026-08-02: the clerk put a STANCE value in the
   // `facet` field three times. `propose()` cast it and `saveReading` wrote it.
-  const turn = oneTurn('I have always wondered about the process of participatory activities.');
-  const text = 'I have always wondered about the process of participatory activities.';
+  const turn = oneTurn('I have always wondered about the process of learning in groups.');
+  const text = 'I have always wondered about the process of learning in groups.';
 
   it('holds a stance-in-the-facet-field cut as a Bud', async () => {
     const { proposals, buds, diagnostics } = await propose(
