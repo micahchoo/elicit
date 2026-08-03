@@ -501,6 +501,14 @@ http://localhost:3002/?board=elicit-ideal-state).
   via a new git-gated docket job. Agent left the consequence dead-wired
   inside the wrong loop; caught by tsc at verification and fixed.
 
+- [Build: the Seeding slice](tickets/014-build-seeding.md)
+  — all 15 tasks: regions with mechanical dating (Q-57), declared
+  authorship reaching snippet and stance on disk (THE GATE, proven through
+  the routes), region-bounded review with the accept gate untouched, every
+  dangler budding with only the question capped (Q-72), Reach offering one
+  region licensed by names (Q-62), still-true aging by written-when. The
+  corpus can now grow by regions, not clicks.
+
 - [Build: Gap-fill question source](tickets/027-gapfill-source.md)
   — Buds and half-Constructs now mint their questions: one zero-LLM docket
   job, verbatim-quoting templates, ever-minted dedupe (dormancy is signal —
