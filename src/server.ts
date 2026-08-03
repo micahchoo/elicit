@@ -29,6 +29,7 @@ import { runDocket } from './clerk/docket.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
+import { proposeArrangements } from './clerk/arrangements.js';
 import { createImportStore } from './import/store.js';
 import { chronological } from './piece/arrange.js';
 import { createPieceStore } from './piece/store.js';
@@ -1982,7 +1983,105 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   });
  });
 
- // Static fallback: serve web/dist when it exists
+// ── The candidate arrangements (T12): one margin word, and a choice ──
+//
+// Two routes close pass 2's loop. POST /arrangements asks the clerk model
+// for other orders of the SAME pins (Q-38, Q-48) and puts every survivor
+// on disk; zero survivors is a valid outcome and the person keeps the
+// chronology they already had. POST /choose makes one candidate current
+// and, unless the piece is set down (Q-41), mints one queue question per
+// model-marked gap that does not already carry one. Proposing mints
+// nothing: the minting IS the choosing (Q-39).
+
+// POST /api/piece/:id/arrangements — the acceptance-time generation
+// (Q-38). Slow by design; the waiting surface says so before the request
+// goes out.
+app.post('/api/piece/:id/arrangements', async (c) => {
+ const pieceId = c.req.param('id');
+ const piece = pieces.get(pieceId);
+ if (!piece) return c.json({ error: 'piece not found' }, 404);
+ const base = piece.arrangements.find((a) => a.id === piece.current);
+ if (!base) return c.json({ error: 'piece has no arrangement' }, 404);
+ const snippets = deps.vault.rebuildIndex().snippets;
+ // Q-56: the bound is registered as piece.gapsPerCandidate (T10, 3), but
+ // src/wiki/thresholds.ts carries ticket 087's uncommitted changes and is
+ // blocked at dispatch, so the value arrives here. When T10 lands, switch
+ // to THRESHOLDS.piece.gapsPerCandidate.
+ const { candidates } = await proposeArrangements(
+  base,
+  snippets,
+  clerkComplete,
+  { gapsPerCandidate: 3 },
+  (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+  clerkModelName,
+ );
+ // The module already logged arrangements-proposed and arrangement-rejected
+ // through the sink; nothing more is emitted here.
+ for (const candidate of candidates) {
+  pieces.addArrangement(pieceId, candidate);
+ }
+ return c.json(enrichPiece(pieces.get(pieceId) ?? piece));
+});
+
+// POST /api/piece/:id/choose { arrangement } — the person takes a
+// candidate: it becomes current, and the model-marked gaps it carries are
+// minted, one question each (Q-39), unless the piece is set down (Q-41).
+// The other candidates stay on disk; nothing is deleted (Q-38).
+app.post('/api/piece/:id/choose', async (c) => {
+ const pieceId = c.req.param('id');
+ const piece = pieces.get(pieceId);
+ if (!piece) return c.json({ error: 'piece not found' }, 404);
+ const body = await c.req.json<{ arrangement: string }>();
+ const chosen = piece.arrangements.find((a) => a.id === body.arrangement);
+ if (!chosen) return c.json({ error: 'unknown arrangement' }, 400);
+ // setCurrent FIRST: the arrangement must exist on disk, and setCurrent
+ // throws otherwise. A set-down piece may still be re-read this way; only
+ // the minting is suppressed (Q-41).
+ const setDown = piece.setDownAt !== undefined;
+ try {
+  pieces.setCurrent(pieceId, chosen.id);
+ } catch {
+  return c.json({ error: 'unknown arrangement' }, 400);
+ }
+ serverEmit(deps.vaultRoot, 'clerk', 'arrangement-chosen', `principle=${chosen.principle}`);
+ if (!setDown) {
+  // Model-marked gaps without a question id mint EXACTLY ONE queue entry
+  // each. The question text is the model's composition, already verified
+  // to quote an adjacent snippet (T11), so the weight is ordinary: the
+  // person did not declare it (isUserDeclaredWeight is false).
+  const toMint = chosen.entries.filter(
+   (e): e is Gap & { pending: string } =>
+    e.kind === 'gap' && e.pending !== undefined && e.question === undefined,
+  );
+  if (toMint.length > 0) {
+   let next = chosen;
+   for (const gap of toMint) {
+    const entry = deps.queue.add({
+     source: 'gap-fill',
+     license: 'arrangement-gap',
+     question: gap.pending,
+     questionForm: 'deliberative',
+     sharpness: 'weak',
+     horizon: 'session',
+     gap: gap.id,
+    });
+    next = {
+     ...next,
+     entries: next.entries.map((e) =>
+      e.kind === 'gap' && e.id === gap.id ? { ...e, question: entry.id } : e,
+     ),
+    };
+    serverEmit(deps.vaultRoot, 'clerk', 'gap-question-minted', `chars=${gap.pending.length}`);
+   }
+   // Write the question ids back onto the chosen arrangement. The guards
+   // pass: the pin set is unchanged and the gap gains a declared field.
+   pieces.putArrangement(pieceId, next);
+  }
+ }
+ return c.json(enrichPiece(pieces.get(pieceId) ?? piece));
+});
+
+// Static fallback: serve web/dist when it exists
  app.get('/*', (c) => {
   const distDir = join(process.cwd(), 'web', 'dist');
   if (!existsSync(distDir)) return c.notFound();

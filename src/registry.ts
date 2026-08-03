@@ -100,8 +100,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/clerk/arrangements',
   name: 'proposeArrangements',
-  status: 'unwired',
-  reason: 'wired by T12\'s POST /api/piece/:id/arrangements route (Wave 4)',
+  status: 'live',
+  reason: 'wired by T12: POST /api/piece/:id/arrangements calls it with the clerk model (010 T12)',
  },
 
  // ── src/clerk/docket.ts ──

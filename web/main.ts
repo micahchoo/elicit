@@ -2203,18 +2203,43 @@ function renderPiece() {
  // An explicit string binding: function declarations below do not inherit
  // the narrowing of `id` (only arrow closures do), so name it once, plainly.
  const pieceId: string = id;
+ // The arrangement being viewed: a candidate the person switched to, or the
+ // current one. Viewing never chooses (Q-38); `keep this order` does.
+ let viewedArrangementId: string | null = null;
 
  const div = el('div', { class: 'screen active piece-surface' });
 
  const nav = el('div', { class: 'piece-nav' });
  const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
  backBtn.addEventListener('click', () => navTo('material'));
+ // Pass 2's margin words (Q-38): `other orders?` requests the
+ // acceptance-time generation and hides once the piece holds its bound of
+ // three; the principle names switch the view between candidates; `keep
+ // this order` takes a viewed candidate that is not current. All plain
+ // words in the margin, never a row of tabs.
+ const otherOrders = el('button', { class: 'nav-link' }, 'other orders?');
+ const keepOrder = el('button', { class: 'nav-link' }, 'keep this order');
+ const ordersSwitcher = el('span', { class: 'piece-orders' });
  // Margin words, dimmed until the page is focused: set down (or pick up,
  // when the Piece is set down) and export. Q-41's verbs, never a flag.
  const setDown = el('button', { class: 'nav-link' }, 'set down');
  const pickUp = el('button', { class: 'nav-link' }, 'pick up');
  const exportBtn = el('button', { class: 'nav-link' }, 'export');
- nav.append(backBtn, ' \u00b7 ', setDown, ' \u00b7 ', pickUp, ' \u00b7 ', exportBtn);
+ nav.append(
+  backBtn,
+  ' \u00b7 ',
+  otherOrders,
+  ' \u00b7 ',
+  ordersSwitcher,
+  ' \u00b7 ',
+  keepOrder,
+  ' \u00b7 ',
+  setDown,
+  ' \u00b7 ',
+  pickUp,
+  ' \u00b7 ',
+  exportBtn,
+ );
  div.append(nav);
 
  const doc = el('div', { class: 'piece-doc' });
@@ -2247,6 +2272,26 @@ function renderPiece() {
    }
   })();
  });
+ otherOrders.addEventListener('click', () => {
+  // The acceptance-time generation is slow by design (Q-38): the waiting
+  // line speaks before the request goes out.
+  const wait = pieceWait(doc, 'asking for other orders\u2026');
+  api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/arrangements`)
+   .then((piece) => {
+    wait.end();
+    paint(piece);
+   })
+   .catch((e: unknown) => wait.fail(e));
+ });
+ keepOrder.addEventListener('click', () => {
+  const viewedId = viewedArrangementId;
+  if (viewedId === null) return;
+  api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/choose`, { arrangement: viewedId })
+   .then((piece) => {
+    paint(piece);
+   })
+   .catch((e: unknown) => console.error(e));
+ });
 
  async function refresh(): Promise<void> {
   try {
@@ -2259,12 +2304,37 @@ function renderPiece() {
 
  function paint(piece: PieceEnriched) {
   doc.innerHTML = '';
-  const arrangement = piece.arrangements.find((a) => a.id === piece.current) ?? piece.arrangements[0] ?? null;
+  // The view: the arrangement the person last asked for, else the current
+  // one. A candidate is never chosen by viewing it (Q-38).
+  const arrangement =
+   piece.arrangements.find((a) => a.id === viewedArrangementId) ??
+   piece.arrangements.find((a) => a.id === piece.current) ??
+   piece.arrangements[0] ??
+   null;
   if (arrangement === null) return;
+  viewedArrangementId = arrangement.id;
 
   const isDown = piece.setDownAt !== null;
   setDown.style.display = isDown ? 'none' : '';
   pickUp.style.display = isDown ? '' : 'none';
+
+  // The margin words, restated for this piece: `other orders?` is the
+  // request for candidates and hides once the piece holds its bound of
+  // three (Q-38); the principle names switch the view; `keep this order`
+  // offers the choice when the viewed arrangement is not current.
+  otherOrders.style.display = piece.arrangements.length >= 3 ? 'none' : '';
+  ordersSwitcher.innerHTML = '';
+  for (let i = 0; i < piece.arrangements.length; i++) {
+   const candidate = piece.arrangements[i]!;
+   if (i > 0) ordersSwitcher.append(' \u00b7 ');
+   const word = el('button', { class: 'nav-link' }, candidate.principle);
+   word.addEventListener('click', () => {
+    viewedArrangementId = candidate.id;
+    void refresh();
+   });
+   ordersSwitcher.append(word);
+  }
+  keepOrder.style.display = arrangement.id === piece.current ? 'none' : '';
 
   const entryIds = arrangement.entries.map((e) => e.id);
 
@@ -2362,10 +2432,23 @@ function renderPiece() {
   });
   doc.append(seam);
 
-  // Marginalia sit in the margin, dimmed until hovered. Empty in pass 1;
-  // the column is rendered anyway so later waves land in a seam that exists.
+  // Skeleton Marginalia sit in the margin column, dimmed until hovered:
+  // the principle sentence first, then each role phrase beside its
+  // paragraph, then any stale-pin flag. A stale-pin flag is a note, never
+  // a control — there is nothing to click (Q-39).
   const marginalia = el('div', { class: 'piece-marginalia' });
-  for (const m of arrangement.marginalia) {
+  const notes = [...arrangement.marginalia].sort((a, b) => {
+   const rank = (m: PieceMarginalium): number => {
+    if (m.note === 'principle') return 0;
+    if (m.note === 'role') {
+     const at = entryIds.indexOf(m.on ?? '');
+     return at === -1 ? 1 + entryIds.length : 2 + at;
+    }
+    return 2 + entryIds.length;
+   };
+   return rank(a) - rank(b);
+  });
+  for (const m of notes) {
    marginalia.append(el('p', { class: 'wiki-note' }, m.text));
   }
   doc.append(marginalia);

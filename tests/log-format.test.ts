@@ -519,6 +519,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   detail: 'count=2',
   reads: 'offered 2 other orders of the same material',
 },
+{
+  kind: 'arrangement-chosen',
+  detail: 'principle=argument',
+  reads: 'kept the argument order for the piece',
+},
 ];
 
 describe('formatEvent', () => {

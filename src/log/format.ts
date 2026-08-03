@@ -660,6 +660,11 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 // says whether the model can do this job at all (T14 reads it).
 'arrangement-rejected': (f) =>
  `set one proposed order aside (${f.reason ?? 'a boundary check'})`,
+// Emitted when the person takes a candidate arrangement as current (T12).
+// The detail carries the principle — the one word the person can use; the
+// ids stay in the JSONL where the audit trail belongs.
+'arrangement-chosen': (f) =>
+ `kept the ${f.principle ?? 'chronology'} order for the piece`,
 };
 
 /**
