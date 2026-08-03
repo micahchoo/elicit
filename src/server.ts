@@ -90,8 +90,10 @@ import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
 import { createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
 import { createCoachStore, readSittingTags } from './coach/store.js';
-import { evaluateOffer, type CoachFacts } from './coach/license.js';
-import { waitingLines, coachOfferSentence } from './coach/page.js';
+import { evaluateOffer, licenseState, type CoachFacts } from './coach/license.js';
+import { waitingLines, coachOfferSentence, buildCoachPage } from './coach/page.js';
+import { runCoachAdvice } from './coach/advise.js';
+import { mintReflections } from './coach/reflection.js';
 import type { AdviceNote } from './coach/contract.js';
 import type {
  Vault,
@@ -2760,6 +2762,216 @@ app.get('/api/coach/waiting', (c) => {
   offer: offered ? { slug: offered.slug, name: offered.name, sentence: coachOfferSentence(offered) } : null,
   lines: waitingLines(facts),
  });
+});
+
+// The one fire-and-forget advice attempt, shared by /read, /return and
+// /artifact (T10): licenseState recomputed from disk, then the mint. The
+// mint failing is a log line, never a 5xx — the request already succeeded.
+function refreshAdviceInBackground(slug: string): void {
+ setImmediate(() => {
+  let facts: CoachFacts;
+  try {
+   facts = buildCoachFacts();
+  } catch {
+   serverEmit(deps.vaultRoot, 'elicitor', 'advice-withheld', 'reason=call-failed');
+   return;
+  }
+  const licensed = licenseState(facts, slug);
+  if (!licensed) return;
+  runCoachAdvice({ store: coachStore, facts, complete: clerkComplete, slug, license: licensed.event })
+   .then((outcome) => {
+    if (outcome.outcome === 'minted') {
+     serverEmit(
+      deps.vaultRoot,
+      'elicitor',
+      'advice-minted',
+      `license=${outcome.note.license} options=${outcome.note.options.length} replaced=${outcome.replaced}`,
+     );
+    } else {
+     serverEmit(deps.vaultRoot, 'elicitor', 'advice-withheld', `reason=${outcome.reason}`);
+    }
+   })
+   .catch(() => serverEmit(deps.vaultRoot, 'elicitor', 'advice-withheld', 'reason=call-failed'));
+ });
+}
+
+// GET /api/coach/:slug — the page, read-only. Reading a page is not an
+// agent act: no side effects, no log write. 404 when the lens is off (Q-73).
+app.get('/api/coach/:slug', (c) => {
+ const slug = c.req.param('slug');
+ const facts = buildCoachFacts();
+ const page = buildCoachPage(facts, facts.snippets, slug);
+ if (!page) return c.json({ error: 'unknown direction' }, 404);
+ return c.json(page);
+});
+
+// POST /api/coach/:slug/read — the read is an act: mark the note read,
+// stamp the visit, then let page-opened license a fresh mint in the
+// background (Q-77's cap holds structurally — one unread note, replaced).
+app.post('/api/coach/:slug/read', (c) => {
+ const slug = c.req.param('slug');
+ const direction = coachStore.getDirection(slug);
+ if (!direction || !direction.coached) return c.json({ error: 'unknown direction' }, 404);
+ // The visit stamp must be strictly later than every prior record on the
+ // Direction, or a same-millisecond declare→read would make `lastVisit >
+ // coachedAt` compare equal and page-opened would never license (Q-77
+ // compares recorded event times, and ms precision is the clock's).
+ const prior = [direction.coachedAt, direction.lastVisit].filter((s): s is string => s !== undefined);
+ const latest = prior.length > 0 ? prior.reduce((a, b) => (a > b ? a : b)) : '';
+ let now = new Date().toISOString();
+ if (latest !== '' && now <= latest) now = new Date(Date.parse(latest) + 1).toISOString();
+ coachStore.markAdviceRead(slug, now);
+ coachStore.recordVisit(slug, now);
+ serverEmit(deps.vaultRoot, 'elicitor', 'coach-page-read', `slug=${slug}`);
+ refreshAdviceInBackground(slug);
+ return c.json({ ok: true });
+});
+
+// POST /api/coach/:slug/adopt { optionId } — adoption MINTS the quest
+// (Q-74). An option id from a replaced note is 404: nothing mints from an
+// evaporated option.
+app.post('/api/coach/:slug/adopt', async (c) => {
+ const slug = c.req.param('slug');
+ const note = coachStore.readAdvice(slug);
+ const body = await c.req.json<{ optionId?: unknown }>();
+ const optionId = typeof body?.optionId === 'string' ? body.optionId : '';
+ const option = note?.options.find((o) => o.id === optionId);
+ if (!option) return c.json({ error: 'option not found' }, 404);
+ const quest = coachStore.adoptQuest({ direction: slug, act: option.text, cites: option.cites });
+ serverEmit(deps.vaultRoot, 'elicitor', 'quest-adopted', `slug=${slug} quest=${quest.id}`);
+ return c.json({ quest });
+});
+
+// POST /api/coach/:slug/decline-option { optionId } — recorded text,
+// never re-offered (Q-77).
+app.post('/api/coach/:slug/decline-option', async (c) => {
+ const slug = c.req.param('slug');
+ const note = coachStore.readAdvice(slug);
+ const body = await c.req.json<{ optionId?: unknown }>();
+ const optionId = typeof body?.optionId === 'string' ? body.optionId : '';
+ const option = note?.options.find((o) => o.id === optionId);
+ if (!option) return c.json({ error: 'option not found' }, 404);
+ coachStore.addDeclinedOption(slug, option.text);
+ serverEmit(deps.vaultRoot, 'elicitor', 'coach-option-declined', `slug=${slug}`);
+ return c.json({ ok: true });
+});
+
+// POST /api/coach/quest/:id/return { text, channel? } — ORDINARY CAPTURE
+// (Q-75): the unprompted template with the quest/direction tag on the
+// transcript (T4's caller), protocol 'quest-return', then the reflection
+// mint (T6) and the same background advice attempt.
+app.post('/api/coach/quest/:id/return', async (c) => {
+ const quest = coachStore.getQuest(c.req.param('id'));
+ if (!quest) return c.json({ error: 'unknown quest' }, 404);
+ const body = await c.req.json<{ text?: unknown; channel?: unknown }>();
+ if (typeof body?.text !== 'string' || body.text.trim().length === 0) {
+  return c.json({ error: 'text is required' }, 400);
+ }
+ if (body.channel !== undefined && !isCaptureChannel(body.channel)) {
+  return c.json({ error: `invalid channel "${String(body.channel)}"` }, 400);
+ }
+ const text = body.text.trim();
+ const sessionId = ulid();
+ const at = new Date().toISOString();
+ const turn: Turn = { role: 'user', text, at };
+
+ deps.vault.startTranscript(sessionId, {
+  mode: { minutes: 0, energy: 'medium', target: 'self' },
+  protocol: 'quest-return',
+  started: at,
+  quest: quest.id,
+  direction: quest.direction,
+ });
+ deps.vault.appendTurn(sessionId, turn);
+ unpromptedSessions.add(sessionId);
+ unpromptedChannels.set(sessionId, body.channel);
+
+ // Length, never content (Q-23: the JSONL is the audit trail).
+ serverEmit(deps.vaultRoot, 'elicitor', 'quest-returned', `quest=${quest.id} session=${sessionId} chars=${text.length}`);
+
+ startBackgroundHarvest({
+  sessionId,
+  turns: [turn],
+  protocol: 'quest-return',
+  started: at,
+  origin: 'unprompted',
+  ...(body.channel !== undefined ? { unpromptedChannel: body.channel } : {}),
+ });
+
+ const reflections = mintReflections({
+  queue: deps.queue,
+  quest,
+  session: sessionId,
+  returnText: text,
+  log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+ });
+ if (reflections.minted.length > 0) {
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'reflection-minted',
+   `minted=${reflections.minted.length} clipped=${reflections.clipped}`,
+  );
+ }
+ refreshAdviceInBackground(quest.direction);
+ return c.json({ status: 'harvesting', sessionId, reflections: reflections.minted.length });
+});
+
+// POST /api/coach/quest/:id/retire — the person's verb, no confirmation,
+// no reason (Q-75).
+app.post('/api/coach/quest/:id/retire', (c) => {
+ const quest = coachStore.retireQuest(c.req.param('id'));
+ if (!quest) return c.json({ error: 'unknown quest' }, 404);
+ serverEmit(deps.vaultRoot, 'elicitor', 'quest-retired', `quest=${quest.id}`);
+ return c.json({ ok: true });
+});
+
+// POST /api/coach/:slug/artifact { pointer, name, sentence } — a pointer
+// plus the person's own sentence (Q-78). The pointer is lineage-plane and
+// NEVER opened; the sentence goes through the ordinary capture path. The
+// POINTER never enters a detail line — the Activity JSONL is surfaced.
+app.post('/api/coach/:slug/artifact', async (c) => {
+ const slug = c.req.param('slug');
+ const direction = coachStore.getDirection(slug);
+ if (!direction || !direction.coached) return c.json({ error: 'unknown direction' }, 404);
+ const body = await c.req.json<{ pointer?: unknown; name?: unknown; sentence?: unknown }>();
+ if (
+  typeof body?.pointer !== 'string' ||
+  body.pointer.trim() === '' ||
+  typeof body?.name !== 'string' ||
+  body.name.trim() === '' ||
+  typeof body?.sentence !== 'string' ||
+  body.sentence.trim() === ''
+ ) {
+  return c.json({ error: 'pointer, name and sentence are required' }, 400);
+ }
+ const pointer = body.pointer.trim();
+ const name = body.name.trim();
+ const sentence = body.sentence.trim();
+
+ const sessionId = ulid();
+ const at = new Date().toISOString();
+ const turn: Turn = { role: 'user', text: sentence, at };
+ deps.vault.startTranscript(sessionId, {
+  mode: { minutes: 0, energy: 'medium', target: 'self' },
+  protocol: 'artifact',
+  started: at,
+  direction: slug,
+ });
+ deps.vault.appendTurn(sessionId, turn);
+ unpromptedSessions.add(sessionId);
+ unpromptedChannels.set(sessionId, undefined);
+ startBackgroundHarvest({
+  sessionId,
+  turns: [turn],
+  protocol: 'artifact',
+  started: at,
+  origin: 'unprompted',
+ });
+ coachStore.declareArtifact({ direction: slug, pointer, name, sentenceSession: sessionId });
+ serverEmit(deps.vaultRoot, 'elicitor', 'artifact-declared', `direction=${slug} named=true`);
+ refreshAdviceInBackground(slug);
+ return c.json({ status: 'harvesting', sessionId });
 });
 
 // Static fallback: serve web/dist when it exists

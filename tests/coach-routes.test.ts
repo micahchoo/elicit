@@ -22,7 +22,11 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { readEvents } from '../src/log/activity.js';
 import { makeFakeComplete } from '../src/fake-responder.js';
-import { createCoachStore } from '../src/coach/store.js';
+import { createCoachStore, type CoachStore } from '../src/coach/store.js';
+import { createClaimStore } from '../src/wiki/store.js';
+import type { Claim } from '../src/wiki/contract.js';
+import type { AdviceNote } from '../src/coach/contract.js';
+import type { Complete, QueueStore } from '../src/types.js';
 
 let root: string;
 let app: Hono;
@@ -175,5 +179,302 @@ describe('the coached direction routes (090 T9)', () => {
   expect(paths).toContain('/api/coach/direction/:slug/uncoach');
   expect(paths).toContain('/api/coach/direction/:slug/decline-offer');
   expect(paths).toContain('/api/coach/waiting');
+ });
+});
+
+// ===========================================================================
+// The quest, artifact and return routes (090 T10) — the capture wiring.
+// ===========================================================================
+// These tests need a scripted model: the advice mint and the background
+// harvest both call it, in an order the routes decide asynchronously, so the
+// fake routes by PROMPT CONTENT instead of script order. The vault is seeded
+// with claims BEFORE createApp so the advice mint has something to cite.
+
+describe('the quest, artifact and return routes (090 T10)', () => {
+ const NOW = '2026-08-03T09:00:00.000Z';
+ const ADVICE_MARKER = 'composing an advice note';
+ const ADVICE_JSON = JSON.stringify({
+  options: [
+   { text: 'Cook one new recipe', cites: ['c1'] },
+   { text: 'Write down your knife setup', cites: ['c2'] },
+   { text: 'Plan a week of meals', cites: ['c3'] },
+  ],
+ });
+ const CUT_JSON = JSON.stringify({
+  cuts: [
+   {
+    text: 'I burnt the rice.',
+    sourceTurn: 0,
+    facet: 'construct',
+    stance: 'self-observation',
+    reading: 'the person reports this',
+    standalone: true,
+   },
+  ],
+ });
+
+ function routedComplete(): { complete: Complete; calls: { system: string; text: string }[] } {
+  const calls: { system: string; text: string }[] = [];
+  const complete: Complete = async (system, turns) => {
+   calls.push({ system, text: turns[0]?.text ?? '' });
+   return system.includes(ADVICE_MARKER) ? ADVICE_JSON : CUT_JSON;
+  };
+  return { complete, calls };
+ }
+
+ function claim(id: string, body: string, cites: string[]): Claim {
+  return {
+   id,
+   body,
+   range: 'in the kitchen, since 2024',
+   status: 'unconfirmed',
+   cites,
+   facet: 'fact',
+   referents: [],
+   fromReadings: [],
+   attested: false,
+   readLog: [],
+   model: 'test-model',
+   modelAt: NOW,
+   created: NOW,
+   updated: NOW,
+  };
+ }
+
+ let queue: QueueStore;
+ let routed: { complete: Complete; calls: { system: string; text: string }[] };
+
+ beforeEach(async () => {
+  root = mkdtempSync(join(tmpdir(), 'elicit-coach-routes-'));
+  settled = 0;
+  waiting = [];
+  const vault = createVault(root);
+  // One snippet and three claims sharing the 'cooking' name-term — the
+  // offer floor's worth, so the advice mint has a citable pool.
+  const snip = vault.saveSnippet('a paragraph about cooking', {
+   kind: 'unprompted',
+   session: 's-1',
+   question: '',
+   questionForm: 'theoretical',
+  });
+  const claimStore = createClaimStore(root);
+  claimStore.writeClaim(claim('c1', 'cooking changed how I plan meals', [`${snip.id}@1`]));
+  claimStore.writeClaim(claim('c2', 'cooking is a daily craft', [`${snip.id}@1`]));
+  claimStore.writeClaim(claim('c3', 'cooking taught me patience', [`${snip.id}@1`]));
+  queue = createQueueStore(root);
+  const index = buildIndex(Object.values(vault.rebuildIndex().snippets));
+  routed = routedComplete();
+  app = await createApp({
+   vault,
+   complete: routed.complete,
+   queue,
+   index,
+   vaultRoot: root,
+   authStore: createFileAuth(join(root, '.auth.json')),
+   onDocketSettled,
+  });
+  await waitForSettles(1);
+ });
+
+ afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+ });
+
+ /**
+  * Poll disk until the advice note exists (and, optionally, is newer than a
+  * stamp). The mint runs on the server's setImmediate and exposes no signal
+  * to await — the same why the harvest-queue suite polls /api/harvest-queue.
+  */
+ async function waitForNote(slug: string, newerThan?: string): Promise<AdviceNote> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+   const note = createCoachStore(root).readAdvice(slug);
+   if (note && (newerThan === undefined || note.mintedAt > newerThan)) return note;
+   if (Date.now() > deadline) {
+    throw new Error(
+     `advice note never minted for ${slug}; root=${root}; ` +
+     `events=${JSON.stringify(readEvents(root).map((e) => e.kind))}; ` +
+     `note=${JSON.stringify(createCoachStore(root).readAdvice(slug))}`,
+    );
+   }
+   await new Promise<void>((r) => setTimeout(r, 25));
+  }
+ }
+
+ /**
+  * Poll /api/harvest-queue until the pending record lands. The propose
+  * runs on the server's setImmediate and exposes no signal to await — the
+  * same why the harvest-queue suite polls.
+  */
+ async function waitForHarvest(sessionId: string): Promise<void> {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+   const res = await get(`/api/harvest-queue/${sessionId}`);
+   if (res.status === 200) return;
+   if (Date.now() > deadline) throw new Error(`pending harvest for ${sessionId} never landed`);
+   await new Promise<void>((r) => setTimeout(r, 25));
+  }
+ }
+
+ it('adopt mints a quest; return leaves a tagged transcript, two reflections, a pending harvest, and a replaced note', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+
+  // The first read licenses a mint (page-opened) — the note appears in the
+  // background, and the page then shows it with the empty-state opening.
+  await post('/api/coach/cooking/read');
+  const note1 = await waitForNote('cooking');
+  expect(note1.options).toHaveLength(3);
+
+  const page = await get('/api/coach/cooking');
+  expect(page.status).toBe(200);
+  const pageBody = await jsonOf<{ name: string; opening: string; advice: { unread: boolean } | null }>(page);
+  expect(pageBody.name).toBe('Cooking');
+  expect(pageBody.opening).toBe('nothing here yet — this page fills as you act');
+  expect(pageBody.advice!.unread).toBe(true);
+
+  // Adopt an option — the quest record is minted (Q-74).
+  const adopt = await post('/api/coach/cooking/adopt', { optionId: note1.options[0]!.id });
+  expect(adopt.status).toBe(200);
+  const adopted = await jsonOf<{ quest: { id: string; direction: string; act: string; cites: string[] } }>(adopt);
+  expect(adopted.quest.direction).toBe('cooking');
+  expect(adopted.quest.act).toBe(note1.options[0]!.text);
+  expect(adopted.quest.cites).toEqual(['c1']);
+
+  // Return — ordinary capture with the quest tag (T4 wired: assert the FILE).
+  const ret = await post(`/api/coach/quest/${adopted.quest.id}/return`, {
+   text: 'I burnt the rice. Then I tried again.',
+  });
+  expect(ret.status).toBe(200);
+  const retBody = await jsonOf<{ sessionId: string; reflections: number }>(ret);
+  expect(retBody.reflections).toBe(2);
+
+  const transcript = readFileSync(join(root, 'transcripts', `${retBody.sessionId}.md`), 'utf-8');
+  expect(transcript).toContain(`quest: ${adopted.quest.id}`);
+  expect(transcript).toContain('direction: cooking');
+
+  // Two quest-reflection entries, quoted, deduped on the (quest, session) pair.
+  const reflections = queue.list({ source: 'quest-reflection' });
+  expect(reflections).toHaveLength(2);
+  for (const e of reflections) {
+   expect(e.quest).toBe(adopted.quest.id);
+   expect(e.direction).toBe('cooking');
+   expect('I burnt the rice. Then I tried again.').toContain(e.quotedFragment!);
+   expect(e.license).toBe(`Q-75 quest return quest=${adopted.quest.id} session=${retBody.sessionId}`);
+  }
+
+  // A pending harvest for the return (the ordinary review queue).
+  await waitForHarvest(retBody.sessionId);
+  const hq = await get(`/api/harvest-queue/${retBody.sessionId}`);
+  expect(hq.status).toBe(200);
+  const hqBody = await jsonOf<{ proposals: unknown[] }>(hq);
+  expect(hqBody.proposals).toHaveLength(1);
+
+  // The return licensed a fresh mint — the note was replaced (Q-77).
+  const note2 = await waitForNote('cooking', note1.mintedAt);
+  expect(note2.mintedAt > note1.mintedAt).toBe(true);
+
+  const kinds = readEvents(root).map((e) => e.kind);
+  expect(kinds).toContain('coach-page-read');
+  expect(kinds).toContain('quest-adopted');
+  expect(kinds).toContain('quest-returned');
+  expect(kinds).toContain('reflection-minted');
+  expect(kinds).toContain('advice-minted');
+ });
+
+ it('an artifact declaration captures the sentence; the pointer reaches neither the model nor the log (Q-78)', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/cooking/read');
+  const note1 = await waitForNote('cooking');
+  const pointer = '/home/me/notes/secret.pdf';
+
+  const art = await post('/api/coach/cooking/artifact', {
+   pointer,
+   name: 'the kitchen log',
+   sentence: 'this log holds my knife decisions',
+  });
+  expect(art.status).toBe(200);
+  const artBody = await jsonOf<{ sessionId: string }>(art);
+
+  const records = createCoachStore(root).listArtifacts('cooking');
+  expect(records).toHaveLength(1);
+  expect(records[0]!.pointer).toBe(pointer);
+  expect(records[0]!.name).toBe('the kitchen log');
+  expect(records[0]!.sentenceSession).toBe(artBody.sessionId);
+
+  // The artifact licensed a fresh mint, so the advice call ran after the
+  // declaration — and the pointer still never entered any recorded prompt.
+  const note2 = await waitForNote('cooking', note1.mintedAt);
+  expect(note2).toBeDefined();
+  const allPrompts = routed.calls.map((c) => c.system + c.text).join('\n');
+  expect(allPrompts).toContain('the kitchen log');
+  expect(allPrompts).not.toContain('secret.pdf');
+  expect(allPrompts).not.toContain('/home/me/notes');
+  for (const e of readEvents(root)) {
+   expect(e.detail).not.toContain('secret.pdf');
+   expect(e.detail).not.toContain('/home/me/notes');
+  }
+  expect(readEvents(root).map((e) => e.kind)).toContain('artifact-declared');
+ });
+
+ it('rejects an artifact missing any of the three fields', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  const r = await post('/api/coach/cooking/artifact', { pointer: '/x', name: 'the log' });
+  expect(r.status).toBe(400);
+ });
+
+ it('retire is the person\'s verb — no confirmation, no reason (Q-75)', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/cooking/read');
+  const note = await waitForNote('cooking');
+  const adopt = await post('/api/coach/cooking/adopt', { optionId: note.options[0]!.id });
+  const { quest } = await jsonOf<{ quest: { id: string } }>(adopt);
+
+  const ret = await post(`/api/coach/quest/${quest.id}/retire`);
+  expect(ret.status).toBe(200);
+  const retired = createCoachStore(root).getQuest(quest.id)!;
+  expect(retired.retiredAt).toBeTypeOf('string');
+  expect(readEvents(root).map((e) => e.kind)).toContain('quest-retired');
+  expect((await post('/api/coach/quest/nope/retire')).status).toBe(404);
+ });
+
+ it('adopting an option from a replaced note is 404 — nothing mints from an evaporated option (Q-74)', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/cooking/read');
+  const note1 = await waitForNote('cooking');
+
+  // The note is replaced on disk before the person acts.
+  createCoachStore(root).writeAdvice({
+   direction: 'cooking',
+   mintedAt: new Date().toISOString(),
+   license: 'page-opened',
+   options: [{ id: 'opt-9', text: 'The new option', cites: ['c1'] }],
+  });
+
+  const adopt = await post('/api/coach/cooking/adopt', { optionId: note1.options[0]!.id });
+  expect(adopt.status).toBe(404);
+  expect(createCoachStore(root).listQuests('cooking')).toEqual([]);
+ });
+
+ it('a declined option never appears in the next minted note (Q-77)', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/cooking/read');
+  const note1 = await waitForNote('cooking');
+  const declined = note1.options[1]!;
+
+  const dec = await post('/api/coach/cooking/decline-option', { optionId: declined.id });
+  expect(dec.status).toBe(200);
+  expect(readEvents(root).map((e) => e.kind)).toContain('coach-option-declined');
+
+  // A second read re-mints; the declined text is dropped by the guard.
+  await post('/api/coach/cooking/read');
+  const note2 = await waitForNote('cooking', note1.mintedAt);
+  expect(note2.options.map((o) => o.text)).not.toContain(declined.text);
+  expect(note2.options).toHaveLength(2);
+ });
+
+ it('the page 404s when the lens is off (Q-73)', async () => {
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/direction/cooking/uncoach');
+  expect((await get('/api/coach/cooking')).status).toBe(404);
  });
 });

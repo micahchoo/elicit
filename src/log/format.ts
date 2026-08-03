@@ -363,6 +363,15 @@ const SENTENCES: Record<string, (f: Fields, detail: string) => string> = {
 'direction-coached': () => 'you took up coaching on a direction',
 'direction-uncoached': () => 'you set a coaching direction down',
 'coach-offer-declined': () => 'you declined a coaching offer',
+'coach-page-read': () => 'you read a coach page',
+'quest-adopted': () => 'you took up a quest',
+'coach-option-declined': () => 'you set an option aside',
+'quest-returned': () => 'you came back with something for a quest',
+'quest-retired': () => 'you retired a quest',
+'reflection-minted': (_f, d) => `minted ${count(nth(d, 0), 'reflection question')}`,
+'advice-minted': () => 'left a fresh note on a coach page',
+'advice-withheld': () => 'held a coach note back for want of grounded options',
+'artifact-declared': () => 'you declared an artifact by the name you gave it',
 
  // ── The queue's degradation ladder (Q-55) ──
 

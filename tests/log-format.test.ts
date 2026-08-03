@@ -128,6 +128,15 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'direction-coached', detail: 'slug=cooking', reads: 'you took up coaching on a direction' },
  { kind: 'direction-uncoached', detail: 'slug=cooking', reads: 'you set a coaching direction down' },
  { kind: 'coach-offer-declined', detail: 'slug=cooking', reads: 'you declined a coaching offer' },
+ { kind: 'coach-page-read', detail: 'slug=cooking', reads: 'you read a coach page' },
+ { kind: 'quest-adopted', detail: `slug=cooking quest=${ULID}`, reads: 'you took up a quest' },
+ { kind: 'coach-option-declined', detail: 'slug=cooking', reads: 'you set an option aside' },
+ { kind: 'quest-returned', detail: `quest=${ULID} session=${SECOND_ULID} chars=42`, reads: 'you came back with something for a quest' },
+ { kind: 'quest-retired', detail: `quest=${ULID}`, reads: 'you retired a quest' },
+ { kind: 'reflection-minted', detail: 'minted=2 clipped=0', reads: 'minted 2 reflection questions' },
+ { kind: 'advice-minted', detail: 'license=page-opened options=3 replaced=true', reads: 'left a fresh note on a coach page' },
+ { kind: 'advice-withheld', detail: 'reason=no-claims', reads: 'held a coach note back for want of grounded options' },
+ { kind: 'artifact-declared', detail: 'direction=cooking named=true', reads: 'you declared an artifact by the name you gave it' },
 
  // The degradation ladder (Q-55). `before=0` holds at every rung by
  // construction, so what the reader needs is what relaxing recovered.
