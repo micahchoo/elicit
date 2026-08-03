@@ -181,6 +181,59 @@ describe('proposeOps — the call', () => {
   });
 });
 
+describe('proposeOps — ticket 087: the claim-quality correctives', () => {
+  it('names one subject form — "The user" — and forbids the drift RESULTS 16.2 measured', async () => {
+    // The corrective's shape: ONE canonical form stated, the measured drift
+    // named as forbidden ("The user" 59 / "The person" 28 / "The author" 2 /
+    // bare "They" most of the rest).
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+
+    const system = calls[0]!.system;
+    expect(system).toMatch(/every body names them the same way: "The user"/);
+    expect(system).toContain('Never "The person"');
+    expect(system).toContain('never "The author"');
+    expect(system).toContain('never a bare "They"');
+  });
+
+  it('keeps referent discipline with the 085 exemplars: ma\'am is never their mother', async () => {
+    // Mode 2 of the 085 review: the severe case resolved "ma'am" to a
+    // relation that appears nowhere in the prose; the mild case read a named
+    // work as a common noun. The prompt must carry both exemplars.
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+
+    const system = calls[0]!.system;
+    expect(system).toContain('"ma\'am" stays "ma\'am"');
+    expect(system).toContain('never "their mother"');
+    expect(system).toContain('"Clement Valla\'s Binder"');
+    expect(system).toContain('never "a binder"');
+  });
+
+  it('binds modality to the prose: completed work is never filed as facet "intention"', async () => {
+    // Mode 3 of the 085 review: two completed works filed as `facet:
+    // intention`. The corrective is a verb-mode rule, stated with the facet
+    // corruption it protects.
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+
+    expect(calls[0]!.system).toContain('Completed work is never filed as facet "intention"');
+    expect(calls[0]!.system).toContain('If the prose says they did it, the claim says they did it');
+  });
+
+  it('keeps the prose\'s hedges: observer and collective agency survive', async () => {
+    // Mode 4 of the 085 review: "as far as I saw it" and "a conscious
+    // unspoken decision" (collective) flattened to sole agency. The hedge
+    // IS the content.
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+
+    const system = calls[0]!.system;
+    expect(system).toContain('"As far as I saw it" stays an observer\'s view');
+    expect(system).toContain('a decision the prose describes as shared stays shared');
+  });
+});
+
 describe('proposeOps — parsing', () => {
   it('parses a JSON array of ops', async () => {
     const { complete } = recorder([JSON.stringify([mintOp()])]);

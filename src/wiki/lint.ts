@@ -1,5 +1,5 @@
 /**
- * The graph lint — five findings, no model, no writes (Q-31).
+ * The graph lint — seven findings, no model, no writes (Q-31).
  *
  * **This module takes no model handle. There is no such parameter anywhere in
  * its signature, and that absence IS the contract.** A reader who wants to know
@@ -63,6 +63,8 @@ export function lint(
     ...godNodeFindings(graph, thresholds, log),
     ...mergeCandidateFindings(graph, thresholds, log),
     ...undiscriminatedRangeFindings(graph, thresholds, log),
+    ...occasionlessRangeFindings(graph, thresholds, log),
+    ...weakEvidenceFindings(graph, thresholds, log),
   ];
 }
 
@@ -360,6 +362,91 @@ function undiscriminatedRangeFindings(
 }
 
 /**
+ * `occasionless-range` — a live claim whose Range names no occasion.
+ *
+ * The measured classes (RESULTS 16.2, ticket 087): "generally" x7,
+ * "in general", and the over-broad "throughout their life" the 085
+ * review met in the wild. Q-21 makes Range mandatory so a claim cannot
+ * float free of its occasion; this finding is the note that says one
+ * does. Shadowed (Q-35) like its siblings: computed and logged, returned
+ * only when the register flips.
+ *
+ * The subject is the claim id — the note renders beside the sentence.
+ */
+function occasionlessRangeFindings(
+  graph: ClaimGraph,
+  thresholds: ThresholdRegister,
+  log: LogFn,
+): LintFinding[] {
+  const t = thresholds['lint.occasionlessRange'];
+  // The register admits booleans, because two of its entries are switches.
+  // This one is a switch; anything else is not a flag and is not acted on.
+  if (typeof t.value !== 'boolean') return [];
+
+  const findings: LintFinding[] = [];
+  for (const c of graph.claims) {
+    if (!isLive(c)) continue;
+    if (namesOccasion(c.range)) continue;
+
+    const would = `note occasionless-range on claim=${c.id} range="${c.range}"`;
+    if (!shadowDecision(t, would, log)) continue;
+
+    findings.push({
+      kind: 'occasionless-range',
+      subject: c.id,
+      detail: `range "${c.range}" names no occasion`,
+      refs: [c.id],
+    });
+  }
+  return findings;
+}
+
+/**
+ * `weak-evidence` — a live claim whose only cite is one of the labelled
+ * danglers (074's measured set, docs/dangler-labels-2026-08-02.md).
+ *
+ * The 085 review met the consequence: "Archie is my attempt at those four
+ * parts in one window" — "those four parts" is a dangler — and the claim
+ * minted from it is opaque. The check is mechanical: the claim cites
+ * exactly one snippet and that snippet id is in the labelled set. Nothing
+ * else about the claim is judged — the note is about the evidence, never
+ * the claim's content (Q-31, Q-15).
+ *
+ * Shadowed (Q-35) like its siblings.
+ */
+function weakEvidenceFindings(
+  graph: ClaimGraph,
+  thresholds: ThresholdRegister,
+  log: LogFn,
+): LintFinding[] {
+  const t = thresholds['lint.weakEvidenceDangler'];
+  if (typeof t.value !== 'boolean') return [];
+
+  const findings: LintFinding[] = [];
+  for (const c of graph.claims) {
+    if (!isLive(c)) continue;
+    if (c.cites.length !== 1) continue;
+
+    const cite = c.cites[0];
+    if (cite === undefined) continue;
+    const at = cite.lastIndexOf('@');
+    if (at <= 0) continue;
+    if (!(cite.slice(0, at) in DANGLER_SNIPPET_IDS)) continue;
+
+    const would = `note weak-evidence on claim=${c.id} cite=${cite}`;
+    if (!shadowDecision(t, would, log)) continue;
+
+    findings.push({
+      kind: 'weak-evidence',
+      subject: c.id,
+      detail: `its only cite is a labelled dangler (074): ${cite}`,
+      refs: [c.id, cite],
+    });
+  }
+  return findings;
+}
+
+/**
  * Normalized token overlap between two canonical names — Jaccard over the
  * words, case and punctuation and word order discarded.
  *
@@ -387,3 +474,326 @@ function nameSimilarity(a: string, b: string): number {
 function nameTokens(name: string): Set<string> {
   return new Set(name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 0));
 }
+/**
+ * Closed-class words that never name an occasion: prepositions,
+ * determiners, conjunctions, auxiliaries, pronouns, and the
+ * subordinators that introduce one ("when", "while"). A range like
+ * "when working with cheap devices" names its occasion through the
+ * content words that survive this list; a range that survives with no
+ * content word at all names nothing.
+ */
+const FUNCTION_WORDS: Record<string, true> = {
+  'about': true,
+  'above': true,
+  'across': true,
+  'after': true,
+  'against': true,
+  'along': true,
+  'among': true,
+  'around': true,
+  'as': true,
+  'at': true,
+  'before': true,
+  'behind': true,
+  'below': true,
+  'beneath': true,
+  'beside': true,
+  'between': true,
+  'beyond': true,
+  'by': true,
+  'despite': true,
+  'down': true,
+  'during': true,
+  'except': true,
+  'for': true,
+  'from': true,
+  'in': true,
+  'inside': true,
+  'into': true,
+  'near': true,
+  'of': true,
+  'off': true,
+  'on': true,
+  'onto': true,
+  'out': true,
+  'outside': true,
+  'over': true,
+  'past': true,
+  'per': true,
+  'since': true,
+  'through': true,
+  'throughout': true,
+  'till': true,
+  'to': true,
+  'toward': true,
+  'towards': true,
+  'under': true,
+  'underneath': true,
+  'until': true,
+  'unto': true,
+  'up': true,
+  'upon': true,
+  'via': true,
+  'with': true,
+  'within': true,
+  'without': true,
+  'regarding': true,
+  'concerning': true,
+  'and': true,
+  'or': true,
+  'but': true,
+  'nor': true,
+  'so': true,
+  'yet': true,
+  'is': true,
+  'are': true,
+  'was': true,
+  'were': true,
+  'be': true,
+  'been': true,
+  'being': true,
+  'am': true,
+  'has': true,
+  'have': true,
+  'had': true,
+  'do': true,
+  'does': true,
+  'did': true,
+  'will': true,
+  'would': true,
+  'shall': true,
+  'should': true,
+  'can': true,
+  'could': true,
+  'may': true,
+  'might': true,
+  'must': true,
+  'need': true,
+  'ought': true,
+  'used': true,
+  'i': true,
+  'me': true,
+  'my': true,
+  'mine': true,
+  'we': true,
+  'us': true,
+  'our': true,
+  'ours': true,
+  'you': true,
+  'your': true,
+  'yours': true,
+  'he': true,
+  'him': true,
+  'his': true,
+  'she': true,
+  'her': true,
+  'hers': true,
+  'it': true,
+  'its': true,
+  'they': true,
+  'them': true,
+  'their': true,
+  'theirs': true,
+  'who': true,
+  'whom': true,
+  'whose': true,
+  'which': true,
+  'what': true,
+  'when': true,
+  'where': true,
+  'why': true,
+  'how': true,
+  'whether': true,
+  'if': true,
+  'that': true,
+  'because': true,
+  'though': true,
+  'although': true,
+  'unless': true,
+  'whereas': true,
+};
+
+/**
+ * Content words that still name no occasion: time adverbs without an
+ * anchor ("generally", "currently"), and lifetime or deictic nouns
+ * ("life", "point", "time"). These are the measured classes of ticket
+ * 087 — RESULTS 16.2 counted `generally` x7 and `in general`; the 085
+ * review met `throughout their life` in the wild.
+ */
+const OCCASIONLESS_WORDS: Record<string, true> = {
+  'generally': true,
+  'general': true,
+  'currently': true,
+  'current': true,
+  'previously': true,
+  'early': true,
+  'late': true,
+  'recently': true,
+  'always': true,
+  'usually': true,
+  'often': true,
+  'sometimes': true,
+  'seldom': true,
+  'rarely': true,
+  'never': true,
+  'eventually': true,
+  'initially': true,
+  'finally': true,
+  'soon': true,
+  'now': true,
+  'then': true,
+  'past': true,
+  'present': true,
+  'future': true,
+  'life': true,
+  'lifetime': true,
+  'whole': true,
+  'entire': true,
+  'ever': true,
+  'forever': true,
+  'point': true,
+  'time': true,
+  'moment': true,
+  'instance': true,
+  'case': true,
+  'period': true,
+  'phase': true,
+  'everyday': true,
+  'ongoing': true,
+  'overall': true,
+  'broadly': true,
+  'widely': true,
+  'commonly': true,
+  'typically': true,
+  'occasionally': true,
+  'regularly': true,
+  'constantly': true,
+  'continually': true,
+  'continuously': true,
+  'frequently': true,
+  'mostly': true,
+  'mainly': true,
+  'primarily': true,
+  'merely': true,
+};
+
+/**
+ * Does this range name an occasion? A range is occasionless when every
+ * content word in it is an OCCASIONLESS_WORDS member — the measured
+ * classes — or when no content word survives at all.
+ */
+function namesOccasion(range: string): boolean {
+  for (const token of nameTokens(range)) {
+    if (!(token in FUNCTION_WORDS) && !(token in OCCASIONLESS_WORDS)) return true;
+  }
+  return false;
+}
+
+/**
+ * The labelled dangler set, ticket 074 (docs/dangler-labels-2026-08-02.md):
+ * 96 of 139 vault snippets dangle, measured 2026-08-02. A snippet id here
+ * carries a pronoun, demonstrative or definite description whose referent
+ * is not identifiable from the snippet text alone — the 085 review met
+ * the consequence when a claim minted from "those four parts" came out
+ * opaque. The set is data, keyed by snippet id; the conformance test
+ * keeps it equal to the doc's "yes" rows.
+ */
+const DANGLER_SNIPPET_IDS: Record<string, true> = {
+  '01KZ0WPJ2KYCBVJZRV0CCETZGG': true,
+  '01KZ0WPJ2N66XJ8A510B5C1975': true,
+  '01KZ0WPJ2N7R8N9A3QEWW7ENRB': true,
+  '01KZ0WPJ2NA5F7G77CYH6GD8TG': true,
+  '01KZ0WPJ2NKF2MJA30Q9ZZFS4W': true,
+  '01KZ0WPJ2NN1BS6AGFPN3B9KHY': true,
+  '01KZ0WPJ2P4NG70F0GGRYGT58D': true,
+  '01KZ0WPJ2P7G6QCHWVV617SCBZ': true,
+  '01KZ0WPJ2PACD23D4VYNFZJ50Z': true,
+  '01KZ0WPJ2PCZCVEV5HAYTFZP39': true,
+  '01KZ0WPJ2PDVW882KF8Y8D4BFF': true,
+  '01KZ0WPJ2PHRH7H1FHV22TYNRB': true,
+  '01KZ0WPJ2PQAXNW18ZS9Y2B0A6': true,
+  '01KZ0WPJ2Q2ZRVH42X1YAMC3JH': true,
+  '01KZ0WPJ2QBWCMXAA0BV8C55XS': true,
+  '01KZ0WPJ2QGJ3M5FFBTSTR7E67': true,
+  '01KZ0WPJ2QJBM59EYTFF22BDAX': true,
+  '01KZ0WPJ2QKDKRDQCKYMQ648QG': true,
+  '01KZ0WPJ2QP6C13FBJXSQR1VBN': true,
+  '01KZ0WPJ2QPD5WR70VEJ9VRY0J': true,
+  '01KZ0WPJ2QPHJX69VJAWQPJXJB': true,
+  '01KZ0WPJ2QSA0TTJS1TAB9GSPA': true,
+  '01KZ0WPJ2R2XA1M31VE52VX6T9': true,
+  '01KZ0WPJ2R40FGWNMERCF2337C': true,
+  '01KZ0WPJ2R4B0GXHR018WH67YM': true,
+  '01KZ0WPJ2R7GJ9M2R4TBT141N6': true,
+  '01KZ0WPJ2R85NPX95DWMST5X55': true,
+  '01KZ0WPJ2R9MQZ4SX26VG1QMW6': true,
+  '01KZ0WPJ2REXHTSGSVM6QF5D3B': true,
+  '01KZ0WPJ2RFC75N2764ZGA3G2N': true,
+  '01KZ0WPJ2RFF08J7PTM8WAAGCH': true,
+  '01KZ0WPJ2RGA9YS8BA9TWTSD73': true,
+  '01KZ0WPJ2RJ7W9HNAFD8FBRWEY': true,
+  '01KZ0WPJ2RRA83QEF7BZ47C89Q': true,
+  '01KZ0WPJ2RTSJKDJSXDJWRYZDG': true,
+  '01KZ0WPJ2RWHM597TH224VMP21': true,
+  '01KZ0WPJ2RWK6VKRYS4SEP42T7': true,
+  '01KZ0WPJ2RY4ZTAAC45N62YRYE': true,
+  '01KZ0WPJ2S0246WM96Z95CR288': true,
+  '01KZ0WPJ2S17Q1R60EMNAD06AS': true,
+  '01KZ0WPJ2S4BBW7HVKB5J8JKWZ': true,
+  '01KZ0WPJ2S6Z3QRARW35EXNQX3': true,
+  '01KZ0WPJ2S9H134XFWGGGWDAGE': true,
+  '01KZ0WPJ2S9YEGHFRJ3SBAN2GY': true,
+  '01KZ0WPJ2SBX7GK5YP9F1SPVYJ': true,
+  '01KZ0WPJ2SC8KSF34TH28DX84J': true,
+  '01KZ0WPJ2SCD5A29Z7KN7KB1Y1': true,
+  '01KZ0WPJ2SGSP8YRH2GHV9HD44': true,
+  '01KZ0WPJ2SHA55FCCDV5T6HYA5': true,
+  '01KZ0WPJ2SHQ7DCYYCAMEZ2KWS': true,
+  '01KZ0WPJ2SJ0602ZQW0CB2WR1J': true,
+  '01KZ0WPJ2SKDYFAS9825G9QH1N': true,
+  '01KZ0WPJ2SM38E117VFG190BH8': true,
+  '01KZ0WPJ2SWZYRXJQVG1Y6SC1T': true,
+  '01KZ0WPJ2SX0GRTQANR692Y7Y1': true,
+  '01KZ0WPJ2SXJZXVES7Y3V00DNG': true,
+  '01KZ0WPJ2SZEJV0QRZZ6XH90TT': true,
+  '01KZ0WPJ2TMV0X31P5Y19XCNR6': true,
+  '01KZ0WPJ2TTDVEKZA5R4BWEXTZ': true,
+  '01KZ0WPJ2TTK286235GQZPS6WJ': true,
+  '01KZ0WPJ2TW1CTTA799KBVEQVQ': true,
+  '01KZ0WPJ4VR58XDR38KYZFHAZF': true,
+  '01KZ0WPJ4WSD2FPC64YWG7NBMW': true,
+  '01KZ0WPJ4XATS07M5136HXAMYD': true,
+  '01KZ0WPJ4XVJ86K24317EDF4NW': true,
+  '01KZ0WPJ4YP3BQJXC760M7FAC4': true,
+  '01KZ0WPJ518Y17E3WHNS0ED48W': true,
+  '01KZ0WPJ51YZQ5RXXTPKHPRC5V': true,
+  '01KZ0WPJ52SJFF4JSK7CB8MVZ0': true,
+  '01KZ0WPJ52WRKNX5126QEY2GJY': true,
+  '01KZ0WPJ52X6Q8B8T1F1W2RXFA': true,
+  '01KZ0WPJ52ZWFTBMTVCDCDHZ24': true,
+  '01KZ0WPJ539XVS9S6BHVX9T85P': true,
+  '01KZ0WPJ53C145GX47GCSBJH6H': true,
+  '01KZ0WPJ53F8RXWCXKBX5JTYVT': true,
+  '01KZ0WPJ53RPWM1REKGGNV2AEB': true,
+  '01KZ0WPJ53V8WTH0DAACWXKQR0': true,
+  '01KZ0WPJ53W6AX603Y8NWK8GZF': true,
+  '01KZ0WPJ53Y6AM0WFP7T1VZT1D': true,
+  '01KZ0WPJ54Z0Q612H4WAXBJZ1J': true,
+  '01KZ0WPJ58CF8MJ5VDY43FRSKK': true,
+  '01KZ0WPJ5D5HFB8CPN01WGSWZN': true,
+  '01KZ0WPJ5DDVEAQB92NYP65VM1': true,
+  '01KZ0WPJ5DGFT0Q0E985XGK1RN': true,
+  '01KZ0WPJ5DH0M1K2GS9HQMMQK5': true,
+  '01KZ0WPJ5DQTEDF7F4J8ADBHAY': true,
+  '01KZ0WPJ5DV9T1T39FDYSYN2EZ': true,
+  '01KZ0WPJ5DVQFHP0HF30H2JV70': true,
+  '01KZ0WPJ5Q2P5YH3N66WEY5J9K': true,
+  '01KZ0WPJ5Q4FRXYX42YM1AV65S': true,
+  '01KZ0WPJ5QFJ4T2WMH2GS6FMJW': true,
+  '01KZ0WPJ5QRT4HZNF9Y99FE95H': true,
+  '01KZ0WPJ5R70487WM6XZAPC9T8': true,
+  '01KZ0WPJ5RME9X5B523GWT2M6Q': true,
+  '01KZ0WPJ5S77XM071PMHTHDSFQ': true,
+  '01KZ0WPJ5WKCM01Y1W10KFNBHW': true,
+};
+

@@ -140,6 +140,20 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Already live: a quota that protects the docket run must act from day one, or a first run over a large corpus monopolizes every pass. Every clip is logged, and the log is what would resize it.',
  },
+ 'lint.occasionlessRange': {
+  name: 'lint.occasionlessRange',
+  value: true,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows the note would fire on a real corpus — a Range that names no occasion (the measured classes: "generally" x7, "in general", the over-broad "throughout their life", RESULTS 16.2 and the 085 review) — and that a human agrees the claim floats free of its occasion (ticket 087). The closed word set the mechanical predicate uses lives in src/wiki/lint.ts; graduating this entry acts on that predicate and nothing else.',
+ },
+ 'lint.weakEvidenceDangler': {
+  name: 'lint.weakEvidenceDangler',
+  value: true,
+  live: false,
+  graduatesWhen:
+   'The shadow record shows the note firing on claims whose only cite is one of the 96 labelled danglers (docs/dangler-labels-2026-08-02.md), and that a human agrees the single cited snippet cannot carry the claim alone (ticket 087, mode 1 of the 085 review).',
+ },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;

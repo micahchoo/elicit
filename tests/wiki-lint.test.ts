@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { Claim, ClaimGraph, LogFn, Referent } from '../src/wiki/contract.js';
 import type { Complete, Facet, Snippet } from '../src/types.js';
 
+const root = join(import.meta.dirname, '..');
+
 /**
- * The lint's tests have one job beyond checking five findings: they must fail
+ * The lint's tests have one job beyond checking seven findings: they must fail
  * if the module ever grows the power to act. Three of them are about absence —
  * no fourth parameter, no mutation of the graph, no memory between calls — and
  * absence is the only part of a module a later reader cannot see by reading it.
@@ -101,6 +105,14 @@ const DISCRIMINATED_LIVE: ThresholdRegister = {
     ...THRESHOLDS['lint.undiscriminatedRangeSimilarity'],
     live: true,
   },
+};
+const OCCASIONLESS_LIVE: ThresholdRegister = {
+  ...THRESHOLDS,
+  'lint.occasionlessRange': { ...THRESHOLDS['lint.occasionlessRange'], live: true },
+};
+const WEAK_LIVE: ThresholdRegister = {
+  ...THRESHOLDS,
+  'lint.weakEvidenceDangler': { ...THRESHOLDS['lint.weakEvidenceDangler'], live: true },
 };
 
 describe('stale-citation (Q-31, Q-5)', () => {
@@ -546,6 +558,160 @@ describe('undiscriminated-range (ticket 060, Q-35: shadowed)', () => {
     lint(sameRange, DISCRIMINATED_LIVE, log);
 
     expect(sameRange).toEqual(before);
+  });
+});
+
+describe('occasionless-range (ticket 087, Q-35: shadowed)', () => {
+  it('flags a range that names no occasion, naming the claim as subject', () => {
+    const g = graphOf({
+      claims: [claim('c1', { range: 'generally', cites: ['snipA@1'] })],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { log } = collector();
+
+    const findings = lint(g, OCCASIONLESS_LIVE, log);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: 'occasionless-range',
+      subject: 'c1',
+      refs: ['c1'],
+    });
+  });
+
+  it('flags the measured classes: the general adverbs and the over-broad lifetime', () => {
+    // RESULTS 16.2 counted `generally` x7 and `in general`; the 085 review
+    // met `throughout their life` in the wild; `currently` and `previously`
+    // are the same class — a time adverb with no occasion attached.
+    for (const range of ['in general', 'throughout their life', 'currently', 'previously', 'early on']) {
+      const { log } = collector();
+      const findings = lint(
+        graphOf({ claims: [claim('c1', { range, cites: ['snipA@1'] })], snippets: { snipA: snippet('snipA', 1) } }),
+        OCCASIONLESS_LIVE,
+        log
+      );
+      expect(findings.some((f) => f.kind === 'occasionless-range'), range).toBe(true);
+    }
+  });
+
+  it('leaves a range that names an occasion alone', () => {
+    for (const range of [
+      'at work',
+      'when working with cheap devices',
+      'during their capstone project',
+      'in 2021',
+      "when describing the programme's objective",
+      'in the mornings, since 2024',
+    ]) {
+      const { log } = collector();
+      const findings = lint(
+        graphOf({ claims: [claim('c1', { range, cites: ['snipA@1'] })], snippets: { snipA: snippet('snipA', 1) } }),
+        OCCASIONLESS_LIVE,
+        log
+      );
+      expect(findings.some((f) => f.kind === 'occasionless-range'), range).toBe(false);
+    }
+  });
+
+  it('is shadowed in the shipped register: computed and logged, never returned', () => {
+    const g = graphOf({
+      claims: [claim('c1', { range: 'generally', cites: ['snipA@1'] })],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { events, log } = collector();
+
+    const findings = lint(g, THRESHOLDS, log);
+
+    expect(findings.some((f) => f.kind === 'occasionless-range')).toBe(false);
+    expect(
+      events.some((e) => e.kind === 'shadow-decision' && e.detail.includes('occasionless-range'))
+    ).toBe(true);
+  });
+});
+
+describe('weak-evidence (ticket 087, Q-35: shadowed)', () => {
+  // One of the 96 labelled danglers (docs/dangler-labels-2026-08-02.md).
+  const D = '01KZ0WPJ2KYCBVJZRV0CCETZGG';
+
+  it('flags a claim whose only cite is a labelled dangler', () => {
+    const g = graphOf({ claims: [claim('c1', { cites: [`${D}@1`] })] });
+    const { log } = collector();
+
+    const findings = lint(g, WEAK_LIVE, log);
+
+    const weak = findings.find((f) => f.kind === 'weak-evidence');
+    expect(weak).toMatchObject({ subject: 'c1', refs: ['c1', `${D}@1`] });
+  });
+
+  it('does not flag a claim with more than one cite, even when one is a dangler', () => {
+    const g = graphOf({
+      claims: [claim('c1', { cites: [`${D}@1`, 'snipA@1'] })],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { log } = collector();
+
+    expect(lint(g, WEAK_LIVE, log).some((f) => f.kind === 'weak-evidence')).toBe(false);
+  });
+
+  it('does not flag a claim whose only cite is not a labelled dangler', () => {
+    const g = graphOf({
+      claims: [claim('c1', { cites: ['snipA@1'] })],
+      snippets: { snipA: snippet('snipA', 1) },
+    });
+    const { log } = collector();
+
+    expect(lint(g, WEAK_LIVE, log).some((f) => f.kind === 'weak-evidence')).toBe(false);
+  });
+
+  it('is shadowed in the shipped register: computed and logged, never returned', () => {
+    const g = graphOf({ claims: [claim('c1', { cites: [`${D}@1`] })] });
+    const { events, log } = collector();
+
+    const findings = lint(g, THRESHOLDS, log);
+
+    expect(findings.some((f) => f.kind === 'weak-evidence')).toBe(false);
+    expect(
+      events.some((e) => e.kind === 'shadow-decision' && e.detail.includes('weak-evidence'))
+    ).toBe(true);
+  });
+});
+
+describe('the 074 dangler set the weak-evidence finding keys on (conformance)', () => {
+  // The code-side set is private; the conformance check runs the MECHANISM.
+  // A claim whose only cite is a doc-labelled dangler is flagged once the
+  // register flips live, and a claim citing a doc-"no" snippet is not. The
+  // doc table (docs/dangler-labels-2026-08-02.md) is the labelled ground
+  // truth: 96 yes rows, 43 no rows, 139 snippets.
+  const doc = readFileSync(join(root, 'docs/dangler-labels-2026-08-02.md'), 'utf-8');
+  const rows = doc
+    .split('\n')
+    .filter((l) => l.trimStart().startsWith('|'))
+    .map((l) => l.split('|').map((c) => c.trim()))
+    .filter(
+      (cells): cells is string[] =>
+        cells.length >= 5 && (cells[2] === 'yes' || cells[2] === 'no')
+    )
+    .map((cells) => ({ id: cells[1] ?? '', dangles: cells[2] as 'yes' | 'no' }));
+
+  it('the doc parses to the labelled population', () => {
+    expect(rows).toHaveLength(139);
+    expect(rows.filter((r) => r.dangles === 'yes')).toHaveLength(96);
+    expect(rows.filter((r) => r.dangles === 'no')).toHaveLength(43);
+  });
+
+  it('flags exactly the doc-labelled danglers when the finding is live', () => {
+    for (const row of rows) {
+      const { log } = collector();
+      const findings = lint(
+        graphOf({ claims: [claim(`c-${row.id}`, { cites: [`${row.id}@1`] })] }),
+        WEAK_LIVE,
+        log
+      );
+      const weak = findings.filter((f) => f.kind === 'weak-evidence');
+      expect(weak.length, `${row.id} labelled ${row.dangles}`).toBe(
+        row.dangles === 'yes' ? 1 : 0
+      );
+    }
   });
 });
 

@@ -107,12 +107,15 @@ The vocabulary is six operations and nothing else:
 
 Rules:
 - "range" is the context where a claim holds: "at work", "since the move", "when the stakes are low". MINT, UPDATE, MERGE and SUPERSEDE each need one. "This person is X" with no range is not a claim about anybody.
-- "body" is ONE sentence, in your own words, about the person. Never a quotation of them.
+- "body" is ONE sentence, in your own words, about the person. Never a quotation of them. The wiki is about ONE person, and every body names them the same way: "The user". Never "The person", never "The author", never a bare "They" where the subject can be named.
 - SUPERSEDE and ARCHIVE each need a "reason", in your own words.
 - Cite only the snippet versions listed below, copied exactly as they are written there.
 - <question> and <context> blocks are lineage, never evidence: they explain what the prose points at, but they are not the person's approved words. Never quote them, never cite them, never echo them into a body or a range.
 - "facet" is one of: episode, general-event, lifetime-period, fact, construct, intention, value, causal-theory.
+- Match the prose's modality. If the prose says they did it, the claim says they did it; if it says they intend to or want to, the claim says they intend to or want to. Completed work is never filed as facet "intention".
+- Keep the prose's hedges. "As far as I saw it" stays an observer's view; a decision the prose describes as shared stays shared. Never promote the person to sole author of something the prose hedges.
 - MINT and UPDATE may carry "referents": [{"name":"...","kind":"person|project|place|pole|construct|other"}] — the people, projects, places and constructs the claim is about, named the way this person names them.
+- Name referents exactly as the prose names them; never resolve a word to a relation or object the prose does not state. "ma'am" stays "ma'am", never "their mother"; a named work stays named — "Clement Valla's Binder", never "a binder". If the prose does not say who or what something is, the claim does not invent it.
 
 Return ONLY the JSON array. No markdown fences. No commentary.`;
 

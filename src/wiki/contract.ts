@@ -284,7 +284,9 @@ export type LintFinding = {
     | 'orphan-claim'
     | 'god-node-facet'
     | 'merge-candidate'
-    | 'undiscriminated-range';
+    | 'undiscriminated-range'
+    | 'occasionless-range'
+    | 'weak-evidence';
   /** The claim id, facet name or referent slug the finding is about. */
   subject: string;
   detail: string;
