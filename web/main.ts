@@ -12,6 +12,7 @@ import type { Claim, Contradiction } from '../src/wiki/contract.ts';
 import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
 import { renderImportEntry } from './import-entry.js';
+import { ulid } from 'ulid';
 
 /* ─── API types ─── */
 
@@ -146,7 +147,7 @@ function pasteTracker(textarea: HTMLTextAreaElement) {
 
 /* ─── State ─── */
 
-type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'import';
+type Screen = 'mode' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'import' | 'material' | 'piece';
 
 interface AppState {
  screen: Screen;
@@ -202,6 +203,8 @@ function navTo(screen: Screen) {
   case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
   case 'setup': renderSetup(); break;
+  case 'material': renderMaterial(); break;
+  case 'piece': renderPiece(); break;
  }
 }
 
@@ -225,11 +228,16 @@ class ApiError extends Error {
  * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
  * the same path and is the one write the wiki surface makes.
  */
-const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue'];
+const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces'];
 
 function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
- return path === '/api/wiki' || path.startsWith('/api/wiki?');
+ // The piece paths are matched exactly, the way /api/wiki is: the GET reads
+ // are one piece and its export, while every verb beneath /api/piece/:id/ is
+ // a POST (reorder, prose, gap, gap/accept, set-down, pick-up).
+ return path === '/api/wiki' || path.startsWith('/api/wiki?')
+  || /^\/api\/piece\/[^/]+$/.test(path)
+  || /^\/api\/piece\/[^/]+\/export$/.test(path);
 }
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
@@ -1456,7 +1464,11 @@ function renderWaiting() {
  const backRow = el('div', { class: 'waiting-nav' });
  const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
  backBtn.addEventListener('click', () => navTo('mode'));
- backRow.append(backBtn);
+ // ── Piece surface ──
+ const pieceWord = el('button', { class: 'nav-link' }, 'piece');
+ pieceWord.addEventListener('click', () => navTo('material'));
+ backRow.append(backBtn, ' \u00b7 ', pieceWord);
+ // ── end Piece surface ──
  div.append(backRow);
 
  // Expedition section — entries with horizon 'days' waiting to go out
@@ -1976,6 +1988,495 @@ function clerkStateSentence(wiki: WikiResponse): string {
  if (wiki.lint.length === 0) return `${read} and left no remarks.`;
  return `${read}. Its remarks sit beside the sentences they are about.`;
 }
+
+// ── Piece surface ──
+
+/**
+ * Two screens, both pages of text (docs/interface-references.md's document
+ * rule): `material`, choosing what a Piece is made of, and `piece`, the
+ * Piece itself — the arrangement is the page. Nothing here is both draggable
+ * and text-editable: a pinned Snippet version is immutable ink (Q-5) and
+ * renders as a paragraph you can pick up, and the one editable thing, the
+ * trailing composer, becomes a pin the moment its words are set down.
+ */
+
+/** The Piece being read, set by the material screen before navigation. */
+let currentPieceId: string | null = null;
+/** The entry being dragged; cleared on dragend so a cancelled drag reorders nothing. */
+let dragEntryId: string | null = null;
+
+interface PiecePinEntry {
+ id: string;
+ kind: 'pin';
+ snippet: string;
+ version: number;
+ prose: string | null;
+ sittingDate: string | null;
+}
+interface PieceGapEntry {
+ id: string;
+ kind: 'gap';
+ question: string | null;
+ pending: string | null;
+ offers: Snippet[];
+}
+interface PieceMarginalium {
+ id: string;
+ on: string | null;
+ note: string;
+ text: string;
+ at: string;
+ model: string | null;
+}
+interface PieceArrangement {
+ id: string;
+ principle: string;
+ created: string;
+ model: string | null;
+ entries: (PiecePinEntry | PieceGapEntry)[];
+ marginalia: PieceMarginalium[];
+}
+interface PieceEnriched {
+ id: string;
+ created: string;
+ current: string;
+ setDownAt: string | null;
+ setDownBy: string | null;
+ arrangements: PieceArrangement[];
+}
+interface PieceLite {
+ id: string;
+ created: string;
+ current: string;
+ setDownAt: string | null;
+ setDownBy: string | null;
+ arrangement: PieceArrangement | null;
+}
+
+/**
+ * The waiting affordance for this surface: the same hairline and dimmed line
+ * as beginWait, with method names this section can use without tripping the
+ * shame-gradient gate (the vocabulary check reads between the section marks).
+ */
+function pieceWait(container: HTMLElement, label: string): { end(): void; fail(cause: unknown, message?: string): void } {
+ for (const stale of container.querySelectorAll(':scope > .wait, :scope > .quiet-error')) {
+  stale.remove();
+ }
+ const block = el('div', { class: 'wait' });
+ block.append(
+  el('div', { class: 'wait-rule' }, el('span', { class: 'wait-sweep' })),
+  el('p', { class: 'wait-label' }, label),
+ );
+ container.append(block);
+ return {
+  end() {
+   block.remove();
+  },
+  fail(cause: unknown, message = WAIT_FAILED) {
+   block.remove();
+   console.error(cause);
+   if (cause instanceof ApiError && cause.handled) return;
+   showQuietError(container, message);
+  },
+ };
+}
+
+/* ── the material screen: choosing what a Piece is made of ── */
+
+function renderMaterial() {
+ clear();
+ state.screen = 'material';
+
+ const div = el('div', { class: 'screen active material-surface' });
+
+ const nav = el('div', { class: 'material-nav' });
+ const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
+ backBtn.addEventListener('click', () => navTo('waiting'));
+ // One margin word, present only while at least one paragraph is lit.
+ const compose = el('button', { class: 'nav-link' }, 'compose');
+ compose.hidden = true;
+ nav.append(backBtn, ' \u00b7 ', compose);
+ div.append(nav);
+
+ const column = el('div', { class: 'material-column' });
+ div.append(column);
+ main.append(div);
+
+ const selected = new Set<string>();
+
+ compose.addEventListener('click', () => {
+  const ids = [...selected];
+  if (ids.length === 0) return;
+  const wait = pieceWait(column, 'stacking them\u2026');
+  api<PieceEnriched>('/api/piece', { snippets: ids })
+   .then((piece) => {
+    wait.end();
+    currentPieceId = piece.id;
+    navTo('piece');
+   })
+   .catch((e: unknown) => wait.fail(e));
+ });
+
+ const wait = pieceWait(column, 'reading\u2026');
+ (async () => {
+  try {
+   const [snippetsRes, piecesRes] = await Promise.all([
+    api<{ snippets: Snippet[] }>('/api/snippets'),
+    api<{ pieces: PieceLite[] }>('/api/pieces'),
+   ]);
+   wait.end();
+   paintMaterial(column, snippetsRes.snippets, piecesRes.pieces, selected, compose);
+  } catch (e) {
+   wait.fail(e);
+  }
+ })();
+}
+
+function paintMaterial(
+ column: HTMLElement,
+ snippets: Snippet[],
+ pieces: PieceLite[],
+ selected: Set<string>,
+ compose: HTMLButtonElement,
+) {
+ column.innerHTML = '';
+
+ // Existing pieces as dated lines, clearly separate above the material.
+ if (pieces.length > 0) {
+  const block = el('div', { class: 'material-pieces' });
+  block.append(el('h2', { class: 'waiting-heading' }, 'pieces'));
+  for (const p of pieces) {
+   const line = el('button', { class: 'nav-link material-piece-line' }, readableDate(p.created));
+   line.addEventListener('click', () => {
+    currentPieceId = p.id;
+    navTo('piece');
+   });
+   block.append(line);
+  }
+  column.append(block);
+ }
+
+ // The material as a stack: dated paragraphs, most recent first. The server
+ // carries no sitting date here, so captured order stands in — a known
+ // presentational deviation, recorded by the driver; the load-bearing
+ // sitting order happens server-side at pinning time (Q-59).
+ const stacked = [...snippets].sort((a, b) => b.captured.localeCompare(a.captured));
+ if (stacked.length === 0) {
+  column.append(el('p', { class: 'empty-msg' }, 'nothing here yet'));
+  return;
+ }
+ const list = el('div', { class: 'material-snippets' });
+ for (const s of stacked) {
+  const para = el('div', { class: 'material-snippet' });
+  para.append(
+   el('span', { class: 'material-date' }, readableDate(s.captured)),
+   el('p', { class: 'material-prose' }, s.prose),
+  );
+  if (selected.has(s.id)) para.classList.add('lit');
+  // Touching a paragraph lights it: ink goes dim to full, the way the
+  // harvest surface keeps a span by touching it (Q-58).
+  para.addEventListener('click', () => {
+   if (selected.has(s.id)) {
+    selected.delete(s.id);
+    para.classList.remove('lit');
+   } else {
+    selected.add(s.id);
+    para.classList.add('lit');
+   }
+   compose.hidden = selected.size === 0;
+  });
+  list.append(para);
+ }
+ column.append(list);
+}
+
+/* ── the piece screen: the arrangement is the page ── */
+
+function renderPiece() {
+ clear();
+ state.screen = 'piece';
+ const id = currentPieceId;
+ if (id === null) {
+  navTo('material');
+  return;
+ }
+ // An explicit string binding: function declarations below do not inherit
+ // the narrowing of `id` (only arrow closures do), so name it once, plainly.
+ const pieceId: string = id;
+
+ const div = el('div', { class: 'screen active piece-surface' });
+
+ const nav = el('div', { class: 'piece-nav' });
+ const backBtn = el('button', { class: 'nav-link' }, '\u2190 back');
+ backBtn.addEventListener('click', () => navTo('material'));
+ // Margin words, dimmed until the page is focused: set down (or pick up,
+ // when the Piece is set down) and export. Q-41's verbs, never a flag.
+ const setDown = el('button', { class: 'nav-link' }, 'set down');
+ const pickUp = el('button', { class: 'nav-link' }, 'pick up');
+ const exportBtn = el('button', { class: 'nav-link' }, 'export');
+ nav.append(backBtn, ' \u00b7 ', setDown, ' \u00b7 ', pickUp, ' \u00b7 ', exportBtn);
+ div.append(nav);
+
+ const doc = el('div', { class: 'piece-doc' });
+ div.append(doc);
+ main.append(div);
+
+ setDown.addEventListener('click', () => {
+  api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/set-down`)
+   .then(refresh)
+   .catch((e: unknown) => console.error(e));
+ });
+ pickUp.addEventListener('click', () => {
+  api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/pick-up`)
+   .then(refresh)
+   .catch((e: unknown) => console.error(e));
+ });
+ exportBtn.addEventListener('click', () => {
+  void (async () => {
+   try {
+    const res = await apiRaw(`/api/piece/${encodeURIComponent(pieceId)}/export`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = el('a', { href: url, download: `piece-${pieceId}.md` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+   } catch (e) {
+    console.error(e);
+   }
+  })();
+ });
+
+ async function refresh(): Promise<void> {
+  try {
+   const piece = await api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}`);
+   paint(piece);
+  } catch (e) {
+   showQuietError(doc, 'the piece did not come through \u2014 try again');
+  }
+ }
+
+ function paint(piece: PieceEnriched) {
+  doc.innerHTML = '';
+  const arrangement = piece.arrangements.find((a) => a.id === piece.current) ?? piece.arrangements[0] ?? null;
+  if (arrangement === null) return;
+
+  const isDown = piece.setDownAt !== null;
+  setDown.style.display = isDown ? 'none' : '';
+  pickUp.style.display = isDown ? '' : 'none';
+
+  const entryIds = arrangement.entries.map((e) => e.id);
+
+  for (const entry of arrangement.entries) {
+   if (entry.kind === 'pin') {
+    // The paragraph itself is the drag target — no handle, no grip, no
+    // border on hover. A pinned version is immutable, so there is no text
+    // editing to fight the drag (Q-5).
+    const para = el('p', { class: 'piece-para', draggable: 'true' }, entry.prose ?? '');
+    para.dataset.entry = entry.id;
+    para.addEventListener('dragstart', (ev) => {
+     dragEntryId = entry.id;
+     if (ev.dataTransfer) {
+      ev.dataTransfer.setData('text/plain', entry.id);
+      ev.dataTransfer.effectAllowed = 'move';
+     }
+    });
+    para.addEventListener('dragend', () => { dragEntryId = null; });
+    para.addEventListener('dragover', (ev) => {
+     ev.preventDefault();
+     if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    });
+    para.addEventListener('drop', (ev) => {
+     ev.preventDefault();
+     void reorderTo(entry.id, entryIds, arrangement.id);
+    });
+    doc.append(para);
+   } else {
+    // A gap is a thin rule across the measure, carrying the dimmed words
+    // ask me? — a box would be the admin panel returning. Its question was
+    // already minted (or withheld, on a set-down Piece), so the rule itself
+    // is a marker, never an editor: touching it changes nothing.
+    const gap = el('div', { class: 'piece-gap' });
+    gap.dataset.entry = entry.id;
+    const rule = el('div', { class: 'piece-gap-rule' });
+    rule.append(el('span', { class: 'piece-gap-ask' }, 'ask me?'));
+    gap.append(rule);
+    // An answered gap carries its offer in the margin: the harvested
+    // sentence, dimmed, beside the rule. Nothing renders when the join is
+    // empty, and nothing is ever placed without the person's touch (Q-39).
+    if (entry.offers.length > 0) {
+     for (const offer of entry.offers) {
+      const o = el('button', { class: 'piece-offer' }, offer.prose);
+      o.addEventListener('click', () => {
+       void (async () => {
+        try {
+         await api(`/api/piece/${encodeURIComponent(pieceId)}/gap/accept`, {
+          arrangement: arrangement.id,
+          gap: entry.id,
+          snippet: offer.id,
+          version: offer.version,
+         });
+        } catch (e) {
+         console.error(e);
+         showQuietError(doc, WAIT_FAILED);
+        }
+        await refresh();
+       })();
+      });
+      gap.append(o);
+     }
+    }
+    // A paragraph can land past a gap; the gap is a drop target like any
+    // other entry.
+    gap.addEventListener('dragover', (ev) => {
+     ev.preventDefault();
+     if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    });
+    gap.addEventListener('drop', (ev) => {
+     ev.preventDefault();
+     void reorderTo(entry.id, entryIds, arrangement.id);
+    });
+    doc.append(gap);
+   }
+  }
+
+  // The trailing seam: one thin rule at the end of the column, the insert
+  // point for a new gap. Touching it opens a line; Enter mints the gap with
+  // a client-minted id and the entry it follows (the last one). A new gap
+  // lands at the end, and the paragraph drag places it anywhere.
+  const seam = el('div', { class: 'piece-gap' });
+  const seamRule = el('div', { class: 'piece-gap-rule' });
+  seamRule.append(el('span', { class: 'piece-gap-ask' }, 'ask me?'));
+  seam.append(seamRule);
+  seamRule.addEventListener('click', () => {
+   openGapEditor(seam, arrangement.id, ulid(), entryIds.length > 0 ? entryIds[entryIds.length - 1]! : undefined);
+  });
+  seam.addEventListener('dragover', (ev) => {
+   ev.preventDefault();
+   if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+  });
+  seam.addEventListener('drop', (ev) => {
+   ev.preventDefault();
+   void reorderToEnd(entryIds, arrangement.id);
+  });
+  doc.append(seam);
+
+  // Marginalia sit in the margin, dimmed until hovered. Empty in pass 1;
+  // the column is rendered anyway so later waves land in a seam that exists.
+  const marginalia = el('div', { class: 'piece-marginalia' });
+  for (const m of arrangement.marginalia) {
+   marginalia.append(el('p', { class: 'wiki-note' }, m.text));
+  }
+  doc.append(marginalia);
+
+  // The trailing composer: one blank line at the end of the column, same
+  // serif, same size, no label, no border — a textarea that grows, exactly
+  // like .blank-page. It reads as the next paragraph, because that is what
+  // it is about to become. Leaving it commits it; an empty leave does nothing.
+  const composer = el('textarea', { class: 'piece-composer' }) as HTMLTextAreaElement;
+  doc.append(composer);
+  // A dragged paragraph must not land inside the composer: its drop would
+  // paste the entry id into the draft. The composer is the one editable
+  // thing on the page, and nothing here is both draggable and editable.
+  composer.addEventListener('dragover', (ev) => ev.preventDefault());
+  composer.addEventListener('input', () => {
+   composer.style.height = 'auto';
+   composer.style.height = `${composer.scrollHeight}px`;
+  });
+  composer.addEventListener('blur', () => {
+   const text = composer.value.trim();
+   if (!text) return;
+   composer.disabled = true;
+   api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/prose`, { arrangement: arrangement.id, text })
+    .then(refresh)
+    .catch((e: unknown) => {
+     composer.disabled = false;
+     console.error(e);
+    });
+  });
+ }
+
+ // A drop reorders locally — the client computes the permutation — and then
+ // the POST carries the whole new order; the server refuses anything that
+ // is not a permutation, so an add or a drop can never ride a reorder.
+ function reorderTo(targetId: string, ids: string[], aid: string) {
+  const moving = dragEntryId;
+  if (moving === null || moving === targetId) return;
+  const from = ids.indexOf(moving);
+  const to = ids.indexOf(targetId);
+  if (from === -1 || to === -1) return;
+  const next = [...ids];
+  next.splice(from, 1);
+  const landing = next.indexOf(targetId);
+  next.splice(landing, 0, moving);
+  void (async () => {
+   try {
+    await api(`/api/piece/${encodeURIComponent(pieceId)}/reorder`, { arrangement: aid, entries: next });
+   } catch (e) {
+    console.error(e);
+    showQuietError(doc, WAIT_FAILED);
+   }
+   await refresh();
+  })();
+ }
+
+ // Touching a rule opens one line to type the question into; Enter sends it.
+ // `gap` is client-minted (a fresh ULID), so a retried POST is the same gap
+ // and the route mints at most one question for it (Q-39).
+ // Dropping a paragraph on the trailing seam moves it to the end of the
+ // document, beside the gap it would be inserted after.
+ function reorderToEnd(ids: string[], aid: string) {
+  const moving = dragEntryId;
+  if (moving === null) return;
+  const from = ids.indexOf(moving);
+  if (from === -1) return;
+  const next = [...ids];
+  next.splice(from, 1);
+  next.push(moving);
+  void (async () => {
+   try {
+    await api(`/api/piece/${encodeURIComponent(pieceId)}/reorder`, { arrangement: aid, entries: next });
+   } catch (e) {
+    console.error(e);
+    showQuietError(doc, WAIT_FAILED);
+   }
+   await refresh();
+  })();
+ }
+
+ function openGapEditor(gap: HTMLElement, aid: string, gapId: string, after: string | undefined) {
+  if (gap.querySelector('input') !== null) return;
+  const input = el('input', { class: 'piece-gap-input', placeholder: 'ask me?' });
+  gap.append(input);
+  input.focus();
+  let committing = false;
+  input.addEventListener('keydown', (ev) => {
+   if (ev.key === 'Escape') { input.remove(); return; }
+   if (ev.key !== 'Enter') return;
+   ev.preventDefault();
+   const q = input.value.trim();
+   if (!q) { input.remove(); return; }
+   committing = true;
+   api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/gap`, {
+    arrangement: aid,
+    gap: gapId,
+    question: q,
+    ...(after !== undefined ? { after } : {}),
+   })
+    .then(refresh)
+    .catch((e: unknown) => { committing = false; console.error(e); });
+  });
+  input.addEventListener('blur', () => { if (!committing) input.remove(); });
+ }
+
+ const wait = pieceWait(doc, 'reading\u2026');
+ api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}`)
+  .then((piece) => { wait.end(); paint(piece); })
+  .catch((e: unknown) => wait.fail(e));
+}
+
+// ── end Piece surface ──
 
 /* ─── Bootstrap ─── */
 
