@@ -792,16 +792,16 @@ Nothing else in `src/server.ts` changes. T6 is finished with the file by Wave 3 
 - Modify: `src/wiki/thresholds.ts`, `src/clerk/docket.ts`, `src/server.ts` (append-only: two thunks at the `runDocket(` call), `src/log/format.ts`
 - Test: `tests/docket.test.ts` (extend), `tests/piece-routes.test.ts` (extend — the through-`createApp` wiring test), `tests/log-format.test.ts` (extend `EMITTED`)
 
-- [ ] **Step 1: Failing tests** — `isDormant` is false for a Piece touched yesterday, true for one touched 60 days ago, and **false for one already set down**; a docket run over a vault with one dormant Piece writes `setDownAt` and `setDownBy: 'dormancy'` to disk and emits `piece-set-down-auto` exactly once; a second run over the same vault emits it **zero** times; a docket run over a Piece with a stale pin writes exactly one `stale-pin` Marginalia and **the pin's version is unchanged on disk**; a second run writes no duplicate Marginalia; a docket run with a `complete` that throws still completes both piece jobs.
-- [ ] **Step 1a: The wiring test, and it must go through `createApp`** — in `tests/piece-routes.test.ts`'s style: build a real app over a temp vault holding one dormant Piece with one stale pin, trigger a docket run the way the product does, await `onDocketSettled`, then assert **on disk** that the Piece is set down and the Marginalia is written. **A test that hand-builds a `runDocket` deps object does not close this issue** — that is the shape that passes over an unwired product, and it is why this step exists as its own line.
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-dormancy.test.ts tests/docket.test.ts tests/piece-routes.test.ts` Expected: FAIL
-- [ ] **Step 3: Implement** the predicate, the two register entries, the two guarded Docket jobs, **and the two thunks at `src/server.ts`'s `runDocket(` call**. Re-read both files first — both are contended.
-- [ ] **Step 3a: Verify the mechanism is wired, as an exit code** — `grep -A25 "runDocket({" src/server.ts | grep -cE "stalePins|piece" ` Expected: ≥ 1 — a thunk reaches the one production call site. A green suite with a zero here means both jobs exist and neither runs.
-- [ ] **Step 4: Add the two log sentences and their `EMITTED` samples.** Read `piece-set-down-auto`'s sentence out loud; if it sounds like a reminder, rewrite it (Q-24).
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass. Then, as exit codes:
+- [x] **Step 1: Failing tests** — `isDormant` is false for a Piece touched yesterday, true for one touched 60 days ago, and **false for one already set down**; a docket run over a vault with one dormant Piece writes `setDownAt` and `setDownBy: 'dormancy'` to disk and emits `piece-set-down-auto` exactly once; a second run over the same vault emits it **zero** times; a docket run over a Piece with a stale pin writes exactly one `stale-pin` Marginalia and **the pin's version is unchanged on disk**; a second run writes no duplicate Marginalia; a docket run with a `complete` that throws still completes both piece jobs.
+- [x] **Step 1a: The wiring test, and it must go through `createApp`** — in `tests/piece-routes.test.ts`'s style: build a real app over a temp vault holding one dormant Piece with one stale pin, trigger a docket run the way the product does, await `onDocketSettled`, then assert **on disk** that the Piece is set down and the Marginalia is written. **A test that hand-builds a `runDocket` deps object does not close this issue** — that is the shape that passes over an unwired product, and it is why this step exists as its own line.
+- [x] **Step 2: Run** — `npx vitest run tests/piece-dormancy.test.ts tests/docket.test.ts tests/piece-routes.test.ts` Expected: FAIL
+- [x] **Step 3: Implement** the predicate, the two register entries, the two guarded Docket jobs, **and the two thunks at `src/server.ts`'s `runDocket(` call**. Re-read both files first — both are contended.
+- [x] **Step 3a: Verify the mechanism is wired, as an exit code** — `grep -A25 "runDocket({" src/server.ts | grep -cE "stalePins|piece" ` Expected: ≥ 1 — a thunk reaches the one production call site. A green suite with a zero here means both jobs exist and neither runs.
+- [x] **Step 4: Add the two log sentences and their `EMITTED` samples.** Read `piece-set-down-auto`'s sentence out loud; if it sounds like a reminder, rewrite it (Q-24).
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: all pass. Then, as exit codes:
   - `! grep -qE 'complete|Complete' <(sed -n '/piece jobs/,/end piece jobs/p' src/clerk/docket.ts)` Expected: exit 0 — no model in either job. (Mark the block with those comments.)
   - `grep -q "piece.dormancyDays" src/wiki/thresholds.ts && grep -rq "piece.dormancyDays" src/piece/ src/clerk/` Expected: exit 0 — a declared threshold nothing reads is a mechanism with undefined behaviour.
-- [ ] **Step 6: Commit** — `git commit -m "feat: stale-pin sweep and silent auto-set-down on the docket"`
+- [x] **Step 6: Commit** — `git commit -m "feat: stale-pin sweep and silent auto-set-down on the docket"`
 
 ---
 
@@ -915,12 +915,12 @@ One appended describe block, scripted fake model: a Piece from pass 1's flow →
 **Files:**
 - Modify: `tests/piece-e2e.test.ts` (append one describe block)
 
-- [ ] **Step 1: Write the flow above as one appended describe block.**
-- [ ] **Step 2: Run** — `npx vitest run tests/piece-e2e.test.ts` Expected: PASS, both blocks.
-- [ ] **Step 3: Verify pass 1's block was not edited** — `[ $(git diff HEAD~1 -- tests/piece-e2e.test.ts | grep -c '^-[^-]') -eq 0 ]` Expected: exit 0. The `[^-]` matters: a unified diff opens with a `--- a/…` header, so a bare `grep -c '^-'` has a floor of 1 and can never report zero — the check would pass by arithmetic rather than by evidence.
-- [ ] **Step 4: Verify the additive property** — remove `src/piece/stale.ts`, `src/piece/dormancy.ts` and `src/clerk/arrangements.ts` to a temp location, run `npx vitest run tests/piece-e2e.test.ts -t "pass 1"`, Expected: PASS. Restore them.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass.
-- [ ] **Step 6: Commit** — `git commit -m "test: pass 2 end to end, and pass 1 still standing alone"`
+- [x] **Step 1: Write the flow above as one appended describe block.**
+- [x] **Step 2: Run** — `npx vitest run tests/piece-e2e.test.ts` Expected: PASS, both blocks.
+- [x] **Step 3: Verify pass 1's block was not edited** — `[ $(git diff HEAD~1 -- tests/piece-e2e.test.ts | grep -c '^-[^-]') -eq 0 ]` Expected: exit 0. The `[^-]` matters: a unified diff opens with a `--- a/…` header, so a bare `grep -c '^-'` has a floor of 1 and can never report zero — the check would pass by arithmetic rather than by evidence.
+- [x] **Step 4: Verify the additive property** — remove `src/piece/stale.ts`, `src/piece/dormancy.ts` and `src/clerk/arrangements.ts` to a temp location, run `npx vitest run tests/piece-e2e.test.ts -t "pass 1"`, Expected: PASS. Restore them.
+- [x] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run` Expected: both pass.
+- [x] **Step 6: Commit** — `git commit -m "test: pass 2 end to end, and pass 1 still standing alone"`
 
 ---
 

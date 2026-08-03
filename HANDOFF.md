@@ -1,36 +1,37 @@
 # HANDOFF — Elicit
 
-Updated: 2026-08-02, after the 010 composition-slice execution (HEAD `78de2c5`).
+Updated: 2026-08-03, after 010 T10/T13 landed (HEAD `1e4a1a3`).
 
 ## Right now
 
-**Tree is green at `78de2c5`: tsc clean, 75 files / 1613 tests pass, vite
-build ok.** The only dirty/untracked files are ticket **087**'s fence —
-`src/clerk/mint.ts`, `src/wiki/contract.ts`, `src/wiki/lint.ts`,
-`src/wiki/thresholds.ts`, `tests/clerk-mint.test.ts`, `tests/wiki-lint.test.ts`,
-`docs/superpowers/plans/2026-08-02-the-clerk.md`, `scripts/remeasure-087-mint.ts`,
-`data/eval-087-mint/` — plus `tools/claim-review/server.log` (untracked on
-purpose). 087 has NOT committed; its uncommitted changes are foreign to every
-commit below. Never stash, revert, or rebase them; never `git add -A`.
+**Tree is green at `1e4a1a3`: tsc clean, 76 files / 1625 tests pass at the
+010-T10 commit, vite build ok.** Ticket 087 landed (`f027392`) and its fence
+is committed. Ticket **074**'s annotation half is IN FLIGHT on this tree,
+uncommitted and foreign to every commit below: `src/clerk/annotate.ts`,
+`tests/annotate.test.ts`, `scripts/measure-074-annotate.ts`,
+`data/eval-074-annotate/`, plus edits to `src/registry.ts` and
+`tests/invariant-context.test.ts` — plus `tools/claim-review/server.log`
+(untracked on purpose). Never stash, revert, or rebase the 074 work; never
+`git add -A`. Ticket **089**'s fix ships uncommitted in this tree (see below).
 
-**010 composition slice: pass 1 shipped, pass 2 half-shipped, three tasks
-blocked on 087** — full record in `docs/wayfinder/tickets/010-build-composition.md`
-(Resolution section) and the plan file's checkboxes. Commits: T1 `6410f38`, T2
+**010 composition slice: COMPLETE except T14.** Pass 1 and pass 2 are fully
+landed and green; the only open item is T14 (real-model run + RESULTS; Micah +
+real vault + live model — a human remainder). Commits: T1 `6410f38`, T2
 `11ba5e05`, T3 `e52e0c9`, T4 `b60c82b`, T5 `1930fbe`, T6 `d50528a` (routes +
 readVersion + ticket 081), T7 `219d7e4` (web surface, browser-verified), T8
 `985dbd1` (pass-1 e2e), T9 `05abe56`, registry chore `3c70694`, T11 `5171c71`
-(arrangements + ticket 082), T12 `9a9faa4` (routes + surface), docs `78de2c5`.
-**BLOCKED: T10** (dormancy + `piece.dormancyDays`/`gapsPerCandidate` register
-entries + two docket jobs + runDocket thunks — its Files list includes
-`src/wiki/thresholds.ts`, foreign-dirty at dispatch) and **T13** (pass-2 e2e —
-transitively needs T10's docket jobs), plus **T14** (real-model run + RESULTS;
-Micah + real vault + live model). When 087 lands, dispatch T10 → T13 → T14 in
-that order; T10's remaining work is spelled out in the ticket.
+(arrangements + ticket 082), T12 `9a9faa4` (routes + surface), **T10 `7f6741a`**
+(dormancy predicate, the two register entries + clerk-plan ledger rows, the two
+guarded zero-LLM docket jobs, the two runDocketNow thunks, the wave-3 log
+kinds, the through-createApp wiring test; stalePins registry entry flipped
+live; T12's `gapsPerCandidate: 3` literal switched to the register), **T13
+`1e4a1a3`** (pass-2 e2e append, additive). Full record in the ticket's
+Resolution and the plan file's checkboxes (T10/T13 ticked, T14 unticked).
 
 Two deliberate deviations recorded in the ticket: the material screen orders by
 `captured` (no sitting date on /api/snippets); `proposeArrangements` takes
 optional `log` + `modelName` params and `thresholds.gapsPerCandidate` is
-injected (T12 passes 3 with a comment — switch to THRESHOLDS when T10 lands).
+injected — T10 switched T12's literal to `THRESHOLDS['piece.gapsPerCandidate']`.
 
 ## Map state
 
@@ -39,19 +40,22 @@ map at `docs/wayfinder/map.md`. Canon: Q-1..Q-78 in `docs/decisions/elicit.md`.
 
 Open tickets and their order:
 
-- **087** mint-prompt + lint correctives (085's measured modes) — in flight,
-  uncommitted (above). Then **089** (after 087, shares lint files).
-- **010** composition slice — executed above; pass 1 complete, pass 2
-  half-landed, T10/T13/T14 blocked on 087 (see Resolution). Not closed.
-  **012** Soundings waits on 010 closing; **014** Seeding after 012 — 014's
-  approved plan: `docs/superpowers/plans/2026-08-02-seeding-slice.md`.
-  Wave-3 gate there: route-driven import must leave `provenance.authorship` on
-  disk. Never skip it. Pre-dispatch check (found by the Coach-plan review): its
-  T14 calls `api('/api/reach')`, and `web/main.ts#isReadPath` doesn't know that
-  path — the GET would go out as a POST. Verify/fix at that wave, same
-  `/api/wiki`-style exact-match shape.
+- **074**-annotation half — IN FLIGHT, uncommitted on this tree (a peer
+  session's fence, listed under Right now). Never stash or revert it.
+- **089** godNodeFanout — scope the fanout to referents (shadow record is
+  conclusive: facets are a closed vocabulary of eight and the facet counts
+  climb monotonically with the corpus). Ships uncommitted for driver
+  verification when it lands; before/after counts go in the ticket.
+- **010** composition slice — T14 only (real-model run + RESULTS, human
+  remainder); ticket stays OPEN until it lands. **012** Soundings waits on 010
+  closing; **014** Seeding after 012 — 014's approved plan:
+  `docs/superpowers/plans/2026-08-02-seeding-slice.md`. Wave-3 gate there:
+  route-driven import must leave `provenance.authorship` on disk. Never skip
+  it. Pre-dispatch check (found by the Coach-plan review): its T14 calls
+  `api('/api/reach')`, and `web/main.ts#isReadPath` doesn't know that path —
+  the GET would go out as a POST. Verify/fix at that wave, same `/api/wiki`-
+  style exact-match shape.
 - **027** gap-fill docket seam — unblocked, but sequence with 010 (server.ts).
-- **074**-annotation half — pending; rendering is web, sequence behind 010.
 - **090** build the Coach — plan-first, grilled canon is Q-73..Q-78.
 - **015** remainder and **033** — honestly data-bound, waiting on usage.
 - **065** EventKind union — deliberately last (sweeps all kinds).

@@ -107,18 +107,15 @@ writing-plans then omp execution for the grilled composition design. Slice hypot
 
 ## Resolution (2026-08-02)
 
-**Status: OPEN — blocked on ticket 087.** Pass 1 (zero-LLM) landed complete and
-verified green; pass 2's model half (T11, T12) landed; the pass-2 zero-LLM half
-(T10) and the pass-2 acceptance e2e (T13) are BLOCKED: `src/wiki/thresholds.ts`
-and `docs/superpowers/plans/2026-08-02-the-clerk.md` carry ticket 087's
-uncommitted changes at every dispatch check (`git status`), and the dispatch
-rule for this execution stops a task whose Files list includes a
-foreign-dirty file. T10 stopped at dispatch (its Files list names
-`src/wiki/thresholds.ts`); T13 is transitively blocked — its flow asserts the
-stale-pin sweep and the dormancy auto-set-down that only T10's docket jobs
-perform. T14 (real-model run + RESULTS) needs Micah, the real vault and a live
-model, and the hard rules forbid writing `./vault`; it is a human remainder.
-The ticket stays open until 087 lands and T10 + T13 + T14 complete.
+**Status: OPEN — T14 remains.** Pass 1 (zero-LLM) and pass 2 are fully landed
+and verified green. The dispatch block cleared when ticket 087 landed
+(`f027392`); T10 and T13 were then executed on a clean tree: T10 as commit
+`7f6741a`, T13 as commit `1e4a1a3`, with `npx tsc --noEmit` clean and the full
+suite green at both (76 files / 1625 passed at T10; the piece e2e passes both
+blocks at T13). T14 (real-model run + RESULTS) needs Micah, the real vault and
+a live model, and the hard rules forbid writing `./vault`; it is a human
+remainder. The ticket stays OPEN until T14 completes and the RESULTS file
+names a rejection rate.
 
 **What landed per wave (commits on main):**
 
@@ -150,7 +147,15 @@ words; browser-verified live by the driver) — 219d7e4. T8 (pass-1 e2e in
 assertions) — 985dbd1.
 - Wave 3 — T9 (`src/piece/stale.ts`, `stalePins()` add-only lint, zero-LLM)
 — 05abe56; registry chore (stalePins declared unwired, honest debt with a name)
-— 3c70694. **T10 BLOCKED at dispatch.**
+— 3c70694. **T10** (`src/piece/dormancy.ts` — the pure `isDormant` predicate;
+the two register entries `piece.dormancyDays` (45) and `piece.gapsPerCandidate`
+(3), both live per Q-56, plus their clerk-plan ledger rows; the two guarded
+zero-LLM docket jobs `runStalePinSweep` / `runDormancySweep`; the two
+runDocketNow thunks at the one production `runDocket(` call; the three wave-3
+log kinds with sentences and EMITTED samples; the through-`createApp` wiring
+test; the registry's `stalePins` entry flipped unwired → live; T12's
+`{ gapsPerCandidate: 3 }` literal switched to `THRESHOLDS['piece.gapsPerCandidate']`)
+— 7f6741a.
 - Wave 4 — T11 (`src/clerk/arrangements.ts`, `proposeArrangements()`: the one
 CLERK model call, the eight-check boundary in code, model-stamped candidates
 with fresh per-candidate entry ids, gap-cap via an injected bound, its own log
@@ -158,7 +163,10 @@ sink emitting arrangements-proposed / arrangement-rejected; ticket 082 filed)
 — 5171c71. T12 (POST /api/piece/:id/arrangements + /choose with choose-time
 gap-fill minting and set-down suppression, the `other orders?` margin word, the
 principle switcher, the marginalia column; the arrangement-chosen log kind) —
-9a9faa4. **T13 BLOCKED (transitive on T10).**
+9a9faa4. **T13** (the pass-2 e2e append in `tests/piece-e2e.test.ts` — additive,
+`git diff HEAD~1` reports zero removed lines; the additive property verified
+with stubs in place of the pass-2 sources, since bare removal breaks static
+imports) — 1e4a1a3.
 - Wave 5 — T14 not run; human + real-vault remainder.
 
 **Deliberate behavior changes and recorded deviations:**
@@ -174,21 +182,21 @@ sentence for a kind nothing emits, so T11 had to be the emitter) and
 `modelName` (Q-34 stamp). `thresholds.gapsPerCandidate` arrives as a parameter
 because the register entry is blocked; T12's route passes `{ gapsPerCandidate:
 3 }` with a comment, to switch to `THRESHOLDS.piece.gapsPerCandidate` when T10
-lands.
+lands. T10 landed 2026-08-03 and made the switch: the route now passes
+`THRESHOLDS['piece.gapsPerCandidate'].value` (typeof-narrowed); the entry is
+live per Q-56 (a bound ships in force, and every clip emits threshold-clipped).
 - T7's gap entry point is a trailing `ask me?` seam; a new gap lands at the end
 and drag placement moves it. Existing gap rules are static (re-POSTing the
 same gap id is an idempotent no-op).
 - Plan checkboxes for T10 / T13 / T14 remain unticked in the plan file; all
 completed tasks are ticked.
 
-**Verification:** `npx tsc --noEmit` clean at every commit; full suite green at
-HEAD — 75 files, 1613 passed, 3 skipped; `npx vite build` clean; pass-1 e2e
-passes with a throwing Complete. The foreign canon.test.ts red that appeared
-mid-run (087's contract.ts reindent) cleared when 087's in-flight edits
-settled; it was never in a commit here.
+**Verification:** `npx tsc --noEmit` clean at every commit; full suite green —
+75 files / 1613 passed at the pass-1 HEAD, 76 files / 1625 passed at T10
+(`7f6741a`), and the piece e2e passes both blocks at T13 (`1e4a1a3`); `npx vite
+build` clean. The foreign canon.test.ts red that appeared mid-run (087's
+contract.ts reindent) cleared when 087's in-flight edits settled; it was never
+in a commit here.
 
-**Remainders when 087 lands:** T10 (dormancy predicate, the two register
-entries incl. the clerk-plan table rows, the two guarded docket jobs, the two
-runDocket thunks, the through-createApp wiring test, the two log kinds), then
-T13 (pass-2 e2e append + additive check), then T14 (real-model run + RESULTS
-file naming a rejection rate).
+**Remainder:** T14 (real-model run + RESULTS) — the only open item. The
+ticket stays open until it lands.
