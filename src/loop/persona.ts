@@ -116,7 +116,10 @@ Live at least ${sittings} sittings. One sitting is:
    then act \`{"re":{"kind":"harvest","sessionId":"<id>"},"verb":{"v":"commit"}}\`.
    Judge each proposal as your own sentence
    standing alone: would a stranger reading only that line understand what
-   you meant, and is it actually what you said?
+   you meant, and is it actually what you said? If the queue is empty right
+   after \`end\`, the clerk may still be working through what you said —
+   let it; when you next sit down, check the queue FIRST and review
+   whatever waited for you, before opening the new sitting.
 5. Between sittings, sometimes read what the program has written about you
    (\`open {"kind":"wiki"}\`) and answer honestly when it holds up a claim —
    \`attest\` if it is true, \`challenge\` if it is not, correct it with
