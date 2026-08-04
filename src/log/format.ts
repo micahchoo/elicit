@@ -511,6 +511,12 @@ const SENTENCES = {
   const moved = `moved a claim from ${f.from ?? 'nothing'} to ${f.to ?? 'nothing'}`;
   return why === '' ? moved : `${moved}: ${why}`;
  },
+
+ // ── Lineage mirror (Q-83, ticket 112) ──
+
+ 'lineage-mirror-shadow': () => 'evaluated a mirror candidate — shadow mode, nothing minted',
+ 'lineage-mirror-minted': () => 'minted a mirror question from the record',
+ 'lineage-mirror-failed': () => 'could not mint a mirror question',
  'claim-op-rejected': (f) => `rejected an edit to the wiki: ${rejection(f.reason)}`,
  'referent-minted': (f, d) => {
   const name = quoted(d, 'name') ?? f.slug ?? 'a name';

@@ -632,6 +632,16 @@ gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
  */
 atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number }>;
 /**
+ * The lineage mirror sweep (Q-83, ticket 112), as a docket job after the
+ * atlas gap-fill. Reads claims against lineage (transcripts), evaluates
+ * candidates, and mints juxtaposition-style mirror questions.
+ * Shadow-first (Q-35): candidates always logged; questions minted only
+ * when the selection threshold graduates to live. The cap is live (Q-56).
+ * Absent means no mirror work this run, and every caller predating the
+ * field behaves exactly as before.
+ */
+lineageMirrorSweep?: () => Promise<{ evaluated: number; minted: number }>;
+/**
  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
@@ -1091,6 +1101,19 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
    }
   }
 
+  // Lineage mirror (Q-83, ticket 112) — reads claims against lineage,
+  // evaluates mirror candidates, mints juxtaposition-style questions.
+  // Shadow-first (Q-35): candidates always logged; questions minted only
+  // when the selection threshold graduates to live.
+  let lineageMirror: DocketReport['lineageMirror'];
+  if (deps.lineageMirrorSweep) {
+   try {
+    lineageMirror = await deps.lineageMirrorSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'lineage-mirror-failed', detail: String(err) });
+   }
+  }
+
   // ── 10. The wiki jobs, last and guarded (ticket 023 item 2) ──
   // Last because every job above is the docket's own work and must not wait
   // on the slowest thing in the run; guarded because a wiki failure is one
@@ -1135,6 +1158,7 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
    ...(gazetteerExtraction ? { gazetteerExtraction } : {}),
    ...(atlasGapFill ? { atlasGapFill } : {}),
    ...(gazetteerFrontier ? { gazetteerFrontier } : {}),
+   ...(lineageMirror ? { lineageMirror } : {}),
   };
  } finally {
   running = false;

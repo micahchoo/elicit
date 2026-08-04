@@ -64,6 +64,8 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'atlas-gap-fill': 'from your own words',
  // Ticket 106: outcome questions — "did this intention come to pass?"
  'outcome': 'from your own words',
+ // Lineage mirror — questions minted from usage facts (Q-83)
+ 'lineage-mirror': 'from the record',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {

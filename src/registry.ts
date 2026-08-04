@@ -157,6 +157,17 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'wired by 114: runDocket calls it once before the minting jobs; the flag file gates it to a single run',
  },
 
+ // ── src/clerk/lineage-mirror.ts ──
+ { module: 'src/clerk/lineage-mirror', name: 'readLineage', status: 'live' },
+ { module: 'src/clerk/lineage-mirror', name: 'licenseMirror', status: 'live' },
+ { module: 'src/clerk/lineage-mirror', name: 'composeLineageMirror', status: 'live' },
+ {
+  module: 'src/clerk/lineage-mirror',
+  name: 'runLineageMirrorSweep',
+  status: 'unwired',
+  reason: 'no production caller yet — the server has not wired the lineage mirror sweep into runDocket; flips to shadow with shadowKind lineage-mirror-shadow when wired',
+ },
+
  // ── src/clerk/gap-fill.ts ──
  {
   module: 'src/clerk/gap-fill',

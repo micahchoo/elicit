@@ -210,6 +210,23 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Shadow record over ≥50 composed turns shows at least one pattern-derived question per sitting on average, and the guard pipeline catches every QR-2 fixture across all nine patterns.',
  },
+
+ // ── Lineage mirror (Q-83, ticket 112) ──
+
+ 'lineageMirror.minClaimAgeDays': {
+  name: 'lineageMirror.minClaimAgeDays',
+  value: 14,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a bound on candidate age, not a selection judgment. A claim younger than 14 days has no lineage to mirror against; the number is a floor, not a tuned threshold, and every evaluation is logged.',
+ },
+ 'lineageMirror.selection': {
+  name: 'lineageMirror.selection',
+  value: 0,
+  live: false,
+  graduatesWhen:
+   'Shadow record over ≥20 runs shows at least one mirror candidate per run on average, and a human review of the shadow log confirms the evaluated claims are ones where cadence data is genuinely interesting alongside the claim body.',
+ },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;

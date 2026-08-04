@@ -51,7 +51,9 @@ export type QuestionProvenance =
  // Territory-gap-fill questions minted from KTG instrument data (094)
  | 'territory'
  // The opening pulse — momentary-state convention at sitting start (105)
- | 'pulse';
+ | 'pulse'
+ // Lineage mirror — a question composed from usage facts (Q-83)
+ | 'lineage-mirror';
 
 /**
  * How far the writing is from the person reading it now (Q-18,
@@ -85,6 +87,32 @@ export type DrawProvenance =
   /** ISO date of the sitting the snippet came from. */
   wroteAt: string;
  };
+
+/**
+ * What the lineage mirror read — the evidence variant for mirror questions
+ * (Q-83, Q-18's rule: name what you read).
+ *
+ * The type is structurally sealed: only neutral usage facts the person can
+ * already see on their own surfaces — timestamps, counts, cadence. Skips,
+ * deferrals, refusals, and dormancy have no fields here and cannot be
+ * represented (Q-78 pattern: the reader type simply has no fields for them).
+ */
+export type LineageRead = {
+  /** The claim this lineage was read against. */
+  claimId: string;
+  /** When the claim was created (ISO). */
+  claimCreated: string;
+  /** When the claim was last updated, or same as created (ISO). */
+  claimUpdated: string;
+  /** Total sittings, excluding imports. */
+  totalSittings: number;
+  /** Sittings in the 30 days before the read. */
+  sittingsInLastMonth: number;
+  /** Days since the most recent sitting (at read time). */
+  daysSinceLastSitting: number;
+  /** Days between first and most recent sitting, divided by (total-1); 0 when <2 sittings. */
+  averageDaysBetween: number;
+};
 
 /**
  * One curated Randomizer deck entry. `targetFacet` is the question's INTENT —
@@ -367,7 +395,9 @@ source:
  | 'gazetteer-frontier'
  | 'atlas-gap-fill'
  // Ticket 106: outcome questions — "did this intention come to pass?"
- | 'outcome';
+ | 'outcome'
+ // Lineage mirror — questions minted from usage facts (Q-83)
+ | 'lineage-mirror';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -514,6 +544,12 @@ derivedFrom?: string[];
  * Absent on non-pattern-derived entries.
  */
 operatorsUsed?: Operator[];
+/**
+ * The lineage evidence that licensed this mirror question (Q-83).
+ * Absent on non-lineage-mirror entries. Carries only neutral usage
+ * facts the person can already see — structurally sealed per Q-78.
+ */
+lineageMirror?: LineageRead;
 };
 
 export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
@@ -611,6 +647,12 @@ territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions
   * did none. Structural — this file must not depend on `src/clerk/`.
   */
  gazetteerFrontier?: { minted: number; frontierEntities: number };
+/**
+ * What the lineage mirror sweep did on this run, absent when a run did none.
+ * Shadow-first (Q-35): evaluated counts candidates; minted is zero in shadow.
+ * Structural — this file must not depend on `src/clerk/`.
+ */
+lineageMirror?: { evaluated: number; minted: number };
 };
 
 export type SessionState = {

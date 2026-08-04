@@ -76,6 +76,10 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'gazetteer-frontier-shadow', detail: 'frontierEntities=3', reads: 'gazetteer frontier would mint 3 questions — shadow mode, nothing minted' },
  { kind: 'gazetteer-frontier-minted', detail: 'minted=2', reads: 'minted 2 frontier questions from the gazetteer' },
  { kind: 'gazetteer-frontier-failed', detail: 'boom', reads: 'could not run the gazetteer frontier sweep' },
+ // ── Lineage mirror (Q-83, ticket 112) ──
+ { kind: 'lineage-mirror-shadow', detail: '', reads: 'evaluated a mirror candidate — shadow mode, nothing minted' },
+ { kind: 'lineage-mirror-minted', detail: '', reads: 'minted a mirror question from the record' },
+ { kind: 'lineage-mirror-failed', detail: 'boom', reads: 'could not mint a mirror question' },
  { kind: 'pulse-answered', detail: '', reads: 'answered the opening pulse' },
  { kind: 'pattern-decompose-rejection', detail: 'reason=presupposition pattern=scenario question-preview=When you...', reads: 'pattern question refused: presupposition' },
 {
