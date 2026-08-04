@@ -66,8 +66,11 @@ const DEFAULTS: Record<LlmRole, { baseUrl: string; modelId: string }> = {
  // bonsai-27b on llama.cpp: 3-9s turns, and it collapses on long structured
  // payloads — which the foreground never asks it for.
  elicitor: { baseUrl: 'http://127.0.0.1:8088/v1', modelId: 'bonsai-27b' },
- // qwen3.6:35b on Ollama: clean JSON first try, far slower per call.
- clerk: { baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'qwen3.6:35b' },
+ // gemma4:e4b on Ollama: clean JSON first try, and ~13x faster through the
+ // harvest pipeline than qwen3.6:35b (25s vs 5m35s end-of-sitting to
+ // proposals, measured 2026-08-04) — the latency that starved every
+ // eval trial's queue. Extraction coverage measured equal-or-better.
+ clerk: { baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'gemma4:e4b' },
 };
 
 const ENV_KEYS: Record<LlmRole, { baseUrl: string; modelId: string }> = {

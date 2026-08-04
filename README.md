@@ -80,7 +80,7 @@ at the same one:
 export ELICIT_LLM_BASE_URL="http://127.0.0.1:8088/v1"     # interview
 export ELICIT_LLM_MODEL="bonsai-27b"
 export ELICIT_CLERK_BASE_URL="http://127.0.0.1:11434/v1"  # background
-export ELICIT_CLERK_MODEL="qwen3.6:35b"
+export ELICIT_CLERK_MODEL="gemma4:e4b"
 
 npm start
 # open http://127.0.0.1:4517
@@ -103,7 +103,7 @@ ELICIT_HOST=0.0.0.0 npm start
 | `ELICIT_LLM_BASE_URL` | `http://127.0.0.1:8088/v1` | Endpoint for the live-interview model |
 | `ELICIT_LLM_MODEL` | `bonsai-27b` | Model id for the live interview |
 | `ELICIT_CLERK_BASE_URL` | `http://127.0.0.1:11434/v1` | Endpoint for the background model |
-| `ELICIT_CLERK_MODEL` | `qwen3.6:35b` | Model id for background work |
+| `ELICIT_CLERK_MODEL` | `gemma4:e4b` | Model id for background work |
 | `ELICIT_VAULT_ROOT` | `./vault` | Where your archive lives |
 | `ELICIT_HOST` | `127.0.0.1` | Bind address; `0.0.0.0` for network access |
 | `ELICIT_PORT` | `4517` | Server port |

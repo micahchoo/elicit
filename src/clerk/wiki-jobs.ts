@@ -136,7 +136,7 @@ import type {
  * stamp that named the wrong role would make the two indistinguishable in the
  * record — which is the one thing Q-34 stamps exist to keep possible.
  */
-export const DEFAULT_CLERK_MODEL = 'qwen3.6:35b';
+export const DEFAULT_CLERK_MODEL = 'gemma4:e4b';
 
 /** Every per-job failure and the lock refusal, under one kind. Detail says which job. */
 const JOB_FAILED = 'wiki-jobs-failed';

@@ -32,7 +32,7 @@ export function createVault(root: string): Vault {
  * nobody passes is how Q-34 stayed unmet.
  */
 function clerkModel(): string {
-  return process.env.ELICIT_CLERK_MODEL ?? 'qwen3.6:35b';
+  return process.env.ELICIT_CLERK_MODEL ?? 'gemma4:e4b';
 }
 
 class VaultImpl implements Vault {

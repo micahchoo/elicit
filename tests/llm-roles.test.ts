@@ -134,7 +134,7 @@ describe('role configuration', () => {
 
   expect(elicitor.modelId).toBe('bonsai-27b');
   expect(elicitor.baseUrl).toBe('http://127.0.0.1:8088/v1');
-  expect(clerk.modelId).toBe('qwen3.6:35b');
+  expect(clerk.modelId).toBe('gemma4:e4b');
   expect(clerk.baseUrl).toBe('http://127.0.0.1:11434/v1');
   // The point of the split: two different backends, not two names for one.
   expect(elicitor.baseUrl).not.toBe(clerk.baseUrl);
@@ -157,7 +157,7 @@ describe('role configuration', () => {
  });
 
  it('names the role and endpoint in one line', () => {
-  expect(describeRole(roleConfig('clerk'))).toBe('clerk: qwen3.6:35b @ http://127.0.0.1:11434/v1');
+  expect(describeRole(roleConfig('clerk'))).toBe('clerk: gemma4:e4b @ http://127.0.0.1:11434/v1');
  });
 
  // ── ADR-0001: both endpoints local, always ──
@@ -183,7 +183,7 @@ describe('role configuration', () => {
   const clerk = makeComplete('clerk');
 
   await expect(clerk('system', [{ role: 'user', text: 'hello', at: '' }])).rejects.toThrow(
-   /clerk model call failed — qwen3\.6:35b at http:\/\/127\.0\.0\.1:9\/v1/,
+   /clerk model call failed — gemma4:e4b at http:\/\/127\.0\.0\.1:9\/v1/,
   );
  });
 });
