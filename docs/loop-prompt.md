@@ -1,9 +1,13 @@
 # The improvement-loop prompt — RATIFIED
 
 Status: RATIFIED by Micah 2026-08-04 ("go"), with the shakedown's
-(ticket 134, cycle shakedown-c00) amendments folded in. This file is
-now FROZEN — it is in the frozen set it names. Changes require an
-explicit ruling from Micah, never the loop. Under Q-89 (prompt-level freezing, nothing else) THIS TEXT is
+(ticket 134, cycle shakedown-c00) amendments folded in. Amended
+2026-08-04 by ruling (Micah: "ratify the prompt") — session-3
+apparatus rules folded in (per-sitting dispatch with symmetric
+pacing, daemonized arm drivers, planted-marker audits; cycle c03
+paid for each). This file is FROZEN — it is in the frozen set it
+names. Changes require an explicit ruling from Micah, never the
+loop. Under Q-89 (prompt-level freezing, nothing else) THIS TEXT is
 the enforcement layer — every constraint below binds because it is
 here.
 
@@ -112,12 +116,36 @@ these was a real failure or a near-miss):
   — two independent pgrep watchdogs each reported "still running"
   18–25 minutes after actual exit. Log-growth polling is fine for
   staleness; liveness and exit come only from the child handle.
-- **One `omp -p` dispatch carries a full multi-sitting life.** Both
-  clean shakedown lives completed all required sittings in a single
-  dispatch. If a life exits short, do not assume the harness must
-  loop: check for cwd/session contamination first (the one short
-  exit observed followed exactly that), then continue with
-  `omp -p --continue`, recording the continuation as a deviation.
+- **One dispatch carries exactly ONE sitting; pacing is symmetric.**
+  (Supersedes the shakedown-era full-life-per-dispatch guidance.)
+  Every kickoff, first included, says "live exactly one sitting,
+  then stop" — the harness, never the persona, decides how many
+  sittings a life has. A fixed inter-sitting gap (90s) is enforced
+  identically in both arms: an arm that runs sittings back to back
+  gives its clerk no time to harvest, and asymmetric pacing biases
+  every dimension (c02's trial was voided for exactly this). A
+  dispatch that yields more than one transcript is an OVERSHOOT —
+  log it loudly; that arm needs review before it counts as
+  evidence.
+- **A daemonized driver owns each arm's timing loop.** One
+  long-lived process (detached, unref, own log fd — the e1ac25b
+  pattern; and never `await` an unref'd child's exit event, poll
+  the pid) dispatches each sitting as its own child, waits for it,
+  sleeps the gap, exits at the required count. Agent wake-ups are
+  unreliable across notification hops (two silent stalls in c03
+  before the driver); crons OBSERVE (log mtime, progress counts)
+  and alert — they never perform wait-then-act sequences, because
+  a chained sleep-then-dispatch is tool-blocked and the blocked
+  cron turn dies silently.
+- **Audit each life for its dossier's planted material before the
+  next arm launches.** Extract discriminating vocabulary from the
+  revision cue's from/to texts (set-difference: proper nouns plus
+  long content words, stoplisted); FROM markers must be on record
+  before the revision sitting, TO markers at or after it. A
+  generic keyword check can pass while the persona substitutes
+  invented facts for the scripted ones (c03 attempt 2) — when the
+  check passes, still read the transcripts before trusting any
+  dimension that depends on the planted cue.
 
 ## The cycle
 
