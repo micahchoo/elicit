@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson 3 — One Docket Run</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<div class="kicker">Lesson 3 · How Elicit Works</div>
+<h1>One Docket Run</h1>
+
+<p>You know the turn order and you know the Queue draw. This lesson answers
+the question those two left open: who stocks the Queue, and when? One win
+today: know what wakes the background Clerk, name the jobs of one run in
+order, and know which of them are even <em>capable</em> of touching a
+model.</p>
+
+<h2>Five words first</h2>
+
+<p>New vocabulary this lesson leans on — one line each, full versions in
+the <a href="../reference/glossary.html">glossary</a>:</p>
+
+<table>
+<tr><td><strong><a href="../reference/glossary.html#mint">mint</a></strong></td>
+<td>background work creating something durable — a question into the Queue, a claim into the Wiki.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#reading">Reading</a></strong></td>
+<td>the Clerk's recorded interpretation of one Snippet — the raw material claims are proposed from.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#op">op</a></strong></td>
+<td>one of six edits the model may <em>propose</em> against the Wiki — a gate applies or refuses each.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#consolidation">consolidation</a></strong></td>
+<td>folding old transcripts into one-line summaries, so history fits a fixed reading budget.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#watermark">watermark</a></strong></td>
+<td>a git marker of "the last state the Clerk looked at" — a commit, not a timestamp.</td></tr>
+</table>
+
+<h2>What wakes the Clerk</h2>
+
+<p>The honest answer surprised me when I read for it: <strong>there is no
+timer anywhere.</strong> No cron, no interval, no scheduled anything. The
+docket runs when something you did creates work — and only then:</p>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What triggers a docket run" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<defs><marker id="ar5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<rect x="40" y="40" width="260" height="40" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="65" text-anchor="middle">the server boots</text>
+<rect x="40" y="95" width="260" height="40" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="120" text-anchor="middle">you decide a harvest</text>
+<rect x="40" y="150" width="260" height="40" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="175" text-anchor="middle">an import is admitted</text>
+<rect x="40" y="205" width="260" height="40" rx="8" fill="#fff" stroke="#6b6459" stroke-dasharray="5 4"/>
+<text x="170" y="230" text-anchor="middle" fill="#6b6459">drain: a run left work (~2s)</text>
+
+<line x1="300" y1="60" x2="346" y2="110" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar5)"/>
+<line x1="300" y1="115" x2="346" y2="132" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar5)"/>
+<line x1="300" y1="170" x2="346" y2="155" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar5)"/>
+<line x1="300" y1="225" x2="346" y2="178" stroke="#6b6459" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar5)"/>
+
+<rect x="350" y="90" width="190" height="110" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="445" y="120" text-anchor="middle">single-flight</text>
+<text x="445" y="140" text-anchor="middle" font-size="11" fill="#6b6459">one run at a time;</text>
+<text x="445" y="156" text-anchor="middle" font-size="11" fill="#6b6459">a trigger mid-run</text>
+<text x="445" y="172" text-anchor="middle" font-size="11" fill="#6b6459">queues exactly one more</text>
+
+<line x1="540" y1="145" x2="586" y2="145" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar5)"/>
+<rect x="590" y="115" width="150" height="60" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="665" y="150" text-anchor="middle">one run</text>
+
+<path d="M 665 175 L 665 225 L 306 225" fill="none" stroke="#6b6459" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar5)"/>
+<text x="480" y="218" font-size="10" fill="#6b6459">if sweep work remains, re-arm the drain</text>
+
+<text x="560" y="46" font-size="12" fill="#8a3324">no clock anywhere:</text>
+<text x="560" y="64" font-size="12" fill="#8a3324">idle means truly idle</text>
+</svg>
+<figcaption>Every <code>runDocket</code> trigger in
+<code>src/server.ts</code>: boot (<code>:3637</code>), harvest decided
+(<code>:2146</code>), import admitted (<code>:2268</code>), and the
+self-chained drain (<code>:1005</code>). Background activity is always
+downstream of something you did.</figcaption>
+</figure>
+
+<p>This is a design position, not an accident: the app's own rule is that
+agent initiative ends at the app's edge — nothing reaches out to you, so
+nothing needs to run while you're away. The cost is real too, and worth
+knowing as the author: a long-idle server does <em>zero</em> background
+work until you harvest, import, or restart.</p>
+
+<h2>The run, job by job</h2>
+
+<p>One run walks a fixed order. Three families: capped composing trickles,
+model-blind sweeps, and the heavy tail that always goes last:</p>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The jobs of one docket run, grouped by family" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+
+<rect x="40" y="28" width="680" height="62" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="50" font-size="11" fill="#6b6459" letter-spacing="1">PREP</text>
+<text x="64" y="74">1 &#183; rebuild the search index</text>
+<rect x="596" y="60" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="74" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+
+<rect x="40" y="102" width="680" height="248" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="124" font-size="11" fill="#6b6459" letter-spacing="1">COMPOSE &#8212; CAPPED TRICKLES</text>
+<text x="64" y="152">2 &#183; openers from your newest uncited answers</text>
+<rect x="596" y="138" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="152" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="186">3 &#183; still-true revisits &#8212; two max, cursor rotates</text>
+<rect x="596" y="172" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="186" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="220">4 &#183; one consolidation line for old transcripts</text>
+<rect x="596" y="206" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="220" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="254">5 &#183; summaries for parked descents</text>
+<rect x="596" y="240" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="254" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="288">6 &#183; at most one expedition</text>
+<rect x="596" y="274" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="288" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="322">7 &#183; margin annotations &#8212; caps 5 / 3 / 2</text>
+<rect x="596" y="308" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="322" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+
+<rect x="40" y="362" width="680" height="240" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="384" font-size="11" fill="#6b6459" letter-spacing="1">EXPIRE &amp; SWEEP &#8212; MODEL-BLIND BY CONSTRUCTION</text>
+<text x="64" y="410">8 &#183; expire month-old queue entries</text>
+<rect x="596" y="396" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="410" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="440">9 &#183; piece sweeps: stale pins &#183; dormancy</text>
+<rect x="596" y="426" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="440" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="470">10 &#183; gap-fill: buds &amp; half-constructs</text>
+<rect x="596" y="456" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="470" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="500">11 &#183; territory &amp; atlas maps (atlas: shadow)</text>
+<rect x="596" y="486" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="500" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="530">12 &#183; gazetteer extraction &#8212; the exception here</text>
+<rect x="596" y="516" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="530" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="560">13 &#183; gazetteer frontier &#183; lineage mirror (shadow) &#183; tripwires</text>
+<rect x="596" y="546" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="560" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="590" font-size="11" fill="#6b6459">the sweeps are never handed the model handle &#8212; they cannot call one</text>
+
+<rect x="40" y="614" width="680" height="72" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="636" font-size="11" fill="#6b6459" letter-spacing="1">THE HEAVY TAIL &#8212; ALWAYS LAST</text>
+<text x="64" y="662">14 &#183; wiki upkeep &#8212; claims, lint, contradictions</text>
+<rect x="596" y="648" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="662" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="682" font-size="12">15 &#183; import extraction &#8212; the very last thing</text>
+</svg>
+<figcaption>One <code>runDocket</code> pass
+(<code>src/clerk/docket.ts:513</code> onward). Ordering is cost-driven:
+the slowest work goes last so the trickles never wait on it. Every cap is
+deliberate &#8212; the docket is built to trickle, never flood.</figcaption>
+</figure>
+
+<p>Three structural facts about this pipeline are worth holding onto,
+because they're what makes background work trustworthy:</p>
+
+<ul>
+  <li><strong>No job can kill the run.</strong> Every job sits in its own
+    try/catch; a failure logs a named <code>*-failed</code> event and the
+    run continues. Even inside loops: one snippet's failed opener doesn't
+    stop the next snippet's.</li>
+  <li><strong>"Model-blind" is enforced by wiring, not discipline.</strong>
+    The sweep thunks are simply never handed the model handle
+    (<code>complete</code>) — a sweep <em>cannot</em> develop a model call,
+    the same way agent prose cannot enter a Piece.</li>
+  <li><strong>The docket never imports the newer layers.</strong> Wiki
+    jobs, import extraction, ladder summaries all arrive as pre-wired
+    thunks injected by the server — the older, smaller module never
+    depends on the things built on top of it.</li>
+</ul>
+
+<h2>Inside job 14: how the Wiki actually changes</h2>
+
+<p>The wiki stage is its own pipeline, and it rhymes with Lesson 2's guard
+shape — the model proposes, a gate disposes:</p>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The wiki upkeep pipeline" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<defs><marker id="ar6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<rect x="30" y="40" width="170" height="70" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="115" y="70" text-anchor="middle">Readings</text>
+<text x="115" y="90" text-anchor="middle" font-size="11" fill="#6b6459">cited interpretations</text>
+<line x1="200" y1="75" x2="236" y2="75" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+<rect x="240" y="30" width="210" height="92" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="345" y="52" text-anchor="middle" font-size="12">one proposed op each:</text>
+<rect x="250" y="60" width="60" height="20" rx="4" fill="#f0ece3"/><text x="280" y="74" text-anchor="middle" font-size="9">MINT</text>
+<rect x="316" y="60" width="60" height="20" rx="4" fill="#f0ece3"/><text x="346" y="74" text-anchor="middle" font-size="9">UPDATE</text>
+<rect x="382" y="60" width="60" height="20" rx="4" fill="#f0ece3"/><text x="412" y="74" text-anchor="middle" font-size="9">MERGE</text>
+<rect x="250" y="88" width="60" height="20" rx="4" fill="#f0ece3"/><text x="280" y="102" text-anchor="middle" font-size="8">SUPERSEDE</text>
+<rect x="316" y="88" width="60" height="20" rx="4" fill="#f0ece3"/><text x="346" y="102" text-anchor="middle" font-size="9">ARCHIVE</text>
+<rect x="382" y="88" width="60" height="20" rx="4" fill="#f0ece3"/><text x="412" y="102" text-anchor="middle" font-size="9">KEEP</text>
+<line x1="450" y1="75" x2="486" y2="75" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+<rect x="490" y="16" width="180" height="124" rx="8" fill="#fff" stroke="#8a3324" stroke-width="2"/>
+<text x="580" y="40" text-anchor="middle" fill="#8a3324" font-weight="600" font-size="12">the applyOps gate</text>
+<text x="500" y="62" font-size="10">&#183; cites must resolve</text>
+<text x="500" y="78" font-size="10">&#183; a Range is mandatory</text>
+<text x="500" y="94" font-size="10">&#183; one short sentence</text>
+<text x="500" y="110" font-size="10">&#183; Status untouchable</text>
+<text x="500" y="126" font-size="10">&#183; your edits untouchable</text>
+<line x1="580" y1="140" x2="580" y2="166" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar6)"/>
+<text x="588" y="158" font-size="10" fill="#6b6459">pass</text>
+<rect x="490" y="170" width="180" height="44" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="580" y="196" text-anchor="middle">the Wiki changes</text>
+
+<text x="30" y="252" font-size="12" fill="#6b6459">then the whole claim graph is re-checked:</text>
+<rect x="30" y="262" width="200" height="60" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="130" y="286" text-anchor="middle">lint &#8212; six checks</text>
+<text x="130" y="304" text-anchor="middle" font-size="10" fill="#6b6459">two kinds mint questions</text>
+<line x1="230" y1="292" x2="266" y2="292" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar6)"/>
+<rect x="270" y="262" width="210" height="60" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="375" y="286" text-anchor="middle">clash pooling</text>
+<text x="375" y="304" text-anchor="middle" font-size="10" fill="#6b6459">shared phrase &#183; shared name</text>
+<line x1="480" y1="292" x2="516" y2="292" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar6)"/>
+<rect x="520" y="254" width="210" height="76" rx="8" fill="#fff" stroke="#8a3324" stroke-width="2"/>
+<text x="625" y="278" text-anchor="middle">opposition judge</text>
+<text x="625" y="296" text-anchor="middle" font-size="10" fill="#6b6459">both poles must be exact</text>
+<text x="625" y="312" text-anchor="middle" font-size="10" fill="#6b6459">quotes, or the pair drops</text>
+</svg>
+<figcaption>Job 14 unpacked (<code>src/clerk/wiki-jobs.ts:429</code>,
+<code>src/wiki/ops.ts:675</code>): the model gets six verbs and no more;
+the gate refuses a claim without resolving citations or a Range, and can
+never touch Status or rewrite a claim you edited.</figcaption>
+</figure>
+
+<p>Notice what the gate protects: the model literally cannot promote its
+own claims (Status is computed, never written), cannot cite evidence that
+doesn't exist, and cannot rewrite anything you've touched. Same
+architecture as everywhere else — trust the wiring, not the model's
+manners.</p>
+
+<h2>Honest edges</h2>
+
+<p>Reading your own system closely also means naming what's half-built.
+Three edges the research turned up, in increasing order of "worth a look":</p>
+
+<ul>
+  <li><strong>Consolidation writes; nothing reads.</strong> Summaries are
+    faithfully written to the vault every run, but the "cover" tiler that
+    would feed them into a prompt has no production caller — your own
+    registry documents this. The three-layer memory design (ADR-0002) is
+    live on the write side only.</li>
+  <li><strong>The embedding clash channel is shadowed to zero.</strong>
+    The channel that would surface meaning-level contradictions currently
+    returns no pairs at all — only the shared-phrase and shared-name
+    channels feed the judge. The Q-65 ranking (cross-sitting above
+    same-sitting) is computed but never actually orders the pool.</li>
+  <li><strong>A possible real bug:</strong> the docket hands sessions to
+    the consolidation picker <em>newest-first</em>, but the picker and the
+    (unwired) tiler both document <em>oldest-first</em> expectations — so
+    summary ranges are built backwards relative to what the read side will
+    expect when it's wired. Nothing breaks today precisely because nothing
+    reads; it will matter the day the tiler gets a caller.</li>
+</ul>
+
+<div class="check">
+<h3>Self-check</h3>
+<div id="quiz"></div>
+<div class="result" id="quiz-result"></div>
+</div>
+
+<div class="aside">
+<strong>Primary source:</strong> the body of <code>runDocket</code>
+(<code class="path">src/clerk/docket.ts:678</code> on) — it reads as a
+numbered list once you know the shape — and
+<code class="path">src/wiki/ops.ts</code> for the gate. ADR-0002
+(<code class="path">docs/adr/0002-three-layer-memory.md</code>) is the
+five-minute read behind the consolidation job.
+</div>
+
+<div class="ask-agent">
+Good follow-ups for your agent: "show me one job's try/catch and its
+<code>*-failed</code> event," "walk me through <code>applyOps</code>
+refusing a claim," or "what would wiring the cover tiler actually take?"
+</div>
+
+<div class="next-links">
+<strong>Back:</strong>
+<a href="0002-how-a-question-gets-made.html">Lesson 2 — How a Question
+Gets Made</a>.
+<p><strong>Candidates for lesson 4</strong>:</p>
+<ul>
+  <li>The Wiki's evidence rules in depth — claim statuses, ranges, coreness, and the contradiction types</li>
+  <li>Shadow graduation — the thresholds table and what flips a mechanism live</li>
+  <li>The import/seeding path — how old journals become Snippets without flooding you</li>
+</ul>
+</div>
+
+</main>
+
+<script>
+const OUTCOMES = [
+  "Nothing — it waits for a boot, harvest, or import",
+  "It logs a named failure and the run continues",
+  "Refused — citations are non-negotiable",
+  "They can't — sweeps are never handed the model handle",
+  "Import extraction — always the very last job"
+];
+const ITEMS = [
+  { def: "The server has been idle for a week. What background work has happened?", answer: OUTCOMES[0] },
+  { def: "The consolidation job throws an error mid-run. What happens to the rest of the run?", answer: OUTCOMES[1] },
+  { def: "The model proposes a new claim with a Range but no citations.", answer: OUTCOMES[2] },
+  { def: "Could a refactor accidentally make the dormancy sweep call the LLM?", answer: OUTCOMES[3] },
+  { def: "Which job runs after even the wiki upkeep?", answer: OUTCOMES[4] },
+];
+
+const quiz = document.getElementById("quiz");
+ITEMS.forEach((item, i) => {
+  const row = document.createElement("div");
+  row.style.margin = "0.7rem 0";
+  const label = document.createElement("label");
+  label.textContent = item.def + "  ";
+  const select = document.createElement("select");
+  select.id = "q" + i;
+  const blank = document.createElement("option");
+  blank.textContent = "— choose —";
+  blank.value = "";
+  select.appendChild(blank);
+  OUTCOMES.forEach(o => {
+    const opt = document.createElement("option");
+    opt.value = o;
+    opt.textContent = o;
+    select.appendChild(opt);
+  });
+  row.appendChild(label);
+  row.appendChild(select);
+  quiz.appendChild(row);
+});
+
+const btn = document.createElement("button");
+btn.textContent = "Check answers";
+btn.style.marginTop = "0.6rem";
+btn.onclick = () => {
+  let correct = 0;
+  ITEMS.forEach((item, i) => {
+    const sel = document.getElementById("q" + i);
+    if (sel.value === item.answer) correct++;
+  });
+  const result = document.getElementById("quiz-result");
+  result.textContent = correct + " / " + ITEMS.length + " correct.";
+  result.className = "result " + (correct === ITEMS.length ? "correct" : "incorrect");
+};
+quiz.appendChild(btn);
+</script>
+
+</body>
+</html>

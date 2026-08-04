@@ -1,0 +1,59 @@
+<svg viewBox="0 0 760 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The jobs of one docket run, grouped by family" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<rect width="100%" height="100%" fill="#faf7f2"/>
+
+<rect x="40" y="28" width="680" height="62" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="50" font-size="11" fill="#6b6459" letter-spacing="1">PREP</text>
+<text x="64" y="74">1 &#183; rebuild the search index</text>
+<rect x="596" y="60" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="74" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+
+<rect x="40" y="102" width="680" height="248" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="124" font-size="11" fill="#6b6459" letter-spacing="1">COMPOSE &#8212; CAPPED TRICKLES</text>
+<text x="64" y="152">2 &#183; openers from your newest uncited answers</text>
+<rect x="596" y="138" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="152" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="186">3 &#183; still-true revisits &#8212; two max, cursor rotates</text>
+<rect x="596" y="172" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="186" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="220">4 &#183; one consolidation line for old transcripts</text>
+<rect x="596" y="206" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="220" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="254">5 &#183; summaries for parked descents</text>
+<rect x="596" y="240" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="254" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="288">6 &#183; at most one expedition</text>
+<rect x="596" y="274" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="288" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="322">7 &#183; margin annotations &#8212; caps 5 / 3 / 2</text>
+<rect x="596" y="308" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="322" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+
+<rect x="40" y="362" width="680" height="240" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="384" font-size="11" fill="#6b6459" letter-spacing="1">EXPIRE &amp; SWEEP &#8212; MODEL-BLIND BY CONSTRUCTION</text>
+<text x="64" y="410">8 &#183; expire month-old queue entries</text>
+<rect x="596" y="396" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="410" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="440">9 &#183; piece sweeps: stale pins &#183; dormancy</text>
+<rect x="596" y="426" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="440" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="470">10 &#183; gap-fill: buds &amp; half-constructs</text>
+<rect x="596" y="456" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="470" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="500">11 &#183; territory &amp; atlas maps (atlas: shadow)</text>
+<rect x="596" y="486" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="500" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="530">12 &#183; gazetteer extraction &#8212; the exception here</text>
+<rect x="596" y="516" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="530" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="560">13 &#183; gazetteer frontier &#183; lineage mirror (shadow) &#183; tripwires</text>
+<rect x="596" y="546" width="84" height="20" rx="10" fill="none" stroke="#6b6459"/>
+<text x="638" y="560" text-anchor="middle" font-size="10" fill="#6b6459">no model</text>
+<text x="64" y="590" font-size="11" fill="#6b6459">the sweeps are never handed the model handle &#8212; they cannot call one</text>
+
+<rect x="40" y="614" width="680" height="72" rx="8" fill="#fff" stroke="#d8d1c4"/>
+<text x="56" y="636" font-size="11" fill="#6b6459" letter-spacing="1">THE HEAVY TAIL &#8212; ALWAYS LAST</text>
+<text x="64" y="662">14 &#183; wiki upkeep &#8212; claims, lint, contradictions</text>
+<rect x="596" y="648" width="84" height="20" rx="10" fill="none" stroke="#8a3324"/>
+<text x="638" y="662" text-anchor="middle" font-size="10" fill="#8a3324">model</text>
+<text x="64" y="682" font-size="12">15 &#183; import extraction &#8212; the very last thing</text>
+</svg>

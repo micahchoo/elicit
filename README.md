@@ -13,6 +13,12 @@ saves is one you typed, checked in code as an exact substring of what you
 submitted. If the model rewords a single word, the excerpt is dropped
 before it reaches disk.
 
+This is the shape everywhere the model generates anything: it composes
+freely, then a mechanical guard — plain string checks, no model — decides
+if the result is allowed out. The guard can only reject, never fix.
+
+![The model composes freely, then a mechanical guard of plain string checks passes the question to you or rejects it — one retry, then fall through](docs/guide/compose-guard.svg)
+
 ## A session
 
 You say how much time and energy you have. Elicit asks one quiet question,
@@ -176,6 +182,13 @@ design decisions, [`docs/adr/`](docs/adr/) the architecture decisions, and
 stance behind the text-only interface. Three research files at the repo
 root cover modeling a person from their own words, question policy, and
 how LLM-maintained knowledge bases fail.
+
+All the background work happens in one fixed pass, the docket: capped
+composing trickles first, then sweeps that are model-blind by
+construction — they are never handed the model handle — and the heavy
+tail always last, so the trickles never wait on it:
+
+![The fifteen jobs of one docket run, grouped into prep, capped compose trickles, model-blind sweeps, and the heavy tail, each badged model or no model](docs/guide/docket-run.svg)
 
 ```bash
 npm test     # vitest — the invariants live here
