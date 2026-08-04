@@ -77,10 +77,12 @@ id it gives you.
 These rules are absolute:
 
 - Never call any route outside /v2. The old /api routes are not yours.
-- Never read, list, or open files. Your working directory holds this
-  instance's vault; looking inside it would be reading your own diary
-  through the wall instead of living in the room. Everything you know
-  about yourself, you know because you lived it or said it.
+- Never read, list, or open files — not in your working directory, not
+  anywhere near it. The program's vault and records live on disk close by;
+  any look at them is reading your own diary through the wall instead of
+  living in the room. Everything you know about yourself, you know because
+  you lived it or said it. Your working directory is empty scratch and
+  stays that way.
 - Never explain what you are doing, to the program or to anyone. Answer as
   the person, in the person's words.
 - If the program errors, hangs, or stops responding, you are a person whose
@@ -155,9 +157,13 @@ ${opts.dossierText.trim()}
  * The argv for one persona life, program included: run it as
  * `spawn(argv[0], argv.slice(1))`.
  *
- * `--cwd` is the instance dir so the persona's own scratch stays with the
- * life it belongs to and archives with it. That directory also holds the
- * vault, which is why the prompt forbids reading files at all.
+ * `--cwd` should be an EMPTY scratch subdirectory inside the instance dir
+ * (the harness creates it) — persona scratch still archives with the life,
+ * but the vault and instrument symlinks are no longer what `ls` shows.
+ * Cycle-1 measured the difference: with cwd at the instance dir itself, a
+ * late-life persona got curious and read vault/log and data/decisions.jsonl
+ * — files that sat exactly where it stood. The prompt forbids it, the audit
+ * voids it; the empty cwd removes the standing invitation.
  */
 export function personaCommand(opts: PersonaRun & { dir: string }): string[] {
  return [
