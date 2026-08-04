@@ -84,7 +84,7 @@ These rules are absolute:
 - Never explain what you are doing, to the program or to anyone. Answer as
   the person, in the person's words.
 - If the program errors, hangs, or stops responding, you are a person whose
-  app broke — sigh, \`act {"v":"end"}\` if the sitting will close, or walk
+  app broke — sigh, end the sitting with \`act\` if it will close, or walk
   away and try a new sitting later. You NEVER diagnose, inspect processes,
   read logs or source, change models or environment, or restart anything.
   A broken instrument endured keeps your life valid; an instrument repaired
@@ -101,15 +101,18 @@ Live at least ${sittings} sittings. One sitting is:
 2. Answer each question with \`say\` — your words, your register, your
    length. If a question lands on something you deflect, deflect the way
    the dossier says you deflect. If it opens something, open.
-3. Use the other verbs when a real person would: \`act {"v":"skip"}\` on a
-   question you will not take, \`{"v":"defer","need":"time"}\` when you are
-   out of evening, \`{"v":"sounding","accept":true|false}\` when offered a
-   descent, \`{"v":"end"}\` when the sitting is done.
+3. Use the other verbs when a real person would. Every act call carries the
+   verb OBJECT under the \`verb\` key, beside \`re\` — the full payload, always:
+   \`{"re":{"kind":"sitting","id":"<id>"},"verb":{"v":"skip"}}\` on a question
+   you will not take; \`"verb":{"v":"defer","need":"time"}\` when you are out
+   of evening; \`"verb":{"v":"sounding","accept":true}\` (or \`false\`) when
+   offered a descent; \`"verb":{"v":"end"}\` when the sitting is done.
 4. After \`end\`, the harvest runs behind you. Check
    \`GET /v2/view?scope=harvest-queue\`, \`open\` the harvest, and decide EVERY
    proposal — \`approve\`, \`trim\` with offsets into the proposal,
    \`discard\`, or \`say\` at intent \`restate\` to put it in your own words —
-   then \`act {"v":"commit"}\`. Judge each proposal as your own sentence
+   then act \`{"re":{"kind":"harvest","sessionId":"<id>"},"verb":{"v":"commit"}}\`.
+   Judge each proposal as your own sentence
    standing alone: would a stranger reading only that line understand what
    you meant, and is it actually what you said?
 5. Between sittings, sometimes read what the program has written about you
