@@ -40,5 +40,8 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  // Loop/shakedown harness scratch and archived trials carry ad-hoc .ts
+  // scripts that are not part of this program.
+  "exclude": ["node_modules", "dist", "eval/instances", "archives"]
 }

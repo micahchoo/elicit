@@ -1902,12 +1902,10 @@ describe('clerk slice: presweep confirmation opens the Contradiction before the 
 /**
  * Ticket 067's fix, at the only place it is observable.
  *
- * `clash.embeddingCosine` is in shadow (Q-35), so this channel returns nothing
- * live and its whole output is a `shadow-decision` line. That line IS the
- * graduation evidence, and 067 is the finding that it was structurally missing
- * for every claim a run minted: the server primes before `runWikiJobs`, job 1
- * mints, and `candidates()` is cache-only. Job 1.5 is the second prime, and a
- * shadow record naming two claims born in the SAME run is the only proof it ran.
+ * Ticket 118 graduated `clash.embeddingCosine` live (5,154 shadow records,
+ * 2,845 cross-sitting pairs on the real vault). The channel now returns live
+ * pairs instead of shadow records. The prime-before-pool invariant (067) still
+ * holds: a pair of claims born in the SAME run appears in the live clash pool.
  *
  * The embedder is a fake that gives every body one vector, so the cosine is 1
  * and the threshold is not what is under test — the cache is.
@@ -1919,7 +1917,7 @@ describe('clerk slice: the embedding channel sees claims minted this run (067)',
   rmSync(vaultDir, { recursive: true, force: true });
  });
 
- it('writes a shadow record for a pair both minted in the run that pooled them', async () => {
+ it('pools a pair both minted in the run that pooled them', async () => {
   vaultDir = mkdtempSync(join(tmpdir(), 'elicit-clerk-embed-'));
   const vault = createVault(vaultDir);
   seedSitting(vault, SITTING_ONE, QUESTION_ONE, PROSE_ONE, READING_ONE);
@@ -1955,14 +1953,15 @@ describe('clerk slice: the embedding channel sees claims minted this run (067)',
   expect(embedded.length).toBe(1);
   expect(embedded[0]!.length).toBe(2);
 
+  // Ticket 118: graduated live — no shadow records from this channel.
   const shadow = readEvents(vaultDir).filter(
    (e) => e.kind === 'shadow-decision' && e.detail.includes('clash.embeddingCosine'),
   );
-  expect(shadow.length).toBe(1);
-  for (const claim of claims) expect(shadow[0]!.detail).toContain(claim.id);
+  expect(shadow).toEqual([]);
 
-  // Shadow means shadow: the channel proposed nothing live.
-  expect(readEvents(vaultDir).some((e) => e.kind === 'clash-checked' && e.detail.includes('embedding:0'))).toBe(true);
+  // The live channel contributed the pair to the pool.
+  const checked = readEvents(vaultDir).find((e) => e.kind === 'clash-checked')!;
+  expect(checked.detail).toContain('embedding:1');
  });
 });
 

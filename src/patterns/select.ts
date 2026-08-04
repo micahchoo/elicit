@@ -10,7 +10,7 @@
 
 import type { Pattern, LicensingContext } from './types.js';
 import { licensePattern } from './license.js';
-import { THRESHOLDS } from '../wiki/thresholds.js';
+import { THRESHOLDS, isLive } from '../wiki/thresholds.js';
 
 /** A log sink matching the ThresholdLogFn shape but emitted directly. */
 type LogFn = (e: { at: string; actor: string; kind: string; detail: string }) => void;
@@ -40,8 +40,9 @@ export function selectPattern(
 
   const threshold = THRESHOLDS['patternSelection'];
 
-  // Shadow mode: log and return null — caller falls through
-  if (!threshold.live) {
+  // Shadow mode: log and return null — caller falls through. `isLive` rather
+  // than `.live`, so a demotion reaches the gate too (Q-90).
+  if (!isLive(threshold)) {
     if (log) {
       log({
         at: new Date().toISOString(),

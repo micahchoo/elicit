@@ -22,6 +22,8 @@
  * the Q-13 draw filter: compute always, log always, act only when licensed.
  */
 
+import { isDemoted } from '../loop/demotions.js';
+
 export type Threshold = {
  name: string;
  value: number | boolean;
@@ -40,8 +42,9 @@ export type Threshold = {
  * Structurally identical to `src/clerk/docket.ts`'s `log` dependency, whose
  * `actor` is the wider `string` — so the Docket's own logger is assignable
  * here, and so is the `LogFn` the wiki contract declares. This module imports
- * nothing on purpose: the registry every other wiki module reads must not be
- * able to fail to load.
+ * one thing on purpose: the registry every other wiki module reads must not be
+ * able to fail to load, so `src/loop/demotions.ts` is filesystem-only, does no
+ * work at load, and returns "nothing is demoted" on every failure path.
  */
 export type ThresholdLogFn = (e: {
  at: string;
@@ -122,9 +125,9 @@ export const THRESHOLDS = {
  'clash.embeddingCosine': {
   name: 'clash.embeddingCosine',
   value: 0.5,
-  live: false,
+  live: true,
   graduatesWhen:
-   'SANITY FLOOR, not the selection mechanism (ticket 083): selection is rank — Q-65 orders pairs with cross-sitting strictly above same-sitting, then by cosine desc, then by the sorted pair key — bounded by the judgment quota (clash.judgmentsPerRun), which cuts the ordered pool to its top-N. The floor keeps near-orthogonal pairs from spending the quota when the corpus is small; 0.5 sits below the measured cross-sitting ceiling of 0.640 (ticket 064) so it can never re-create the ceiling. Graduation evidence remains: the shadow record shows a proposed pair joining TWO SITTINGS.',
+   'LIVE by its own record (2026-08-03) — 5,154 shadow-decision records on the real vault, 2,845 cross-sitting pairs (counted 2026-08-03), meeting its stated condition ("a proposed pair joining TWO SITTINGS"). SANITY FLOOR: 0.5 sits below the measured 0.640 cross-sitting ceiling (ticket 064); selection is rank by Q-65 (cross-sitting above same-sitting, then cosine desc) bounded by the judgment quota (clash.judgmentsPerRun, ticket 083) — the floor must never select. Demote if the judged pairs the channel admits are dominated by dissolutions on same-phrasing pairs the lexical channel already finds.',
  },
  'sweep.attemptsBeforeBackoff': {
   name: 'sweep.attemptsBeforeBackoff',
@@ -206,9 +209,9 @@ export const THRESHOLDS = {
  'patternSelection': {
   name: 'patternSelection',
   value: 0,
-  live: false,
+  live: true,
   graduatesWhen:
-   'Shadow record over ≥50 composed turns shows at least one pattern-derived question per sitting on average, and the guard pipeline catches every QR-2 fixture across all nine patterns.',
+   'LIVE by decision, not by record (2026-08-03, Micah) — graduated with the shadow set ahead of the planned ≥50-turn evidence. The decomposition guard (Q-81) and checkQuestion still gate every mint. NOTE: the cheap-path caller (docket wiring of composeWithPattern, 111 remainder) does not exist yet, so this licence waits on that wiring to act. Demote if the pattern-selection-live record shows guard rejections dominating mints.',
  },
 
  // ── Lineage mirror (Q-83, ticket 112) ──
@@ -223,17 +226,58 @@ export const THRESHOLDS = {
  'lineageMirror.selection': {
   name: 'lineageMirror.selection',
   value: 0,
-  live: false,
+  live: true,
   graduatesWhen:
-   'Shadow record over ≥20 runs shows at least one mirror candidate per run on average, and a human review of the shadow log confirms the evaluated claims are ones where cadence data is genuinely interesting alongside the claim body.',
+  'LIVE by decision, not by record (2026-08-03, Micah) — graduated with the shadow set ahead of the planned ≥20-run evidence. The licence predicate (Q-83 divergence, updated-not-created, 14-day floor) and LINEAGE_MIRROR_CAP still bound every run; one mirror question per claim, ever. Demote if the lineage-mirror-minted record shows questions the person skips or defers.',
+ },
+ 'opener.historyBudgetChars': {
+  name: 'opener.historyBudgetChars',
+  value: 0,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — the cover() verbatim budget bound (Q-56: bounds ship live); a shadowed budget is no budget, and every clip is logged.',
+ },
+ 'opener.historyBlockCap': {
+  name: 'opener.historyBlockCap',
+  value: 4000,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — the rendered history block cap; a shadowed cap is not a cap (Q-56: bounds ship live), and every clip is logged.',
+ },
+ 'opener.echoGuardMinSpanWords': {
+  name: 'opener.echoGuardMinSpanWords',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-86 — 3 content words catches phrase lifts while missing topic-only overlap; every evaluation is logged and the record retunes the number.',
  },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;
 
 /**
- * The one door every threshold decision passes through. Returns `t.live`:
- * true means the caller is licensed to act, false means it must not.
+ * Whether this threshold is licensed to act RIGHT NOW: its declared `live`
+ * flag, minus any demotion standing against its name (Q-90, ticket 132).
+ *
+ * The table above is the declaration; the demotion store is the tripwire's
+ * and the owner's live override, applied at read time rather than by
+ * rewriting this file. Read time is what makes `scripts/demote.ts` work
+ * with the server down and makes a running server obey a demotion without
+ * a restart — and it keeps the demotion out of the source, so what a
+ * mechanism EARNED and what is currently true of it stay two facts.
+ *
+ * Every gate on liveness goes through here or through `shadowDecision`
+ * below. A bare `THRESHOLDS[…].live` read that decides behaviour is a
+ * review failure for the same reason a bare numeric literal is.
+ */
+export function isLive(t: Threshold): boolean {
+ return t.live && !isDemoted(t.name);
+}
+
+/**
+ * The one door every threshold decision passes through. Returns whether the
+ * threshold is live and undemoted: true means the caller is licensed to act,
+ * false means it must not.
  *
  * ```
  * if (shadowDecision(THRESHOLDS['lint.godNodeFanout'], 'note god-node on referent=atlas', log)) {
@@ -259,9 +303,10 @@ export function shadowDecision(
  log: ThresholdLogFn,
  clips = false,
 ): boolean {
- if (!t.live) {
+ if (!isLive(t)) {
   // Shadow: the whole point of the call. One line, every time, whether or
-  // not the decision would have changed anything downstream.
+  // not the decision would have changed anything downstream. A demoted
+  // threshold takes this path too — demotion IS shadow (Q-90).
   log({
    at: new Date().toISOString(),
    actor: 'clerk',

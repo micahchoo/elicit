@@ -16,6 +16,7 @@ import { readSitting, sittingCache } from './sitting.js';
 import { stalePins } from '../piece/stale.js';
 import { isDormant } from '../piece/dormancy.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
+import { cover } from '../memory/cover.js';
 import type { Piece, PieceStore } from '../piece/contract.js';
 import { annotateReferent, annotateIntentionHorizon } from './annotate.js';
 import type { AnnotationStore, AnnotationRecord } from './annotation-store.js';
@@ -514,7 +515,7 @@ export async function runDocket(deps: {
  queue: QueueStore;
  complete: Complete;
  buildIndex: (snippets: Snippet[]) => LexicalIndex;
- composeOpener: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
+ composeOpener: (s: Snippet, c: Complete, sitting?: SittingContext, historyBlock?: string, summaryLines?: string[]) => Promise<QueueDraft | null>;
  composeStillTrue: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeExpedition?: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeOtherMindsExpedition?: (
@@ -630,7 +631,7 @@ gazetteerFrontier?: () => Promise<{ minted: number; frontierEntities: number }>;
  * logged, not minted. ZERO-LLM. Absent means no atlas work this run,
  * and every caller predating the field behaves exactly as before.
  */
-atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number }>;
+atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number; minted: number }>;
 /**
  * The lineage mirror sweep (Q-83, ticket 112), as a docket job after the
  * atlas gap-fill. Reads claims against lineage (transcripts), evaluates
@@ -675,6 +676,20 @@ intentionHorizonAnnotations?: () => Promise<{ annotated: number; silent: number;
  * work this run.
  */
 outcomeQuestionSweep?: () => Promise<{ minted: number }>;
+/**
+ * The tripwire sweep (Q-90, ticket 132), as a docket job after the lineage
+ * mirror. Reads the graduation ledger against the guarded metrics and
+ * demotes a batch when the person's own record has gone worse. ZERO-LLM —
+ * it is never handed the Complete, and never will be: a model deciding
+ * whether the mechanism watching the model should stop is the one wiring
+ * this job exists to prevent. Absent means no tripwire work this run, and
+ * every caller predating the field behaves exactly as before.
+ *
+ * Its result is deliberately NOT in the DocketReport. The guarded numbers
+ * are Q-83's never-mirrored class applied to the operator hat: they reach
+ * `data/` and `scripts/loop-status.ts` and no surface a person reads.
+ */
+tripwireSweep?: () => Promise<void>;
 }): Promise<DocketReport> {
  if (running) {
   return {
@@ -731,6 +746,49 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
   }
 
   // ── 2. Opener minting: uncited snippets from last 2 sessions ──
+
+  // Build the history tile block (Q-86, ticket 119): cover() tiles sessions
+  // into summary + gap lines for the composition prompt.
+  let historyBlock: string | undefined;
+  let summaryLines: string[] | undefined;
+  if (sessions && deps.loadSummaries) {
+   const summaries = deps.loadSummaries(deps.vaultRoot);
+   const tiles = cover(sessions, summaries, THRESHOLDS['opener.historyBudgetChars'].value as number);
+
+   const lines: string[] = [];
+   const sLines: string[] = [];
+   const sessionById = new Map(sessions.map(s => [s.session, s]));
+
+   for (const tile of tiles) {
+    if (tile.kind === 'summary') {
+     const dates = tile.sessions.map(sid => sessionById.get(sid)?.started ?? '').filter(Boolean).sort();
+     const range = dates.length >= 2
+      ? `${dates[0]!.slice(0, 10)} to ${dates[dates.length - 1]!.slice(0, 10)}`
+      : dates[0]?.slice(0, 10) ?? 'unknown';
+     const line = `Sessions ${range} — ${tile.line}`;
+     lines.push(line);
+     sLines.push(tile.line);
+    } else if (tile.kind === 'unsummarized') {
+     const dates = tile.sessions.map(sid => sessionById.get(sid)?.started ?? '').filter(Boolean).sort();
+     const range = dates.length >= 2
+      ? ` (${dates[0]!.slice(0, 10)} to ${dates[dates.length - 1]!.slice(0, 10)})`
+      : '';
+     lines.push(`${tile.sessions.length} session${tile.sessions.length !== 1 ? 's' : ''} not yet consolidated${range}`);
+    }
+   }
+
+   // Cap: oldest lines drop first
+   const cap = THRESHOLDS['opener.historyBlockCap'].value as number;
+   let block = lines.join('\n');
+   while (block.length > cap) {
+    const idx = block.lastIndexOf('\n');
+    if (idx === -1) break;
+    block = block.slice(0, idx);
+   }
+   historyBlock = block || undefined;
+   summaryLines = sLines.length > 0 ? sLines : undefined;
+  }
+
   let openerCount = 0;
   if (sessions) {
    const recentSessionIds = new Set(sessions.slice(0, 2).map(s => s.session));
@@ -751,7 +809,7 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
    const openerRefs: string[] = [];
    for (const s of candidates) {
     try {
-     const draft = await deps.composeOpener(s, deps.complete, sittingFor(s.provenance.session));
+     const draft = await deps.composeOpener(s, deps.complete, sittingFor(s.provenance.session), historyBlock, summaryLines);
      if (draft) {
       const entry = deps.queue.add(draft);
       minted.push(entry);
@@ -874,7 +932,13 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
   if (deps.nextConsolidation && deps.saveSummary && deps.loadSummaries && sessions) {
    try {
     const summaries = deps.loadSummaries(deps.vaultRoot);
-    const range = deps.nextConsolidation(sessions, summaries);
+    // nextConsolidation's contract is oldest-first (ticket 117). The shared
+    // array stays newest-first for the opener job; reversing a copy of the
+    // descending sort is the ascending sort. Oldest-first is also what keeps
+    // the bracketing tree stable as sessions accumulate: new sessions append
+    // instead of shifting every pairing, so summary range keys stay valid.
+    const oldestFirst = [...sessions].reverse();
+    const range = deps.nextConsolidation(oldestFirst, summaries);
     if (range && range.length > 0) {
      // The summary must see actual content — cap per-transcript and total
      // so one consolidation always fits the local model's context.
@@ -1111,6 +1175,26 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
     lineageMirror = await deps.lineageMirrorSweep();
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'lineage-mirror-failed', detail: String(err) });
+   }
+  }
+
+  // Tripwire (Q-90, ticket 132) — reads the graduation ledger against the
+  // guarded metrics and demotes a batch when the record has gone worse.
+  // Guarded like every other job: a throw here must not cost the run, and
+  // an instance that has graduated nothing has no ledger and no work.
+  //
+  // The one job whose failure does NOT reach `deps.log`. Every other line
+  // in this run is about the person's own material and renders on the
+  // Activity Log they read; this job is about mechanisms watching them, and
+  // Q-83's never-mirrored class applied to the operator hat keeps the whole
+  // record plane off that surface. The failure goes to the operator's
+  // channel — the same stderr the docket's own deferral notice uses — and
+  // `scripts/loop-status.ts` shows what the sweep did or did not do.
+  if (deps.tripwireSweep) {
+   try {
+    await deps.tripwireSweep();
+   } catch (err) {
+    console.error(`tripwire sweep failed — the rest of the docket run is already on disk: ${String(err)}`);
    }
   }
 

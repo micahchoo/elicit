@@ -636,7 +636,7 @@ territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions
   * did none. Shadow-first (Q-35): candidates are logged, not minted.
   * Structural — this file must not depend on `src/ktg/`.
   */
- atlasGapFill?: { candidateCount: number; scanned: number };
+ atlasGapFill?: { candidateCount: number; scanned: number; minted: number };
  /**
   * What the gazetteer extraction job did on this run, absent when a run
   * did none. Structural — this file must not depend on `src/clerk/`.

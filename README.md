@@ -103,6 +103,10 @@ ELICIT_HOST=0.0.0.0 npm start
 | `ELICIT_PORT` | `4517` | Server port |
 | `ELICIT_STT_MODEL_DIR` | _auto-detected_ | Directory with voice-model files |
 
+Any of these can also go in a `.env` file next to the server — see `.env`.
+Real environment variables always win over the file, and a value starting
+with `~/` expands to the home directory.
+
 Opener questions live in `data/question-bank.jsonl`; grow the file and
 restart.
 
@@ -121,9 +125,9 @@ huggingface-cli download csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
   --local-dir ~/.cache/elicit/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
 ```
 
-Or set `ELICIT_STT_MODEL_DIR` to any directory containing
-`encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx`, and
-`tokens.txt`. Without the files, the mic simply is not offered.
+Or set `ELICIT_STT_MODEL_DIR` (in the shell or in `.env`) to any directory
+containing `encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx`,
+and `tokens.txt`. Without the files, the mic simply is not offered.
 
 </details>
 

@@ -37,16 +37,16 @@ export const RANDOMIZER_THRESHOLDS = {
   'randomizer.drySpellDays': {
     name: 'randomizer.drySpellDays',
     value: 7,
-    live: false,
+    live: true,
     graduatesWhen:
-      'Shadow. It decides whether the system may OFFER a draw nobody asked for, which is a selection mechanism in the exact sense of Q-35. It graduates when the log shows a run of randomizer-license lines whose grounds=dry-spell days figure lines up with sittings the person agrees were droughts — and, critically, when the shadow record contains no line that would have interrupted an active week. A week is a guess drawn from Q-16 session budget arithmetic, not a measurement.',
+      'LIVE by decision, not by record (2026-08-03, Micah) — graduated with the shadow set ahead of the planned drought-alignment evidence. It licenses the system to OFFER a draw nobody asked for; the offer surface is one card, declined with one tap (Q-62). The VALUE stays a guess from Q-16 session budget arithmetic. Demote if the randomizer-license record shows grounds=dry-spell offers landing in weeks the person was active.',
   },
   'randomizer.staleRegionDays': {
     name: 'randomizer.staleRegionDays',
     value: 30,
-    live: false,
+    live: true,
     graduatesWhen:
-      'Shadow, for the same reason as the dry spell and with a harder evidential bar: it names a Facet the corpus has stopped feeding, and a wrong name sends the person to a region they deliberately left. It graduates when the shadow lines name regions that the facet distribution in the Activity Log independently shows starving over the same window.',
+      'LIVE by decision, not by record (2026-08-03, Micah) — graduated with the shadow set ahead of the planned starvation-alignment evidence. The original bar stands as the DEMOTION test: if the randomizer-license lines name regions the facet distribution does not independently show starving, demote — a wrong name sends the person to a region they deliberately left.',
   },
   'randomizer.cooldownDays': {
     name: 'randomizer.cooldownDays',

@@ -66,6 +66,12 @@ export function contentWordsOf(text: string): Set<string> {
  return extractContentWords(tokenize(text));
 }
 
+/** Content words of a text string, in order — for n-gram guards. */
+export function contentWordSequence(text: string): string[] {
+ const tokens = tokenize(text);
+ return tokens.filter(t => !isStopword(t.word)).map(t => t.word);
+}
+
 /** Jaccard similarity: |A ∩ B| / |A ∪ B| */
 export function jaccard(a: Set<string>, b: Set<string>): number {
  if (a.size === 0 && b.size === 0) return 0;

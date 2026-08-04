@@ -527,12 +527,26 @@ describe('randomizer draw', () => {
     expect(draw).not.toBeNull();
   });
 
-  it('offers nothing unasked while the license is in shadow (Q-35)', () => {
+  it('offers nothing unasked while the license is in shadow (demotion path, Q-35)', () => {
     const dir = join(root, 'decks-shipped');
     writeJsonlDeck(dir, 'shipped', [deckRow('What did you avoid?', 77)]);
     const entries = [entry({ answeredAt: daysAgo(400), targetFacet: 'episode' })];
 
-    expect(createRandomizer(makeDeps({ deckDir: dir, entries }))('system')).toBeNull();
+    // The coverage grounds graduated 2026-08-03; this pins the demotion path.
+    const shadow: RandomizerThresholds = {
+      ...RANDOMIZER_THRESHOLDS,
+      'randomizer.drySpellDays': {
+        ...RANDOMIZER_THRESHOLDS['randomizer.drySpellDays'],
+        live: false,
+      },
+      'randomizer.staleRegionDays': {
+        ...RANDOMIZER_THRESHOLDS['randomizer.staleRegionDays'],
+        live: false,
+      },
+    };
+    expect(
+      createRandomizer(makeDeps({ deckDir: dir, entries, thresholds: shadow }))('system'),
+    ).toBeNull();
   });
 
   it('offers a draw unasked once the dry-spell threshold graduates', () => {

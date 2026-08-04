@@ -242,6 +242,7 @@ describe('runLineageMirrorSweep', () => {
     claims: MirrorClaim[];
     queueEntries?: QueueEntry[];
     dryRun?: boolean;
+    script?: string[];
   }) {
     const root = mkdtempSync(join(tmpdir(), 'elicit-lm-'));
     writeTranscript(root, 'sess-1', '2026-06-01T12:00:00Z');
@@ -249,7 +250,7 @@ describe('runLineageMirrorSweep', () => {
 
     const { log, events } = collectorLog();
     const queue = fakeQueue(opts.queueEntries ?? []);
-    const complete: Complete = makeScriptedComplete([]);
+    const complete: Complete = makeScriptedComplete(opts.script ?? []);
 
     return {
       root,
@@ -317,7 +318,7 @@ describe('runLineageMirrorSweep', () => {
     expect(result.evaluated).toBe(0);
   });
 
-  test('in shadow mode, evaluates but does not mint', async () => {
+  test('live mode (graduated 2026-08-03): evaluates, mints, writes no shadow record', async () => {
     const now = Date.now();
     const fortyDaysAgo = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -325,17 +326,17 @@ describe('runLineageMirrorSweep', () => {
       claims: [
         { id: 'claim-1', body: 'I write every day.', created: fortyDaysAgo, updated: fortyDaysAgo },
       ],
+      script: [
+        'You wrote this claim on June 1, 2026. You have had 12 sittings since, about one week apart. Same thing?',
+      ],
     });
 
-    // Shadow mode by default: lineageMirror.selection.live === false
+    // Live by graduation: lineageMirror.selection.live === true
     const result = await sweep();
 
-    // evaluated++ happens before shadow check, so one candidate was found
     expect(result.evaluated).toBe(1);
-    // Shadow mode: nothing minted
-    expect(result.minted).toBe(0);
-    // Shadow log emitted
-    expect(events.some((e) => e.kind === 'lineage-mirror-shadow')).toBe(true);
+    expect(result.minted).toBe(1);
+    expect(events.some((e) => e.kind === 'lineage-mirror-shadow')).toBe(false);
   });
 });
 

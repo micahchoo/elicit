@@ -1603,20 +1603,19 @@ describe('the second prime', () => {
     expect(store.rows.map((r) => r.claimId).sort()).toEqual(['c-old', mintedClaim!.id].sort());
   });
 
-  it('puts the fresh pair into the Q-35 shadow record on the run that minted it', async () => {
-    // The SHIPPED threshold, unaltered: `clash.embeddingCosine` is in shadow, so
-    // the pool stays empty and the record is the whole output of the channel.
-    const { h, events } = setup();
+  it('pools a claim minted this run in the SAME run with the live channel', async () => {
+    // Ticket 118: `clash.embeddingCosine` graduated live. The pair that was
+    // only a shadow record before this ticket now enters the live pool.
+    const { h } = setup();
 
-    await h.run();
+    const report = await h.run();
 
-    const shadow = events.filter(
-      (e) => e.kind === 'shadow-decision' && e.detail.includes('threshold=clash.embeddingCosine'),
-    );
-    expect(shadow).toHaveLength(1);
+    expect(report.candidates['embedding']).toBe(1);
     const mintedClaim = h.store.loadSlice().claims.find((c) => c.body === MINTED);
-    expect(shadow[0]?.detail).toContain(mintedClaim!.id);
-    expect(shadow[0]?.detail).toContain('c-old');
+    expect(mintedClaim).toBeTruthy();
+    // The clash-checked event records channel contributions, not individual ids.
+    const checked = h.rec.events.find((e) => e.kind === 'clash-checked');
+    expect(checked?.detail).toContain('embedding:1');
   });
 
   it('embeds only what the sweep added, never the rest of the graph', async () => {

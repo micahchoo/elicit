@@ -14,7 +14,7 @@ describe('pattern selection', () => {
     expect(result).toBeNull();
   });
 
-  test('returns null when threshold is shadow (the default)', () => {
+  test('returns a licensed pattern now the threshold is live (graduated 2026-08-03)', () => {
     const patterns = loadPatterns();
     const c = ctx({
       availableSnippets: [
@@ -23,10 +23,11 @@ describe('pattern selection', () => {
       ],
     });
     const result = selectPattern(patterns, c);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(patterns.some((p) => p.id === result!.id)).toBe(true);
   });
 
-  test('logs shadow events when log fn is provided', () => {
+  test('logs a live selection event when log fn is provided', () => {
     const patterns = loadPatterns();
     const events: { kind: string }[] = [];
     const log = (e: { at: string; actor: string; kind: string; detail: string }) => {
@@ -40,7 +41,7 @@ describe('pattern selection', () => {
     });
 
     selectPattern(patterns, c, log);
-    expect(events.some((e) => e.kind === 'pattern-selection-shadow')).toBe(true);
+    expect(events.some((e) => e.kind === 'pattern-selection-live')).toBe(true);
   });
 
   test('selectCheapPattern only considers cheap patterns', () => {
@@ -65,7 +66,7 @@ describe('pattern selection', () => {
     expect(result).toBeNull();
   });
 
-  test('selectDeepPattern logs shadow event when licensed late-session', () => {
+  test('selectDeepPattern returns a deep pattern and logs live when licensed late-session', () => {
     const patterns = loadPatterns();
     const c = ctx({
       availableSnippets: [
@@ -82,7 +83,8 @@ describe('pattern selection', () => {
     };
 
     const result = selectDeepPattern(patterns, c, log);
-    expect(result).toBeNull();
-    expect(events.some((e) => e.kind === 'pattern-selection-shadow')).toBe(true);
+    expect(result).not.toBeNull();
+    expect(result!.tier).toBe('deep');
+    expect(events.some((e) => e.kind === 'pattern-selection-live')).toBe(true);
   });
 });

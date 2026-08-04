@@ -114,14 +114,16 @@ describe('derivation patterns e2e', () => {
     }
   });
 
-  test('selectCheapPattern returns null in shadow mode', () => {
-    expect(selectCheapPattern(loadPatterns(), richCtx())).toBeNull();
+  test('selectCheapPattern returns a cheap pattern now the threshold is live (graduated 2026-08-03)', () => {
+    const r = selectCheapPattern(loadPatterns(), richCtx());
+    expect(r).not.toBeNull();
+    expect(r!.tier).toBe('cheap');
   });
 
-  test('shadow mode logs events', () => {
+  test('live mode logs selection events', () => {
     const events: { kind: string }[] = [];
     selectCheapPattern(loadPatterns(), richCtx(), (e) => events.push(e));
-    expect(events.some((e) => e.kind === 'pattern-selection-shadow')).toBe(true);
+    expect(events.some((e) => e.kind === 'pattern-selection-live')).toBe(true);
   });
 
   test('near-duplicate: same quote, different frame → not duplicate', () => {

@@ -76,6 +76,46 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/auth/auth', name: 'createFileAuth', status: 'live' },
  { module: 'src/auth/auth', name: 'isLoopback', status: 'live' },
 
+ // ── src/v2/router.ts (ticket 129) ──
+ { module: 'src/v2/router', name: 'createV2App', status: 'live', reason: 'wired: createApp mounts it at /v2 before the static catch-all (129)' },
+
+ // ── src/loop/instances.ts (ticket 130) ── the harness's own entry points are
+ // dispatched by the improvement loop at run time; scripts/ and tests do not
+ // count as callers, so they flip to live when the loop runner lands in src/.
+ { module: 'src/loop/instances', name: 'variantWorktreeArgs', status: 'live', reason: 'wired: createVariantWorktree builds its git argv through it' },
+ { module: 'src/loop/instances', name: 'instanceEnv', status: 'live', reason: 'wired: provisionInstance builds the child environment through it' },
+ { module: 'src/loop/instances', name: 'serverArgs', status: 'live', reason: 'wired: provisionInstance spawns the variant server through it' },
+ { module: 'src/loop/instances', name: 'materializeInstanceDir', status: 'live', reason: 'wired: provisionInstance builds the instance dir through it' },
+ { module: 'src/loop/instances', name: 'allocatePort', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'createVariantWorktree', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'provisionInstance', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'awaitHealthy', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'setupAuth', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'relogin', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/instances', name: 'teardownInstance', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+ { module: 'src/loop/persona', name: 'personaRunPrompt', status: 'live', reason: 'wired: personaCommand appends it to the omp argv' },
+ { module: 'src/loop/persona', name: 'personaCommand', status: 'unwired', reason: 'ticket 130: loop-dispatched at run time' },
+
+ // ── src/loop record plane + tripwire (tickets 131/132) ──
+ { module: 'src/loop/ledger', name: 'appendLedger', status: 'live', reason: 'wired: scripts/demote.ts and sweepTripwire append through it' },
+ { module: 'src/loop/ledger', name: 'readLedger', status: 'live', reason: 'wired: sweepTripwire reads graduations through it' },
+ { module: 'src/loop/demotions', name: 'readDemotions', status: 'live', reason: 'wired: isDemoted consults the store through it' },
+ { module: 'src/loop/demotions', name: 'addDemotion', status: 'live', reason: 'wired: sweepTripwire and scripts/demote.ts write through it' },
+ { module: 'src/loop/demotions', name: 'isDemoted', status: 'live', reason: 'wired: thresholds isLive() consults it at read time' },
+ { module: 'src/loop/demotions', name: 'clearDemotion', status: 'unwired', reason: 'ticket 131: the re-graduation-after-dwell path is not built; the mechanical counterpart to hand-editing JSON' },
+ { module: 'src/loop/verdicts', name: 'validateVerdict', status: 'unwired', reason: 'ticket 131: the paired-trial harness that renders and weighs verdicts is not built; the record plane ships ahead of it' },
+ { module: 'src/loop/verdicts', name: 'keepRule', status: 'unwired', reason: 'ticket 131: same — weighed by the loop at run time' },
+ { module: 'src/loop/tripwire', name: 'sweepTripwire', status: 'live', reason: 'wired: createApp constructs the docket tripwireSweep thunk with it (132)' },
+ { module: 'src/loop/tripwire', name: 'readTripwireState', status: 'live', reason: 'wired: scripts/loop-status.ts renders state through it' },
+ { module: 'src/loop/tripwire', name: 'dwellUntil', status: 'live', reason: 'wired: sweepTripwire stamps demotions through it' },
+ { module: 'src/loop/tripwire', name: 'underDwell', status: 'live', reason: 'wired: sweepTripwire skips dwelling mechanisms through it' },
+ { module: 'src/wiki/thresholds', name: 'isLive', status: 'live', reason: 'wired: shadowDecision and patterns/select gate on it; demotions consult at read time (131)' },
+
+ // ── src/reset/fresh-start.ts ──
+ { module: 'src/reset/fresh-start', name: 'archiveStamp', status: 'live', reason: 'wired: POST /api/fresh-start names the archive dir with it' },
+ { module: 'src/reset/fresh-start', name: 'freshStartTargets', status: 'live', reason: 'wired: archiveFreshStart enumerates the person-derived paths through it' },
+ { module: 'src/reset/fresh-start', name: 'archiveFreshStart', status: 'live', reason: 'wired: POST /api/fresh-start (loopback-only, typed confirm) moves the records and exits' },
+
  // ── src/clerk/composed.ts ──
  { module: 'src/clerk/composed', name: 'redLights', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeFollowUp', status: 'live' },
@@ -112,17 +152,15 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/clerk/clause',
   name: 'hasConstructPole',
-  status: 'shadow',
-  shadowKind: 'gap-fill-pole-skip',
-  reason: 'Q-35 shadow (ticket 114, QR-1): the pole gate blocks pole-less half-Construct mints; the skip log records the decision',
+  status: 'live',
+  reason: 'graduated 2026-08-03 (was Q-35 shadow, ticket 114, QR-1): the gate acted from birth — blocks pole-less half-Construct mints and logs every skip as gap-fill-pole-skip',
  },
  // ── src/clerk/disfluency.ts ──
  {
   module: 'src/clerk/disfluency',
   name: 'elideDisfluencies',
-  status: 'shadow',
-  shadowKind: 'disfluency-elided',
-  reason: 'Q-35 shadow-first for selection-behavior changes (QR-5): queue add elides STT disfluencies from quoted fragments and logs disfluency-elided when the text changes',
+  status: 'live',
+  reason: 'graduated 2026-08-03 (was Q-35 shadow, QR-5): acts at the queue\'s one write gate — elides STT disfluencies from quoted fragments and logs disfluency-elided when the text changes',
  },
 
  // ── src/clerk/arrangements.ts ──
@@ -164,9 +202,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/clerk/lineage-mirror',
   name: 'runLineageMirrorSweep',
-  status: 'shadow',
-  shadowKind: 'lineage-mirror-shadow',
-  reason: 'wired into runDocket by the server; the selection threshold (lineageMirror.selection) is not live, so candidates are logged and nothing is minted',
+  status: 'live',
+  reason: 'graduated 2026-08-03: lineageMirror.selection is live, so the sweep mints capped mirror questions — one per claim, ever; wired into runDocket by the server',
  },
 
  // ── src/clerk/gap-fill.ts ──
@@ -315,9 +352,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/index/semantic',
   name: 'SEMANTIC_FLOOR',
-  status: 'shadow',
-  shadowKind: 'shadow-decision',
-  reason: 'Q-35 threshold, live:false — read by buildSemanticIndex through shadowDecision; the channel now runs on every turn, so the shadow record accrues',
+  status: 'live',
+  reason: 'graduated 2026-08-03 on the ticket-064 measurement: live noise floor under the ranker, read by buildSemanticIndex through shadowDecision on every turn',
  },
  {
   module: 'src/index/semantic',
@@ -520,8 +556,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/memory/cover',
   name: 'cover',
-  status: 'unwired',
-  reason: '030 wired nextConsolidation/saveSummary/loadSummaries, not the tiler — cover() has no production caller; tests only',
+  status: 'live',
+  reason: '119: the opener job tiles history through it — wired 2026-08-03',
  },
  { module: 'src/memory/cover', name: 'nextConsolidation', status: 'live' },
  { module: 'src/memory/cover', name: 'saveSummary', status: 'live' },
@@ -790,6 +826,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // ── src/index/lexical.ts (soundings slice Task 2 — the license's word API) ──
 { module: 'src/index/lexical', name: 'contentWordsOf', status: 'live' },
 { module: 'src/index/lexical', name: 'jaccard', status: 'live' },
+ { module: 'src/index/lexical', name: 'contentWordSequence', status: 'live', reason: '119: the echo guard in composeOpener reads it to check summary n-gram overlap' },
 
 // ── src/sounding/license.ts ──
 { module: 'src/sounding/license', name: 'licenseSounding', status: 'live', reason: 'wired by 012 T8: the turn route evaluates it on every turn' },
@@ -892,12 +929,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/ktg/atlas-loader', name: 'loadAtlas', status: 'live', reason: 'wired by 110: server loads atlas instruments at docket time' },
 { module: 'src/ktg/atlas-loader', name: 'loadAtlasOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadAtlas (110)' },
 { module: 'src/ktg/atlas-coverage', name: 'createAtlasCoverageStore', status: 'live', reason: 'wired by 110: server creates atlas coverage stores for the sweep' },
-{ module: 'src/ktg/atlas-gap-fill', name: 'runAtlasGapFillSweep', status: 'shadow', shadowKind: 'atlas-gap-fill-candidate', reason: 'selection mechanism shadow-first (Q-35): evaluates candidates, logs them, does not mint' },
+{ module: 'src/ktg/atlas-gap-fill', name: 'runAtlasGapFillSweep', status: 'live', reason: 'graduated 2026-08-03: server passes shadowMode:false — mints capped questions, one per region ever, deduped by atlasRegion' },
 // ── src/clerk/gazetteer-* (100 — gazetteer entity index) ──
 { module: 'src/clerk/gazetteer-store', name: 'createGazetteerStore', status: 'live', reason: 'wired by 100: server creates the store for extraction + frontier (store)' },
 { module: 'src/clerk/gazetteer', name: 'extractEntities', status: 'live', reason: 'wired by 100: extraction thunk calls it; model-calling, cap live at birth (Q-56)' },
 { module: 'src/clerk/gazetteer', name: 'entityId', status: 'live', reason: 'wired by 100: extraction docket job uses it for entity id derivation' },
-{ module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'shadow', shadowKind: 'gazetteer-frontier-shadow', reason: 'selection mechanism (Q-35 shadow-first): mints frontier questions only when shadow record earns it' },
+{ module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'live', reason: 'graduated 2026-08-03: server passes shadowMode:false — mints capped frontier questions, one per entity ever, deduped on subjects' },
 // ── src/patterns/ (111 — derivation patterns) ──
 { module: 'src/patterns/registry', name: 'loadPatterns', status: 'live', reason: 'pure, no I/O side effects beyond disk reads — loaded at composition time (111 T2)' },
 { module: 'src/patterns/registry', name: 'clearPatternCache', status: 'unwired', reason: 'no production caller — test seam only (111 T2, corrected by dispatcher verification)' },

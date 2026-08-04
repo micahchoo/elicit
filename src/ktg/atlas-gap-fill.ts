@@ -1,11 +1,15 @@
 /**
- * Atlas gap-fill sweep — ticket 110.
+ * Atlas gap-fill sweep — ticket 110, graduated 2026-08-03.
  *
- * Reads atlas instruments against their coverage stores and generates
- * candidate questions for unprobed regions. Shadow-first (Q-35): the sweep
- * runs, evaluates coverage, generates candidate questions, and LOGS them —
- * but does NOT add them to the queue. The cap is live (Q-56) even in shadow:
- * the sweep stops evaluating after ATLAS_MINT_CAP candidates.
+ * Reads atlas instruments against their coverage stores and mints questions
+ * for unprobed regions. Shipped shadow-first (Q-35): the sweep ran, evaluated
+ * coverage, logged candidates and minted nothing. Graduated by decision
+ * 2026-08-03 (Micah) — `shadowMode: false` mints into the queue; the module
+ * default stays shadow so a caller must opt in to acting. The cap is live
+ * (Q-56) in both modes: the sweep stops after ATLAS_MINT_CAP candidates.
+ *
+ * One question per region, ever, deduped by `atlasRegion` on the queue
+ * entry — any status blocks re-minting (the gap-fill any-status rule).
  *
  * Questions are ZERO-LLM templates: each one names the TOPIC like any opener,
  * never the gap (Q-79: "you've never mentioned X" is banned). Weak sharpness
@@ -17,6 +21,7 @@
  * ARCHIVE, never about the person (Q-79).
  */
 
+import type { QueueStore, QueueDraft } from '../types.js';
 import type { AtlasInstrument, AtlasRegion } from './atlas-types.js';
 import type { CoverageStore } from './coverage.js';
 
@@ -29,26 +34,30 @@ export type AtlasGapFillLog = (e: {
   refs?: string[];
 }) => void;
 
-/** How many atlas questions one run may evaluate (Q-56 bound, live). */
+/** How many atlas questions one run may evaluate or mint (Q-56 bound, live). */
 const ATLAS_MINT_CAP = 2;
 
 /**
  * The atlas gap-fill sweep. Called by the docket's atlas thunk.
  *
- * Shadow-first (Q-35): evaluates coverage and logs candidates, but does
- * not call queue.add. The cap is live (Q-56): at most ATLAS_MINT_CAP
- * candidates are evaluated per run.
+ * In shadow mode (the default), candidates are logged and nothing is added
+ * to the queue. In live mode, at most ATLAS_MINT_CAP questions are minted,
+ * deduped by region id against every existing atlas-gap-fill entry.
  */
 export function runAtlasGapFillSweep(deps: {
   atlas: AtlasInstrument;
   coverage: CoverageStore;
+  queue: QueueStore;
   log: AtlasGapFillLog;
   now: string;
-}): { candidateCount: number; scanned: number } {
-  const { atlas, coverage, log, now } = deps;
+  /** When true, log candidates only — add nothing to the queue. */
+  shadowMode?: boolean;
+}): { candidateCount: number; scanned: number; minted: number } {
+  const { atlas, coverage, queue, log, now } = deps;
+  const shadowMode = deps.shadowMode ?? true; // default: shadow-first (Q-35)
 
   let candidateCount = 0;
-  let scanned = 0;
+  let minted = 0;
 
   // Collect explicit coverage statuses from stored readings
   const statusCache = new Map<string, string>();
@@ -59,29 +68,62 @@ export function runAtlasGapFillSweep(deps: {
     );
   }
 
-  // Scan unprobed regions and generate candidate questions
+  // One question per region, ever — any status blocks re-minting.
+  const existing = new Set<string>();
+  for (const entry of queue.list()) {
+    if (entry.source === 'atlas-gap-fill' && entry.atlasRegion) {
+      existing.add(entry.atlasRegion);
+    }
+  }
+
+  // Scan unprobed regions and mint (or log) candidate questions
   for (const region of atlas.regions) {
     if (candidateCount >= ATLAS_MINT_CAP) break;
     if (statusCache.get(region.id) !== 'unprobed') continue;
+    if (existing.has(region.id)) continue;
 
     const question = atlasRegionQuestion(region);
     if (!question) continue;
 
     candidateCount++;
+
+    if (shadowMode) {
+      log({
+        at: now,
+        actor: 'clerk',
+        kind: 'atlas-gap-fill-candidate',
+        detail: `shadow candidate for atlas "${atlas.instrument}" region ${region.id}: "${question}"`,
+        refs: [region.id, atlas.instrument],
+      });
+      continue;
+    }
+
+    const draft: QueueDraft = {
+      source: 'atlas-gap-fill',
+      license: `atlas gap: region ${region.id} (${atlas.instrument})`,
+      question,
+      questionForm: 'deliberative',
+      sharpness: 'weak',
+      horizon: 'session',
+      atlasRegion: region.id,
+    };
+
+    queue.add(draft);
+    existing.add(region.id);
+    minted++;
     log({
       at: now,
       actor: 'clerk',
-      kind: 'atlas-gap-fill-candidate',
-      detail: `shadow candidate for atlas "${atlas.instrument}" region ${region.id}: "${question}"`,
+      kind: 'atlas-gap-fill-minted',
+      detail: `minted question for atlas "${atlas.instrument}" region ${region.id}`,
       refs: [region.id, atlas.instrument],
     });
   }
 
-
   // All regions were scanned via the status cache read above
-  scanned = atlas.regions.length;
+  const scanned = atlas.regions.length;
 
-   return { candidateCount, scanned };
+  return { candidateCount, scanned, minted };
 }
 
 // ── Question template (ZERO-LLM, never quote region labels, Q-79 opener form) ──

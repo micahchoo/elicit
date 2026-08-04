@@ -115,10 +115,13 @@ import { surfaced } from './log/surfaced.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
+import { archiveFreshStart } from './reset/fresh-start.js';
 import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
 import { anniversaryDraw, createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
 import { datedSnippets, readSittingDates } from './randomizer/strata.js';
 import { RANDOMIZER_THRESHOLDS } from './randomizer/thresholds.js';
+import { createV2App } from './v2/router.js';
+import { sweepTripwire } from './loop/tripwire.js';
 import { createCoachStore, readSittingTags } from './coach/store.js';
 import { evaluateOffer, licenseState, type CoachFacts } from './coach/license.js';
 import { waitingLines, coachOfferSentence, buildCoachPage } from './coach/page.js';
@@ -370,6 +373,23 @@ const CAPTURE_CHANNELS: readonly CaptureChannel[] = ['typed', 'spoken', 'pasted'
 /** Narrowing guard for a capture channel value sent by the client. */
 function isCaptureChannel(v: unknown): v is CaptureChannel {
  return (CAPTURE_CHANNELS as readonly unknown[]).includes(v);
+}
+
+/**
+ * Whether this request is a PURE read (ticket 129, the core API spec).
+ *
+ * The census found six read-shaped routes that write: /api/wiki stamps
+ * surfaced, /api/queue expires the open-pool tail, /api/import/survey writes
+ * the snapshot, and /api/coach/waiting and /api/reach log an offer
+ * evaluation. Under `/v2` those writes move to explicit verbs and to the
+ * docket, so the /v2 view dispatch marks its internal request with this
+ * header and each of those handlers skips its write.
+ *
+ * INTERNAL: only `src/v2/router.ts` sets it, and only on a projection
+ * dispatch. The SPA never sends it, so what the person meets is unchanged.
+ */
+function isPureRead(c: Context): boolean {
+ return c.req.header('x-elicit-pure') === '1';
 }
 
 /** Scan transcript files for session metadata (used by docket). */
@@ -792,12 +812,13 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      const atlasDir = join(deps.vaultRoot, 'data', 'atlases');
      let totalCandidates = 0;
      let totalScanned = 0;
+     let totalMinted = 0;
 
      let files: string[];
      try {
       files = readdirSync(atlasDir).filter((f) => f.endsWith('.json'));
      } catch {
-      return Promise.resolve({ candidateCount: 0, scanned: 0 });
+      return Promise.resolve({ candidateCount: 0, scanned: 0, minted: 0 });
      }
 
      for (const file of files) {
@@ -809,15 +830,18 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       const result = runAtlasGapFillSweep({
        atlas: atlas.value,
        coverage,
+       queue: deps.queue,
        log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
        now: new Date().toISOString(),
+       shadowMode: false, // graduated 2026-08-03 (Micah) — mints, cap live
       });
 
       totalCandidates += result.candidateCount;
       totalScanned += result.scanned;
+      totalMinted += result.minted;
      }
 
-     return Promise.resolve({ candidateCount: totalCandidates, scanned: totalScanned });
+     return Promise.resolve({ candidateCount: totalCandidates, scanned: totalScanned, minted: totalMinted });
     },
     // Ticket 112: the lineage mirror sweep (Q-83) — reads claims against
     // lineage, shadow-first. Superseded claims are excluded: a claim no
@@ -829,6 +853,18 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      queue: deps.queue,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     }),
+    // Ticket 132: the zero-LLM tripwire sweep (Q-90/Q-95) — guarded-metric
+    // baselines vs post-graduation counts, batch demotion by recency. A
+    // missing ledger makes it a no-op inside sweepTripwire.
+    tripwireSweep: () => {
+     sweepTripwire({
+      dataDir: join(process.cwd(), 'data'),
+      ledgerPath: join(process.cwd(), 'data', 'graduation-ledger.jsonl'),
+      vaultRoot: deps.vaultRoot,
+      now: new Date(),
+     });
+     return Promise.resolve();
+    },
     gazetteerExtraction: () => {
      if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
      const allEntities = gazetteerStore.list();
@@ -892,7 +928,7 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       queue: deps.queue,
       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
       now: new Date().toISOString(),
-      shadowMode: true, // Q-35 shadow-first
+      shadowMode: false, // graduated 2026-08-03 (Micah) — mints, cap live
      }));
     },
     runImportJobs: runImportJobsNow,
@@ -1139,6 +1175,42 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    return new Response('Unauthorized', { status: 401 });
   }
   return next();
+ });
+
+ // POST /api/fresh-start {confirm: 'fresh start'} → {ok, archiveDir, moved}
+ // Loopback-only, like /api/setup: a fresh start re-runs first-boot setup,
+ // which is host-only by design. Every person-derived record is MOVED —
+ // never deleted — into ./archives/<stamp>/ (the 2026-08-03 pristine reset's
+ // layout), instruments stay, and the process exits so the next boot
+ // rebuilds an empty vault and asks for a new password. Refused while a
+ // docket run is in flight: a mid-run rename would pull files out from
+ // under the clerk.
+ app.post('/api/fresh-start', async (c) => {
+  const remoteAddr = getRemoteAddr(c.env);
+  if (!isLoopback(remoteAddr)) {
+   return c.json({ error: 'fresh start must be done from the host machine' }, 403);
+  }
+  const body = await c.req
+   .json<{ confirm?: string }>()
+   .catch(() => ({}) as { confirm?: string });
+  if (body.confirm !== 'fresh start') {
+   return c.json({ error: 'type the phrase "fresh start" to confirm' }, 400);
+  }
+  if (docketRunning) {
+   return c.json({ error: 'a background run is in flight — try again in a moment' }, 409);
+  }
+  let report;
+  try {
+   report = archiveFreshStart({ cwd: process.cwd(), vaultRoot: deps.vaultRoot, now: new Date() });
+  } catch (err) {
+   return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+  console.error(`\n  fresh start: ${report.moved.length} records archived → ${report.archiveDir}`);
+  console.error('  exiting — run npm start again for a fresh vault\n');
+  // The response flushes first; the delay is generous because the exit is
+  // not racing anything — the archive is already on disk.
+  setTimeout(() => process.exit(0), 750);
+  return c.json({ ok: true, archiveDir: report.archiveDir, moved: report.moved });
  });
 
  // GET /api/target-suggestion → {target, recent, declaredRequired}
@@ -1470,6 +1542,12 @@ function closeTheDoor(state: SessionState, at: string): void {
   if (!state) return c.json({ error: 'session not found' }, 404);
 
   const result = skipQuestion(state);
+  // The replacement draw carries the 'skip' provenance (src/types.ts) whose
+  // log sentence already exists — without this emit a skip leaves no trace
+  // on disk and the skip-rate guarded metric (Q-90) cannot be counted.
+  if (result.kind === 'question') {
+   serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=skip`);
+  }
   return c.json(result);
  });
 
@@ -2445,7 +2523,9 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   } catch (err) {
    return c.json({ error: String(err) }, 400);
   }
-  writeSurvey(deps.vaultRoot, survey);
+  // A pure read computes the map and keeps nothing (129): under /v2 the
+  // snapshot is written by act {v:'survey'}, which is why that verb exists.
+  if (!isPureRead(c)) writeSurvey(deps.vaultRoot, survey);
   return c.json({ survey });
  };
  app.get('/api/import/survey', importSurvey);
@@ -2500,7 +2580,9 @@ app.post('/api/session/:id/drm/resume', async (c) => {
  app.get('/api/reach', (c) => {
   const survey = readSurvey(deps.vaultRoot);
   const pending = deps.queue.list({ status: 'pending' });
-  const log: LogFn = (e) => appendEvent(deps.vaultRoot, e as ActivityEvent);
+  // A pure read offers and records nothing (129) — same rule as the coach
+  // offer: the evaluation record belongs to the server clock, not to a read.
+  const log: LogFn = isPureRead(c) ? () => {} : (e) => appendEvent(deps.vaultRoot, e as ActivityEvent);
   const offer = reachOffer({
    survey,
    // The live Direction (Q-69): the pending queue's question text — the
@@ -2550,7 +2632,11 @@ app.post('/api/session/:id/drm/resume', async (c) => {
    if (aUd !== bUd) return aUd - bUd;
    return b.created.localeCompare(a.created);
   });
-  if (open.length > MAX_OPEN_QUESTIONS) {
+  // TODO(ticket 132): a pure read expires nothing — the docket sweep owns
+  // the open-pool tail under the core API spec. Until that sweep lands, a
+  // vault read only through /v2 keeps a tail past the cap on disk while the
+  // capped list below still hides it.
+  if (open.length > MAX_OPEN_QUESTIONS && !isPureRead(c)) {
    deps.queue.expireTailBeyond(MAX_OPEN_QUESTIONS);
   }
   const capped = open.slice(0, MAX_OPEN_QUESTIONS);
@@ -2736,9 +2822,13 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   // snippets its citations render. One line per claim; ?all=1 serves the
   // whole record and stamps it too. The /api/snippets pool is display
   // support, not display, and never stamps.
-  for (const facet of facets) {
-   for (const cl of facet.claims) {
-    surfaced(deps.vaultRoot, [cl.id, ...cl.cites], 'wiki');
+  // A pure read stamps nothing (129): under /v2 the stamp is an explicit
+  // act {v:'read'} per claim, which is what the dwell observer maps to.
+  if (!isPureRead(c)) {
+   for (const facet of facets) {
+    for (const cl of facet.claims) {
+     surfaced(deps.vaultRoot, [cl.id, ...cl.cites], 'wiki');
+    }
    }
   }
 
@@ -3369,10 +3459,13 @@ app.post('/api/coach/direction/:slug/decline-offer', (c) => {
 // logged, offered=null on the empty corpus (090's data note), and silence
 // renders nothing.
 app.get('/api/coach/waiting', (c) => {
+ // A pure read evaluates the offer and records nothing (129): the server
+ // logs offer evaluations on its own clock, never on a reader arriving.
+ const pure = isPureRead(c);
  const facts = buildCoachFacts();
- const evaluation = evaluateOffer(facts, (e) => appendEvent(deps.vaultRoot, e as ActivityEvent));
+ const evaluation = evaluateOffer(facts, pure ? () => {} : (e) => appendEvent(deps.vaultRoot, e as ActivityEvent));
  const offered = evaluation.offered;
- serverEmit(
+ if (!pure) serverEmit(
   deps.vaultRoot,
   'elicitor',
   'coach-offer',
@@ -3601,6 +3694,17 @@ app.post('/api/coach/:slug/artifact', async (c) => {
  refreshAdviceInBackground(slug);
  return c.json({ status: 'harvesting', sessionId });
 });
+
+// ── The core API (ticket 129) ──
+//
+// Mounted LAST among the routes and before the static catch-all, because it
+// is an adapter: every /v2 operation dispatches against the /api routes
+// registered above, so the closure below can only reach a route that already
+// exists. The env is forwarded whole, which is what carries remoteAddr into
+// the /api auth lock — /v2 has no gate of its own, it inherits one.
+ const v2Dispatch = (path: string, init: RequestInit, env: unknown): Promise<Response> =>
+  Promise.resolve(app.request(path, init, env as Record<string, unknown>));
+ app.route('/v2', createV2App({ dispatch: v2Dispatch }));
 
 // Static fallback: serve web/dist when it exists
  app.get('/*', (c) => {

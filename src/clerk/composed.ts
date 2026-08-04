@@ -17,6 +17,7 @@ import {
  quotesFragmentSetOff,
  setOffSpans,
 } from '../elicitor/guards.js';
+import { contentWordSequence } from '../index/lexical.js';
 import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
 
 // ---------------------------------------------------------------------------
@@ -122,7 +123,8 @@ type Rejection =
  | 'degenerate'
  | 'not-interrogative'
  | 'first-person'
- | 'repeats-original';
+ | 'repeats-original'
+ | 'summary-echo';
 
 /**
  * Checks that apply once a verbatim fragment is in hand.
@@ -180,6 +182,9 @@ function checkQuotesSource(question: string, source: string): QuoteResult {
  * retry never trades one invariant for another.
  */
 function corrective(rejection: Rejection, quoteRule: string): string {
+ if (rejection === 'summary-echo') {
+  return 'Your question must NOT repeat or closely paraphrase the history summary lines shown above. Use the snippet for your quote, not the summaries.';
+ }
  switch (rejection) {
   case 'no-quote':
    return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
@@ -442,14 +447,57 @@ Return only the question text. No markdown, no commentary.`;
 // composeOpener
 // ---------------------------------------------------------------------------
 
+
+/**
+ * Summary-echo guard (Q-86): reject a composed question that shares
+ * a span of minSpanWords content words with any summary line.
+ * Returns the matched summary line, or null. The guard is a code
+ * boundary, not a prompt instruction — agent-plane summaries may
+ * INFORM composition but are never QUOTABLE material.
+ */
+function checkSummaryEcho(
+  question: string,
+  summaryLines: string[],
+  minSpanWords: number,
+): string | null {
+  if (summaryLines.length === 0) return null;
+  const qWords = contentWordSequence(question);
+  if (qWords.length < minSpanWords) return null;
+
+  for (const line of summaryLines) {
+    const lineWords = contentWordSequence(line);
+    if (lineWords.length < minSpanWords) continue;
+
+    // Sliding window over the summary line's content words
+    for (let i = 0; i <= lineWords.length - minSpanWords; i++) {
+      const window = lineWords.slice(i, i + minSpanWords);
+      // Check if this window appears in sequence in the question
+      for (let qi = 0; qi <= qWords.length - minSpanWords; qi++) {
+        let match = true;
+        for (let j = 0; j < minSpanWords; j++) {
+          if (qWords[qi + j] != window[j]) { match = false; break; }
+        }
+        if (match) return line;
+      }
+    }
+  }
+  return null;
+}
+
 export async function composeOpener(
  snippet: Snippet,
  complete: Complete,
  sitting?: SittingContext,
+ historyBlock?: string,
+ summaryLines?: string[],
 ): Promise<QueueDraft | null> {
+ const historySection = historyBlock
+  ? `\nRecent session history (agent summaries — for context, never quote these):\n${historyBlock}\n`
+  : '';
+
  const prompt = `You are a clerk for Elicit — a quiet, reflective interview tool. Given a snippet the user wrote in a prior session, compose ONE question that returns them to that thought. Quote the snippet verbatim — your question must set off an exact phrase from the snippet inside quotation marks.
 
-Snippet: "${snippet.prose}"
+${historySection}Snippet: "${snippet.prose}"
 Snippet date: ${snippet.captured}
 
 ${FRAMING_RULE}
@@ -463,7 +511,15 @@ Return only the question text. No markdown, no commentary.`;
 
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
+  const echoLine = summaryLines && summaryLines.length > 0
+   ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
+   : null;
+  if (echoLine) {
+   check = { ok: false, rejection: 'summary-echo' };
+   console.warn(`Composed: opener rejected (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
+  } else {
+   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
+  }
  }
 
  // One retry
@@ -474,7 +530,15 @@ Return only the question text. No markdown, no commentary.`;
  check = checkQuotesSource(question, snippet.prose);
 
  if (check.ok) {
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
+  const echoLine2 = summaryLines && summaryLines.length > 0
+   ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
+   : null;
+  if (echoLine2) {
+   check = { ok: false, rejection: 'summary-echo' };
+   console.warn(`Composed: opener retry also rejected (summary-echo) — shares span with: "${echoLine2.slice(0, 80)}"`);
+  } else {
+   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
+  }
  }
 
  console.warn(

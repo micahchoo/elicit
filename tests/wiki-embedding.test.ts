@@ -143,12 +143,15 @@ describe('the cosine gate', () => {
     expect(ch.candidates(g)).toEqual([]);
   });
 
-  it('returns NOTHING while the threshold is in shadow, and names the pair it would have pooled', async () => {
+  it('returns NOTHING when the threshold is explicitly in shadow, and names the pair it would have pooled', async () => {
     const { log, details } = recorder();
     const fake = scripted({ near: CLOSE.a, alsoNear: CLOSE.b });
-    // No `threshold` override: this is the shipped register entry, which Q-35
-    // keeps in shadow until its own record graduates it.
-    const ch = embeddingChannel({ embed: fake.embed, model: 'fake-embed', store: memStore(), log });
+    // Explicit live:false — the shipped register graduated this threshold
+    // (ticket 118), so the demotion path is only testable by injection.
+    const ch = embeddingChannel({
+      embed: fake.embed, model: 'fake-embed', store: memStore(), log,
+      threshold: { name: 'clash.embeddingCosine', value: 0.5, live: false, graduatesWhen: 'demotion path' },
+    });
     const g = graph([claim('c-a', 'near'), claim('c-b', 'alsoNear')]);
     await ch.prime(g);
 
@@ -163,11 +166,11 @@ describe('the cosine gate', () => {
     expect(shadow[0]).toContain('joinsTwoSittings=');
   });
 
-  it('ships in shadow — the channel does not decide that for itself', () => {
-    // If this goes red, the register graduated the threshold. That is the
-    // intended way for this channel to go live, and the test above changes with
-    // it. It is here so the flip is deliberate rather than incidental.
-    expect(THRESHOLDS['clash.embeddingCosine'].live).toBe(false);
+  it('ships live — graduated by its own shadow record (2026-08-03)', () => {
+    // Ticket 118: 5,154 shadow records, 2,845 cross-sitting pairs on the real
+    // vault earned it. The test below (demotion path) keeps the shadow path alive
+    // by injecting live:false explicitly.
+    expect(THRESHOLDS['clash.embeddingCosine'].live).toBe(true);
   });
 
   it('pools NOTHING when the threshold is not a number — a misconfiguration fails closed', async () => {
@@ -273,11 +276,11 @@ describe('the vector cache', () => {
     await embeddingChannel({ embed: first.embed, model: 'fake-embed', store, log }).prime(g);
 
     const second = scripted({ one: ray(0), two: ray(0.25) });
-    const later = embeddingChannel({ embed: second.embed, model: 'fake-embed', store, log });
+    const later = embeddingChannel({ embed: second.embed, model: 'fake-embed', store, log, threshold: liveAt(0.82) });
     await later.prime(g);
 
     expect(second.texts()).toEqual([]);
-    expect(later.candidates(g)).toEqual([]); // shadow — but it had the vectors
+    expect(later.candidates(g).map((p) => p.map((c) => c.id))).toEqual([['c-a', 'c-b']]);
   });
 
   it('pairs from a warm cache without ever calling prime', () => {

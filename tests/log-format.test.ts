@@ -71,6 +71,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
 { kind: 'territory-gap-fill', detail: 'minted=2', reads: 'minted 2 territory questions from the KTG skeleton' },
 { kind: 'territory-gap-fill-failed', detail: 'boom', reads: 'could not run the territory gap-fill sweep' },
 { kind: 'atlas-gap-fill-candidate', detail: 'shadow candidate for atlas indexical-checklist region indexical-checklist.people', reads: 'evaluated an atlas region — shadow mode, candidate logged, nothing minted' },
+{ kind: 'atlas-gap-fill-minted', detail: 'minted question for atlas "indexical-checklist" region indexical-checklist.people', reads: 'minted an atlas region question into the queue' },
 { kind: 'atlas-gap-fill-failed', detail: 'boom', reads: 'could not run the atlas gap-fill sweep' },
  { kind: 'gazetteer-extraction-failed', detail: 'boom', reads: 'could not run the gazetteer extraction job' },
  { kind: 'gazetteer-frontier-shadow', detail: 'frontierEntities=3', reads: 'gazetteer frontier would mint 3 questions — shadow mode, nothing minted' },

@@ -1,25 +1,31 @@
 /**
- * Atlas gap-fill sweep tests — ticket 110.
+ * Atlas gap-fill sweep tests — ticket 110, graduated 2026-08-03.
  *
- * Shadow-first (Q-35): the sweep evaluates coverage and logs candidates
- * but never calls queue.add. The cap is live (Q-56): at most ATLAS_MINT_CAP
- * candidates per run.
+ * The module default stays shadow (Q-35): candidates are logged, nothing
+ * is minted. Live mode (`shadowMode: false`, what the server passes since
+ * graduation) mints into the queue, deduped by `atlasRegion`. The cap is
+ * live (Q-56) in both modes: at most ATLAS_MINT_CAP candidates per run.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadAtlasOrThrow } from '../src/ktg/atlas-loader.js';
 import { createAtlasCoverageStore } from '../src/ktg/atlas-coverage.js';
 import { runAtlasGapFillSweep, type AtlasGapFillLog } from '../src/ktg/atlas-gap-fill.js';
 import type { AtlasInstrument } from '../src/ktg/atlas-types.js';
+import { createQueueStore } from '../src/queue/queue.js';
+import type { QueueStore } from '../src/types.js';
 
 let root: string;
+let queue: QueueStore;
 let logEntries: Parameters<AtlasGapFillLog>[0][];
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'elicit-atlas-gapfill-'));
+  mkdirSync(join(root, 'vault', 'queue'), { recursive: true });
+  queue = createQueueStore(join(root, 'vault'));
   logEntries = [];
 });
 
@@ -31,13 +37,15 @@ function makeLog(): AtlasGapFillLog {
   return (e) => { logEntries.push(e); };
 }
 
-function doSweep(atlas: AtlasInstrument) {
+function doSweep(atlas: AtlasInstrument, shadowMode?: boolean) {
   const coverage = createAtlasCoverageStore(root);
   return runAtlasGapFillSweep({
     atlas,
     coverage,
+    queue,
     log: makeLog(),
     now: '2026-08-03T00:00:00Z',
+    ...(shadowMode !== undefined ? { shadowMode } : {}),
   });
 }
 
@@ -97,6 +105,7 @@ describe('atlas gap-fill sweep — candidates', () => {
     const result = runAtlasGapFillSweep({
       atlas: indexicalChecklist,
       coverage,
+      queue,
       log: makeLog(),
       now: '2026-08-03T00:00:00Z',
     });
@@ -137,6 +146,7 @@ describe('atlas gap-fill sweep — candidates', () => {
     const result = runAtlasGapFillSweep({
       atlas: indexicalChecklist,
       coverage,
+      queue,
       log: makeLog(),
       now: '2026-08-03T00:00:00Z',
     });
@@ -152,13 +162,40 @@ describe('atlas gap-fill sweep — candidates', () => {
     expect(doSweep(timeUseGrid).scanned).toBe(6);
   });
 
-  it('writes no queue — shadow-first means log-only', () => {
-    // This test verifies the sweep does NOT call queue.add
-    // (the sweep function doesn't even receive a queue parameter)
+  it('writes no queue in shadow mode — log-only', () => {
     const result = doSweep(indexicalChecklist);
     expect(result.candidateCount).toBeGreaterThan(0);
+    expect(result.minted).toBe(0);
     expect(logEntries.length).toBeGreaterThan(0);
-    // No queue parameter in the function signature — shadow by construction
+    expect(queue.list().length).toBe(0);
+  });
+});
+
+describe('atlas gap-fill sweep — live mode (graduated 2026-08-03)', () => {
+  it('mints capped questions with atlasRegion set', () => {
+    const result = doSweep(indexicalChecklist, false);
+
+    expect(result.minted).toBe(2);
+    expect(result.candidateCount).toBe(2);
+
+    const entries = queue.list({ source: 'atlas-gap-fill' });
+    expect(entries.length).toBe(2);
+    for (const entry of entries) {
+      expect(entry.atlasRegion).toBeDefined();
+      expect(entry.sharpness).toBe('weak');
+      expect(entry.question).toMatch(/^Tell me about /);
+    }
+    for (const e of logEntries) {
+      expect(e.kind).toBe('atlas-gap-fill-minted');
+    }
+  });
+
+  it('never re-mints a region — one question per region, ever', () => {
+    doSweep(indexicalChecklist, false);
+    doSweep(indexicalChecklist, false);
+
+    const regions = queue.list({ source: 'atlas-gap-fill' }).map((e) => e.atlasRegion);
+    expect(new Set(regions).size).toBe(regions.length);
   });
 });
 

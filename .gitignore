@@ -1,6 +1,12 @@
 node_modules/
 /vault/
 dist/
+
+# Fresh-start archives — the person's history, moved aside, never shared
+/archives/
+
+# The gazetteer entity index — person-derived, like /data/annotations/
+/data/gazetteer/
 node-compile-cache/
 tsx-1000/
 
@@ -41,3 +47,6 @@ local:/
 /scripts/eval-007-lexical-overlap.ts
 /scripts/eval-007-analyze.ts
 /scripts/export-leaflet.ts
+
+# Improvement loop — persona instances are person-plane-shaped, never tracked
+/eval/instances/

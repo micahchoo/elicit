@@ -362,6 +362,7 @@ const SENTENCES = {
  'territory-gap-fill': (f) => `minted ${count(num(f, 'minted'), 'territory question')} from the KTG skeleton`,
  'territory-gap-fill-failed': () => 'could not run the territory gap-fill sweep',
  'atlas-gap-fill-candidate': () => 'evaluated an atlas region — shadow mode, candidate logged, nothing minted',
+ 'atlas-gap-fill-minted': () => 'minted an atlas region question into the queue',
  'atlas-gap-fill-failed': () => 'could not run the atlas gap-fill sweep',
  'gazetteer-entities-extracted': (f) => `extracted ${count(num(f, 'entities'), 'entity')} from ${count(num(f, 'snippets'), 'snippet')} into the gazetteer`,
  'gazetteer-extraction-failed': () => 'could not run the gazetteer extraction job',

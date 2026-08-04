@@ -238,10 +238,12 @@ describe('a semantic hit cannot claim the person just said something', () => {
 
 describe('ranking', () => {
   const CORPUS = [snip('a', 'alpha'), snip('b', 'beta'), snip('c', 'gamma')];
+  // Every vector sits above the (now live) noise floor: ranking mechanics
+  // are this block's subject, the floor has its own describe below.
   const VECTORS = {
     alpha: [1, 0],
     beta: [0.8, 0.6],
-    gamma: [0, 1],
+    gamma: [0.6, 0.8],
     query: [1, 0],
   };
 
@@ -568,11 +570,11 @@ describe('the bounds act, and leave the record that would resize them', () => {
   const many = Array.from({ length: 40 }, (_, i) => snip(`s${String(i).padStart(2, '0')}`, `t${i}`));
   const map = Object.fromEntries(many.map((s, i) => [s.prose, [i, 1]]));
 
-  it('all four are declared live except the floor, which is shadow', () => {
+  it('all four bounds and the floor are declared live (floor graduated 2026-08-03)', () => {
     expect(PRIME_CAP_BOUND.live).toBe(true);
     expect(PRIME_BUDGET_BOUND.live).toBe(true);
     expect(QUERY_BUDGET_BOUND.live).toBe(true);
-    expect(SEMANTIC_FLOOR.live).toBe(false);
+    expect(SEMANTIC_FLOOR.live).toBe(true);
     expect(SEMANTIC_FLOOR.value).toBe(0.5);
   });
 
@@ -629,7 +631,7 @@ describe('the bounds act, and leave the record that would resize them', () => {
 
 // ── The floor is shadow-first (Q-35) ─────────────────────────────────────
 
-describe('the noise floor is shadow, so it records and does not act', () => {
+describe('the noise floor acts (graduated 2026-08-03), and demotes cleanly', () => {
   const CORPUS = [snip('near', 'near'), snip('far', 'far')];
   const VECTORS = { near: [1, 0], far: [0, 1], query: [0.99, 0.14] };
 
@@ -639,9 +641,10 @@ describe('the noise floor is shadow, so it records and does not act', () => {
     return index;
   }
 
-  it('keeps a below-floor hit and writes what it would have dropped', async () => {
+  it('keeps a below-floor hit when demoted to shadow, and writes what it would have dropped', async () => {
     const { log, lines } = collector();
-    const hits = await (await primed({ log })).resonate('query', 5);
+    const index = await primed({ log, floor: { ...SEMANTIC_FLOOR, live: false } });
+    const hits = await index.resonate('query', 5);
     expect(hits.map((h) => h.snippetId)).toEqual(['near', 'far']);
     const shadow = lines.find((l) => l.kind === 'shadow-decision');
     expect(shadow?.detail).toContain('threshold=resonance.semanticFloor');
@@ -649,10 +652,9 @@ describe('the noise floor is shadow, so it records and does not act', () => {
     expect(shadow?.detail).toContain('drop 1 of 2 ranked hits');
   });
 
-  it('drops it once the floor is live, and re-ranks what is left', async () => {
+  it('drops a below-floor hit by default, and re-ranks what is left', async () => {
     const { log, lines } = collector();
-    const index = await primed({ log, floor: { ...SEMANTIC_FLOOR, live: true } });
-    const hits = await index.resonate('query', 5);
+    const hits = await (await primed({ log })).resonate('query', 5);
     expect(hits.map((h) => h.snippetId)).toEqual(['near']);
     expect(hits[0]!.rank).toBe(1);
     expect(lines.some((l) => l.kind === 'shadow-decision')).toBe(false);

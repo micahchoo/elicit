@@ -88,10 +88,11 @@ describe('shadowDecision (Q-35)', () => {
 
   it('never reports live for a shadowed threshold, whatever the clip flag says', () => {
     // The clip flag names the KIND of the record, never the licence to act.
-    const t = THRESHOLDS['clash.embeddingCosine'];
+    // `lint.occasionlessRange` is still shadowed — pick it as the example.
+    const t = THRESHOLDS['lint.occasionlessRange'];
     const { events, log } = collector();
 
-    expect(shadowDecision(t, 'surface pair 01K/01M at cosine 0.91', log, true)).toBe(false);
+    expect(shadowDecision(t, 'note occasionless range on claim=01K', log, true)).toBe(false);
     expect(events).toHaveLength(1);
     expect(events[0]!.kind).toBe('shadow-decision');
   });

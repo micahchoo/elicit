@@ -441,6 +441,38 @@ describe('runDocket', () => {
   expect(saveSummary).toHaveBeenCalledTimes(1);
  });
 
+ // Ticket 117: nextConsolidation's contract is oldest-first. The docket's
+ // shared session sort is newest-first (the opener job needs it), so the
+ // consolidation call site must hand over an ascending copy — otherwise the
+ // bracketing tree consolidates from the newest end and re-keys itself every
+ // time a session lands.
+ it('hands nextConsolidation sessions oldest-first, whatever order listSessions returns', async () => {
+  const refs: SessionRef[] = [
+   { session: 's-mid', started: '2026-08-02T00:00:00Z', turnCount: 1, chars: 10 },
+   { session: 's-new', started: '2026-08-03T00:00:00Z', turnCount: 1, chars: 10 },
+   { session: 's-old', started: '2026-08-01T00:00:00Z', turnCount: 1, chars: 10 },
+  ];
+  const nextConsolidation = vi.fn().mockReturnValue(null);
+
+  await runDocket({
+   vault: fakeVault([]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener: vi.fn(),
+   composeStillTrue: vi.fn(),
+   log: vi.fn(),
+   vaultRoot: '/tmp/fake',
+   nextConsolidation,
+   saveSummary: vi.fn(),
+   loadSummaries: vi.fn().mockReturnValue([]),
+   listSessions: vi.fn().mockReturnValue(refs),
+  });
+
+  const seen = (nextConsolidation.mock.calls[0]![0] as SessionRef[]).map((s) => s.session);
+  expect(seen).toEqual(['s-old', 's-mid', 's-new']);
+ });
+
  it('skips consolidation when nextConsolidation returns null', async () => {
   const nextConsolidation = vi.fn().mockReturnValue(null);
   const saveSummary = vi.fn();
@@ -1069,7 +1101,7 @@ describe('a real docket run and the Activity Log', () => {
   expect(checked.actor).toBe('clerk');
  });
 
- it('writes the embedding channel shadow record, which needs prime before the pool', async () => {
+it('writes the embedding channel into the live clash record (graduated, ticket 118)', async () => {
   const store = createClaimStore(dir);
   store.writeClaim(claim('01KA000000000000000000000A', 'I choose the work that looks impressive.'));
   store.writeClaim(claim('01KA000000000000000000000B', 'I keep picking the impressive-looking work.'));
@@ -1085,11 +1117,14 @@ describe('a real docket run and the Activity Log', () => {
   await app;
   await settled();
 
+  // Ticket 118: graduated live — no more shadow decisions for this channel.
   const shadows = readEvents(dir).filter((e) => e.kind === 'shadow-decision');
-  const embedding = shadows.filter((e) => e.detail.includes('threshold=clash.embeddingCosine'));
-  expect(embedding.length).toBeGreaterThan(0);
-  expect(embedding[0]!.detail).toContain('would=pool');
- });
+  expect(shadows.filter((e) => e.detail.includes('threshold=clash.embeddingCosine'))).toEqual([]);
+
+  const checked = readEvents(dir).filter((e) => e.kind === 'clash-checked');
+  expect(checked.length).toBeGreaterThan(0);
+  expect(checked.some((e) => e.detail.includes('embedding:1'))).toBe(true);
+});
 
  it('drains a quota-clipped sweep across self-triggered runs, with no harvest', async () => {
   vi.stubEnv('ELICIT_DOCKET_DRAIN_DELAY_MS', '5');

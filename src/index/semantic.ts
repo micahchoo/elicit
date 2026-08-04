@@ -274,9 +274,9 @@ const EMBED_BATCH = 16;
 export const SEMANTIC_FLOOR: Threshold = {
  name: 'resonance.semanticFloor',
  value: 0.5,
- live: false,
+ live: true,
  graduatesWhen:
-  'The shadow record shows it would drop hits a reader agrees are unrelated, and drops none the reader wanted. 0.50 is measured, not guessed: on the paraphrase fixture it sits below every true pair (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064).',
+  'LIVE by decision (2026-08-03, Micah), on the measurement already in hand: 0.50 sits below every true pair on the paraphrase fixture (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064). Demote if the threshold-clipped record shows it dropping hits a reader wanted.',
 };
 
 /** Live. A per-run bound; see `PRIME_CAP` for why it is not a recency window. */
