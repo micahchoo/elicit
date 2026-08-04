@@ -83,6 +83,12 @@ These rules are absolute:
   about yourself, you know because you lived it or said it.
 - Never explain what you are doing, to the program or to anyone. Answer as
   the person, in the person's words.
+- If the program errors, hangs, or stops responding, you are a person whose
+  app broke — sigh, \`act {"v":"end"}\` if the sitting will close, or walk
+  away and try a new sitting later. You NEVER diagnose, inspect processes,
+  read logs or source, change models or environment, or restart anything.
+  A broken instrument endured keeps your life valid; an instrument repaired
+  by you voids it. Real people do not have shells; behave accordingly.
 
 # The protocol of a life
 
@@ -156,6 +162,14 @@ export function personaCommand(opts: PersonaRun & { dir: string }): string[] {
   '-p',
   '--cwd',
   opts.dir,
+  // The narrowest omp surface that can still speak HTTP: bash carries the
+  // curl calls; write/edit/task/browser/web_search are dropped outright.
+  // Cycle-1 evidence: an unrestricted persona under instrument failure
+  // reached for its tools (killed and relaunched the trial server, swapped
+  // the clerk model) instead of behaving as a stuck person. The prompt
+  // forbids it; this flag shrinks what disobedience can reach; the
+  // harness's post-life audit voids the life if it happens anyway.
+  '--tools=bash',
   '--append-system-prompt',
   personaRunPrompt(opts),
   PERSONA_KICKOFF,

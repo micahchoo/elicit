@@ -349,8 +349,15 @@ describe('personaCommand', () => {
    revisionSitting: 3,
    dir: '/i/cycle-1/trial-a',
   });
-  expect(argv.slice(0, 5)).toEqual(['omp', '-p', '--cwd', '/i/cycle-1/trial-a', '--append-system-prompt']);
-  expect(argv[5]).toContain('elicit_session=abc');
-  expect(argv[6]).toBe(PERSONA_KICKOFF);
+  expect(argv.slice(0, 6)).toEqual([
+   'omp',
+   '-p',
+   '--cwd',
+   '/i/cycle-1/trial-a',
+   '--tools=bash',
+   '--append-system-prompt',
+  ]);
+  expect(argv[6]).toContain('elicit_session=abc');
+  expect(argv[7]).toBe(PERSONA_KICKOFF);
  });
 });
