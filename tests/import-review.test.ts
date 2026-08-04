@@ -83,7 +83,9 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
       path: `/api/import/${HASH}/exclude`,
       body: { reason: 'co-taught with Paul; no cut of it is mine alone' },
     });
-    expect(nav).toContain('mode');
+    // Landing on 'import' (not 'mode') is deliberate — the next ready piece,
+    // or the waiting sentence, is the natural destination (2fd883a).
+    expect(nav).toContain('import');
   });
 
   it('keeps save disabled until every cut has a decision, then sends one per cut', async () => {
@@ -119,7 +121,7 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
         { cut: 2, action: 'discard' },
       ],
     });
-    expect(nav).toContain('mode');
+    expect(nav).toContain('import'); // same 2fd883a destination as exclude
   });
 
   it('refuses a trim that is not a non-empty substring of the cut', async () => {
