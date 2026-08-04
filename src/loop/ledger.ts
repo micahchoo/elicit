@@ -92,7 +92,28 @@ export type ReGraduationLine = {
   verdicts: string[];
 };
 
-export type LedgerLine = GraduationLine | DemotionLine | ReGraduationLine;
+/**
+ * A candidate ran the full battery and did not clear the keep rule (Q-98):
+ * at least one resolving-cited regression, however many wins. A rejected
+ * trial is evidence too (docs/loop-prompt.md step 7) — this is what makes
+ * that evidence part of the loop's memory against oscillation, the same
+ * way a graduation is: without this line, a future cycle re-proposing the
+ * same mechanism would find no trace that it was already tried and lost.
+ */
+export type RejectionLine = {
+  at: string;
+  event: 'rejection';
+  mechanism: string;
+  cycle: string;
+  /** The commit sha of the candidate variant that was tried. */
+  variant: string;
+  trials: string[];
+  verdicts: string[];
+  /** One sentence: the citation-backed reason it was not kept. */
+  rejected: string;
+};
+
+export type LedgerLine = GraduationLine | DemotionLine | ReGraduationLine | RejectionLine;
 
 /**
  * Append one line. Creates the parent directory, so the first graduation of
@@ -133,10 +154,12 @@ export function readLedger(path: string): LedgerLine[] {
   return lines;
 }
 
-/** Structural guard: the three fields every event shape shares, plus a known event. */
+/** Structural guard: the two fields every event shape shares, plus a known event. */
 function isLedgerLine(value: unknown): value is LedgerLine {
   if (value === null || typeof value !== 'object') return false;
   const o = value as Record<string, unknown>;
   if (typeof o.at !== 'string' || typeof o.mechanism !== 'string') return false;
-  return o.event === 'graduation' || o.event === 'demotion' || o.event === 're-graduation';
+  return (
+    o.event === 'graduation' || o.event === 'demotion' || o.event === 're-graduation' || o.event === 'rejection'
+  );
 }
