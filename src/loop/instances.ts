@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, symlinkSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync, symlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -242,20 +242,23 @@ export function provisionInstance(opts: ProvisionOpts): Instance {
   ...(opts.instrumentDirs ? { instrumentDirs: opts.instrumentDirs } : {}),
  });
 
+ // The server is a DAEMON: its own process group, its log written straight
+ // to a file descriptor it owns. Piped stdio into the provisioning process
+ // ties the server's life to its parent's — cycle-1 measured exactly that:
+ // when the dispatching agent's process tree was reaped between its turns,
+ // every instance server died with it, silently, mid-trial. Detached +
+ // direct fd means nothing upstream can take the server down except an
+ // explicit kill of its recorded pid (teardown's job).
+ const logFd = openSync(join(instanceDir, 'server.log'), 'a');
  const child = spawn(process.execPath, serverArgs(variantDir), {
   cwd: instanceDir,
   env: instanceEnv({ ambient: process.env, vaultRoot, port: opts.port, host, ...(opts.env ? { env: opts.env } : {}) }),
-  stdio: ['ignore', 'pipe', 'pipe'],
+  stdio: ['ignore', logFd, logFd],
+  detached: true,
  });
- // The banner and the boot docket go to a file inside the instance, so the
- // pipes never fill and stall the server, and the log archives with the
- // life it describes.
- const log = createWriteStream(join(instanceDir, 'server.log'), { flags: 'a' });
- // A log that cannot be written is a diagnosis lost, never a trial lost.
- log.on('error', () => {});
- child.stdout?.pipe(log, { end: false });
- child.stderr?.pipe(log, { end: false });
- child.on('exit', () => log.end());
+ child.unref();
+ // The child holds its own copy of the descriptor; the parent's is done.
+ closeSync(logFd);
 
  return {
   child,
