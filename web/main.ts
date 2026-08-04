@@ -791,7 +791,61 @@ function renderMode(showSetupHint?: boolean) {
   if (e.key === 'Enter') submit.click();
  });
 
- div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot);
+ // Fresh start: the whole personal archive moves aside, nothing deleted.
+ // Host-only — the server refuses non-loopback callers — and armed only by
+ // typing the phrase, so a stray tap can never move a vault. In the
+ // document rule's idiom the control is the words that name what happens,
+ // sitting quietly at the bottom of the screen.
+ const freshRow = el('div', { class: 'mode-aside fresh-start-row' });
+ const freshLink = el('button', { class: 'nav-link' }, 'start fresh…');
+ freshRow.append(freshLink);
+ freshLink.addEventListener('click', () => {
+  freshRow.innerHTML = '';
+  const note = el(
+   'div',
+   { class: 'fresh-start-note' },
+   'Moves the vault and every personal record into archives/ — nothing is deleted, instruments stay. The server exits; you start it again for a fresh vault.',
+  );
+  const phrase = el('input', {
+   class: 'topic-input',
+   type: 'text',
+   placeholder: 'type "fresh start" to confirm',
+  });
+  const go = el('button', { class: 'nav-link' }, 'archive & start fresh');
+  const cancelLink = el('button', { class: 'nav-link' }, 'cancel');
+  const slot = el('div', { class: 'error-slot' });
+  cancelLink.addEventListener('click', () => renderMode(showSetupHint));
+  go.addEventListener('click', () => {
+   void (async () => {
+    go.disabled = true;
+    slot.textContent = '';
+    try {
+     const res = await api<{ ok: boolean; archiveDir: string; moved: string[] }>(
+      '/api/fresh-start',
+      { confirm: phrase.value.trim() },
+     );
+     clear();
+     const done = el('div', { class: 'screen active mode-form' });
+     done.append(
+      el('h2', { class: 'home-heading' }, 'fresh start'),
+      el(
+       'div',
+       { class: 'fresh-start-note' },
+       `${res.moved.length} records archived to ${res.archiveDir}. ` +
+        'The server has exited — start it again, reload this page, and set a new password.',
+      ),
+     );
+     surface.append(done);
+    } catch (err) {
+     go.disabled = false;
+     slot.textContent = err instanceof Error ? err.message : String(err);
+    }
+   })();
+  });
+  freshRow.append(note, phrase, go, cancelLink, slot);
+ });
+
+ div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot, freshRow);
  surface.append(div);
 }
 
@@ -2559,7 +2613,7 @@ api<{ question: string; snippetQuestion?: string; context?: string; draw: { kind
   const actions = el('div', { class: 'anniversary-actions' });
   const readWord = el('button', { class: 'nav-link', type: 'button' }, 'read');
   const notNow = el('button', { class: 'nav-link', type: 'button' }, 'not now');
-  readWord.addEventListener('click', () => navTo('mode'));
+  readWord.addEventListener('click', () => navTo('wiki'));
   notNow.addEventListener('click', () => anniversaryCard.replaceChildren());
   actions.append(readWord, ' \u00b7 ', notNow);
   anniversaryCard.append(actions);

@@ -227,6 +227,21 @@ main {
  padding-top: 0.5rem;
 }
 
+/* Fresh start: present but recessed — a rare, host-only operation. */
+.fresh-start-row {
+ margin-top: 3rem;
+ opacity: 0.65;
+}
+.fresh-start-row:focus-within,
+.fresh-start-row:hover {
+ opacity: 1;
+}
+.fresh-start-note {
+ max-width: 34rem;
+ line-height: 1.5;
+ margin-bottom: 0.5rem;
+}
+
 /* ── home dashboard: three regions, one surface ── */
 
 .home-heading {
@@ -1581,6 +1596,9 @@ main {
  font-family: var(--font-ui);
  font-size: 0.75rem;
  margin-top: 0.5rem;
+ display: flex;
+ flex-wrap: wrap;
+ gap: 0.5rem;
 }
 
 .claim-verbs .nav-link {

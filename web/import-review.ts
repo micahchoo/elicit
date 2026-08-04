@@ -178,7 +178,7 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     void deps
       .api(`/api/import/${item.hash}/exclude`, { reason })
       .then(() => wait.done())
-      .then(() => deps.navTo('mode'))
+      .then(() => deps.navTo('import'))
       .catch((cause: unknown) => wait.failed(cause));
   });
 
@@ -396,7 +396,7 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     void deps
       .api(`/api/import/${item.hash}/decisions`, payload)
       .then(() => wait.done())
-      .then(() => deps.navTo('mode'))
+      .then(() => deps.navTo('import'))
       .catch((cause: unknown) => {
         save.disabled = false;
         wait.failed(cause);
