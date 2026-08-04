@@ -23,6 +23,7 @@
  */
 
 import { isDemoted } from '../loop/demotions.js';
+import { isGraduated } from '../loop/graduations.js';
 
 export type Threshold = {
  name: string;
@@ -271,7 +272,11 @@ export type ThresholdName = keyof typeof THRESHOLDS;
  * review failure for the same reason a bare numeric literal is.
  */
 export function isLive(t: Threshold): boolean {
- return t.live && !isDemoted(t.name);
+ // Graduation rides data (Q-99) exactly as demotion does, and demotion wins:
+ // a demoted key is dead whatever data/graduations.json says. The register's
+ // `live:` keeps meaning what SHIPS; both runtime states live beside the
+ // owner's records, applied at read time.
+ return (t.live || isGraduated(t.name)) && !isDemoted(t.name);
 }
 
 /**
@@ -285,7 +290,9 @@ export function isLive(t: Threshold): boolean {
  * }
  * ```
  *
- * Graduating a mechanism is then flipping one boolean in the table above, and
+ * Graduating a mechanism is then a `data/graduations.json` entry written
+ * beside its ledger line (Q-99) — or, for a shipped default, flipping the
+ * boolean in the table above as an ordinary human commit. Either way,
  * forgetting to log the road not taken is impossible.
  *
  * `clips` says what KIND of record this call leaves, never whether the caller

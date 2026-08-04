@@ -23,11 +23,13 @@ record, and the record is sacred.
 
 Budget: your whole campaign is ONE OR TWO SESSIONS. Spend it on few,
 well-evidenced graduations — one mechanism made truly better beats
-five landed on thin trials. Measured cadence (shakedown-c00, one
-dossier): one paired trial is ~35 minutes of machine time with arms
-concurrent, but arms serialize when clerk capacity is uncertain (see
-the apparatus rules) — plan a full 5-dossier cycle in hours, not
-minutes, and expect one or two full cycles per session.
+five landed on thin trials. Measured cadence (session 1, real
+trials): a CLEAN paired trial runs 2.5–3 hours — lives take 25–45
+minutes each and usually need 1–4 `--continue` rounds, arms
+serialize, the judge adds ~5 minutes — so a full 5-dossier battery
+is a long unattended day, and one cycle per session is the honest
+plan. (The shakedown's ~35-minute figure was machine time with no
+continuations and no discovery overhead; do not budget from it.)
 
 ## The frozen paths
 
@@ -58,7 +60,10 @@ include it verbatim, never summarize it (Q-96).
   `data/eval-fixtures.json` (Q-91), and the single write-once move
   of a finished trial into `archives/eval/<cycle>/<trial>/`.
 - Your writable record files: `data/graduation-ledger.jsonl`
-  (append-only, never rewrite a line) and `data/tripwire-state.json`.
+  (append-only, never rewrite a line), `data/tripwire-state.json`, and
+  `data/graduations.json` (Q-99 — written ONLY beside a graduation
+  ledger line, in the same act; never edited to remove a key, because
+  the visible reverse of a graduation is a demotion).
 - Never run an instance from the live checkout; worktrees only.
   A cycle starts only from a COMMITTED base: variants are
   `git worktree add` checkouts, never rsync copies of a working
@@ -73,7 +78,13 @@ include it verbatim, never summarize it (Q-96).
 - Shadow-first stands (Q-35/Q-62): a kept change lands with
   `live: false` and graduates through the thresholds contract with a
   ledger line — never by editing a threshold's `graduatesWhen` to
-  meet itself.
+  meet itself. Graduation is DATA (Q-99): append the key to
+  `data/graduations.json` beside the ledger line; `isLive` reads it
+  at runtime. You never flip `live:` in code and never touch a pin
+  test — the register and its tests guard what SHIPS, your data
+  carries what this instance has earned. A candidate arm in a trial
+  is the same move instance-scoped: the variant's own data dir gets
+  the graduation entry; the code in both arms stays identical.
 
 ## Running the apparatus
 
@@ -113,7 +124,16 @@ these was a real failure or a near-miss):
 1. **Pick a target.** Read the ledger (your memory — respect dwell
    clocks, don't re-litigate a recent demotion), the registry, and
    the shadow logs. Choose ONE mechanism where you can say, in one
-   sentence, which rubric dimension should improve and why.
+   sentence, which rubric dimension should improve and why. Two
+   class rules cycle 1 paid for: NO prompt-phrasing nudges — a small
+   model leaks any distinctive directive phrasing into its output
+   (two wordings failed identically; the class is banned, not the
+   words) — and CHECK VIABILITY BEFORE COMMITTING: flip the candidate
+   in a scratch worktree and run the full suite as part of selection;
+   a candidate that breaks an existing test is not yours to unblock.
+   Prefer mechanisms a 5-6 sitting fresh-vault life actually
+   exercises — a knob gated on months of vault history measures
+   nothing in a trial.
 2. **Implement the variant** in a fresh worktree. Full test suite
    green is a PRECONDITION of any trial — an invariant violation
    voids everything downstream (Q-87, no partial credit).
