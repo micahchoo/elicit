@@ -164,8 +164,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  {
   module: 'src/clerk/lineage-mirror',
   name: 'runLineageMirrorSweep',
-  status: 'unwired',
-  reason: 'no production caller yet — the server has not wired the lineage mirror sweep into runDocket; flips to shadow with shadowKind lineage-mirror-shadow when wired',
+  status: 'shadow',
+  shadowKind: 'lineage-mirror-shadow',
+  reason: 'wired into runDocket by the server; the selection threshold (lineageMirror.selection) is not live, so candidates are logged and nothing is minted',
  },
 
  // ── src/clerk/gap-fill.ts ──

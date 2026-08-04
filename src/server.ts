@@ -42,6 +42,7 @@ import {
 import { readCadence, cadenceSentence } from './log/cadence.js';
 import { runDocket, runDormancySweep, runStalePinSweep, runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions } from './clerk/docket.js';
 import { runGapFillSweep } from './clerk/gap-fill.js';
+import { runLineageMirrorSweep } from './clerk/lineage-mirror.js';
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
 import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
@@ -818,6 +819,16 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
 
      return Promise.resolve({ candidateCount: totalCandidates, scanned: totalScanned });
     },
+    // Ticket 112: the lineage mirror sweep (Q-83) — reads claims against
+    // lineage, shadow-first. Superseded claims are excluded: a claim no
+    // longer current has no divergence to probe.
+    lineageMirrorSweep: runLineageMirrorSweep({
+     vaultRoot: deps.vaultRoot,
+     listClaims: () => claimStore.loadSlice().claims.filter((c) => !c.supersededBy),
+     complete: clerkComplete,
+     queue: deps.queue,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
     gazetteerExtraction: () => {
      if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
      const allEntities = gazetteerStore.list();
