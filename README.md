@@ -5,6 +5,12 @@ think — out of nothing but your own words.
 
 ![A question, a dated quote from a past session beneath it, and a half-written answer](docs/guide/exchange.png)
 
+You never start at a blank page. Elicit asks, and you answer. An answer
+is easier to start than a document, and each question quotes your earlier
+words, so each answer has a handhold. You talk, and prose accumulates as
+a side effect. Most AI tools put words in front of you. This one pulls
+your own words out of you.
+
 AI notes tools drift toward the model writing your notes: summaries that
 smooth over your contradictions, claims you never quite said, errors that
 compound with every rewrite. Elicit forbids the model to write. It asks
@@ -12,12 +18,6 @@ questions, selects excerpts, and annotates the margins — but every word it
 saves is one you typed, checked in code as an exact substring of what you
 submitted. If the model rewords a single word, the excerpt is dropped
 before it reaches disk.
-
-This is the shape everywhere the model generates anything: it composes
-freely, then a mechanical guard — plain string checks, no model — decides
-if the result is allowed out. The guard can only reject, never fix.
-
-![The model composes freely, then a mechanical guard of plain string checks passes the question to you or rejects it — one retry, then fall through](docs/guide/compose-guard.svg)
 
 ## A session
 
@@ -45,9 +45,12 @@ resolves it; only you do.
 
 ![The wiki as an essay: facet headings in a sidebar, the Clerk's claims in light ink, your dated quotes in dark ink beneath](docs/guide/wiki.png)
 
-Out of this fall the things you keep: a wiki you can read as an essay
-about yourself, and pieces — essays assembled from your own past
-sentences, in your order, with no generated filler.
+Out of this fall the things you keep. The wiki reads as an essay about
+yourself, the essay that nobody writes on their own. Pieces are essays
+assembled from your own past sentences, in your order, with no generated
+filler. And the vault itself is the diary you never kept: dated entries in
+your own words, never edited again, re-read for you between sessions. A
+diary dies at the blank page. This one asks.
 
 ![The library: your snippets as dated paragraphs under snippets and pieces tabs, with a filter over your own words](docs/guide/library.png)
 
@@ -163,21 +166,43 @@ One honest limit: the guarantee is about wording, not origin. Paste in
 someone else's sentence and Elicit files it as yours. You can declare what
 you imported; the app never tries to detect it.
 
-## Status
+## If you build with language models
 
-Early, personal software — expect movement. Everything above works end to
-end against local models: the interview loop, the returning memory, the
-background wiki upkeep, contradiction detection, essay composition, bulk
-import of past writing, and structured interview formats borrowed from
-knowledge-elicitation research. Multi-step deep-dive questioning is
-landing now.
+Elicit is also a worked example of a different way to build an agent.
+Every agent product faces the same question: the model writes fluently
+and cannot be trusted, so where does its authority stop? A prompt cannot
+settle this, because a prompt is a request. Elicit settles it in code.
+The model gets total freedom to compose and zero authority to commit.
 
-## Going deeper
+The shape is the same everywhere the model generates anything: it composes
+freely, then a mechanical guard — plain string checks, no model — decides
+if the result is allowed out. The guard can only reject, never fix.
 
-The domain model was designed by extended interrogation before code, and
-the research is checked in: [`CONTEXT.md`](CONTEXT.md) is the glossary,
-[`docs/decisions/elicit.md`](docs/decisions/elicit.md) the register of 78
-design decisions, [`docs/adr/`](docs/adr/) the architecture decisions, and
+![The model composes freely, then a mechanical guard of plain string checks passes the question to you or rejects it — one retry, then fall through](docs/guide/compose-guard.svg)
+
+Four of the patterns, each enforced by a guard rather than a prompt, each
+small enough to steal:
+
+- The agent cannot misquote you. Every saved excerpt must be an exact
+  substring of what you typed, and the same check binds composed
+  questions — a question must quote you verbatim. Misquotes cannot reach
+  disk.
+- The model proposes claims, but a claim's epistemic status moves only
+  through mechanical transitions — two independent citations promote it,
+  your attestation upgrades it, an open contradiction contests it. The
+  model never writes status.
+- Question selection filters hard, then draws at random from the
+  survivors — never argmax. A model with a favorite question produces
+  monoculture, and chance retires favorites structurally.
+- A new mechanism ships in shadow: it logs its decisions without acting
+  on them, and graduates to live on that record. Caps and rate limits
+  ship live from day one.
+
+The method behind the patterns is checked in too.
+[`CONTEXT.md`](CONTEXT.md) is the glossary,
+[`docs/decisions/elicit.md`](docs/decisions/elicit.md) the register of
+locked design decisions with the reason each was made,
+[`docs/adr/`](docs/adr/) the architecture decisions, and
 [`docs/interface-references.md`](docs/interface-references.md) the design
 stance behind the text-only interface. Three research files at the repo
 root cover modeling a person from their own words, question policy, and
@@ -198,6 +223,15 @@ npm run dev  # fake model, watch mode
 The tests are the contract: exact-substring enforcement, immutable
 versions, append-only transcripts. If you change behavior, a failing
 invariant test is the design telling you no.
+
+## Status
+
+Early, personal software — expect movement. Everything above works end to
+end against local models: the interview loop, the returning memory, the
+background wiki upkeep, contradiction detection, essay composition, bulk
+import of past writing, and structured interview formats borrowed from
+knowledge-elicitation research. Multi-step deep-dive questioning is
+landing now.
 
 ## License
 
