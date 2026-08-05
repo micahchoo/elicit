@@ -4,7 +4,10 @@ The ratified spec for the improvement loop's persona battery (Q-91,
 Q-94). This session was the last human fingerprint on the measure:
 Claude authors the battery to this spec, then the battery FREEZES.
 Frozen paths are covered by the cycle report's `diff --stat`
-self-disclosure (Q-96).
+self-disclosure (Q-96). Amended 2026-08-04 by ruling (Micah: "draft
+and ratify", Q-103): the sparse-canon design below, paid for by
+cycle c03's three void attempts — a persona holds frontmatter-level
+facts but treats dense life-story prose as improvisable color.
 
 ## The battery: five archetypes, five life stories
 
@@ -66,6 +69,9 @@ One markdown file per persona:
 ---
 id: dossier-001
 archetype: guarded
+canon:
+  - "<one atomic fixed fact: relationship + event + place/time, distinctive vocabulary>"
+  - "<... at most ten of these — sparse on purpose>"
 contradictions:
   - id: c1
     type: synchronic
@@ -92,6 +98,39 @@ contradictions:
 Frontmatter is for the harness (verdict checking against planted
 ground truth); prose is what the persona inhabits. The whole file
 drops into the omp persona run's system prompt (instance-plane spec).
+
+## Sparse canon (Q-103 — cycle c03 paid for every clause)
+
+The persona model reliably holds facts stated at frontmatter level;
+it treats dense narrative prose as color and improvises substitutes
+(c03: a scripted brother became a best friend in one arm and an
+unrelated patient in the other, across three attempts and two
+persona-contract fixes). The design answer is structural, not
+hortatory:
+
+- **`canon:` frontmatter list.** Every load-bearing past-fact lives
+  here — at most ten atomic entries per dossier. Each entry is
+  conjunctive: relationship + event + place/time in one string, so
+  no single common word can stand in for delivery. Entries carry
+  distinctive vocabulary (proper nouns, specific causes) — audit
+  markers derive from them by set-difference, and a marker set must
+  be able to verify the REFERENT, not just a token.
+- **Life story defers to canon.** The prose section names the canon
+  list as fixed points and explicitly licenses everything else as
+  open ground — invention is free, consistent once invented, and
+  never contradicts canon or cues. Density beyond the canon list is
+  the enemy: what the file does not fix, the persona may invent, so
+  the file fixes little and fixes it hard.
+- **Wide, reliably-visited doors.** Each diachronic cue names
+  several natural entry points, weighted toward material the topic
+  engine reliably visits (family, home, identity) rather than a
+  single career doorway — c03 attempt 1 starved because topic draws
+  never approached the one scripted door.
+- **Cue texts carry their own markers.** Both `from` and `to` texts
+  include the discriminating conjunctive facts (the c3 `to` names
+  the person AND the place AND the mechanism), so frontmatter-level
+  fidelity — the level the persona demonstrably holds — is
+  sufficient for faithful delivery.
 
 ## Where pre-authored identity ends
 
