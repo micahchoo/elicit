@@ -228,10 +228,10 @@ invariant test is the design telling you no.
 
 Early, personal software — expect movement. Everything above works end to
 end against local models: the interview loop, the returning memory, the
-background wiki upkeep, contradiction detection, essay composition, bulk
-import of past writing, and structured interview formats borrowed from
-knowledge-elicitation research. Multi-step deep-dive questioning is
-landing now.
+background wiki upkeep, contradiction detection, multi-step deep-dive
+questioning with consent gates, essay composition, bulk import of past
+writing, and structured interview formats borrowed from
+knowledge-elicitation research.
 
 ## License
 
