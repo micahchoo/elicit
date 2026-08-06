@@ -16,6 +16,12 @@ export type DirectionRecord = {
  uncoachedAt?: string;
  /** A declined coached-offer; this Direction is never offered again (Q-77 discipline). */
  offerDeclinedAt?: string;
+ /** Q-112: seeded offer declined → parked, not permanently declined. Absent = not parked. */
+ seededOfferParkedAt?: string;
+ /** Q-112: how many claims were in the cluster when parked — the re-offer bar is +3. */
+ seededOfferParkedClaimCount?: number;
+ /** Q-110 door 1: this Direction was minted by the seed job (docket clustering), not by the user. */
+ seeded?: boolean;
  /** Last page read — what "something new" is measured against (Q-76). */
  lastVisit?: string;
  /** Normalized texts of declined options — never re-offered (Q-77). */

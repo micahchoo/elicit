@@ -300,18 +300,22 @@ describe('the four impossibilities (090 T12)', () => {
  }, 15000);
 
  it('(b) after decline-offer, fifty waiting evaluations never offer that Direction again, and each wrote a coach-offer line (Q-62)', async () => {
-  await makeLoopApp();
-  // A never-declared candidate with enough claims WOULD qualify — then it is
-  // declined, and the decline is forever (Q-43).
-  await post('/api/coach/direction/gardening/decline-offer');
-  for (let i = 0; i < 50; i++) {
-   const w = await get('/api/coach/waiting');
-   const body = await jsonOf<{ offer: unknown; lines: unknown[] }>(w);
-   expect(body.offer).toBeNull();
-   expect(body.lines).toEqual([]);
-  }
-  const offers = readEvents(root).filter((e) => e.kind === 'coach-offer');
-  expect(offers).toHaveLength(50);
+   await makeLoopApp();
+   // Q-110: the seed job may mint un-coached Directions from claim clusters.
+   // Decline all of them — the test verifies that a declined offer stays
+   // declined forever, regardless of how the Direction was created.
+   const dirs = store.listDirections().filter(d => !d.coached);
+   for (const d of dirs) {
+     await post(`/api/coach/direction/${d.slug}/decline-offer`);
+   }
+   for (let i = 0; i < 50; i++) {
+     const w = await get('/api/coach/waiting');
+     const body = await jsonOf<{ offer: unknown; lines: unknown[] }>(w);
+     expect(body.offer).toBeNull();
+     expect(body.lines).toEqual([]);
+   }
+   const offers = readEvents(root).filter((e) => e.kind === 'coach-offer');
+   expect(offers).toHaveLength(50);
  }, 15000);
 
  it('(c) the pointer never reaches the model — every recorded prompt, joined, lacks it (Q-78)', async () => {

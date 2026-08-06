@@ -28,14 +28,21 @@ export type LicenseReasons = {
 };
 
 /**
- * The one tunable number in this file — the minimum mean adjacent Jaccard
- * over the last three user turns that counts as a sustained thread. Q-62
- * makes the license live from day one (offer-shaped, logs every evaluation —
- * no shadow flag, no env gate, no "would have offered" branch), and the
- * sounding-license record emitted on every evaluation is what will
- * eventually re-tune this value with evidence behind it.
+ * The minimum mean adjacent content-word Jaccard over the last three user
+ * turns that counts as a sustained thread. Re-derived 2026-08-05 from 957
+ * window evaluations across 105 archived sittings (ticket 142):
+ *
+ *   Content-word Jaccard: p50=0.053  p75=0.081  p90=0.115  p95=0.135
+ *
+ * The prior value 0.15 sat above p95; only 3.4% of windows cleared it and
+ * `late` was simultaneously false every time, producing 0 offers in 216
+ * evaluations. 0.10 sits near p85 — a window that tight is rare but a
+ * sitting of 8+ turns will find one in the mid-phase.
+ *
+ * This value bakes in the assumption that real sittings last 5+ turns;
+ * 1-exchange sittings will never reach the late window.
  */
-export const SUSTAINED_THRESHOLD = 0.15;
+export const SUSTAINED_THRESHOLD = 0.10;
 
 /** The last three user turns, newest last — the thread the license reads. */
 function lastThreeUserTurns(s: SessionState): Turn[] {
@@ -108,23 +115,41 @@ function constructOf(turns: Turn[]): string | undefined {
  */
 export function licenseSounding(
   s: SessionState,
-): { licensed: boolean; reasons: LicenseReasons; construct?: string } {
-  // The elicitor's own budget formula: a sitting runs 10-20 questions.
-  const budget = Math.min(20, Math.max(10, s.mode.minutes));
-  // Late: past the midpoint, and still before the close. Past `budget - 2`
-  // the close has already begun (elicitor.ts:308-310), and a descent offered
-  // there would eat the two close moves Q-47 reserves.
-  const late = s.questionCount >= Math.ceil(budget / 2) && s.questionCount < budget - 2;
+): { licensed: boolean; reasons: LicenseReasons; sustainedValue: number; construct?: string } {
+  // Late: the sitting has left its opening phase and is not yet closing.
+  // Re-derived 2026-08-05 from 209 sounding-license evaluations across six
+  // archive vaults (gate-repair):
+  //
+  //   Joint (late, sustained): (false,false) 85.6%  (false,true) 5.3%
+  //                           (true,false)   8.6%  (true,true)  0.5%
+  //
+  // At questionCount >= 9, `late` cleared 9.1% of evaluations; `sustained`
+  // cleared 5.7%; the joint cleared ONCE (0.5%) — one sounding offered in
+  // 209 windows, across 145 sittings. The assumption that real sittings
+  // last 5+ turns was never operant at 9. Lowering to 6 makes it so: a
+  // sitting at turn 6 is clearly past opening and has enough turns for a
+  // three-turn thread. The `sustained` gate at 0.10 remains the quality
+  // filter — scattered conversation still cannot fire it.
+  //
+  // Ticket 135's greeting turn is free (questionCount starts at 0 and the
+  // greeting never counts), so every count here runs one lower than
+  // pre-135 at the same depth.
+  const late =
+    s.questionCount >= 6 &&
+    s.phase !== 'closing-door' &&
+    s.phase !== 'closing-bookmark';
   const energy = s.mode.energy !== 'low';
   const unoffered = s.soundingOffer === undefined;
   const thread = lastThreeUserTurns(s);
   // A thread needs three turns to be sustained; fewer cannot clear the bar.
-  const sustained = thread.length >= 3 && meanAdjacentJaccard(thread) >= SUSTAINED_THRESHOLD;
+  const value = thread.length >= 3 ? meanAdjacentJaccard(thread) : 0;
+  const sustained = value >= SUSTAINED_THRESHOLD;
   const licensed = late && energy && sustained && unoffered;
   const construct = constructOf(thread);
   return {
     licensed,
     reasons: { late, energy, sustained, unoffered },
+    sustainedValue: value,
     ...(construct ? { construct } : {}),
   };
 }

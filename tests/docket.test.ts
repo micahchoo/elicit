@@ -51,11 +51,13 @@ type DocketDeps = {
  modelName?: string;
  vaultRoot: string;
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
+ runImportJobs?: () => Promise<{ extracted: number; remaining: number; failed: number }>;
  stalePinSweep?: () => Promise<number>;
  dormancySweep?: () => Promise<number>;
  referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
  gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
  stillTrueCursor?: { read: () => number; write: (offset: number) => void };
+ shouldStop?: () => boolean;
 };
 
 function daysAgo(days: number): string {
@@ -125,13 +127,18 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
   draw() { return null; },
   markAsked() { },
   markAnswered() { },
+  markPending() { },
   defer() { },
+  park() { },
+  unpark() { },
   expire(olderThanDays: number): number {
    _expireCalls.push(olderThanDays);
    return 0;
   },
   expireTailBeyond() { return 0; },
   markExpired() { },
+    recordReplyDisengagement() { return false; },
+    noteSittingStarted() {},
  };
 }
 
@@ -247,6 +254,42 @@ describe('runDocket', () => {
   });
 
   expect(composeOpener).toHaveBeenCalledTimes(1);
+ });
+
+ // ── 1c: the stop switch ──
+ it('a stopped run skips every job and says so once', async () => {
+  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
+  const composeOpener = vi.fn();
+  const composeStillTrue = vi.fn();
+  const runImportJobs = vi.fn();
+  const runWikiJobs = vi.fn();
+  const log = vi.fn();
+  const report = await runDocket({
+   vault: fakeVault([sn]),
+   queue: makeFakeQueue(),
+   complete: vi.fn() as unknown as Complete,
+   buildIndex: vi.fn().mockReturnValue(IDX),
+   composeOpener,
+   composeStillTrue,
+   log,
+   listSessions: vi.fn().mockReturnValue([
+    { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
+   ]),
+   vaultRoot: '/tmp/fake',
+   runWikiJobs,
+   runImportJobs,
+   shouldStop: () => true,
+  });
+
+  expect(composeOpener).not.toHaveBeenCalled();
+  expect(composeStillTrue).not.toHaveBeenCalled();
+  expect(runWikiJobs).not.toHaveBeenCalled();
+  expect(runImportJobs).not.toHaveBeenCalled();
+  // The index still rebuilt — that is read-only bookkeeping, not a job.
+  expect(report.index).toBe(IDX);
+  const kinds = log.mock.calls.map((c: unknown[]) => (c[0] as { kind: string }).kind);
+  expect(kinds).toContain('docket-cut-short');
+  expect(kinds).not.toContain('expired');
  });
 
  // ── 2: still-true > 90d, quota 2 ──
@@ -1159,7 +1202,8 @@ it('writes the embedding channel into the live clash record (graduated, ticket 1
    });
    await app;
 
-   // boot + two self-triggered drains: 12 + 12 + 6 of the 30 readings.
+   // Ticket 139 — dynamic quota: ceil(30/2)=15, ceil(15/2)=8→floor at 12.
+   // Three runs: boot (15 swept, 15 remain), drain (12 swept, 3 remain), drain (3 swept, 0 remain).
    await waitFor(() => settled >= 3, 'the drain chain to finish');
    await expectNoFurtherRun(() => settled, 3);
 
@@ -1169,13 +1213,13 @@ it('writes the embedding channel into the live clash record (graduated, ticket 1
    const clips = readEvents(dir)
     .filter((e) => e.kind === 'threshold-clipped' && e.detail.includes('threshold=mint.callsPerRun'))
     .map((e) => Number(e.detail.split('clipped=')[1]!.split(/\s+/)[0]!));
-   expect(clips).toEqual([18, 6]);
+   expect(clips).toEqual([15, 3]);
 
    const deferrals = readFileSync(join(dir, 'wiki', 'sweep-deferral.jsonl'), 'utf-8')
     .trim()
     .split('\n')
     .map(deferralRemaining);
-   expect(deferrals).toEqual([18, 6, 0]);
+   expect(deferrals).toEqual([15, 3, 0]);
   } finally {
    vi.unstubAllEnvs();
   }
@@ -1219,8 +1263,11 @@ it('writes the embedding channel into the live clash record (graduated, ticket 1
    });
    await app;
 
-   await waitFor(() => settled >= 1, 'the boot run');
-   await expectNoFurtherRun(() => settled, 1);
+   // Ticket 139: the boot-time backup drain fires after the boot docket
+   // because the deferral ledger says remaining=7. The boot docket writes
+   // the terminal 0, the drain also finds nothing and writes 0.
+   await waitFor(() => settled >= 2, 'the boot run + backup drain');
+   await expectNoFurtherRun(() => settled, 2);
 
    const deferrals = readFileSync(join(dir, 'wiki', 'sweep-deferral.jsonl'), 'utf-8')
     .trim()

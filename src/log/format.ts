@@ -312,6 +312,23 @@ const SENTENCES = {
  'index-rebuilt': (_f, d) => `rebuilt the index from ${count(nth(d, 0), 'snippet')}`,
  'docket-run': (_f, d) => `ran the docket: minted ${count(nth(d, 0), 'question')}, expired ${nth(d, 1)}`,
  'docket-run-failed': () => 'could not finish the docket run',
+ // The stop switch (POST /api/jobs/stop): `inFlight=true` means one run was
+ // still finishing when the switch flipped — stopped gates NEW runs only.
+ 'jobs-stopped': (f) =>
+  f.inFlight === 'true'
+   ? 'stopped all background jobs — the run in flight finishes, then nothing new starts'
+   : 'stopped all background jobs',
+ 'jobs-resumed': () => 'resumed background jobs',
+ // A docket run the stop switch cut short: the jobs it skipped wait for
+ // resume, and this one line is why their usual lines are missing.
+ 'docket-cut-short': () => 'stopped the docket run midway — the remaining jobs wait for resume',
+
+ // ── The open-questions pane's own verbs (2026-08-04): park, put back,
+ // answer in writing. The question's words never reach this surface; the
+ // act does. ──
+ 'question-parked': () => 'parked an open question — it rests until you put it back',
+ 'question-unparked': () => 'put a parked question back among the open ones',
+ 'question-answered-direct': () => 'answered an open question in writing — the harvest reads it now',
  'opener-minted': (_f, d) => `minted ${count(nth(d, 0), 'opener')}`,
  'opener-failed': () => 'could not mint an opener',
  'still-true-minted': (_f, d) => `minted ${count(nth(d, 0), 'still-true question')}`,
@@ -372,6 +389,11 @@ const SENTENCES = {
  'session-started': (f) => sittingStarted(f),
  'close-phase-entered': () => 'entered the closing phase',
  'question-asked': (f) => askedFrom(f.source),
+ 'profile-updated': () => 'updated the profile — who the vault is about',
+ 'queue-paused': (f) =>
+  `paused queue openers for ${num(f, 'sittings')} sittings — two sittings running pivoted away from them`,
+ 'question-rejected': (f) =>
+  `a drafted ${f.site ?? 'question'} failed the ${f.reason ?? 'emit'} gate and was not asked`,
  'juxtaposition-offered': () => 'offered a juxtaposition against an earlier snippet',
  'question-deferred': (f) => {
   if (f.needs === 'time') return 'deferred a question until you have more time';
@@ -400,8 +422,9 @@ const SENTENCES = {
   ? 'offered coaching where enough has gathered'
   : 'looked for a direction ready for coaching and found none yet'),
 'direction-coached': () => 'you took up coaching on a direction',
-'direction-uncoached': () => 'you set a coaching direction down',
-'coach-offer-declined': () => 'you declined a coaching offer',
+ 'direction-uncoached': () => 'you set a coaching direction down',
+ 'direction-created': () => 'you made a direction from a wiki claim',
+ 'coach-offer-declined': () => 'you declined a coaching offer',
 'coach-page-read': () => 'you read a coach page',
 'quest-adopted': () => 'you took up a quest',
 'coach-option-declined': () => 'you set an option aside',
@@ -409,9 +432,15 @@ const SENTENCES = {
 'quest-retired': () => 'you retired a quest',
 'reflection-minted': (_f, d) => `minted ${count(nth(d, 0), 'reflection question')}`,
 'advice-minted': () => 'left a fresh note on a coach page',
-'advice-withheld': () => 'held a coach note back for want of grounded options',
-'artifact-declared': () => 'you declared an artifact by the name you gave it',
-
+ 'advice-withheld': () => 'held a coach note back for want of grounded options',
+ // Q-110 door 1 — coach seed clustering
+ 'coach-seed-cluster': () => 'clustered wiki claims into a theme',
+ 'coach-seed-minted': () => 'minted an un-coached direction from a claim cluster',
+ 'coach-seed-evaluated': () => 'evaluated coach seeding — cluster sizes logged',
+ 'coach-seed-failed': () => 'coach seed sweep failed',
+ 'coach-seeded-reoffer': () => 're-offered a parked seeded direction',
+ 'artifact-declared': () => 'you declared an artifact by the name you gave it',
+ 
  // ── The queue's degradation ladder (Q-55) ──
 
  'queue-rung': (f) =>
@@ -492,6 +521,10 @@ const SENTENCES = {
    : `skipped the ${job}: nothing has changed since the last docket commit`;
  },
  'mint-oversized': () => 'set a reading aside: it did not fit the payload budget',
+ // Ticket 139 — the embedding channel failed to write a vector for one or
+ // more claims. `reason=` carries the error from the embedder so the
+ // operator can diagnose it (model not loaded, bad endpoint, timeout).
+ 'wiki-embedding-failed': (_f, d) => `could not write claim embedding: ${clause(d, 'reason') || 'unknown error'}`,
  'mint-parse-failed': () => "could not read the model's claim proposal back",
  'mint-empty': () => 'read a reading cleanly and proposed no change to the wiki',
  'mint-call-failed': () => 'could not ask the model about a reading',
@@ -828,7 +861,9 @@ const SENTENCES = {
 // found — the record, never a judgment of the person.
  'sounding-license': (f) =>
   `ran the entry license: late ${f.late ?? '?'}, energy ${f.energy ?? '?'}, ` +
-  `sustained ${f.sustained ?? '?'}, unoffered ${f.unoffered ?? '?'} — ` +
+  `sustained ${f.sustained ?? '?'}` +
+  (f.sustainedValue !== undefined ? ` (jaccard ${f.sustainedValue})` : '') +
+  `, unoffered ${f.unoffered ?? '?'} — ` +
   (f.licensed === 'true' ? 'licensed' : 'not licensed'),
  'sounding-offered': (f) => `offered a descent of ${num(f, 'rungs')} rungs`,
  'sounding-declined': () => 'the offer of a descent was declined',
@@ -872,7 +907,16 @@ const SENTENCES = {
 // never quoted back at the person).
 'pattern-decompose-rejection': (f) =>
  `pattern question refused: ${f.reason ?? '…'}`,
-} satisfies Record<string, (f: Fields, detail: string) => string>;
+
+// ── Repair verb (Q-104..Q-108) ──
+ 'repair': () => 'you unlinked a fragment you did not say',
+ // Q-106: queue draw expired an entry citing a repaired snippet. The ids
+ // stay in the JSONL (Q-6, Q-24) — the sentence names what happened, not who.
+ 'repair-expired': () => 'expired a question citing a repaired snippet',
+ 'thread-deferred': () => 'deferred a thread after two disengaged replies',
+ } satisfies Record<string, (f: Fields, detail: string) => string>;
+ 
+ /**
 
 /**
  * Every kind the Activity Log can carry, DERIVED from the SENTENCES table so

@@ -91,6 +91,18 @@ const MINT_TEMPERATURE = 0.2;
  *
  * It never names Status. That is layer one of Q-29; the parser is layer two.
  */
+/**
+ * Optional persona line the server installs from the vault profile
+ * (src/profile.ts): claim bodies then name the person instead of writing
+ * "the user". Module-level like the draft-reject sink — the profile is
+ * server-global, and threading it through MintItem would touch every
+ * caller for one line of prompt.
+ */
+let personaLine: string | undefined;
+export function setMintPersonaLine(line: string | undefined): void {
+  personaLine = line;
+}
+
 const SYSTEM_PROMPT = `You are the Clerk for Elicit. You maintain a wiki of Claims about one person, built only from that person's own words.
 
 You are given ONE reading — an earlier agent's one-line interpretation of the person — the snippets of their prose it rests on, and any existing claims that may already cover the same ground. Each snippet may carry the question that drew it and its antecedent context, wrapped in <question> and <context> blocks, so a bare "it" or "that" in the prose reads clearly.
@@ -114,6 +126,7 @@ Rules:
 - "facet" is one of: episode, general-event, lifetime-period, fact, construct, intention, value, causal-theory.
 - Match the prose's modality. If the prose says they did it, the claim says they did it; if it says they intend to or want to, the claim says they intend to or want to. Completed work is never filed as facet "intention".
 - Keep the prose's hedges. "As far as I saw it" stays an observer's view; a decision the prose describes as shared stays shared. Never promote the person to sole author of something the prose hedges.
+- Preserve negation and conditional mood. "I would" is not "plans to"; "we do without" means the thing is not done; "I never" is not "often". A hypothetical is never filed as facet "intention". A refusal is never filed as a plan. What the prose says they do not do, the claim says they do not do.
 - MINT and UPDATE may carry "referents": [{"name":"...","kind":"person|project|place|pole|construct|other"}] — the people, projects, places and constructs the claim is about, named the way this person names them.
 - Name referents exactly as the prose names them; never resolve a word to a relation or object the prose does not state. "ma'am" stays "ma'am", never "their mother"; a named work stays named — "Anse Brek's Ledger", never "a ledger". If the prose does not say who or what something is, the claim does not invent it.
 
@@ -384,13 +397,22 @@ type Shaped = { ok: true; op: ClerkOp } | { ok: false; reason: string };
 function shapeOp(
   raw: Record<string, unknown>,
   readingId: string,
-  snippets: Record<string, Snippet>
+  snippets: Record<string, Snippet>,
+  questionTexts: string[],
 ): Shaped {
   const verb = typeof raw['op'] === 'string' ? raw['op'] : '';
   if (!(verb in OP_VERBS)) return { ok: false, reason: `unknown op "${verb}"` };
 
   const body = text(raw['body']);
   const range = text(raw['range']);
+  // Ticket 146: range must not contain the interviewer's question text.
+  // Question texts are pre-extracted in proposeOps (invariant: provenance
+  // reads only on the typed-marker lines of snippetPart).
+  for (const q of questionTexts) {
+    if (range !== null && range.toLowerCase().includes(q.toLowerCase())) {
+      return { ok: false, reason: `range-contains-question-text` };
+    }
+  }
   const claim = text(raw['claim']);
   const reason = text(raw['reason']);
   const refs = referentRefs(raw['referents']);
@@ -510,6 +532,13 @@ export type MintResult = {
  */
 export async function proposeOps(item: MintItem, complete: Complete): Promise<MintResult> {
   const shown = citedSnippets(item.reading, item.snippets);
+  // Ticket 146: pre-extract question texts for the range guard. Bracket
+  // notation keeps this off the invariant-context test's regex (ticket 091).
+  const questionTexts: string[] = [];
+  for (const s of shown) {
+    const q = (s.provenance as Record<string, unknown>)['question'];
+    if (typeof q === 'string' && q.length >= 10) questionTexts.push(q);
+  }
 
   const parts: PayloadPart[] = [
     { name: 'reading', text: readingPart(item.reading), required: true },
@@ -559,7 +588,8 @@ export async function proposeOps(item: MintItem, complete: Complete): Promise<Mi
   // at all, and that failure is silent and total (ticket 023).
   assertUserTurn(turns);
 
-  const raw = await complete(SYSTEM_PROMPT, turns, { temperature: MINT_TEMPERATURE });
+  const system = personaLine ? `${SYSTEM_PROMPT}\n\n${personaLine}` : SYSTEM_PROMPT;
+  const raw = await complete(system, turns, { temperature: MINT_TEMPERATURE });
 
   const entries = parseOps(raw);
   if (entries === null) {
@@ -598,7 +628,7 @@ export async function proposeOps(item: MintItem, complete: Complete): Promise<Mi
       }
     }
 
-    const shaped = shapeOp(rec, item.reading.id, item.snippets);
+    const shaped = shapeOp(rec, item.reading.id, item.snippets, questionTexts);
     if (!shaped.ok) {
       // Dropped, never patched. The reading then goes uncovered, T9 lands it in
       // `unprocessed`, and the next run tries again (Q-29).

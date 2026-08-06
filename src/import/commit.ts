@@ -28,7 +28,9 @@
  *      computed from the cut's recorded offset in the source body, never
  *      present-but-empty.
  *   4. One reading per kept decision, from the cut's own labels (ticket 062
- *      exists because extraction persists them).
+ *      exists because extraction persists them). The person's own additions
+ *      (ruled 2026-08-04) write a snippet each and no reading — nothing
+ *      invents labels for a passage the model never proposed.
  *   5. `store.put` — status 'accepted', the session id, and `kept`: the exact
  *      texts written as Snippets. `kept` is what T5's Q-59 dedupe reads on a
  *      later scan of the same source path, so an edited post offers only what
@@ -42,7 +44,7 @@
 import matter from 'gray-matter';
 
 import { toTurns } from './body.js';
-import type { ImportDecision, RegionRecord } from './contract.js';
+import type { ImportAddition, ImportDecision, RegionRecord } from './contract.js';
 import type { ImportStore } from './store.js';
 import { bodyHash } from './scan.js';
 import { isQuotedFromSource, quotedSpans } from '../harvester/admissibility.js';
@@ -113,6 +115,7 @@ export function commitImport(
   deps: CommitDeps,
   hash: string,
   decisions: ImportDecision[],
+  additions: ImportAddition[] = [],
 ): CommitResult {
   // 1. The record must exist and have been extracted — nothing to commit
   //    otherwise.
@@ -146,10 +149,14 @@ export function commitImport(
 
   // 3. Verify every decision against the source BEFORE any write. A check
   //    that runs after the first write is not a gate.
-  const cuts = record.cuts ?? [];
-  if (cuts.length === 0) {
-    return refuse(deps, 'not-extracted', `hash=${hash} cuts=0`);
+  // `cuts` absent means extraction never wrote the record back — refuse. An
+  // EMPTY cuts array is different: extraction ran and proposed nothing, and
+  // the piece still saves as a dated sitting with a transcript and no
+  // snippets (the review surface offers exactly that).
+  if (record.cuts === undefined) {
+    return refuse(deps, 'not-extracted', `hash=${hash} cuts=missing`);
   }
+  const cuts = record.cuts;
   const rawSpans = quotedSpans(raw);
   const kept: string[] = [];
   for (const d of decisions) {
@@ -195,6 +202,34 @@ export function commitImport(
         `hash=${hash} cut=${d.cut} text sits inside a quotation in the source file`,
       );
     }
+    kept.push(text);
+  }
+
+  // The person's own additions (ruled 2026-08-04) pass EXACTLY the gates a
+  // model cut passes, inside the same all-or-nothing wall: one unverifiable
+  // addition refuses the whole item and nothing is written. A duplicate of a
+  // kept cut is dropped silently — one passage, one snippet.
+  const keptAdditions: string[] = [];
+  for (const text of additions) {
+    if (text.length === 0) {
+      return refuse(deps, 'unverifiable', `hash=${hash} addition is empty`);
+    }
+    if (!body.includes(text)) {
+      return refuse(
+        deps,
+        'unverifiable',
+        `hash=${hash} addition not in the source body`,
+      );
+    }
+    if (isQuotedFromSource(text, rawSpans)) {
+      return refuse(
+        deps,
+        'unverifiable',
+        `hash=${hash} addition sits inside a quotation in the source file`,
+      );
+    }
+    if (kept.includes(text) || keptAdditions.includes(text)) continue;
+    keptAdditions.push(text);
     kept.push(text);
   }
 
@@ -248,6 +283,24 @@ export function commitImport(
       stance: cut.stance as Stance,
       reading: cut.reading,
       cites: [`${snippet.id}@1`],
+    });
+  }
+
+  // The person's additions: a Snippet each, and NO Reading — readings carry
+  // the model's labels, and nothing invents labels for a passage only the
+  // person chose. Provenance is the same shape a kept cut wears.
+  for (const text of keptAdditions) {
+    const at = body.indexOf(text);
+    const context = precedingParagraph(body, at);
+    deps.vault.saveSnippet(text, {
+      kind: 'unprompted' as const,
+      session: sessionId,
+      question: '',
+      questionForm: 'deliberative' as const,
+      channel: 'pasted' as const,
+      // 048: conditional spreads, never a present key holding undefined.
+      ...(region ? { authorship: region.authorship } : {}),
+      ...(context !== undefined ? { context } : {}),
     });
   }
 

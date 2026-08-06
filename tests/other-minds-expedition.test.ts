@@ -272,10 +272,15 @@ function makeQueueStore(entries: QueueEntry[] = []): QueueStore & { _entries: Qu
     draw: vi.fn(),
     markAsked: vi.fn(),
     markAnswered: vi.fn(),
+    markPending: () => { },
     defer: vi.fn(),
+    park: vi.fn(),
+    unpark: vi.fn(),
     expire: vi.fn().mockReturnValue(0),
     expireTailBeyond: vi.fn().mockReturnValue(0),
     markExpired: vi.fn(),
+      recordReplyDisengagement() { return false; },
+    noteSittingStarted() {},
   };
 }
 

@@ -230,6 +230,15 @@ export function probeQuestion(state: DRMState): string {
 }
 
 /**
+ * The raw probe question for transcript storage — no arrow, no middot,
+ * no episode label. The episode context travels in the probe metadata
+ * on the API response, not in the transcript.
+ */
+export function transcriptQuestion(state: DRMState): string {
+  return DRM_PROBE_QUESTIONS[state.probeStep];
+}
+
+/**
  * The affect probe with optional nudge. Open first; if the answer is content-free,
  * append the dimensional nudge (Q-85).
  */

@@ -32,6 +32,30 @@ function dateKey(at: string): string {
  * Append a single event to the append-only activity log.
  * File: vault/log/<date>.jsonl — one JSON object per line, final newline.
  */
+/**
+ * In-process append listeners, keyed by vault root (ticket 150). The
+ * Activity Log is the one spine every actor writes through (Q-23), which
+ * makes an append the complete "something changed" signal — the SSE route
+ * subscribes here so open screens can refresh instead of waiting for a
+ * manual reload. Listeners fire AFTER the line is on disk (the log stays
+ * the truth; the notification is an echo of it), and a throwing listener
+ * never blocks the write path.
+ */
+type AppendListener = (e: ActivityEvent) => void;
+const appendListeners = new Map<string, Set<AppendListener>>();
+
+export function onAppend(root: string, listener: AppendListener): () => void {
+ let set = appendListeners.get(root);
+ if (!set) {
+  set = new Set();
+  appendListeners.set(root, set);
+ }
+ set.add(listener);
+ return () => {
+  set!.delete(listener);
+ };
+}
+
 export function appendEvent(root: string, e: ActivityEvent): void {
  const dir = join(root, LOG_DIR);
  if (!existsSync(dir)) {
@@ -40,6 +64,16 @@ export function appendEvent(root: string, e: ActivityEvent): void {
  const day = dateKey(e.at);
  const path = join(dir, `${day}.jsonl`);
  appendFileSync(path, `${JSON.stringify(e)}\n`, 'utf-8');
+ const listeners = appendListeners.get(root);
+ if (listeners) {
+  for (const listener of [...listeners]) {
+   try {
+    listener(e);
+   } catch {
+    /* a dead listener never blocks the log */
+   }
+  }
+ }
 }
 
 /**

@@ -50,3 +50,6 @@ local:/
 
 # Improvement loop — persona instances are person-plane-shaped, never tracked
 /eval/instances/
+
+# Eval-run scratch vaults — runtime state, vault-shaped, never tracked
+/eval-vault-*/

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reference — Plain-English Glossary</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+dt { font-weight: 600; margin-top: 1.1rem; }
+dd { margin-left: 0; color: var(--ink); }
+dd .src { color: var(--muted); font-size: 0.85em; }
+</style>
+</head>
+<body>
+<main>
+
+<div class="kicker">Reference · How Elicit Works</div>
+<h1>Plain-English Glossary</h1>
+
+<p>Every project term the lessons use, in ordinary language. The precise,
+canonical definitions live in <code>CONTEXT.md</code> — this page is the
+on-ramp, not the authority. When a lesson uses a capitalized word that
+feels like jargon, it's here.</p>
+
+<p>Grouped by what they belong to, not alphabetically — the groups are
+half the understanding.</p>
+
+<h2>The stuff that gets saved</h2>
+<dl>
+<dt id="snippet">Snippet</dt>
+<dd>A saved passage of your own words — exact, dated, never edited again.
+The atom everything else is built from. Editing one creates a new version;
+the old version stays as evidence of a past you.
+<span class="src">CONTEXT.md "Snippet"</span></dd>
+
+<dt id="bud">Bud</dt>
+<dd>A fragment of yours that failed one of the save-worthiness tests (for
+example, it can't be understood on its own). Kept anyway, with its
+failures recorded — each failure is a future question, because answering
+it would mature the Bud into a real Snippet.
+<span class="src">CONTEXT.md "Bud"</span></dd>
+
+<dt id="facet">Facet</dt>
+<dd>A label for what <em>kind</em> of self-knowledge a Snippet shows: a
+specific datable memory, a general fact about you, a value, an intention,
+a theory about your own causes, and so on.
+<span class="src">CONTEXT.md "Facet"</span></dd>
+
+<dt id="construct">Construct</dt>
+<dd>One of the Facet kinds, borrowed from personal-construct psychology: a
+personal dimension you judge things on, defined by a pole <em>and</em> its
+contrast pole ("disciplined vs. scattered"). A pole alone —
+"half-Construct" — is incomplete by definition, which is why the app asks
+"what's the opposite of this, for you?"
+<span class="src">CONTEXT.md "Facet"</span></dd>
+
+<dt id="vault">Vault</dt>
+<dd>The archive on disk: plain markdown files in their own git repo.
+Snippets, transcripts, the Wiki, the question Queue all live here.
+<span class="src">README "Your words stay yours"</span></dd>
+
+<dt id="transcript">Transcript</dt>
+<dd>The full record of one conversation — every question and every answer,
+append-only, never edited.
+<span class="src">CONTEXT.md "Transcript"</span></dd>
+</dl>
+
+<h2>The model of you</h2>
+<dl>
+<dt id="wiki">Wiki</dt>
+<dd>The app's continuously revised model of you — short sentences of agent
+prose ("claims"), each citing the exact Snippet versions it rests on.
+You can read and edit it; it never gets to write your words.
+<span class="src">CONTEXT.md "Wiki"</span></dd>
+
+<dt id="claim">Claim</dt>
+<dd>One sentence in the Wiki, with mandatory citations to Snippets and a
+mandatory range (the context where it holds). No citation, no claim; no
+confidence scores anywhere, ever.
+<span class="src">CONTEXT.md "Claim"</span></dd>
+
+<dt id="contradiction">Contradiction</dt>
+<dd>A recorded tension between two things you said. Typed: either both
+assert the present (genuine tension → a question), or you changed over
+time (the change itself is the finding — nothing to resolve).
+<span class="src">CONTEXT.md "Contradiction"</span></dd>
+</dl>
+
+<h2>The conversation</h2>
+<dl>
+<dt id="sitting">Sitting</dt>
+<dd>One sit-down with the app, from declaring your time and energy to the
+closing questions. The code calls it a "session."
+<span class="src">CONTEXT.md "Sitting"</span></dd>
+
+<dt id="mode">Mode</dt>
+<dd>What you declare at the start of a Sitting: how much time you have,
+how much energy, what the session is about. It constrains what's askable
+now — a deep question waits for a Mode that fits it.
+<span class="src">CONTEXT.md "Mode"</span></dd>
+
+<dt id="protocol">Protocol</dt>
+<dd>A question's category, defined by what it takes to answer well — a
+memory question needs retrieval time, a comparison question needs
+materials in front of you. Protocols are data files, not hardcoded types.
+<span class="src">CONTEXT.md "Protocol"</span></dd>
+
+<dt id="harvesting">Harvesting</dt>
+<dd>Breaking your prose into candidate Snippets. The app proposes cuts —
+exact substrings of what you typed, nothing reworded — and you approve,
+trim, discard, or restate each one.
+<span class="src">CONTEXT.md "Harvesting"</span></dd>
+
+<dt id="content-free">Content-free answer</dt>
+<dd>A flat, closed answer — "not sure," "I guess" — that gives the app
+nothing to work with. Detected by a simple heuristic, and used as a signal
+to change tack rather than push.
+<span class="src">src/elicitor/answer-shape.ts</span></dd>
+</dl>
+
+<h2>Where questions come from</h2>
+<dl>
+<dt id="queue">Queue</dt>
+<dd>The durable to-ask list. Questions minted by background work, deferred
+by you, or declared by you wait here between Sittings.
+<span class="src">CONTEXT.md "Queue"</span></dd>
+
+<dt id="bank">Bank</dt>
+<dd>A curated file of opener questions (<code>data/question-bank.jsonl</code>)
+— hand-picked, not generated. The fallback when nothing better is licensed.
+<span class="src">CONTEXT.md "Question Bank"</span></dd>
+
+<dt id="red-light">Red Light</dt>
+<dd>A feature of your last answer that invites a follow-up: an odd or
+loaded word, a person or thing you named but didn't explain, an
+abstraction with no concrete memory under it, a pole without its
+contrast, a cause claimed without the event.
+<span class="src">CONTEXT.md "Red Light"</span></dd>
+
+<dt id="resonance">Resonance</dt>
+<dd>The every-turn search of your archive for past Snippets that echo or
+clash with what you just said — so the archive participates in the live
+conversation.
+<span class="src">CONTEXT.md "Resonance"</span></dd>
+
+<dt id="juxtaposition">Juxtaposition</dt>
+<dd>The question a Resonance hit licenses: what you just said and what you
+once said, quoted side by side, dated — "same thing?" The app never says
+which one is right.
+<span class="src">CONTEXT.md "Juxtaposition"</span></dd>
+
+<dt id="still-true">Still-true revisit</dt>
+<dd>An old statement of yours, re-asked after it has aged — always worded
+differently than the first time, so you're not just pattern-matching your
+own past answer.
+<span class="src">CONTEXT.md "Question Source"</span></dd>
+
+<dt id="randomizer">Randomizer</dt>
+<dd>The serendipity mechanism: it resurfaces forgotten Snippets or draws
+from decks you curated. It shuffles what exists — it never invents, and
+the agent can't veto its draws.
+<span class="src">CONTEXT.md "Randomizer"</span></dd>
+
+<dt id="expedition">Expedition</dt>
+<dd>A question with homework: it sends you out to read or investigate
+something over days, then asks for your reflection when you're back.
+<span class="src">CONTEXT.md "Expedition"</span></dd>
+
+<dt id="guard">Guard</dt>
+<dd>A mechanical check a composed question must pass before it reaches
+you — is the quote really your exact words, is it actually a question, is
+it not a near-duplicate. Guards can only reject; they never fix.
+<span class="src">src/elicitor/guards.ts</span></dd>
+</dl>
+
+<h2>Structured deep-dives ("instruments")</h2>
+<dl>
+<dt id="sounding">Sounding</dt>
+<dd>A consent-gated chain of questions where each answer becomes the seed
+of the next — drilling down toward what you actually believe. Runs 8–12
+rungs, stops when you converge or hit the cap, and at checkpoints offers:
+continue, park it (depth kept for later), or another day.
+<span class="src">CONTEXT.md "Sounding"</span></dd>
+
+<dt id="drm">DRM (Day Reconstruction Method)</dt>
+<dd>A borrowed research instrument: you list yesterday's episodes (start
+times only), then each episode gets the same four short probes — where,
+what, with whom, how it felt. Tiles <em>across</em> a day where a Sounding
+drills <em>down</em> into a belief.
+<span class="src">docs/decisions Q-85, src/drm/</span></dd>
+
+<dt id="rung">Rung</dt>
+<dd>One question-answer step of a Sounding's descent. The next rung's
+question must quote a piece of the previous answer — that's what makes it
+a chain and not a topic drift.
+<span class="src">src/sounding/ladder.ts</span></dd>
+
+<dt id="park">Park</dt>
+<dd>Pausing an instrument mid-descent with all progress kept. A parked
+Sounding or DRM waits in the Queue until you explicitly resume it.
+<span class="src">src/sounding/park.ts</span></dd>
+</dl>
+
+<h2>Things made from Snippets</h2>
+<dl>
+<dt id="piece">Piece</dt>
+<dd>An essay assembled from your Snippets and nothing else — your
+sentences, your order, no generated filler. Never "finished," only set
+down and resumable.
+<span class="src">CONTEXT.md "Piece"</span></dd>
+
+<dt id="arrangement">Arrangement</dt>
+<dd>One ordering of a Piece's Snippets — the same material can stack as
+chronology, argument, or contrast. Cheap to keep alternatives of.
+<span class="src">CONTEXT.md "Arrangement"</span></dd>
+
+<dt id="gap">Gap (in an Arrangement)</dt>
+<dd>A visible empty slot where no Snippet bridges a leap between two
+others. Backed by a queued question; never filled by agent prose.
+<span class="src">CONTEXT.md "Gap"</span></dd>
+</dl>
+
+<h2>Background machinery</h2>
+<dl>
+<dt id="clerk">Clerk</dt>
+<dd>The agent's background role — it does the between-sittings work and is
+the only writer to the Wiki. Also the name of the slower, more careful of
+the two model roles.
+<span class="src">CONTEXT.md "Clerk", src/llm.ts</span></dd>
+
+<dt id="docket">Docket</dt>
+<dd>The Clerk's standing task list: re-read new Snippets, detect
+contradictions, mint questions, run the sweeps. Finished work waits for
+you on the interface — no task ever contacts you.
+<span class="src">CONTEXT.md "Docket"</span></dd>
+
+<dt id="shadow">Shadow mode</dt>
+<dd>This project's rollout discipline: a new mechanism that would
+<em>act</em> on its own judgment first runs in shadow — it evaluates and
+logs what it <em>would</em> do, but does nothing — until the log earns it
+a graduation to live. Mechanisms that only <em>offer</em> (you can decline
+in a word) skip shadow and ship live.
+<span class="src">docs/decisions Q-35, Q-62</span></dd>
+
+<dt id="sweep">Sweep</dt>
+<dd>A Docket job that walks the whole archive looking for one kind of
+thing — stale pins, dormant Pieces, unfilled gaps — and acts on (or in
+shadow, logs) each hit.
+<span class="src">src/clerk/docket.ts</span></dd>
+
+<dt id="gazetteer">Gazetteer</dt>
+<dd>The index of people and things you've mentioned, built by the Clerk —
+so the app can notice "you've mentioned this person eight times" and ask
+outward from that.
+<span class="src">src/clerk/gazetteer.ts</span></dd>
+
+<dt id="territory">Territory skeleton / Atlas</dt>
+<dd>Two kinds of private checklist for what hasn't been asked about yet. A
+<em>skeleton</em> is a structured prerequisite map of a domain you know
+(this concept builds on that one); an <em>atlas</em> is a deliberately
+crude flat map of what a life contains. Both track only "asked or not" —
+never a score, never shown to you as a progress bar.
+<span class="src">docs/decisions Q-79, src/ktg/</span></dd>
+
+<dt id="lineage-mirror">Lineage mirror</dt>
+<dd>A shadow-mode sweep that may (once live) quote your own usage facts
+back to you — "you wrote this in March, and touched it again yesterday" —
+only ever in service of testing a specific claim, never as commentary on
+your habits.
+<span class="src">docs/decisions Q-83, src/clerk/lineage-mirror.ts</span></dd>
+
+<dt id="marginalia">Marginalia</dt>
+<dd>The agent's margin notes — anything the agent writes about your
+material. Structurally barred from ever entering a Piece.
+<span class="src">CONTEXT.md "Marginalia"</span></dd>
+
+<dt id="mint">Mint</dt>
+<dd>The verb for background work creating something durable — a question
+minted into the Queue, a claim minted into the Wiki. Minting is always
+logged, and most minting paths are capped per run.
+<span class="src">src/clerk/docket.ts, src/clerk/mint.ts</span></dd>
+
+<dt id="annotation">Annotation</dt>
+<dd>A margin note the Clerk attaches to a specific Snippet — a dangling
+reference it noticed, an intention with a time horizon. Marginalia-class:
+about your words, never inside them.
+<span class="src">src/clerk/annotate.ts</span></dd>
+
+<dt id="consolidation">Consolidation (the "Cover")</dt>
+<dd>Folding old transcripts into one-line summaries so unbounded history
+can fit a fixed reading budget — newest sessions verbatim, older ranges
+as single lines, raw text always recoverable. One summary per docket run,
+max.
+<span class="src">docs/adr/0002-three-layer-memory.md, src/memory/cover.ts</span></dd>
+
+<dt id="watermark">Watermark</dt>
+<dd>A git marker recording "the last state the Clerk looked at" — so
+background jobs can skip work when nothing changed. A commit, not a
+timestamp.
+<span class="src">src/index/watermark.ts</span></dd>
+</dl>
+
+<h2>Wiki upkeep</h2>
+<dl>
+<dt id="reading">Reading</dt>
+<dd>The Clerk's recorded interpretation of one Snippet — what kind of
+self-knowledge it shows, what it might evidence. The raw material claims
+are proposed from; every Reading cites its Snippet.
+<span class="src">src/clerk/wiki-jobs.ts</span></dd>
+
+<dt id="op">Op</dt>
+<dd>One of six edits the model may propose against the Wiki: mint a
+claim, update, merge, supersede, archive, or keep. Proposals only — a
+mechanical gate applies or refuses each one.
+<span class="src">src/wiki/ops.ts, src/clerk/mint.ts</span></dd>
+
+<dt id="lint">Lint (of the Wiki)</dt>
+<dd>Mechanical checks over the whole claim graph — orphaned claims, stale
+citations, suspiciously similar pairs. Two kinds of finding become queued
+questions for you; the rest just render.
+<span class="src">src/wiki/lint.ts</span></dd>
+
+<dt id="clash">Clash candidate</dt>
+<dd>A pair of claims or snippets that might contradict, surfaced by
+mechanical channels (a shared phrase, a shared name) and then judged. A
+judged opposition only survives if both poles are exact quotes of what
+was shown.
+<span class="src">src/wiki/clash.ts, src/clerk/contradiction.ts</span></dd>
+</dl>
+
+<div class="aside">
+Terms here are the ones lessons 1–2 use. When a future lesson needs a term
+that isn't here, adding it here is part of writing that lesson — this page
+is the contract.
+</div>
+
+</main>
+</body>
+</html>

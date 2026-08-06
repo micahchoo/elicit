@@ -52,8 +52,12 @@ export type QuestionProvenance =
  | 'territory'
  // The opening pulse — momentary-state convention at sitting start (105)
  | 'pulse'
- // Lineage mirror — a question composed from usage facts (Q-83)
- | 'lineage-mirror';
+// The greeting turn — one framing line at sitting start (ticket 135)
+| 'greeting'
+// Lineage mirror — a question composed from usage facts (Q-83)
+ | 'lineage-mirror'
+ // Repair — the fixed template turn acknowledging a pressed not-mine (Q-105)
+ | 'repair';
 
 /**
  * How far the writing is from the person reading it now (Q-18,
@@ -169,6 +173,8 @@ export type Turn = {
  prosody?: Prosody;
  /** Provenance tag for the eliciting question (105). Absent means unspecified. */
  questionProvenance?: QuestionProvenance;
+ /** When set, this turn is part of a repair exchange — excluded from harvest (Q-107). */
+ repairId?: string;
 };
 
 /**
@@ -368,7 +374,12 @@ export type RedLight = {
 
 export type QueueEntry = {
  id: string;
- status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired';
+ /**
+  * 'parked' is the person's own act (POST /api/queue/:id/park): the question
+  * rests out of the open pool, is never drawn and never expired, until they
+  * put it back. Distinct from 'deferred', which stays in the draw.
+  */
+ status: 'pending' | 'asked' | 'answered' | 'deferred' | 'expired' | 'parked';
 /**
  * Which situation licensed the question. The person's own declarations —
  * typed in directly, or placed as a gap to fill — are the only two that
@@ -560,8 +571,31 @@ export interface QueueStore {
  draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null;
  markAsked(id: string): void;
  markAnswered(id: string): void;
+ markPending(id: string): void;
  defer(id: string): void;
- expire(olderThanDays: number): number;
+ /**
+  * Park an open question (the person's act, never the clerk's): 'pending' →
+  * 'parked'. Parked entries leave the open pool, the draw and both expiry
+  * sweeps until unparked. A no-op on a missing or non-pending entry.
+  */
+ park(id: string): void;
+ /**
+  * Put a parked question back: 'parked' → 'pending', with `created`
+  * refreshed to now — without that, a long-parked question would re-open
+  * already past the expiry sweep's age cutoff and vanish on the next run.
+  * A no-op on a missing or non-parked entry.
+  */
+   unpark(id: string): void;
+   expire(olderThanDays: number): number;
+   /** Ticket 148: check reply engagement and defer thread on 2 strikes. */
+   recordReplyDisengagement(openerEntryId: string, replyText: string): boolean;
+   /**
+    * Q-115: advance the sitting counter the engagement ledger keys on.
+    * Called once per session start; two consecutive sittings whose queue
+    * openers get pivoted-away replies pause the draw for a cooldown of
+    * sittings (2, 4, 8-cap), and an engaged reply resets it.
+    */
+   noteSittingStarted(): void;
  /**
   * QR-6: expire the tail of the pending pool beyond the first `keep`
   * entries — the entries the optional filter names, sorted user-declared
@@ -652,8 +686,10 @@ territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions
  * Shadow-first (Q-35): evaluated counts candidates; minted is zero in shadow.
  * Structural — this file must not depend on `src/clerk/`.
  */
-lineageMirror?: { evaluated: number; minted: number };
-};
+ lineageMirror?: { evaluated: number; minted: number };
+ /** Q-110 door 1: coach seed clustering results, absent when a run did none. */
+ coachSeed?: { clustered: number; minted: number };
+ };
 
 export type SessionState = {
  id: string;
@@ -715,6 +751,21 @@ soundingOffer?: 'offered' | 'declined' | 'entered';
  * route persists it and clears it — the only carrier (T1 contract).
  */
 finishedSounding?: ParkedLadder;
+
+/**
+ * The opening question held until the greeting is answered (ticket 135).
+ * startSession writes only a greeting turn; the opener lives here until
+ * the pulse route appends it after the greeting answer. Absent once
+ * consumed — the pulse route clears it.
+ */
+pendingOpener?: { text: string; questionForm: QuestionForm; questionSource?: QuestionSource; gap?: string };
+/**
+ * Snippets already juxtaposed this sitting. One juxtaposition per snippet
+ * per sitting: the answer to a juxtaposed question re-resonates with the
+ * snippet that prompted it, and without this guard the same sentence drove
+ * three consecutive questions (measured). Sitting-scoped by construction.
+ */
+juxtaposedSnippetIds?: string[];
 };
 
 // ── Soundings ──
@@ -736,8 +787,14 @@ export type Rung = {
 /** The three gate words — the only three (Q-44). */
 export type GateChoice = 'continue' | 'park' | 'another-day';
 
-/** How a descent ended: a gate word, the counter, or the echo check. */
-export type SoundingEnd = 'park' | 'another-day' | 'cap' | 'convergence';
+/**
+ * How a descent ended: a gate word, the counter, or the echo check —
+ * plus `composition-failed`, the honest name for "the model could not
+ * draft the next rung". It used to be recorded as `convergence`, which
+ * made a flaky drafter indistinguishable from settled answers in every
+ * later analysis of the sounding records.
+ */
+export type SoundingEnd = 'park' | 'another-day' | 'cap' | 'convergence' | 'composition-failed';
 
 /** What the gate renders on a rung: position, total, and whether it blocks. */
 export type GateReading = {
@@ -806,11 +863,29 @@ export interface Vault {
    quest?: string;
    /** The coached Direction this capture belongs to. Absent means untagged. */
    direction?: string;
+
   }
  ): void;
  appendTurn(session: string, turn: Turn): void;
  rebuildIndex(): Index;
 }
+
+
+// ── Repair record (Q-106) ──
+
+/** A side-record written when the user presses `not mine`. Consulted at every
+ * draw point — resonance, juxtaposition, composed minting, queue draw — and
+ * never user-facing beyond the activity-stream `repair` event (Q-108). */
+export type RepairRecord = {
+ /** The repaired snippet@version — text stays untouched, lineage is what happened. */
+ snippetRef: string;
+ /** The exact quoted fragment being disavowed (Q-105: never re-quoted). */
+ quotedFragment: string;
+ /** The sitting where the repair was pressed. */
+ sitting: string;
+ /** ISO timestamp of the repair. */
+ at: string;
+};
 
 // ── DRM types — live in their own module per Q-85; re-exported here for the
 // type-only import convention the rest of the codebase uses.

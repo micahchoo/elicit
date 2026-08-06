@@ -641,9 +641,16 @@ atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number; min
  * Absent means no mirror work this run, and every caller predating the
  * field behaves exactly as before.
  */
-lineageMirrorSweep?: () => Promise<{ evaluated: number; minted: number }>;
-/**
- * The import extraction (T6), as the LAST job of a run — after even the
+ lineageMirrorSweep?: () => Promise<{ evaluated: number; minted: number }>;
+ /**
+  * Coach seed sweep (Q-110 door 1): clusters wiki claims by theme and mints
+  * un-coached DirectionRecords for themes with 3+ claims. ZERO-LLM — it
+  * never receives the Complete. Absent means no seeding this run, and every
+  * caller predating the field behaves exactly as before.
+  */
+ coachSeedSweep?: () => Promise<{ clustered: number; minted: number }>;
+ /**
+  * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
  * Structural and optional on purpose. This file must not import
@@ -690,6 +697,14 @@ outcomeQuestionSweep?: () => Promise<{ minted: number }>;
  * `data/` and `scripts/loop-status.ts` and no surface a person reads.
  */
 tripwireSweep?: () => Promise<void>;
+/**
+ * The stop switch (POST /api/jobs/stop), read between jobs and between
+ * per-snippet model calls. A run cannot abort a model call mid-air, so this
+ * is the granularity stopping has: the call in flight finishes, then the
+ * run skips everything that remains and settles. Absent means never
+ * stopped — every caller predating the field behaves exactly as before.
+ */
+shouldStop?: () => boolean;
 }): Promise<DocketReport> {
  if (running) {
   return {
@@ -703,6 +718,8 @@ tripwireSweep?: () => Promise<void>;
  running = true;
  try {
   const ts = () => new Date().toISOString();
+  /** Read at every job boundary and inside every model-call loop. */
+  const stopped = (): boolean => deps.shouldStop?.() === true;
 
   // ── Log: run started ──
   deps.log({ at: ts(), actor: 'clerk', kind: 'run-started', detail: 'docket run started' });
@@ -808,6 +825,7 @@ tripwireSweep?: () => Promise<void>;
 
    const openerRefs: string[] = [];
    for (const s of candidates) {
+    if (stopped()) break;
     try {
      const draft = await deps.composeOpener(s, deps.complete, sittingFor(s.provenance.session), historyBlock, summaryLines);
      if (draft) {
@@ -904,6 +922,7 @@ tripwireSweep?: () => Promise<void>;
 
 
   for (const s of stillTrueCandidates) {
+   if (stopped()) break;
    try {
     const draft = await deps.composeStillTrue(s, deps.complete, sittingFor(s.provenance.session));
     if (draft) {
@@ -925,11 +944,13 @@ tripwireSweep?: () => Promise<void>;
   deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-minted', detail: `minted ${stillTrueCount} still-true` });
 
   // ── 4. Expire stale queue entries ──
-  const expired = deps.queue.expire(30);
-  deps.log({ at: ts(), actor: 'clerk', kind: 'expired', detail: `expired ${expired} entries` });
+  const expired = stopped() ? 0 : deps.queue.expire(30);
+  if (!stopped()) {
+   deps.log({ at: ts(), actor: 'clerk', kind: 'expired', detail: `expired ${expired} entries` });
+  }
 
   // ── 5. At most one consolidation ──
-  if (deps.nextConsolidation && deps.saveSummary && deps.loadSummaries && sessions) {
+  if (!stopped() && deps.nextConsolidation && deps.saveSummary && deps.loadSummaries && sessions) {
    try {
     const summaries = deps.loadSummaries(deps.vaultRoot);
     // nextConsolidation's contract is oldest-first (ticket 117). The shared
@@ -967,7 +988,7 @@ tripwireSweep?: () => Promise<void>;
   // Guarded like the wiki jobs: a throw is one job's failure, and the
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
-  if (deps.runLadderSummaries) {
+  if (!stopped() && deps.runLadderSummaries) {
    try {
     await deps.runLadderSummaries({
      root: deps.vaultRoot,
@@ -982,7 +1003,7 @@ tripwireSweep?: () => Promise<void>;
 
   // ── 6. Expedition minting: at most ONE per run ──
   let expeditionMinted = false;
-  if (deps.composeExpedition) {
+  if (!stopped() && deps.composeExpedition) {
    try {
     const allEntries = deps.queue.list();
     for (const s of allSnippets) {
@@ -1012,7 +1033,7 @@ tripwireSweep?: () => Promise<void>;
   // Other-minds fallback (ticket 113): the errand names a person to ask, but
   // it still spends the run's single expedition budget — tried only when the
   // regular expedition found nothing to mint.
-  if (!expeditionMinted && deps.composeOtherMindsExpedition && deps.gazetteerStore) {
+  if (!expeditionMinted && !stopped() && deps.composeOtherMindsExpedition && deps.gazetteerStore) {
    try {
     const allEntries = deps.queue.list();
     for (const s of allSnippets) {
@@ -1049,7 +1070,7 @@ tripwireSweep?: () => Promise<void>;
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
   let annotations: DocketReport['annotations'];
-  if (deps.referentAnnotations) {
+  if (!stopped() && deps.referentAnnotations) {
    try {
     annotations = await deps.referentAnnotations();
    } catch (err) {
@@ -1061,7 +1082,7 @@ tripwireSweep?: () => Promise<void>;
   // Guarded like the wiki jobs: a failure is one job's failure, and the
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
-  if (deps.intentionHorizonAnnotations) {
+  if (!stopped() && deps.intentionHorizonAnnotations) {
     try {
       await deps.intentionHorizonAnnotations();
     } catch (err) {
@@ -1072,7 +1093,7 @@ tripwireSweep?: () => Promise<void>;
   // ── 7b. Outcome questions (ticket 106): mint from past-horizon intentions ──
   // Guarded like the wiki jobs: a failure is one job's failure. Runs after
   // the intention-horizon annotation job so the annotations are fresh.
-  if (deps.outcomeQuestionSweep) {
+  if (!stopped() && deps.outcomeQuestionSweep) {
     try {
       await deps.outcomeQuestionSweep();
     } catch (err) {
@@ -1085,14 +1106,14 @@ tripwireSweep?: () => Promise<void>;
   // Each guarded on its own: a failure in one is one job's failure, and the
   // other still runs. Neither job calls a model — zero-LLM by contract
   // (Q-39, Q-41).
-  if (deps.stalePinSweep) {
+  if (!stopped() && deps.stalePinSweep) {
    try {
     await deps.stalePinSweep();
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `stale pin sweep: ${String(err)}` });
    }
   }
-  if (deps.dormancySweep) {
+  if (!stopped() && deps.dormancySweep) {
    try {
     await deps.dormancySweep();
    } catch (err) {
@@ -1108,7 +1129,7 @@ tripwireSweep?: () => Promise<void>;
   // Q-72): the thunk never receives the Complete — the sweep is pure
   // vault-and-queue work and cannot touch the model.
   let gapFill: DocketReport['gapFill'];
-  if (deps.gapFillSweep) {
+  if (!stopped() && deps.gapFillSweep) {
    try {
     gapFill = await deps.gapFillSweep();
    } catch (err) {
@@ -1119,7 +1140,7 @@ tripwireSweep?: () => Promise<void>;
   // Territory gap-fill (ticket 094) — follows the ordinary gap-fill,
   // reads KTG skeleton coverage, mints frontier and failure questions.
   let territoryGapFill: DocketReport['territoryGapFill'];
-  if (deps.territoryGapFillSweep) {
+  if (!stopped() && deps.territoryGapFillSweep) {
    try {
     territoryGapFill = await deps.territoryGapFillSweep();
    } catch (err) {
@@ -1132,7 +1153,7 @@ tripwireSweep?: () => Promise<void>;
   // Shadow-first (Q-35): candidates are logged, never minted.
   // ZERO-LLM by design — the sweep is pure vault-and-coverage work.
   let atlasGapFill: DocketReport['atlasGapFill'];
-  if (deps.atlasGapFillSweep) {
+  if (!stopped() && deps.atlasGapFillSweep) {
    try {
     atlasGapFill = await deps.atlasGapFillSweep();
    } catch (err) {
@@ -1145,7 +1166,7 @@ tripwireSweep?: () => Promise<void>;
   // frontier sweep so new entities are available for frontier detection.
   // Caps live at birth (Q-56); the thunk is guarded like the wiki jobs.
   let gazetteerExtraction: DocketReport['gazetteerExtraction'];
-  if (deps.gazetteerExtraction) {
+  if (!stopped() && deps.gazetteerExtraction) {
    try {
     gazetteerExtraction = await deps.gazetteerExtraction();
    } catch (err) {
@@ -1157,7 +1178,7 @@ tripwireSweep?: () => Promise<void>;
   // against the queue's subjects, mints or shadow-logs frontier questions.
   // Must run after extraction so new entities are counted.
   let gazetteerFrontier: DocketReport['gazetteerFrontier'];
-  if (deps.gazetteerFrontier) {
+  if (!stopped() && deps.gazetteerFrontier) {
    try {
     gazetteerFrontier = await deps.gazetteerFrontier();
    } catch (err) {
@@ -1170,14 +1191,27 @@ tripwireSweep?: () => Promise<void>;
   // Shadow-first (Q-35): candidates always logged; questions minted only
   // when the selection threshold graduates to live.
   let lineageMirror: DocketReport['lineageMirror'];
-  if (deps.lineageMirrorSweep) {
+  if (!stopped() && deps.lineageMirrorSweep) {
    try {
     lineageMirror = await deps.lineageMirrorSweep();
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'lineage-mirror-failed', detail: String(err) });
    }
   }
-
+ 
+  // Coach seed (Q-110 door 1): cluster claims → un-coached Directions.
+  // ZERO-LLM: the thunk reads claims and clusters by content-word overlap.
+  // Runs after lineage mirror and before tripwire — it is pure vault work
+  // and does not touch any model.
+  let coachSeed: DocketReport['coachSeed'];
+  if (!stopped() && deps.coachSeedSweep) {
+   try {
+    coachSeed = await deps.coachSeedSweep();
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: 'coach-seed-failed', detail: String(err) });
+   }
+  }
+ 
   // Tripwire (Q-90, ticket 132) — reads the graduation ledger against the
   // guarded metrics and demotes a batch when the record has gone worse.
   // Guarded like every other job: a throw here must not cost the run, and
@@ -1190,7 +1224,7 @@ tripwireSweep?: () => Promise<void>;
   // record plane off that surface. The failure goes to the operator's
   // channel — the same stderr the docket's own deferral notice uses — and
   // `scripts/loop-status.ts` shows what the sweep did or did not do.
-  if (deps.tripwireSweep) {
+  if (!stopped() && deps.tripwireSweep) {
    try {
     await deps.tripwireSweep();
    } catch (err) {
@@ -1205,7 +1239,7 @@ tripwireSweep?: () => Promise<void>;
   // consolidation are already done and on disk by the time this runs, and
   // the report still carries all four when it throws.
   let wiki: DocketReport['wiki'];
-  if (deps.runWikiJobs) {
+  if (!stopped() && deps.runWikiJobs) {
    try {
     wiki = await deps.runWikiJobs();
    } catch (err) {
@@ -1221,12 +1255,18 @@ tripwireSweep?: () => Promise<void>;
   // questions and the expiry are already on disk by the time this runs,
   // and the report still carries all four when it throws.
   let imports: DocketReport['imports'];
-  if (deps.runImportJobs) {
+  if (!stopped() && deps.runImportJobs) {
    try {
     imports = await deps.runImportJobs();
    } catch (err) {
     deps.log({ at: ts(), actor: 'clerk', kind: 'import-run-failed', detail: String(err) });
    }
+  }
+
+  // The run was cut short by the stop switch: say so, once, so the silence
+  // of the skipped jobs is never unexplained.
+  if (stopped()) {
+   deps.log({ at: ts(), actor: 'clerk', kind: 'docket-cut-short', detail: 'jobs stopped mid-run — the remaining jobs wait for resume' });
   }
 
   return {
@@ -1243,6 +1283,7 @@ tripwireSweep?: () => Promise<void>;
    ...(atlasGapFill ? { atlasGapFill } : {}),
    ...(gazetteerFrontier ? { gazetteerFrontier } : {}),
    ...(lineageMirror ? { lineageMirror } : {}),
+   ...(coachSeed ? { coachSeed } : {}),
   };
  } finally {
   running = false;

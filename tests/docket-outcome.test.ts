@@ -87,10 +87,15 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
     draw() { return null; },
     markAsked() { },
     markAnswered() { },
+    markPending() { },
     defer() { },
+    park() { },
+    unpark() { },
     expire() { return 0; },
     expireTailBeyond() { return 0; },
     markExpired() { },
+    recordReplyDisengagement() { return false; },
+    noteSittingStarted() {},
   };
 }
 

@@ -190,10 +190,15 @@ function fakeQueue(seed: QueueEntry[] = []): FakeQueue {
     draw: () => null,
     markAsked: () => {},
     markAnswered: () => {},
+    markPending: () => { },
     defer: () => {},
+    park: () => {},
+    unpark: () => {},
     expire: () => 0,
     expireTailBeyond: () => 0,
     markExpired: () => {},
+      recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
   };
 }
 
@@ -563,8 +568,8 @@ describe('sweep', () => {
     const h = harness({ snippets: [s1], readings, propose: async () => mintResult([]) });
     await h.run();
 
-    expect(h.rec.proposeCalls).toHaveLength(12);
-    const clip = h.rec.events.find((e) => e.kind === 'threshold-clipped' && e.detail.includes('mint.callsPerRun'));
+    expect(h.rec.proposeCalls).toHaveLength(36);
+    const clip = h.rec.events.find((e) => e.kind === 'threshold-clipped' && e.detail.includes('effective quota 36'));
     expect(clip).toBeDefined();
   });
 

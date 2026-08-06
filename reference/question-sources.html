@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reference — Question Sources</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<div class="kicker">Reference · How Elicit Works</div>
+<h1>Question Sources</h1>
+
+<p>See <a href="../lessons/0002-how-a-question-gets-made.html">Lesson 2</a>
+for the actual control-flow order this feeds into. This table is the
+locator: which glossary concept maps to which code, and which of the
+eighteen literal <code>QueueEntry.source</code> values belongs to it.</p>
+
+<h2>CONTEXT.md's seven, mapped to code</h2>
+<table>
+<tr><th>Glossary source</th><th>Code path</th><th><code>QueueEntry.source</code> value(s)</th></tr>
+<tr><td>Bank draw</td><td><code>src/elicitor/bank.ts</code>, <code>pickOpener</code></td><td>(bank entries carry their own <code>QuestionSource</code> provenance shape — a different type, see below — not a Queue entry at all)</td></tr>
+<tr><td>Composed follow-up</td><td><code>src/clerk/composed.ts</code> — <code>redLights</code> → <code>composeFollowUp</code></td><td><code>composed</code></td></tr>
+<tr><td>Gap-fill</td><td>three separate files — see Lesson 2's table</td><td><code>gap-declared</code>, <code>gap-fill</code>, <code>territory-gap-fill</code>, <code>atlas-gap-fill</code>, <code>gazetteer-frontier</code>, <code>import-repair</code></td></tr>
+<tr><td>Instrument step</td><td><code>src/sounding/</code>, <code>src/drm/</code></td><td><code>parked-sounding</code>, <code>parked-drm</code></td></tr>
+<tr><td>Randomizer draw</td><td><code>src/randomizer/randomizer.ts</code></td><td>(not a Queue entry — invoked as a sibling closure in the elicitor, not via <code>queue.draw()</code>)</td></tr>
+<tr><td>Still-true revisit</td><td><code>src/clerk/docket.ts</code> rotation → <code>composeStillTrue</code></td><td><code>still-true</code>, <code>lint-still-true</code></td></tr>
+<tr><td>Verification</td><td>mostly forbidden per CONTEXT.md; closest code equivalents</td><td><code>contradiction-remeasure</code>, <code>claim-challenged</code>, <code>lint-undiscriminated-range</code></td></tr>
+<tr><td><em>(not in the glossary's seven)</em></td><td>user declarations, quest returns, outcomes</td><td><code>user-declared</code>, <code>quest-reflection</code>, <code>outcome</code></td></tr>
+</table>
+
+<div class="aside">
+<strong>Naming collision:</strong> <code>QuestionSource</code> is also a
+distinct TypeScript type (<code>src/types.ts</code>) unrelated to the
+above — it's the Bank's own provenance shape
+(<code>{channel, blockId, channelTitle?}</code>, an are.na channel/block
+reference), attached to a <code>Turn</code> or <code>StarterQuestion</code>.
+Two different things share one name; know which one a piece of code means
+from context.
+</div>
+
+<h2>What the draw actually does with the pool</h2>
+<p><code class="path">src/queue/queue.ts</code> <code>draw()</code>:
+filter chain (status → sounding → Mode needs → sharpness → horizon →
+target, with a relaxed second pass if the pool empties) → sort
+(user/gap-declared first, then newest) → facet balance (shadow by
+default) → <strong>top-3, picked uniformly at random</strong>
+(<code>pickTopK</code>) → mark asked.</p>
+
+<h2>Live vs. shadow, at a glance</h2>
+<p>Full context in Lesson 2. Quick reference:</p>
+<table>
+<tr><th>Mechanism</th><th>Status</th></tr>
+<tr><td>Facet balance in the Queue draw</td><td>Shadow (env-gated) — held back from the 2026-08-03 graduation: its own 21-record shadow log shows the filter stood down on every draw (no pool entry carries a <code>targetFacet</code> the deficit set wants)</td></tr>
+<tr><td>Pattern-derived questions</td><td>Gate live (graduated 2026-08-03) — inert until the docket wiring of <code>composeWithPattern</code> lands (111 remainder)</td></tr>
+<tr><td>Atlas gap-fill</td><td>Live (graduated 2026-08-03) — mints capped openers, one per region ever</td></tr>
+<tr><td>System-triggered Randomizer</td><td>Live (graduated 2026-08-03) — dry-spell and stale-region grounds may now offer a draw unasked</td></tr>
+<tr><td>Lineage mirror</td><td>Live (graduated 2026-08-03) — mints capped mirror questions, one per claim ever</td></tr>
+<tr><td>Territory (skeleton) gap-fill</td><td>Live</td></tr>
+<tr><td>Composed follow-ups / Juxtaposition / Still-true</td><td>Live</td></tr>
+<tr><td>User-triggered Randomizer shuffle</td><td>Live</td></tr>
+</table>
+
+<div class="aside">
+Snapshot as of 2026-08-03 (post-graduation working tree; previous snapshot
+<code>65c0f28</code>). Shadow status is read from live thresholds/env-gates
+in the code, not from prose — re-check <code>src/wiki/thresholds.ts</code>
+and each mechanism's own guard if this drifts.
+</div>
+
+</main>
+</body>
+</html>

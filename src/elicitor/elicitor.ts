@@ -20,6 +20,7 @@ import {
  defaultQuestionForm,
  CLOSING_DOOR_QUESTION,
  CLOSING_BOOKMARK_QUESTION,
+ CLOSING_ACKNOWLEDGMENT,
  type StarterQuestion,
 } from './protocol.js';
 import {
@@ -29,6 +30,8 @@ import {
  DEFAULT_FLOOR_PROBE,
 } from '../protocols/registry.js';
 import { appendEvent } from '../log/activity.js';
+import { readAllRepairs } from '../repair/store.js';
+import { repairedSnippetIds } from '../repair/consult.js';
 import { loadQuestionBank } from './bank.js';
 import { quotablePhrase, resonateHybrid, type SemanticIndex } from '../index/semantic.js';
 import { isContentFree } from './answer-shape.js';
@@ -81,37 +84,20 @@ export function startSession(
   vault: Vault;
   queue: QueueStore;
   index: LexicalIndex;
-  /**
-   * The semantic resonance channel (Q-17, ticket 068). Optional: absent is
-   * the ordinary cold state, in which the hybrid degrades to the trigram
-   * index — the system works with the embedding server switched off because
-   * it works with it switched off today.
-   */
   semantic?: SemanticIndex;
   bank?: StarterQuestion[];
   protocolName?: string;
-  /**
-   * Target to use when the Mode declares none. The caller supplies it because
-   * the honest default is corpus-shaped (`suggestTargetForVault`) and the
-   * elicitor holds no vault path. 'self' remains the last resort so an absent
-   * target never crashes a caller (Q-19, ticket 042).
-   */
   defaultTarget?: Target;
-  /**
-   * The Randomizer's draw (Q-18), passed as a closure so the elicitor never
-   * learns what a deck or a snippet stratum is. `null` means it had nothing to
-   * shuffle, or — for `'system'` — that no coverage ground licensed it.
-   */
   randomizer?: (invokedBy: 'user' | 'system') => RandomizerDraw | null;
-  /** True when the person chose "shuffle a deck" instead of "begin". */
   shuffleRequested?: boolean;
-  /**
-   * The vault root the session's activity log lives in. The caller holds it
-   * (the server owns the vault path); passed so the elicitor can log the
-   * guard floor it reaches (ticket 079). Absent means the floor is served
-   * silently — the log is evidence, not a dependency.
-   */
   vaultRoot?: string;
+  /**
+   * The greeting line shown before the opener (ticket 135). When provided,
+   * startSession writes it as the first turn and holds the opener in
+   * pendingOpener. Absent means the opener fires first — the pre-135
+   * call path, which the server can use for tests.
+   */
+  greetingText?: string;
  },
 ): SessionState {
  const id = ulid();
@@ -120,25 +106,87 @@ export function startSession(
  const normalizedMode: Mode = { ...mode, target };
  const bank = deps.bank ?? loadQuestionBank();
 
- // Protocol name: explicit pass-in wins; fall back to first protocol for target
  const protocol = deps.protocolName ?? selectProtocolForTarget(target, 0, loadProtocolDefinitions()).name;
 
- // Opening, in this order and the order is a values statement:
- //   1. the shuffle the person asked for — never vetoed (Q-16, Q-18);
- //   2. the Queue;
- //   3. a shuffle nobody asked for, and only on a licensed coverage ground —
- //      in shadow today, so this rung never fires (Q-35);
- //   4. the bank.
- // Position 3 sits after the Queue and before the bank because the Queue is
- // material this vault minted about this person, and a deck card is not.
+ // ── Greeting (ticket 135): one framing turn before the opener ──
+ // When a greeting is wanted, it becomes the sole initial turn. The opener
+ // is deferred to pendingOpener; the pulse route appends it after the
+ // greeting answer. Without a greeting, the opener fires first (pre-135).
+ const hasGreeting = deps.greetingText !== undefined;
+ if (hasGreeting) {
+  const greetingTurn: Turn = {
+   role: 'agent',
+   text: deps.greetingText!,
+   at: started,
+   questionProvenance: 'greeting',
+  };
+  deps.vault.startTranscript(id, {
+   mode: normalizedMode,
+   protocol,
+   started,
+  });
+  deps.vault.appendTurn(id, greetingTurn);
+  if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
+
+  // Determine the opener but do NOT write it yet.
+  const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
+  const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode, 'opening');
+  const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
+  const randomDraw = shuffled ?? offered;
+  let pendingOpener: SessionState['pendingOpener'];
+  let openQueueEntryId: string | undefined;
+
+  if (randomDraw) {
+   pendingOpener = {
+    text: randomDraw.question,
+    questionForm: randomDraw.questionForm,
+    ...(randomDraw.draw.kind === 'deck'
+     ? { questionSource: { channel: randomDraw.draw.channel, blockId: randomDraw.draw.blockId } }
+     : {}),
+   };
+  } else if (queueDraw) {
+   openQueueEntryId = queueDraw.id;
+   deps.queue.markAsked(queueDraw.id);
+   pendingOpener = {
+    text: queueDraw.question,
+    questionForm: queueDraw.questionForm,
+    ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
+   };
+  } else {
+   const opener = pickOpener(bank, normalizedMode.topic);
+   pendingOpener = {
+    text: opener.text,
+    questionForm: opener.questionForm,
+    ...(opener.source ? { questionSource: opener.source } : {}),
+   };
+  }
+
+  return {
+   id,
+   mode: normalizedMode,
+   protocol,
+   deps: {
+    complete: deps.complete,
+    vault: deps.vault,
+    queue: deps.queue,
+    index: deps.index,
+    ...(deps.semantic ? { semantic: deps.semantic } : {}),
+   },
+   turns: [greetingTurn],
+   bank,
+   questionCount: 0,        // greeting is framing, not a budget question
+   phase: 'open',
+   pendingOpener,
+   ...(openQueueEntryId ? { openQueueEntryId } : {}),
+  };
+ }
+
+ // ── Pre-135 path: no greeting, opener fires first ──
  const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
  const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode, 'opening');
  const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
  const randomDraw = shuffled ?? offered;
  let openerTurn: Turn;
- // The entry whose question is on the table. Held from here so the answering
- // turn can close it; a bank or Randomizer opener leaves it absent, and
- // nothing is marked.
  let openQueueEntryId: string | undefined;
 
  if (randomDraw) {
@@ -147,8 +195,6 @@ export function startSession(
    text: randomDraw.question,
    at: started,
    questionForm: randomDraw.questionForm,
-   // A deck card keeps the are.na source it was curated from; a resurfaced
-   // snippet has no block behind it, so it carries none rather than a fake.
    ...(randomDraw.draw.kind === 'deck'
     ? {
      questionSource: {
@@ -166,8 +212,6 @@ export function startSession(
    text: queueDraw.question,
    at: started,
    questionForm: queueDraw.questionForm,
-   // The drawn entry names the Gap it was minted to fill; the asking turn
-   // carries it so the harvest can put it on the snippet (hop 2, Q-39).
    ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
   };
  } else {
@@ -188,9 +232,6 @@ export function startSession(
  });
  deps.vault.appendTurn(id, openerTurn);
 
- // The activity-log root for this session, if the caller supplied one. The
- // floor path below is the only reader; every other sitting event is emitted
- // at the server seam, which holds the root itself.
  if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
 
  return {
@@ -224,6 +265,14 @@ export interface Probe {
   * Absent means unknown — never guessed (ticket 042).
   */
  targetFacet?: Facet;
+ /**
+  * The snippet a `juxtaposition` probe actually composed against. The server
+  * renders its rider from THIS, not from the resonance top-hit — the elicitor
+  * may have skipped hits (repairs, reuse, failed drafts), and a rider showing
+  * a snippet the question never used misleads the reader. Set exactly when
+  * `provenance === 'juxtaposition'`.
+  */
+ juxtaposedSnippet?: { snippetId: string; snippetText: string };
 }
 
 /**
@@ -326,7 +375,7 @@ export async function userTurn(
  text: string,
  spoken?: boolean,
  prosody?: Prosody,
-): Promise<Probe | { kind: 'saturated' } | { kind: 'checkpoint' }> {
+): Promise<Probe | { kind: 'saturated'; closingText?: string } | { kind: 'checkpoint' }> {
  const now = new Date().toISOString();
  const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}), ...(prosody ? { prosody } : {}) };
  s.deps.vault.appendTurn(s.id, userTurnRecord);
@@ -359,7 +408,7 @@ export async function userTurn(
    ...(s.mode.target ? { target: s.mode.target } : {}),
    ...(s.mode.topic ? { topic: s.mode.topic } : {}),
   });
-  return { kind: 'saturated' };
+  return { kind: 'saturated', closingText: CLOSING_ACKNOWLEDGMENT };
  }
 
  // Closing-door → advance to the bookmark question
@@ -391,8 +440,14 @@ export async function userTurn(
   // The checkpoint blocks: no next question until a gate word arrives.
   if (gateStateFor(s.sounding).checkpoint) return { kind: 'checkpoint' as const };
 
-  const next = await composeRung(text, s.deps.complete, (q) => guardQuestion(s, q));
-  if (!next) return closeDescent(s, 'convergence');   // no foothold — the chain cannot continue
+  // Up to three drafts: a local model's rung draft failing the emit gate is
+  // routine, and closing a live descent over a drafter stutter threw away a
+  // consented ladder (measured: a 9-rung allowance closed at rung 3).
+  let next: Awaited<ReturnType<typeof composeRung>> = null;
+  for (let attempt = 0; attempt < 3 && !next; attempt++) {
+   next = await composeRung(text, s.deps.complete, (q) => guardQuestion(s, q));
+  }
+  if (!next) return closeDescent(s, 'composition-failed'); // the drafter, not the answers, ran out
   s.sounding.pendingQuestion = next;
   return emitProbe(s, next.text, 'deliberative', 'composed');
  }
@@ -407,8 +462,21 @@ export async function userTurn(
  // ── Probe flow: juxtaposition > red-light compose > generic LLM probe ──
 
  // Priority 1: resonance → juxtaposition
- const hits = await resonateHybrid(s.deps.index, s.deps.semantic, text);
- for (const hit of hits) {
+  const hits = await resonateHybrid(s.deps.index, s.deps.semantic, text);
+  // Q-106: Exclude hits whose snippet is under repair
+  const vaultRoot = sessionVaultRoots.get(s.id);
+  const allRepairs = vaultRoot ? readAllRepairs(vaultRoot) : [];
+  const badSnippetIds = repairedSnippetIds(allRepairs);
+  // One juxtaposition per snippet per sitting: the same snippet re-surfacing
+  // turn after turn produced three consecutive questions off one sentence
+  // (measured, sitting 01KZA76H…) — the person answers, and the answer
+  // re-resonates with the very snippet that prompted it. The sitting-scoped
+  // guard breaks that loop; the snippet is fair game again next sitting.
+  const used = (s.juxtaposedSnippetIds ??= []);
+  const cleanHits = hits.filter(
+    (h) => !badSnippetIds.has(h.snippetId) && !used.includes(h.snippetId),
+  );
+  for (const hit of cleanHits) {
   // Q-12 requires the composed question to quote a verbatim substring, and a
   // semantic hit shares no such substring with the turn — the whole point of
   // the channel. The 068 ruling: the semantic path quotes the SNIPPET's own
@@ -428,6 +496,7 @@ export async function userTurn(
    text,
    quotable,
    s.deps.complete,
+   sessionVaultRoots.get(s.id),
   );
   if (!juxtaposed) continue;
   const verdict = guardQuestion(s, juxtaposed);
@@ -437,7 +506,11 @@ export async function userTurn(
    );
    continue;
   }
-  return emitProbe(s, juxtaposed, 'deliberative', 'juxtaposition');
+  used.push(hit.snippetId);
+  return {
+   ...emitProbe(s, juxtaposed, 'deliberative', 'juxtaposition'),
+   juxtaposedSnippet: { snippetId: hit.snippetId, snippetText: hit.snippetText },
+  };
  }
 
  // Priority 2: red-light detection → composed follow-up

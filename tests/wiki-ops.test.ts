@@ -691,6 +691,10 @@ describe('applyOps — MERGE', () => {
     expect(survivor.cites).toEqual([`${SNIP_A}@1`, `${SNIP_B}@1`]);
     expect(survivor.fromReadings).toEqual([READING_A, READING_B, READING_C]);
     expect(survivor.range).toBe('when he is talking about paid work');
+    // Ticket 146: fusion field is written to disk.
+    expect(survivor.fusion).toEqual(['01KCLAIMBBBBBBBBBBBBBBBBBB']);
+    // Ticket 146: merge never raises status — stayed unconfirmed despite ≥2 sittings.
+    expect(survivor.status).toBe('unconfirmed');
 
     const source = frontmatter('01KCLAIMBBBBBBBBBBBBBBBBBB');
     expect(source.archived).toBe(true);
@@ -817,6 +821,122 @@ describe('applyOps — status recompute', () => {
       [READING_A],
     );
     expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').status).toBe('unconfirmed');
+  });
+});
+
+// ── Ticket 146: merge never manufactures evidence ──
+
+describe('applyOps — fusion guard (ticket 146)', () => {
+  it('MERGE never raises status to evidenced, even with ≥2 distinct sittings', () => {
+    // Two claims from different sittings — the merge pools cites, but fusion caps status.
+    store.writeClaim(claim({ cites: [`${SNIP_A}@1`] }));
+    store.writeClaim(
+      claim({
+        id: '01KCLAIMBBBBBBBBBBBBBBBBBB',
+        cites: [`${SNIP_B}@1`],
+        fromReadings: [READING_B],
+        body: 'He treats a deadline as a debt.',
+      }),
+    );
+
+    const result = run(
+      [
+        {
+          op: 'MERGE',
+          reading: READING_C,
+          into: '01KCLAIMAAAAAAAAAAAAAAAAAA',
+          from: ['01KCLAIMBBBBBBBBBBBBBBBBBB'],
+          body: 'He treats a deadline as a promise he owes another person.',
+          range: 'when he is talking about paid work',
+        },
+      ],
+      [READING_C],
+    );
+    expect(result.applied).toHaveLength(1);
+
+    const survivor = frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA');
+    // Evidence: 2 distinct sittings (sitting-1 from SNIP_A, sitting-2 from SNIP_B).
+    // Without the fusion guard, this would be `evidenced`.
+    expect(survivor.status).toBe('unconfirmed');
+    expect(survivor.fusion).toEqual(['01KCLAIMBBBBBBBBBBBBBBBBBB']);
+
+    // The file contains ≥2 distinct sittings' cites but stays unconfirmed.
+    expect(survivor.cites).toEqual([`${SNIP_A}@1`, `${SNIP_B}@1`]);
+
+    // No status-change event was emitted (did not move).
+    const transitions = events.filter((e) => e.kind === 'claim-status-changed');
+    expect(transitions).toHaveLength(0);
+  });
+
+  it('fusion field accumulates across repeated merges', () => {
+    store.writeClaim(claim({ cites: [`${SNIP_A}@1`] }));
+    store.writeClaim(
+      claim({ id: '01KCLAIMBBBBBBBBBBBBBBBBBB', cites: [`${SNIP_B}@1`], fromReadings: [READING_B], body: 'He treats a deadline as a debt.' }),
+    );
+    store.writeClaim(
+      claim({ id: '01KCLAIMCCCCCCCCCCCCCCCCCC', cites: [`${SNIP_C}@2`], fromReadings: [READING_C], body: 'A deadline is a kind of promise to him.' }),
+    );
+
+    // First merge: B into A.
+    run(
+      [{ op: 'MERGE', reading: READING_A, into: '01KCLAIMAAAAAAAAAAAAAAAAAA', from: ['01KCLAIMBBBBBBBBBBBBBBBBBB'], body: 'He treats a deadline as a promise.', range: 'at work' }],
+      [READING_A],
+    );
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').fusion).toEqual(['01KCLAIMBBBBBBBBBBBBBBBBBB']);
+
+    // Second merge: C into A (which already absorbed B).
+    run(
+      [{ op: 'MERGE', reading: READING_B, into: '01KCLAIMAAAAAAAAAAAAAAAAAA', from: ['01KCLAIMCCCCCCCCCCCCCCCCCC'], body: 'He treats a deadline as a serious promise.', range: 'at work' }],
+      [READING_B],
+    );
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').fusion).toEqual(['01KCLAIMBBBBBBBBBBBBBBBBBB', '01KCLAIMCCCCCCCCCCCCCCCCCC']);
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').status).toBe('unconfirmed');
+  });
+
+  it('a fused claim in an open Contradiction is still contested', () => {
+    const a = claim({ id: '01KCLAIMAAAAAAAAAAAAAAAAAA', cites: [`${SNIP_A}@1`] });
+    const b = claim({ id: '01KCLAIMBBBBBBBBBBBBBBBBBB', cites: [`${SNIP_B}@1`], fromReadings: [READING_B], body: 'He treats a deadline as a suggestion.' });
+    store.writeClaim(a);
+    store.writeClaim(b);
+
+    // Fuse B into A.
+    run(
+      [{ op: 'MERGE', reading: READING_C, into: '01KCLAIMAAAAAAAAAAAAAAAAAA', from: ['01KCLAIMBBBBBBBBBBBBBBBBBB'], body: 'He treats a deadline as both a promise and a suggestion.', range: 'at work' }],
+      [READING_C],
+    );
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').status).toBe('unconfirmed');
+
+    // Open a Contradiction involving the fused claim.
+    const contradiction: Contradiction = {
+      id: '01KCONTRAAAAAAAAAAAAAAAAAA',
+      type: 'synchronic',
+      claims: ['01KCLAIMAAAAAAAAAAAAAAAAAA', '01KCLAIMCCCCCCCCCCCCCCCCCC'],
+      candidate: '01KCANDAAAAAAAAAAAAAAAAAAA',
+      remeasureQueueId: '01KQUEUEAAAAAAAAAAAAAAAAAA',
+      evidence: { snippetRef: `${SNIP_C}@2`, quote: 'I would rather be late', side: 'b' },
+      status: 'open',
+      model: MODEL,
+      modelAt: AT,
+      opened: AT,
+      updated: AT,
+      body: 'two poles',
+    };
+    store.writeContradiction(contradiction);
+    // Create the other side of the contradiction.
+    store.writeClaim(claim({ id: '01KCLAIMCCCCCCCCCCCCCCCCCC', cites: [`${SNIP_C}@2`], body: 'He treats a deadline as a suggestion.', fromReadings: [READING_C] }));
+
+    // Recomputation from the contradiction pushes it to contested.
+    // The cleanest way to trigger this: touch the claim via an UPDATE.
+    run(
+      [{ op: 'UPDATE', reading: READING_A, claim: '01KCLAIMAAAAAAAAAAAAAAAAAA', body: 'He treats a deadline as both a promise and a suggestion.' }],
+      [READING_A],
+    );
+
+    // In computeStatus, contested is checked FIRST (lines 294-312), before
+    // fusion (323-330) and before evidence. Check order: contested → attested
+    // → fusion → evidence. So a fused claim in an open Contradiction is
+    // contested regardless of fusion.
+    expect(frontmatter('01KCLAIMAAAAAAAAAAAAAAAAAA').status).toBe('contested');
   });
 });
 

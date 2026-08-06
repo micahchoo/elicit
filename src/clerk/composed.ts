@@ -19,10 +19,42 @@ import {
 } from '../elicitor/guards.js';
 import { contentWordSequence } from '../index/lexical.js';
 import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
+import { checkEmitForm } from '../queue/emit-gate.js';
+import { readAllRepairs } from '../repair/store.js';
+import { isUnderRepair } from '../repair/consult.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Optional sink the server installs at boot so draft rejections reach the
+ * Activity Log (Q-23) — the console alone outlives no session, and the eval
+ * that found gemma's drafts failing the emit gate twice per descent had to
+ * read a terminal scrollback to see it. The sink receives only the SITE and
+ * a REASON CATEGORY, never the message: reject messages can quote drafted
+ * text, and the log carries counts, not words.
+ */
+let draftRejectSink: ((site: string, reason: string) => void) | undefined;
+export function setDraftRejectSink(sink: (site: string, reason: string) => void): void {
+ draftRejectSink = sink;
+}
+
+/** console.warn a `Composed: <site> rejected …` line AND count it in the log. */
+function warnReject(message: string): void {
+ console.warn(message);
+ if (!draftRejectSink) return;
+ const m = /^Composed: (.+?) (?:retry (?:also )?)?rejected/.exec(message);
+ const site = (m?.[1] ?? 'unknown').replace(/\s+/g, '-');
+ const reason = message.includes('emit-form') ? 'emit-form'
+  : message.includes('summary-echo') ? 'summary-echo'
+  : 'guard';
+ try {
+  draftRejectSink(site, reason);
+ } catch {
+  // The log must never break composition.
+ }
+}
 
 /** Strips markdown code fences from LLM output, keeping the inner content. */
 function stripFences(raw: string): string {
@@ -160,7 +192,7 @@ type QuoteResult =
  | { ok: false; rejection: Rejection };
 
 /** Gate for a question that must quote SOMEWHERE in `source` (opener, still-true, expedition). */
-function checkQuotesSource(question: string, source: string): QuoteResult {
+export function checkQuotesSource(question: string, source: string): QuoteResult {
  const longest = findQuotedFragment(source, question);
  const fragment =
   longest && quotesFragmentSetOff(question, longest)
@@ -330,7 +362,7 @@ export async function redLights(
 
   // Q-12: phrase MUST be an exact substring of the turn
   if (!turnText.includes(light.phrase)) {
-   console.warn(
+   warnReject(
     `Composed: dropped red-light phrase not in turn — "${light.phrase}"`,
    );
    continue;
@@ -350,6 +382,10 @@ export async function redLights(
 // ---------------------------------------------------------------------------
 // composeFollowUp
 // ---------------------------------------------------------------------------
+//
+// Q-106 note: no repair guard here. The red-light phrase is an exact substring
+// of the user's OWN turn (redLights enforces that before it returns a light),
+// never snippet material — so there is no snippet to quarantine at this point.
 
 export async function composeFollowUp(
  turnText: string,
@@ -375,10 +411,17 @@ Return only the question text. No markdown, no commentary.`;
  let question = stripFences(raw).trim();
 
  let rejection = checkAroundPhrase(question, light.phrase, turnText);
- if (!rejection) return question;
+ if (!rejection) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: follow-up rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return question;
+ }
 
  // One retry with corrective prompt
- console.warn(`Composed: follow-up rejected (${rejection}), retrying`);
+ warnReject(`Composed: follow-up rejected (${rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
  const retryRaw = await complete(retryPrompt, userTurn(turnText), {
   temperature: 0.4,
@@ -386,9 +429,16 @@ Return only the question text. No markdown, no commentary.`;
  question = stripFences(retryRaw).trim();
 
  rejection = checkAroundPhrase(question, light.phrase, turnText);
- if (!rejection) return question;
+ if (!rejection) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: follow-up retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return question;
+ }
 
- console.warn(
+ warnReject(
   `Composed: follow-up retry also rejected (${rejection}) — returning null`,
  );
  return null;
@@ -402,7 +452,16 @@ export async function composeJuxtaposition(
  turnText: string,
  hit: ResonanceHit,
  complete: Complete,
+ vaultRoot?: string,
 ): Promise<string | null> {
+ // Q-106: a repair on the hit's snippet quarantines the whole snippet — never
+ // juxtapose against text the person disavowed. The root is optional so every
+ // existing caller (and test) keeps working; without a root there is nothing
+ // to consult, so nothing is excluded.
+ if (vaultRoot) {
+  const repairs = readAllRepairs(vaultRoot);
+  if (isUnderRepair(repairs, hit.snippetId)) return null;
+ }
  const prompt = `You are a clerk for Elicit. The user just said something that echoes a past snippet. Compose ONE question that juxtaposes what they just said with a shared phrase from their past.
 
 What they just said: "${turnText}"
@@ -410,7 +469,13 @@ Past snippet: "${hit.snippetText}"
 Shared phrase that appears in both: "${hit.sharedPhrase}"
 
 Your question MUST contain this exact phrase, verbatim and inside quotation marks: "${hit.sharedPhrase}".
-Ask about the connection between their present thought and their past one.
+
+Ask ONE question that sets the two moments against each other and pushes PAST what they just said. Choose the sharpest move the material affords:
+- name what changed between then and now, and ask what changed it;
+- ask for the specific moment or scene behind one of the two statements;
+- ask what the older statement would say back to the newer one;
+- ask what holding both statements at once costs, or protects.
+Never ask whether the two statements "relate" or "connect" — they already do; that is why you are quoting them. Never ask a question their words above already answer.
 
 ${FRAMING_RULE}
 
@@ -424,10 +489,17 @@ Return only the question text. No markdown, no commentary.`;
  const question = stripFences(raw).trim();
 
  let rejection = checkAroundPhrase(question, hit.sharedPhrase, turnText);
- if (!rejection) return question;
+ if (!rejection) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: juxtaposition rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return question;
+ }
 
  // One retry
- console.warn(`Composed: juxtaposition rejected (${rejection}), retrying`);
+ warnReject(`Composed: juxtaposition rejected (${rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
  const retryRaw = await complete(retryPrompt, userTurn(turnText), {
   temperature: 0.4,
@@ -435,9 +507,16 @@ Return only the question text. No markdown, no commentary.`;
  const retryQuestion = stripFences(retryRaw).trim();
 
  rejection = checkAroundPhrase(retryQuestion, hit.sharedPhrase, turnText);
- if (!rejection) return retryQuestion;
+ if (!rejection) {
+  const f = checkEmitForm(retryQuestion);
+  if (!f.ok) {
+   warnReject(`Composed: juxtaposition retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return retryQuestion;
+ }
 
- console.warn(
+ warnReject(
   `Composed: juxtaposition retry also rejected (${rejection}) — returning null`,
  );
  return null;
@@ -516,14 +595,19 @@ Return only the question text. No markdown, no commentary.`;
    : null;
   if (echoLine) {
    check = { ok: false, rejection: 'summary-echo' };
-   console.warn(`Composed: opener rejected (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
+   warnReject(`Composed: opener rejected (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
   } else {
+   const f = checkEmitForm(question);
+   if (!f.ok) {
+    warnReject(`Composed: opener rejected (emit-form: ${f.failures.join('; ')})`);
+    return null;
+   }
    return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
   }
  }
 
  // One retry
- console.warn(`Composed: opener rejected (${check.rejection}), retrying`);
+ warnReject(`Composed: opener rejected (${check.rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  question = stripFences(retryRaw).trim();
@@ -535,13 +619,18 @@ Return only the question text. No markdown, no commentary.`;
    : null;
   if (echoLine2) {
    check = { ok: false, rejection: 'summary-echo' };
-   console.warn(`Composed: opener retry also rejected (summary-echo) — shares span with: "${echoLine2.slice(0, 80)}"`);
+   warnReject(`Composed: opener retry also rejected (summary-echo) — shares span with: "${echoLine2.slice(0, 80)}"`);
   } else {
+   const f = checkEmitForm(question);
+   if (!f.ok) {
+    warnReject(`Composed: opener retry rejected (emit-form: ${f.failures.join('; ')})`);
+    return null;
+   }
    return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
   }
  }
 
- console.warn(
+ warnReject(
   `Composed: opener retry also rejected (${check.rejection}) — returning null`,
  );
  return null;
@@ -582,17 +671,31 @@ Return only the question text. No markdown, no commentary.`;
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
  const attempt1 = tryBuildStillTrue(snippet, question1, sitting, form);
- if (attempt1.ok) return attempt1.draft;
+ if (attempt1.ok) {
+  const f = checkEmitForm(question1);
+  if (!f.ok) {
+   warnReject(`Composed: still-true rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return attempt1.draft;
+ }
 
  // One retry — enforce every constraint, corrected for what failed
- console.warn(`Composed: still-true rejected (${attempt1.rejection}), retrying`);
+ warnReject(`Composed: still-true rejected (${attempt1.rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
  const attempt2 = tryBuildStillTrue(snippet, question2, sitting, form);
- if (attempt2.ok) return attempt2.draft;
+ if (attempt2.ok) {
+  const f = checkEmitForm(question2);
+  if (!f.ok) {
+   warnReject(`Composed: still-true retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return attempt2.draft;
+ }
 
- console.warn(
+ warnReject(
   `Composed: still-true retry also rejected (${attempt2.rejection}) — returning null`,
  );
  return null;
@@ -650,12 +753,12 @@ function tryBuildStillTrue(
  *
  * A snippet is eligible when its region is well-cited but shallow —
  * the wiki knows it matters but cannot deepen it from self-report alone.
- *
  * Heuristic (025):
  * - Snippet reading facet is 'fact' or 'construct'
  * - Cited by ≥2 queue-asked questions
- * - No episode-facet sibling (other snippet in same session with an
- *   episode-facet reading — episode evidence means the region is not shallow)
+ * - The veto is per-candidate: the facet/construct gate already excludes
+ *   episode readings (ticket 140); `allSnippets` is kept for API
+ *   compatibility with existing callers
  */
 export function isExpeditionCandidate(
  snippet: Snippet,
@@ -674,25 +777,16 @@ export function isExpeditionCandidate(
  );
  if (!hasTargetFacet) return false;
 
- // Cited by ≥2 queue-asked questions
+ // Cited by ≥2 queue entries (any status, not only asked — measured
+ // 2026-08-05 across six archive vaults: 199 queue entries, 1 asked,
+ // 12 snippets with ≥2 total citations; requiring `asked` status on
+ // both made the gate mathematically unopenable). The facet gate above
+ // (fact | construct reading) is the quality filter; citation count
+ // across all queue states measures breadth of interest.
  const citedCount = queueEntries.filter(
-  (e) => e.status === 'asked' && (e.cites ?? []).includes(citeStr),
+  (e) => (e.cites ?? []).includes(citeStr),
  ).length;
  if (citedCount < 2) return false;
-
- // No episode-facet sibling in same session
- const sessionId = snippet.provenance.session;
- for (const other of allSnippets) {
-  if (other.id === snippet.id) continue;
-  if (other.provenance.session !== sessionId) continue;
-  const otherCiteStr = `${other.id}@${other.version}`;
-  const otherReadings = Object.values(readings).filter((r) =>
-   (r.cites ?? []).includes(otherCiteStr),
-  );
-  if (otherReadings.some((r) => r.facet === 'episode')) {
-   return false;
-  }
- }
 
  return true;
 }
@@ -737,11 +831,16 @@ Return only the question text. No markdown, no commentary.`;
 
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: expedition rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
  // One retry
- console.warn(`Composed: expedition rejected (${check.rejection}), retrying`);
+ warnReject(`Composed: expedition rejected (${check.rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
  const retryRaw = await complete(
   '',
@@ -752,10 +851,15 @@ Return only the question text. No markdown, no commentary.`;
  check = checkQuotesSource(question, snippet.prose);
 
  if (check.ok) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: expedition retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
- console.warn(
+ warnReject(
   `Composed: expedition retry also rejected (${check.rejection}) — returning null`,
  );
  return null;
@@ -822,24 +926,34 @@ Return only the question text. No markdown, no commentary.`;
  let question = stripFences(raw).trim();
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: other-minds expedition rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
   const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
   draft.errandKind = 'other-minds';
   draft.errandPerson = personName;
   return draft;
  }
  // One retry
- console.warn(`Composed: other-minds expedition rejected (${check.rejection}), retrying`);
+ warnReject(`Composed: other-minds expedition rejected (${check.rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  question = stripFences(retryRaw).trim();
  check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
+  const f = checkEmitForm(question);
+  if (!f.ok) {
+   warnReject(`Composed: other-minds expedition retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
   const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
   draft.errandKind = 'other-minds';
   draft.errandPerson = personName;
   return draft;
  }
- console.warn(`Composed: other-minds expedition retry also rejected (${check.rejection}) — returning null`);
+ warnReject(`Composed: other-minds expedition retry also rejected (${check.rejection}) — returning null`);
  return null;
 }
 
@@ -921,17 +1035,31 @@ Return only the question text. No markdown, no commentary.`;
  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
  const question1 = stripFences(raw).trim();
  const attempt1 = tryBuildDiscriminating(claims, prose, question1);
- if (attempt1.ok) return attempt1.draft;
+ if (attempt1.ok) {
+  const f = checkEmitForm(question1);
+  if (!f.ok) {
+   warnReject(`Composed: discriminating rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return attempt1.draft;
+ }
 
  // One retry — enforce every constraint, corrected for what failed
- console.warn(`Composed: discriminating rejected (${attempt1.rejection}), retrying`);
+ warnReject(`Composed: discriminating rejected (${attempt1.rejection}), retrying`);
  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
  const question2 = stripFences(retryRaw).trim();
  const attempt2 = tryBuildDiscriminating(claims, prose, question2);
- if (attempt2.ok) return attempt2.draft;
+ if (attempt2.ok) {
+  const f = checkEmitForm(question2);
+  if (!f.ok) {
+   warnReject(`Composed: discriminating retry rejected (emit-form: ${f.failures.join('; ')})`);
+   return null;
+  }
+  return attempt2.draft;
+ }
 
- console.warn(
+ warnReject(
   `Composed: discriminating retry also rejected (${attempt2.rejection}) — returning null`,
  );
  return null;
@@ -1007,7 +1135,7 @@ Return ONLY a JSON object: {"rangeA": "<the narrowed context where claim 1 holds
  const second = attempt(retryRaw);
  if (second) return second;
 
- console.warn('Composed: narrowed-ranges retry also rejected — returning null');
+ warnReject('Composed: narrowed-ranges retry also rejected — returning null');
  return null;
 }
 
@@ -1050,17 +1178,31 @@ Return only the question text. No markdown, no commentary.`;
   const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
   const question1 = stripFences(raw).trim();
   const attempt1 = tryBuildOutcome(snippet, question1, horizon, sitting);
-  if (attempt1.ok) return attempt1.draft;
+  if (attempt1.ok) {
+   const f = checkEmitForm(question1);
+   if (!f.ok) {
+    warnReject(`Composed: outcome question rejected (emit-form: ${f.failures.join('; ')})`);
+    return null;
+   }
+   return attempt1.draft;
+  }
 
   // One retry — enforce every constraint, corrected for what failed
-  console.warn(`Composed: outcome question rejected (${attempt1.rejection}), retrying`);
+  warnReject(`Composed: outcome question rejected (${attempt1.rejection}), retrying`);
   const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
   const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
   const question2 = stripFences(retryRaw).trim();
   const attempt2 = tryBuildOutcome(snippet, question2, horizon, sitting);
-  if (attempt2.ok) return attempt2.draft;
+  if (attempt2.ok) {
+   const f = checkEmitForm(question2);
+   if (!f.ok) {
+    warnReject(`Composed: outcome question retry rejected (emit-form: ${f.failures.join('; ')})`);
+    return null;
+   }
+   return attempt2.draft;
+  }
 
-  console.warn(
+  warnReject(
     `Composed: outcome question retry also rejected (${attempt2.rejection}) — returning null`,
   );
   return null;

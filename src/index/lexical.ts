@@ -14,8 +14,7 @@ const STOPWORDS = new Set([
  'all', 'any', 'few', 'more', 'most', 'other', 'some', 'no', 'not', 'nor',
  'only', 'own', 'same', 'too', 'very', 'just', 'also', 'now', 'here',
  'there', 'when', 'where', 'why', 'how', 'who', 'whom', 'whose', 'what',
- 'which', 'while', 'well', 'yet', 'still', 'again', 'even', 'though',
- 'although', 'because', 'since', 'until', 'once',
+ 'although', 'because', 'since', 'until', 'once', 'one', 'ones', 'which', 'while', 'well', 'yet', 'still', 'again', 'even', 'though',
 ]);
 
 // ── Tokenization ─────────────────────────────────────────────────────────

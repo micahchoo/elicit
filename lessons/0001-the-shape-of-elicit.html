@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson 1 — The Shape of Elicit</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<div class="kicker">Lesson 1 · How Elicit Works</div>
+<h1>The Shape of Elicit</h1>
+
+<p>You built this. This lesson is not going to teach you a library — it's
+going to give you the map you'd draw for someone else, so you stop holding
+the whole app in working memory every time you open <code>src/server.ts</code>.
+One win today: you'll be able to say, in order, what happens between opening
+Elicit and closing a sitting, and name the file behind each step.</p>
+
+<h2>One sitting, start to finish</h2>
+
+<p>A <strong>Sitting</strong> is the human-facing word; <code>session</code>
+is what the code calls it. Here is what happens, in order, the first time
+you open the app and answer one question:</p>
+
+<div class="loop">
+  <span class="node">you open the app</span>
+  <span class="arrow">→</span>
+  <span class="node">Elicitor</span>
+  <span class="arrow">→</span>
+  <span class="node">you answer</span>
+  <span class="arrow">→</span>
+  <span class="node">Harvester</span>
+  <span class="arrow">→</span>
+  <span class="node">Vault</span>
+  <span class="arrow">→</span>
+  <span class="node">Clerk</span>
+  <span class="arrow">→</span>
+  <span class="node">Wiki</span>
+  <span class="arrow">↻</span>
+</div>
+
+<ol>
+  <li><strong>Elicitor picks a question.</strong>
+    <code class="path">startSession</code> in
+    <code class="path">src/elicitor/elicitor.ts</code> opens the sitting;
+    <code class="path">userTurn</code> handles each answer you type. The
+    question itself came from one of seven <strong>Question Sources</strong>
+    (bank draw, composed follow-up, gap-fill, instrument step, randomizer
+    draw, still-true revisit, verification) — that selection logic is its
+    own lesson, coming later.</li>
+  <li><strong>You answer; the Harvester proposes cuts.</strong>
+    <code class="path">propose</code> and <code class="path">decide</code>
+    in <code class="path">src/harvester/harvester.ts</code> break your prose
+    into candidate <strong>Snippets</strong> — verbatim substrings only. You
+    approve, trim, discard, or restate each one. Nothing the model wrote
+    can become a Snippet; see <code>CONTEXT.md</code>'s <em>Sole
+    Authorship</em> invariant.</li>
+  <li><strong>Approved Snippets land in the Vault.</strong>
+    <code class="path">createVault</code> in
+    <code class="path">src/vault/vault.ts</code> is the archive: plain
+    markdown with frontmatter, its own git repo, committed under the
+    <code>elicit-clerk</code> identity so your hand-edits and the app's
+    writes are always distinguishable in <code>git log</code>.</li>
+  <li><strong>The Clerk works the Docket in the background.</strong>
+    <code class="path">runDocket</code> in
+    <code class="path">src/clerk/docket.ts</code> is the standing task
+    list. It runs between and during sittings — never mid-turn, never
+    blocking you. It has grown into a real pipeline of a dozen-plus jobs,
+    but they fall into three families: <em>composing</em> new questions
+    for the waiting queue (from old answers worth re-asking, from
+    recorded holes in the archive), <em>sweeping</em> the archive for one
+    kind of thing at a time (essays gone quiet, references that dangle,
+    people you keep mentioning), and <em>consolidating</em> — the
+    claim-writing and contradiction-detection that maintains the Wiki,
+    always the last job of a run. Each job is wired as an optional
+    dependency the server injects; absent means that job doesn't run this
+    pass — so the function's own <code>deps</code> type is the truest map
+    of what's live right now, and Lesson 2 unpacks the question-composing
+    family in full.</li>
+  <li><strong>The Wiki updates, citing its evidence.</strong>
+    Every <strong>Claim</strong> the Clerk writes into the Wiki cites the
+    exact Snippet versions it rests on. No claim, no citation — see
+    <code>src/wiki/store.ts</code> and <code>src/wiki/lint.ts</code>, which
+    enforces this mechanically.</li>
+  <li><strong>The loop closes.</strong> Whatever the Docket minted waits in
+    the <strong>Queue</strong> (<code class="path">src/queue/queue.ts</code>)
+    for your next sitting. Nothing the Clerk does ever contacts you directly
+    — per <code>CONTEXT.md</code>'s <em>Docket</em> entry, "the user
+    contacts the agent by opening the app."</li>
+</ol>
+
+<div class="aside">
+Notice the shape: <strong>the model never writes your words, and the
+background never reaches for you.</strong> Both are structural rules,
+enforced by code (harvester rejects reworded text; Docket tasks only ever
+wait), not by prompting the model to behave. Keep this pattern in mind —
+it recurs everywhere in this codebase.
+</div>
+
+<h2>Two agents, not one</h2>
+
+<p>"The agent" is actually two model roles, defined in
+<code class="path">src/llm.ts</code>:</p>
+
+<table>
+  <tr><th>Role</th><th>Runs</th><th>Binding constraint</th><th>Default model</th></tr>
+  <tr><td><code>elicitor</code></td><td>in front of you, live</td><td>latency — you're waiting</td><td>bonsai-27b @ llama.cpp</td></tr>
+  <tr><td><code>clerk</code></td><td>behind you, background</td><td>instruction-following — accuracy matters more than speed</td><td>qwen3.6:35b @ Ollama</td></tr>
+</table>
+
+<p>Each role reads its own base URL and model ID from the environment
+(<code>ELICIT_LLM_*</code> for elicitor, <code>ELICIT_CLERK_*</code> for
+clerk) via <code class="path">roleConfig()</code>. The split is a default,
+not a hard coupling — either role can point anywhere. What <em>is</em> a
+hard rule: if a role's endpoint dies, <code class="path">roleFailure()</code>
+fails loudly and names the role. The other role's model is never tried as a
+silent substitute — an artifact stamped with a model that didn't write it
+would be a lie the Wiki can't afford (this is the same evidentiary
+seriousness as Sole Authorship, one layer down).</p>
+
+<p>Every call also carries a wall-clock timeout (180s default) and a
+max-token cap (16384), both overridable per call. These aren't tuning
+knobs left over from testing — <code class="path">src/llm.ts</code>'s
+comments cite the actual incident (an 84-minute runaway generation) that
+each bound exists to convert into a named, diagnosable failure instead of
+a silent hang.</p>
+
+<h2>Nineteen subsystems, five jobs</h2>
+
+<p><code class="path">src/</code> has nineteen top-level directories. Most
+of them are supporting cast for the five roles you just walked through —
+Elicitor, Harvester, Vault, Clerk, Wiki — plus a few standalone concerns
+(auth, speech-to-text, memory consolidation). The full map, with one line
+per directory, is in
+<a href="../reference/subsystem-map.html">reference/subsystem-map.html</a>.
+And whenever any lesson uses a capitalized project word that doesn't click
+— Bud, Sounding, Marginalia — the
+<a href="../reference/glossary.html">plain-English glossary</a> defines
+every one in ordinary language, with pointers to the precise
+<code>CONTEXT.md</code> versions.</p>
+
+<div class="check">
+<h3>Self-check: match the role to what it does</h3>
+<p>No peeking back up — try from memory first, then scroll up to check.</p>
+<div id="quiz"></div>
+<div class="result" id="quiz-result"></div>
+</div>
+
+<div class="aside">
+<strong>Primary source:</strong> read <code>CONTEXT.md</code> top to bottom
+once — it's the project's own glossary, roughly fifteen minutes, and every
+term in this lesson (and every future one) is defined there precisely.
+Everything in this lesson is a gloss on that document plus the actual code
+paths; when the two disagree, trust <code>CONTEXT.md</code> and flag it —
+that's a lesson bug, not a you problem.
+<strong>One live gap as of this writing:</strong> <code>CONTEXT.md</code>
+was last touched 2026-08-02 — one day <em>before</em> the campaign rulings
+Q-79 through Q-85 in <code>docs/decisions/elicit.md</code> (territory
+instruments / <code>ktg</code>, the DRM instrument, the gazetteer/role-taking
+doors, pattern dosing, the lineage mirror). Those subsystems exist in code
+and are ruled on in the decision register, but aren't glossary terms yet.
+For anything DRM/territory/gazetteer/pattern-dosing/lineage-mirror shaped,
+read the decision register and the code directly rather than trusting the
+glossary to have caught up.
+</div>
+
+<div class="ask-agent">
+Stuck on anything above, or want to go straight to code instead of reading
+the gloss? Ask your agent — that's what it's there for. Good next
+questions: "show me <code>runDocket</code>'s full signature," "what's the
+difference between a Bud and a Snippet," "walk me through one Docket task
+end to end."
+</div>
+
+<div class="next-links">
+<strong>Lesson 2 is up:</strong>
+<a href="0002-how-a-question-gets-made.html">How a Question Gets Made</a> —
+the real per-turn order Elicit uses to pick your next question (it isn't
+the seven-source list below), composed follow-ups, pattern dosing, the
+three different things called "gap-fill," and Sounding vs. DRM.
+<p><strong>Candidates for lesson 3</strong>:</p>
+<ul>
+  <li>Shadow-mode graduation mechanics — how a mechanism actually flips from logging-only to live (<code>src/wiki/thresholds.ts</code>; several examples now named in Lesson 2)</li>
+  <li>The Wiki's evidence rules — Claims, citations, Contradictions, and why there's no confidence number anywhere</li>
+  <li>The Docket pipeline in full detail, job by job</li>
+</ul>
+</div>
+
+</main>
+
+<script>
+const ROLES = ["Elicitor", "Harvester", "Vault", "Clerk", "Wiki"];
+const ITEMS = [
+  { def: "Picks the next question and runs the live turn in front of you.", answer: "Elicitor" },
+  { def: "Turns your submitted prose into verbatim, approved Snippets.", answer: "Harvester" },
+  { def: "The git-backed markdown archive — plain files, immutable versions.", answer: "Vault" },
+  { def: "Works the standing background task list between sittings; never contacts you directly.", answer: "Clerk" },
+  { def: "The cited, revisable model of you — every claim points back to evidence.", answer: "Wiki" },
+];
+
+const quiz = document.getElementById("quiz");
+ITEMS.forEach((item, i) => {
+  const row = document.createElement("div");
+  row.style.margin = "0.7rem 0";
+  const label = document.createElement("label");
+  label.textContent = item.def + "  ";
+  const select = document.createElement("select");
+  select.id = "q" + i;
+  const blank = document.createElement("option");
+  blank.textContent = "— choose —";
+  blank.value = "";
+  select.appendChild(blank);
+  ROLES.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r;
+    opt.textContent = r;
+    select.appendChild(opt);
+  });
+  row.appendChild(label);
+  row.appendChild(select);
+  quiz.appendChild(row);
+});
+
+const btn = document.createElement("button");
+btn.textContent = "Check answers";
+btn.style.marginTop = "0.6rem";
+btn.onclick = () => {
+  let correct = 0;
+  ITEMS.forEach((item, i) => {
+    const sel = document.getElementById("q" + i);
+    if (sel.value === item.answer) correct++;
+  });
+  const result = document.getElementById("quiz-result");
+  result.textContent = correct + " / " + ITEMS.length + " correct.";
+  result.className = "result " + (correct === ITEMS.length ? "correct" : "incorrect");
+};
+quiz.appendChild(btn);
+</script>
+
+</body>
+</html>

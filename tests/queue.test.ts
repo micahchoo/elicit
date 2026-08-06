@@ -597,6 +597,47 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   expect(drawn!.id).toBe(e.id);
  });
 
+ // ── park / unpark (ruled 2026-08-04): the person's own act ──
+
+ it('park transitions pending → parked; only a pending entry parks', () => {
+  const e = store.add(makeDraft());
+  store.park(e.id);
+  expect(store.list().find((x) => x.id === e.id)!.status).toBe('parked');
+
+  const answered = store.add(makeDraft());
+  store.markAnswered(answered.id);
+  store.park(answered.id); // no-op: not pending
+  expect(store.list().find((x) => x.id === answered.id)!.status).toBe('answered');
+ });
+
+ it('a parked entry is never drawn and never expired', () => {
+  const e = store.add(makeDraft());
+  store.park(e.id);
+
+  expect(store.draw(makeMode(), 'opening')).toBeNull();
+
+  // Age it far past any cutoff: the sweep only expires pending entries.
+  expect(store.expire(0)).toBe(0);
+  expect(store.list().find((x) => x.id === e.id)!.status).toBe('parked');
+ });
+
+ it('unpark re-opens with the expiry clock restarted', () => {
+  const e = store.add(makeDraft());
+  store.park(e.id);
+  const before = Date.now();
+  store.unpark(e.id);
+
+  const reread = store.list().find((x) => x.id === e.id)!;
+  expect(reread.status).toBe('pending');
+  // Without the refresh, a long-parked question would re-open already past
+  // the sweep's age cutoff and vanish on the next docket run.
+  expect(new Date(reread.created).getTime()).toBeGreaterThanOrEqual(before - 1000);
+
+  const pendingOnly = store.add(makeDraft());
+  store.unpark(pendingOnly.id); // no-op: not parked
+  expect(store.list().find((x) => x.id === pendingOnly.id)!.status).toBe('pending');
+ });
+
  // ── optional fields roundtrip ──
 
  it('optional fields (cites, quotedFragment, modeNeeds, direction) roundtrip', () => {
@@ -1249,5 +1290,113 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    expect(rungs()).toHaveLength(0);
    expect(floors()).toHaveLength(0);
   });
+ });
+});
+
+// ── Q-115: sitting-level engagement pause (ticket 148 reopened) ──
+
+describe('sitting-level queue pause (Q-115)', () => {
+ const OPENER = 'What did the harbor teach you about waiting?';
+ const PIVOT = 'My mornings belong to the bakery and the bread schedule.';
+ const ENGAGED = 'The harbor taught me waiting is its own kind of work.';
+
+ function addOpener(n: number) {
+  return store.add(makeDraft({
+   question: OPENER,
+   cites: [`${'0'.repeat(25)}${n}@1`],
+  }));
+ }
+
+ it('two consecutive strike-sittings pause the draw; an engaged reply resets', () => {
+  const e1 = addOpener(1);
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  store.recordReplyDisengagement(e1.id!, PIVOT);
+
+  const e2 = addOpener(2);
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  store.recordReplyDisengagement(e2.id!, PIVOT);
+
+  // Sitting 3 and 4: the cooldown (2 sittings) holds — nothing drawn.
+  addOpener(3);
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).toBeNull();
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).toBeNull();
+
+  // Sitting 5: the probe. It serves, and an ENGAGED reply resets everything.
+  store.noteSittingStarted();
+  const probe = store.draw(makeMode(), 'opening');
+  expect(probe).not.toBeNull();
+  store.recordReplyDisengagement(probe!.id!, ENGAGED);
+  addOpener(4); // draw marks served entries asked — the pool needs a fresh one
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+ });
+
+ it('a failed probe doubles the cooldown', () => {
+  const e1 = addOpener(1);
+  store.noteSittingStarted();
+  store.draw(makeMode(), 'opening');
+  store.recordReplyDisengagement(e1.id!, PIVOT);
+  const e2 = addOpener(2);
+  store.noteSittingStarted();
+  store.draw(makeMode(), 'opening');
+  store.recordReplyDisengagement(e2.id!, PIVOT);
+
+  // Cooldown 1: sittings 3-4 quiet, probe at 5 — pivoted again.
+  store.noteSittingStarted();
+  store.noteSittingStarted();
+  addOpener(3);
+  store.noteSittingStarted();
+  const probe = store.draw(makeMode(), 'opening');
+  expect(probe).not.toBeNull();
+  store.recordReplyDisengagement(probe!.id!, PIVOT);
+
+  // Cooldown 2 doubles to 4: sittings 6-9 quiet, serving again at 10.
+  addOpener(4); // a fresh pending opener, so quiet draws prove the pause, not an empty pool
+  for (let i = 0; i < 4; i++) {
+   store.noteSittingStarted();
+   expect(store.draw(makeMode(), 'opening')).toBeNull();
+  }
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+ });
+
+ it('one pivot per sitting counts once — two brush-offs in one sitting are one strike', () => {
+  const e1 = addOpener(1);
+  const e2 = addOpener(2);
+  store.noteSittingStarted();
+  store.recordReplyDisengagement(e1.id!, PIVOT);
+  store.recordReplyDisengagement(e2.id!, PIVOT);
+  // Still one strike: the next sitting draws normally.
+  store.noteSittingStarted();
+  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+ });
+
+ it('the pause survives a restart — the ledger is on disk', () => {
+  const e1 = addOpener(1);
+  store.noteSittingStarted();
+  store.recordReplyDisengagement(e1.id!, PIVOT);
+  const e2 = addOpener(2);
+  store.noteSittingStarted();
+  store.recordReplyDisengagement(e2.id!, PIVOT);
+
+  const reopened = createQueueStore(root);
+  reopened.noteSittingStarted();
+  expect(reopened.draw(makeMode(), 'opening')).toBeNull();
+ });
+
+ it('logs queue-paused with the cooldown length', () => {
+  const e1 = addOpener(1);
+  store.noteSittingStarted();
+  store.recordReplyDisengagement(e1.id!, PIVOT);
+  const e2 = addOpener(2);
+  store.noteSittingStarted();
+  store.recordReplyDisengagement(e2.id!, PIVOT);
+  const paused = readEvents(root).filter((e) => e.kind === 'queue-paused');
+  expect(paused).toHaveLength(1);
+  expect(paused[0]!.detail).toContain('sittings=2');
  });
 });

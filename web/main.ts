@@ -31,6 +31,12 @@ interface SessionResponse {
  context?: string;
  /** The rotated pulse prompt (ticket 105): present when the server wants a momentary-state line. */
  pulsePrompt?: string;
+ /** The protocol this sitting uses — auto-rotated by server (ticket 140). */
+ protocol?: string;
+ /** Fragment quoted in the opening question (Q-104): carries the "not mine" verb. */
+ quotedFragment?: string;
+ /** Snippet ref for the opening question's quoted fragment (Q-109). */
+ snippetRef?: string;
 }
 
 interface TurnData {
@@ -49,6 +55,12 @@ interface TurnData {
  soundingId?: string;
  /** The gate word that closed a descent (012 T9) — on descent-closed responses. */
  endedBy?: SoundingEnd;
+ /** Closing acknowledgment rendered before navigating to reviews (ticket 135). */
+ closingText?: string;
+ /** Fragment quoted in the question (Q-104): present on probe responses, carries the "not mine" verb. */
+ quotedFragment?: string;
+ /** Snippet ref for the current question's quoted fragment (Q-109): rides with quotedFragment. */
+ snippetRef?: string;
 }
 
 /**
@@ -89,6 +101,8 @@ interface HarvestResponse {
 interface QueueData {
  pending: Array<QueueEntry & { rungsKept?: number }>;
  open: Array<QueueEntry & { rungsKept?: number }>;
+ /** Questions the person parked from the open pane — held until put back. */
+ parked?: QueueEntry[];
 }
 
 interface ActivityEvent {
@@ -123,6 +137,8 @@ interface WikiResponse {
  lint: WikiLintNote[];
  lintedAt: string | null;
  all: boolean;
+ /** Claim IDs touched by a repair (Q-104): shown as a margin note, statuses untouched. */
+ repairClaimIds?: string[];
 }
 
 /* ─── DOM helpers ─── */
@@ -197,12 +213,20 @@ interface AppState {
  sounding: GateReading | null;
  /** The one-shot offer (012 T9): set once, cleared by either word. */
  soundingOffer: { construct: string; allowance: number; sentence: string } | null;
-/** The Coach page's slug (090 T11): set by navTo('coach', { slug }). */
- coachSlug: string | null;
  /** The pulse prompt text to show before the first question (ticket 105). */
  pulsePrompt: string | null;
  /** The first question held while the pulse is shown (ticket 105). */
  pendingQuestion: string | null;
+ /** The Coach page's slug (090 T11): set by navTo('coach', { slug }). */
+ coachSlug: string | null;
+ /** The protocol this sitting runs — auto-rotated by server (ticket 140). */
+ sessionProtocol: string | null;
+ /** Buds from the last harvest, shown on the done screen (ticket 140). */
+ pendingBuds: unknown[];
+ /** Fragment currently quoted in the question (Q-104): set from session/turn responses. */
+ quotedFragment: string | null;
+ /** Snippet ref for the current question's quoted fragment (Q-109): rides with quotedFragment. */
+ snippetRef: string | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -225,6 +249,10 @@ const state: AppState = {
  coachSlug: null,
  pulsePrompt: null,
  pendingQuestion: null,
+ sessionProtocol: null,
+ pendingBuds: [],
+ quotedFragment: null,
+ snippetRef: null,
 };
 
 const main = $('main')!;
@@ -328,6 +356,74 @@ window.addEventListener('hashchange', () => {
  navTo(screen);
 });
 
+/* ── Live refresh (ticket 150): the Activity Log is the change feed ── */
+// The server pushes one SSE event per log append (Q-23 — every actor
+// writes through that spine, so an append IS "something changed").
+// Screens that only READ re-render when the log moves; screens holding
+// the person's unsent words or pending decisions (exchange, drm,
+// harvest, piece, import, coach) are never re-rendered underneath them.
+const LIVE_SCREENS: ReadonlySet<Screen> = new Set<Screen>([
+ 'waiting', 'wiki', 'reviews', 'inbox', 'unprompted',
+]);
+let liveSource: EventSource | null = null;
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+// The docket heartbeat appends evaluation events every few seconds even
+// when nothing changed (coach-offer with offered=none, reach-evaluated
+// with candidates=0, license checks). Those must not repaint the screen —
+// only MATERIAL events (something minted, committed, answered, repaired)
+// are worth a refresh. Heartbeats follow their naming pattern, so the
+// filter is mostly suffix rules; unknown kinds default to material.
+const HEARTBEAT_SUFFIXES = ['-evaluated', '-license', '-checked', '-shadow', '-clipped', '-skip'];
+const HEARTBEAT_KINDS = new Set([
+ 'coach-offer', 'docket-run', 'run-started', 'queue-floor',
+ 'index-rebuilt', 'still-true-minted', 'pulse-answered',
+ // A rejected draft changed nothing a read-only screen shows.
+ 'question-rejected',
+]);
+function isHeartbeat(kind: string): boolean {
+ if (HEARTBEAT_KINDS.has(kind)) return true;
+ return HEARTBEAT_SUFFIXES.some((sfx) => kind.endsWith(sfx));
+}
+// The suffix list can never enumerate every quiet kind — each docket cycle
+// emits a tail of them (wiki-job-skipped, opener-minted with "minted 0",
+// expired with "expired 0", wiki-run with unchanged counts…), and unknown
+// kinds default to material, so an at-rest cycle still repainted the screen.
+// The structural filter: an idle cycle re-emits BYTE-IDENTICAL detail
+// strings. A kind whose detail has not changed since its last appearance
+// changed nothing — skip it; any count that moves refreshes as before.
+const lastDetailByKind = new Map<string, string>();
+function isRepeat(kind: string, detail: string): boolean {
+ const prev = lastDetailByKind.get(kind);
+ lastDetailByKind.set(kind, detail);
+ return prev === detail;
+}
+function startLiveRefresh() {
+ if (liveSource) return;
+ liveSource = new EventSource('/api/events');
+ // A burst of material appends (a docket run's mints) collapses into one
+ // refresh, trailing the burst by a second.
+ liveSource.onmessage = (ev: MessageEvent<string>) => {
+  if (!LIVE_SCREENS.has(state.screen)) return;
+  let kind = '';
+  let detail = '';
+  try {
+   const parsed = JSON.parse(ev.data) as { kind?: string; detail?: string };
+   kind = parsed.kind ?? '';
+   detail = parsed.detail ?? '';
+  } catch {
+   return;
+  }
+  if (isHeartbeat(kind)) return;
+  if (isRepeat(kind, detail)) return;
+  if (liveTimer) clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => {
+   liveTimer = null;
+   if (LIVE_SCREENS.has(state.screen)) navTo(state.screen);
+  }, 1000);
+ };
+ // EventSource reconnects by itself; nothing to do on error.
+}
+
 
 /**
  * A failed call. `handled` means api() already put the explanation on screen,
@@ -348,10 +444,14 @@ class ApiError extends Error {
  * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
  * the same path and is the one write the wiki surface makes.
  */
-const GET_PREFIXES = ['/api/queue', '/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary'];
+const GET_PREFIXES = ['/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary', '/api/sweep-backlog'];
 
 function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
+ // /api/queue is matched exactly, not by prefix: the GET is the pile itself,
+ // while park / unpark / answer sit under the same path and are POSTs — a
+ // prefix match would send them out as GETs (the /api/reach lesson below).
+ if (path === '/api/queue' || path.startsWith('/api/queue?')) return true;
  // The piece paths are matched exactly, the way /api/wiki is: the GET reads
  // are one piece and its export, while every verb beneath /api/piece/:id/ is
  // a POST (reorder, prose, gap, gap/accept, set-down, pick-up).
@@ -595,6 +695,7 @@ function renderLogin() {
   try {
    await api('/api/login', { password: input.value });
    wait.done();
+   startLiveRefresh();
    navTo('mode');
   } catch (e) {
    const rejected = e instanceof ApiError && e.status === 401;
@@ -634,6 +735,20 @@ function renderSetup() {
   type: 'password',
   placeholder: 'confirm password',
  });
+ // Who the vault is about — optional, skippable, changeable later via
+ // POST /api/profile. The wiki writes about the person; given a name and
+ // pronouns it uses them instead of "the user".
+ const nameHint = el('p', { style: 'color: var(--dim); font-size: 0.9rem; margin: 0.75rem 0 0.5rem' }, 'what should the wiki call you? (optional)');
+ const nameInput = el('input', {
+  class: 'login-input',
+  type: 'text',
+  placeholder: 'your name',
+ });
+ const pronounsInput = el('input', {
+  class: 'login-input',
+  type: 'text',
+  placeholder: 'your pronouns (e.g. they/them)',
+ });
  const submit = el('button', { class: 'submit-btn' }, 'set password');
  const errorSlot = el('div', { class: 'error-slot' });
  const backLink = el('button', { class: 'nav-link' }, '\u2190 back');
@@ -656,6 +771,18 @@ function renderSetup() {
   const wait = beginWait(errorSlot, 'saving the password…');
   try {
    await api('/api/setup', { password: pw });
+   // Best-effort: the password gate is set either way, and the profile can
+   // be set later through the same route.
+   if (nameInput.value.trim() || pronounsInput.value.trim()) {
+    try {
+     await api('/api/profile', {
+      name: nameInput.value.trim(),
+      pronouns: pronounsInput.value.trim(),
+     });
+    } catch {
+     // The vault opens without a profile; nothing is lost but the name.
+    }
+   }
    wait.done();
    navTo('mode');
   } catch (e) {
@@ -668,7 +795,7 @@ function renderSetup() {
   if (e.key === 'Enter') submit.click();
  });
 
- div.append(backLink, heading, hint, input, confirm, submit, errorSlot);
+ div.append(backLink, heading, hint, input, confirm, nameHint, nameInput, pronounsInput, submit, errorSlot);
  surface.append(div);
  input.focus();
 }
@@ -752,6 +879,9 @@ function renderMode(showSetupHint?: boolean) {
     shuffle ? { mode, shuffle: true } : { mode },
    );
    state.sessionId = res.sessionId;
+   state.sessionProtocol = res.protocol ?? null;
+   state.quotedFragment = res.quotedFragment ?? null;
+   state.snippetRef = res.snippetRef ?? null;
    state.lineageQuestion = res.snippetQuestion ?? null;
    state.lineageContext = res.context ?? null;
    // The clock counts down from the declared minutes; the deadline is set
@@ -789,6 +919,49 @@ function renderMode(showSetupHint?: boolean) {
 
  topicInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') submit.click();
+ });
+
+ // Stop all jobs: the quiet switch for the background clerk — no new docket
+ // run, no drain chain, no import re-trigger until resume or a restart. It
+ // sits beside fresh start because fresh start refuses while a run is in
+ // flight; stopping first is how you quiet the server to get one.
+ const jobsRow = el('div', { class: 'mode-aside stop-jobs-row' });
+ const stopLink = el('button', { class: 'nav-link' }, 'stop all jobs');
+ jobsRow.append(stopLink);
+ stopLink.addEventListener('click', () => {
+  void (async () => {
+   stopLink.disabled = true;
+   try {
+    const res = await api<{ ok: boolean; inFlight: boolean }>('/api/jobs/stop', {});
+    jobsRow.replaceChildren(
+     el(
+      'span',
+      { class: 'fresh-start-note' },
+      res.inFlight
+       ? 'jobs stopped — the run in flight finishes, then nothing new starts. '
+       : 'jobs stopped — nothing new starts. ',
+     ),
+    );
+    const resumeLink = el('button', { class: 'nav-link' }, 'resume jobs');
+    resumeLink.addEventListener('click', () => {
+     void (async () => {
+      resumeLink.disabled = true;
+      try {
+       await api('/api/jobs/resume', {});
+       stopLink.disabled = false;
+       jobsRow.replaceChildren(stopLink);
+      } catch (err) {
+       resumeLink.disabled = false;
+       showError(err instanceof Error ? err.message : String(err));
+      }
+     })();
+    });
+    jobsRow.append(resumeLink);
+   } catch (err) {
+    stopLink.disabled = false;
+    showError(err instanceof Error ? err.message : String(err));
+   }
+  })();
  });
 
  // Fresh start: the whole personal archive moves aside, nothing deleted.
@@ -845,7 +1018,42 @@ function renderMode(showSetupHint?: boolean) {
   freshRow.append(note, phrase, go, cancelLink, slot);
  });
 
- div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot, freshRow);
+ div.append(beginHeading, minutesRow, energyRow, targetRow, topicInput, navRow, submit, shuffleRow, errorSlot, jobsRow, freshRow);
+
+ // One-time ask on vaults set up before the profile existed: the wiki
+ // writes about the person, and given a name it stops calling them "the
+ // user". Skippable; skip is remembered in this browser.
+ if (localStorage.getItem('profile-asked') === null) {
+  void (async () => {
+   try {
+    const profileRes = await apiRaw('/api/profile');
+    if (!profileRes.ok) return;
+    const existing = await profileRes.json() as { name?: string; pronouns?: string };
+    if (existing.name || existing.pronouns) return;
+    const box = el('div', { class: 'mode-row', style: 'flex-direction: column; align-items: stretch; gap: 0.4rem; margin-top: 1rem' });
+    const ask = el('p', { style: 'color: var(--dim); font-size: 0.9rem; margin: 0' }, 'what should the wiki call you?');
+    const nameInput = el('input', { class: 'topic-input', type: 'text', placeholder: 'your name' });
+    const pronounsInput = el('input', { class: 'topic-input', type: 'text', placeholder: 'your pronouns (e.g. they/them)' });
+    const row = el('div', { style: 'display: flex; gap: 0.5rem' });
+    const save = el('button', { class: 'submit-btn' }, 'save');
+    const skip = el('button', { class: 'nav-link' }, 'skip');
+    save.addEventListener('click', async () => {
+     try {
+      await api('/api/profile', { name: nameInput.value.trim(), pronouns: pronounsInput.value.trim() });
+      localStorage.setItem('profile-asked', 'yes');
+      box.remove();
+     } catch { /* leave the box; the next click retries */ }
+    });
+    skip.addEventListener('click', () => {
+     localStorage.setItem('profile-asked', 'yes');
+     box.remove();
+    });
+    row.append(save, skip);
+    box.append(ask, nameInput, pronounsInput, row);
+    div.append(box);
+   } catch { /* not signed in yet, or no server — never block the home screen */ }
+  })();
+ }
  surface.append(div);
 }
 
@@ -1216,12 +1424,17 @@ function pulseExchange(container: HTMLElement) {
   renderExchange();
  }
 
- function skip() {
+async function skip() {
   state.pulsePrompt = null;
   state.question = pendingQuestion;
   state.pendingQuestion = null;
+  // Fire the pulse call with empty text so the server appends the
+  // pending opener to the transcript (ticket 135). Non-blocking.
+  try {
+   await api(`/api/session/${state.sessionId}/pulse`, { text: '', prompt: '' });
+  } catch { /* skip is never load-bearing */ }
   renderExchange();
- }
+}
 
  sendWord.addEventListener('click', submit);
  skipWord.addEventListener('click', skip);
@@ -1288,7 +1501,69 @@ function renderExchange() {
  );
  if (openerLineage) header.append(openerLineage);
  const questionBlock = el('div', { class: 'question-block' }, state.question!);
+
+  if (state.sessionProtocol) {
+   header.append(el('div', { class: 'exchange-protocol' }, `protocol: ${state.sessionProtocol}`));
+  }
  header.append(questionBlock);
+ // Q-104: "not mine" margin verb on questions carrying a quotedFragment
+ if (state.quotedFragment) {
+  const repairRow = el('div', { class: 'repair-row' });
+  const notMine = el('button', { class: 'repair-not-mine', type: 'button' }, 'not mine');
+  repairRow.append(notMine);
+  header.append(repairRow);
+
+  // Q-109: Press expands to 'unlink · keep'
+  let repairExpanded = false;
+  let unlinkBtn: HTMLButtonElement;
+  let keepBtn: HTMLButtonElement;
+
+  notMine.addEventListener('click', () => {
+   if (repairExpanded) return;
+   repairExpanded = true;
+   notMine.remove();
+
+   unlinkBtn = el('button', { class: 'repair-unlink', type: 'button' }, 'unlink');
+   const sep = el('span', { class: 'repair-sep' }, ' \u00b7 ');
+   keepBtn = el('button', { class: 'repair-keep', type: 'button' }, 'keep');
+   repairRow.append(unlinkBtn, sep, keepBtn);
+
+   keepBtn.addEventListener('click', () => {
+    unlinkBtn.remove();
+    sep.remove();
+    keepBtn.remove();
+    repairRow.append(notMine);
+    repairExpanded = false;
+   });
+
+   unlinkBtn.addEventListener('click', async () => {
+    unlinkBtn.disabled = true;
+    keepBtn.disabled = true;
+    try {
+     // snippetRef rides beside the fragment (Q-109); the server strips the
+     // @version itself and answers with a fresh probe replacing this question.
+     const turnData = await api<TurnData>(
+      `/api/session/${state.sessionId}/repair`,
+      {
+       snippetRef: state.snippetRef ?? '',
+       quotedFragment: state.quotedFragment,
+      },
+     );
+     if (turnData.kind === 'probe') {
+      state.question = turnData.text!;
+      // The disavowed fragment leaves the screen; the fresh probe is a
+      // new question and may carry its own fragment.
+      state.quotedFragment = null;
+      state.snippetRef = null;
+      renderExchange();
+     }
+    } catch (e) {
+     unlinkBtn.disabled = false;
+     keepBtn.disabled = false;
+    }
+   });
+  });
+ }
 
  // Juxtaposition snippet display
  const juxDiv = el('div', { class: 'juxtaposition' });
@@ -1469,6 +1744,8 @@ function applyProbe(res: TurnData) {
  state.lineageContext = null;
  openerLineage?.remove();
  state.turnPhase = res.phase ?? null;
+ state.quotedFragment = res.quotedFragment ?? null;
+ state.snippetRef = res.snippetRef ?? null;
  state.juxtaposition = res.juxtaposition ?? null;
 
  // Update question + juxtaposition display
@@ -1544,6 +1821,10 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
  actionRow.append(harvestBtn, skipBtn, laterBtn, leaveWord);
  answerArea.append(actionRow);
 
+  const drmOffer = el('button', { class: 'nav-link exchange-drm-offer' }, 'day reconstruction \u2192');
+  drmOffer.addEventListener('click', () => navTo('drm'));
+  answerArea.append(drmOffer);
+
 
  div.append(header, transcript, answerArea);
  surface.append(div);
@@ -1609,14 +1890,23 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
    } else if (res.kind === 'descent-closed') {
     closeByGate();
    } else {
-    // saturated — the sitting is over. The harvest runs behind the response
-    // and lands in the review queue (084), where the existing review cards
-    // pick it up — no stale empty card.
+    // saturated — the sitting is over. The closing acknowledgment
+    // (ticket 135) renders as the final agent turn before harvest.
+    if (res.closingText) {
+     const closingRow = el('div', { class: 'turn-group agent' });
+     const bubble = el('div', { class: 'turn-bubble agent' }, res.closingText);
+     closingRow.append(bubble);
+     const rows = answerArea.querySelectorAll('.turn-group.agent, .turn-group.user');
+     const lastRow = rows[rows.length - 1];
+     if (lastRow) lastRow.insertAdjacentElement('afterend', closingRow);
+     else answerArea.prepend(closingRow);
+     closingRow.scrollIntoView({ block: 'center' });
+    }
     try {
-     const res = await api<EndResponse>(
+     const endRes = await api<EndResponse>(
       `/api/session/${state.sessionId}/end`,
      );
-     state.pendingReviewSession = res.sessionId;
+     state.pendingReviewSession = endRes.sessionId;
      wait.done();
      navTo('reviews');
     } catch (e) {
@@ -2129,6 +2419,26 @@ function renderHarvest() {
   div.append(closeBtn);
  } else {
   const progress = el('p', { class: 'harvest-progress' }, `${state.decisions.length} of ${state.proposals.length} decided`);
+
+  // Bulk preselection, never a commit: one verb lands on every proposal
+  // still waiting; proposals already decided keep their decision, and each
+  // card can still be changed before `save decisions`. The re-render is the
+  // whole mechanism \u2014 every card seeds its visual from state.decisions.
+  const bulkRow = el('div', { class: 'harvest-decide-all' });
+  const bulkApprove = el('button', { class: 'nav-link' }, 'select all \u2014 approve');
+  const bulkDiscard = el('button', { class: 'nav-link' }, 'select all \u2014 discard');
+  bulkRow.append(bulkApprove, bulkDiscard);
+  const decideRest = (action: 'approve' | 'discard') => {
+   const decided = new Set(state.decisions.map((d) => d.proposal));
+   for (let i = 0; i < state.proposals.length; i++) {
+    if (!decided.has(i)) state.decisions.push({ proposal: i, action });
+   }
+   harvestDrafts.set(state.sessionId!, state.decisions);
+   renderHarvest();
+  };
+  bulkApprove.addEventListener('click', () => decideRest('approve'));
+  bulkDiscard.addEventListener('click', () => decideRest('discard'));
+
   const submitRow = el('div', { style: 'margin-top: 1.5rem' });
   const submitBtn = el('button', { class: 'submit-btn' }, 'save decisions');
   submitRow.append(submitBtn);
@@ -2141,7 +2451,7 @@ function renderHarvest() {
    navTo('reviews');
   });
   backRow.append(finishLater);
-  div.append(progress, submitRow, backRow);
+  div.append(bulkRow, progress, submitRow, backRow);
 
   submitBtn.addEventListener('click', async () => {
    if (state.decisions.length < state.proposals.length) {
@@ -2155,10 +2465,11 @@ function renderHarvest() {
    errorSlot.innerHTML = '';
    const wait = beginWait(errorSlot, 'writing them down…');
    try {
-    await api<HarvestResponse>(
+    const result = await api<HarvestResponse>(
      `/api/session/${state.sessionId}/harvest`,
      { decisions: state.decisions },
     );
+    state.pendingBuds = result.buds as unknown[];
     wait.done();
     harvestDrafts.delete(state.sessionId!);
     renderDone();
@@ -2506,6 +2817,16 @@ function renderDone() {
  const backBtn = el('button', { class: 'submit-btn', style: 'margin-top: 1rem' }, 'back');
  backBtn.addEventListener('click', () => navTo('mode'));
  div.append(msg, backBtn);
+
+  if (state.pendingBuds.length > 0) {
+   const budsSection = el('div', { class: 'done-buds' });
+   budsSection.append(el('p', { class: 'done-buds-heading' }, `${state.pendingBuds.length} fragment${state.pendingBuds.length === 1 ? '' : 's'} did not stand on ${state.pendingBuds.length === 1 ? 'its' : 'their'} own`));
+   for (const bud of state.pendingBuds) {
+    const b = bud as { text: string };
+    budsSection.append(el('p', { class: 'done-bud-text' }, b.text));
+   }
+   div.append(budsSection);
+  }
  surface.append(div);
 }
 
@@ -2552,6 +2873,19 @@ function renderWaiting() {
    /* the offer is not load-bearing; a failed read shows nothing */
   });
 
+// The sweep backlog (ticket 139): one dimmed line when readings pile up
+// unswept, nothing at zero or on error — the reach offer's idiom (Q-24):
+// at most one line, never a list.
+const sweepLine = el('p', { class: 'sweep-backlog-line' }, '');
+div.append(sweepLine);
+api<{ pendingReadings: number; freshReadings: number; lastRecorded: number; at: string | null }>('/api/sweep-backlog')
+ .then((r) => {
+  if (r.pendingReadings <= 0) return; // silence renders nothing
+  sweepLine.textContent = `the wiki is ${r.pendingReadings} readings behind`;
+ })
+ .catch(() => {
+  /* the backlog is not load-bearing; a failed read shows nothing */
+ });
 // The Coach surface (090 T11): at most one dimmed offer line, and one
 // quiet line per coached Direction with something new (Q-37, Q-76).
 // `offer: null` and an empty lines list render nothing at all; the offer's
@@ -2726,6 +3060,111 @@ function ageString(created: string): string {
  return `${days}d ago`;
 }
 
+// One open question, with its two quiet verbs (ruled 2026-08-04): answer it
+// in writing right here, or park it until later. Both rows are built by
+// these two helpers so park and put-back can move a question between the
+// lists without re-rendering the page (a re-render would stack SSE readers).
+function openQuestionRow(entry: QueueEntry): HTMLElement {
+ const row = el('div', { class: 'queue-entry' });
+ const question = el('span', { class: 'queue-question' }, entry.question);
+ // Where the question came from, in words. No queue `source` literal
+ // reaches the DOM — `contradiction-remeasure` announcing itself as a
+ // re-measure is the verification Q-15 forbids.
+ const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} · ${entry.horizon}`);
+ const words = el('span', { class: 'queue-words' });
+ const answerWord = el('button', { class: 'nav-link', type: 'button' }, 'answer');
+ const parkWord = el('button', { class: 'nav-link', type: 'button' }, 'park');
+ words.append(answerWord, ' · ', parkWord);
+ row.append(question, meta, words);
+
+ let editor: HTMLTextAreaElement | null = null;
+ let sendWord: HTMLButtonElement | null = null;
+ answerWord.addEventListener('click', () => {
+  if (editor) {
+   // A second press on answer closes the editor, keeping what was typed out
+   // of flight — the same cancel gesture trim uses everywhere else.
+   editor.remove();
+   sendWord?.remove();
+   editor = null;
+   sendWord = null;
+   return;
+  }
+  editor = el('textarea', { class: 'queue-answer-editor', placeholder: 'answer in your own words…' });
+  const tracker = pasteTracker(editor);
+  sendWord = el('button', { class: 'nav-link queue-answer-confirm', type: 'button' }, 'send it');
+  row.append(editor, sendWord);
+  editor.focus();
+  sendWord.addEventListener('click', () => {
+   const text = editor!.value.trim();
+   if (!text) {
+    editor!.focus();
+    return;
+   }
+   sendWord!.disabled = true;
+   const wait = beginWait(row, 'reading what you wrote…');
+   void api(`/api/queue/${entry.id}/answer`, { text, channel: tracker.isPasted(text) ? 'pasted' : 'typed' })
+    .then(() => {
+     wait.done();
+     row.replaceChildren(
+      el('span', { class: 'queue-meta' }, 'answered — its harvest will reach your inbox for review.'),
+     );
+    })
+    .catch((cause: unknown) => {
+     sendWord!.disabled = false;
+     wait.failed(cause);
+    });
+  });
+ });
+
+ parkWord.addEventListener('click', () => {
+  parkWord.disabled = true;
+  const wait = beginWait(row, 'parking…');
+  void api(`/api/queue/${entry.id}/park`, {})
+   .then(() => {
+    wait.done();
+    row.remove();
+    parkedSection.hidden = false;
+    parkedList.append(parkedQuestionRow(entry));
+    if (queueList.querySelector('.queue-entry') === null) {
+     queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
+    }
+   })
+   .catch((cause: unknown) => {
+    parkWord.disabled = false;
+    wait.failed(cause);
+   });
+ });
+
+ return row;
+}
+
+// A parked question rests here — no age, no colouring (Q-24) — until it
+// is put back among the open ones (the expiry clock restarts server-side).
+function parkedQuestionRow(entry: QueueEntry): HTMLElement {
+ const row = el('div', { class: 'parked-entry' });
+ const question = el('span', { class: 'parked-question' }, entry.question);
+ const meta = el('span', { class: 'parked-meta' }, 'a question you set aside');
+ const putBack = el('button', { class: 'nav-link', type: 'button' }, 'put it back');
+ row.append(question, meta, putBack);
+ putBack.addEventListener('click', () => {
+  putBack.disabled = true;
+  const wait = beginWait(row, 'putting it back…');
+  void api(`/api/queue/${entry.id}/unpark`, {})
+   .then(() => {
+    wait.done();
+    row.remove();
+    queueList.querySelector('.empty-msg')?.remove();
+    queueList.append(openQuestionRow(entry));
+    if (parkedList.querySelector('.parked-entry') === null) parkedSection.hidden = true;
+   })
+   .catch((cause: unknown) => {
+    putBack.disabled = false;
+    wait.failed(cause);
+   });
+ });
+ return row;
+}
+
 // Load the lists
 (async () => {
  const wait = beginWait(queueList, 'looking…', 400);
@@ -2752,14 +3191,7 @@ function ageString(created: string): string {
    queueList.append(el('p', { class: 'empty-msg' }, 'nothing waiting'));
   } else {
    for (const entry of pending) {
-    const row = el('div', { class: 'queue-entry' });
-    const question = el('span', { class: 'queue-question' }, entry.question);
-    // Where the question came from, in words. No queue `source` literal
-    // reaches the DOM \u2014 `contradiction-remeasure` announcing itself as a
-    // re-measure is the verification Q-15 forbids.
-    const meta = el('span', { class: 'queue-meta' }, `${sourceLabel(entry.source)} \u00b7 ${entry.horizon}`);
-    row.append(question, meta);
-    queueList.append(row);
+    queueList.append(openQuestionRow(entry));
    }
   }
  } catch (e) {
@@ -2869,7 +3301,17 @@ function ageString(created: string): string {
      });
      parkedList.append(row);
     }
-   } else {
+   }
+
+   // Parked QUESTIONS (ruled 2026-08-04) share the section with the parked
+   // descents: same quiet register, but their way back is `put it back`,
+   // not a resume into a sitting.
+   const parkedQuestions = data.parked ?? [];
+   for (const entry of parkedQuestions) {
+    parkedList.append(parkedQuestionRow(entry));
+   }
+
+   if (parked.length === 0 && parkedQuestions.length === 0) {
     // Nothing parked: the section stays quiet — no empty heading, no count
     // of how long anything has sat (Q-24).
     parkedSection.hidden = true;
@@ -3095,8 +3537,17 @@ function focusClaim(page: HTMLElement, block: HTMLElement, cl: Claim): void {
 
  const correct = el('button', { class: 'nav-link' }, 'correct this');
  correct.addEventListener('click', () => openClaimEditor(block, verbs, cl));
-
- verbs.append(attest, correct, challenge);
+ 
+ const direction = el('button', { class: 'nav-link' }, 'direction');
+ direction.addEventListener('click', () => {
+   api(`/api/wiki/claim/${encodeURIComponent(cl.id)}/direction`)
+     .then(() => {
+       verbs.replaceWith(marginNote('a direction waits on the coach surface'));
+     })
+     .catch((e: unknown) => console.error(e));
+ });
+ 
+ verbs.append(attest, correct, direction, challenge);
  block.append(verbs);
 
  if (!correctingKeyHandler) {
@@ -3308,6 +3759,9 @@ function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, 
 
    block.append(el('p', { class: 'claim-sentence' }, claimSentence(cl.body, cl.range)));
    for (const note of notesByClaim.get(cl.id) ?? []) block.append(marginNote(note));
+   if (wiki.repairClaimIds?.includes(cl.id)) {
+    block.append(el('p', { class: 'wiki-note repair-note' }, 'touched by a repair \u2014 review'));
+   }
 
    for (const cite of cl.cites) {
     // "snippetId@version". The index holds the newest version of each
@@ -4091,6 +4545,7 @@ function renderPiece() {
    // A fresh install still honors a deep link; only the default differs —
    // home carries the set-a-password hint until a password exists.
    const fromHash = screenFromHash();
+   startLiveRefresh();
    if (fromHash && fromHash !== 'mode' && fromHash !== 'home') navTo(fromHash);
    else renderMode(true);
    return;
@@ -4099,6 +4554,7 @@ function renderPiece() {
   // Auth file exists — check if we have a valid session
   try {
    await api<QueueData>('/api/queue');
+   startLiveRefresh();
    // The hash names a screen; empty or unknown takes the default boot.
    const fromHash = screenFromHash();
    if (fromHash) navTo(fromHash); else renderMode(false);

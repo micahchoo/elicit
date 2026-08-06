@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reference — Subsystem Map</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<div class="kicker">Reference · How Elicit Works</div>
+<h1>Subsystem Map</h1>
+
+<p>One line per top-level directory in <code>src/</code>. Grouped by which
+of the five big roles it mostly serves — see
+<a href="../lessons/0001-the-shape-of-elicit.html">Lesson 1</a> for the loop
+these roles form. Term definitions live in <code>CONTEXT.md</code>; this
+table is a locator, not a glossary.</p>
+
+<h2>Elicitor-side (the live sitting)</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>elicitor/</code></td><td>Runs the live turn: starts sessions, handles answers, picks the next question, enforces guards.</td></tr>
+<tr><td><code>protocols/</code></td><td>The registry of question Protocols (episode probe, triadic construct elicitation, critical decision method, ...) and their definitions.</td></tr>
+<tr><td><code>queue/</code></td><td>The durable store of pending questions — what survives between sittings, and how it's drawn from (facet balance, source labels).</td></tr>
+<tr><td><code>randomizer/</code></td><td>Serendipity draws from forgotten Snippets or curated decks — shuffles, never invents.</td></tr>
+<tr><td><code>sounding/</code></td><td>The consent-gated descent ladder (budget, gate, park/resume, convergence) for deep chained questioning.</td></tr>
+<tr><td><code>drm/</code></td><td>The Day Reconstruction Method instrument — a specific structured episodic-recall protocol, implemented as its own state machine.</td></tr>
+<tr><td><code>patterns/</code></td><td>The library of derivation patterns for composed questions (cheap tier vs. Sounding-class deep tier).</td></tr>
+</table>
+
+<h2>Harvester-side (turning prose into evidence)</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>harvester/</code></td><td>Proposes cuts of your prose into Snippets; you approve, trim, discard, or restate.</td></tr>
+<tr><td><code>import/</code></td><td>Seeding — bringing in pre-existing corpora (journals, notes) incrementally: survey, reach, extract, adopt, commit, repair.</td></tr>
+<tr><td><code>ktg/</code></td><td>Territory instruments — a stored map of a domain or life (skeleton coverage, atlas coverage/validation) tracking corpus coverage as a private checklist, never a shown score. (The gazetteer — person/entity index — is a separate <code>clerk/</code> concern, not <code>ktg/</code>.)</td></tr>
+</table>
+
+<h2>Vault-side (storage)</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>vault/</code></td><td>The archive itself — plain markdown with frontmatter, its own git repo, immutable Snippet versions.</td></tr>
+<tr><td><code>index/</code></td><td>Lexical and semantic (embedding) search over the vault — what makes Resonance possible.</td></tr>
+<tr><td><code>log/</code></td><td>The append-only Activity Log — every deterministic and agentic event, visible on the interface as the audit trail.</td></tr>
+</table>
+
+<h2>Clerk-side (background work)</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>clerk/</code></td><td>The background role itself: the Docket (standing task pipeline — composing, sweeping, consolidating; see Lesson 1), contradiction detection, question minting, arrangements, annotations, the gazetteer (person/entity index), the lineage-mirror shadow sweep.</td></tr>
+<tr><td><code>memory/</code></td><td>Consolidation across sittings — the three-layer memory scheme (ADR-0002), session summaries.</td></tr>
+</table>
+
+<h2>Wiki-side (the model of you)</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>wiki/</code></td><td>Claims, citations, contradiction thresholds, the claim registry, clash detection, lint rules, status/coreness computation.</td></tr>
+</table>
+
+<h2>Composition and standalone concerns</h2>
+<table>
+<tr><th>Directory</th><th>Job</th></tr>
+<tr><td><code>piece/</code></td><td>Composed documents built by stacking Snippets — Arrangements, Gaps, staleness, dormancy, markdown export.</td></tr>
+<tr><td><code>coach/</code></td><td>Per-capability advice role — quest log, doing-quests, event-licensed (never time-licensed) advice.</td></tr>
+<tr><td><code>auth/</code></td><td>Password auth (scrypt-hashed), loopback-only checks.</td></tr>
+<tr><td><code>stt/</code></td><td>Speech-to-text — Parakeet running in-process via sherpa-onnx, so dictation never leaves the machine.</td></tr>
+</table>
+
+<div class="aside">
+This table will drift as the codebase does — it was written 2026-08-03
+against the state after the person-model campaign (five waves, commit
+<code>ed64287</code>). If a directory's job here doesn't match what you
+find in the code, trust the code and update this table.
+</div>
+
+</main>
+</body>
+</html>

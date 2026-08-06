@@ -258,7 +258,8 @@ describe('the seven jobs, one undated vault (014 T15)', () => {
     expect(budsOnDisk()).toHaveLength(3);
     expect(queue.list({ source: 'import-repair' })).toHaveLength(2);
     expect(ledgerLines().filter((l) => !l.questioned)).toHaveLength(1);
-    expect(routePaths().some((p) => p.includes('repair'))).toBe(false);
+    // ticket 137 added the /repair route; import-repair has no surface (Q-6)
+    expect(routePaths().some((p) => p.includes('/api/import/repair'))).toBe(false);
   });
 
   it('Link — one sentence in two files becomes two snippets on two dates', () => {

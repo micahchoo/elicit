@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { propose, decide } from '../src/harvester/harvester.js';
+import { propose, decide, mergeAdjacent } from '../src/harvester/harvester.js';
 import type {
   Complete,
   Turn,
@@ -304,6 +304,47 @@ describe('propose', () => {
     expect(proposals).toHaveLength(0);
     expect(buds).toHaveLength(0);
     expect(diagnostics.parsed).toBe(false);
+    expect(diagnostics.parseMode).toBe('failed');
+  });
+
+  it('repairs EOS-truncated output missing only closing brackets', async () => {
+    // The generation grammar constrains tokens but never masks EOS, so the
+    // model can stop at any grammar-valid PREFIX. Measured on gemma4:e4b:
+    // long outputs deterministically end `"}]` — one `}` short — and 11 of
+    // one sitting's 14 chunks were lost to that single character. A valid
+    // prefix completes by appending closers, so parseChunk appends them.
+    const whole = JSON.stringify({
+      cuts: [
+        {
+          text: 'I value autonomy above all else.',
+          sourceTurn: 0,
+          facet: 'value',
+          stance: 'avowal',
+          reading: 'User values autonomy',
+          standalone: true,
+        },
+      ],
+    });
+    const truncated = whole.slice(0, -1); // the measured failure: root `}` never arrives
+
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      transcript,
+      fakeComplete(truncated)
+    );
+
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.text).toBe('I value autonomy above all else.');
+    expect(diagnostics.parseMode).toBe('json');
+  });
+
+  it('still fails on output no closing bracket can repair', async () => {
+    const { proposals, diagnostics } = await propose(
+      'sess-1',
+      transcript,
+      fakeComplete('{"cuts": [{"text": "I value autonomy')
+    );
+    expect(proposals).toHaveLength(0);
     expect(diagnostics.parseMode).toBe('failed');
   });
 
@@ -1257,5 +1298,185 @@ describe('decide', () => {
       channel: 'test-channel',
       blockId: 1,
     });
+  });
+});
+
+// ===========================================================================
+// Ticket 143 — merge adjacent proposals from the same turn at thought boundaries
+// ===========================================================================
+
+describe('mergeAdjacent', () => {
+  it('merges adjacent sentences from the same turn (gap is sentence-ending punctuation)', () => {
+    const turnTexts = new Map([
+      [0, 'The shoulder was real. Two surgeries. It healed. Nobody asks follow-up questions about a shoulder.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'The shoulder was real.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Their shoulder was real', question: '', questionForm: 'deliberative' },
+      { text: 'Two surgeries.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Two surgeries', question: '', questionForm: 'deliberative' },
+      { text: 'It healed.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'It healed', question: '', questionForm: 'deliberative' },
+      { text: 'Nobody asks follow-up questions about a shoulder.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Shoulder ends the inquiry', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.text).toBe('The shoulder was real. Two surgeries. It healed.');
+    expect(result[1]!.text).toBe('Nobody asks follow-up questions about a shoulder.');
+  });
+
+  it('merges short proposals with left neighbor when gap is not sentence-ending punctuation', () => {
+    const turnTexts = new Map([
+      [0, 'Not injured \u2014 finished. The shoulder healed. The wanting did not.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'Not injured \u2014 finished.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Not injured', question: '', questionForm: 'deliberative' },
+      { text: 'The shoulder healed.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Shoulder healed', question: '', questionForm: 'deliberative' },
+      { text: 'The wanting did not.', sourceTurn: 0, facet: 'value', stance: 'avowal', reading: 'Wanting continued', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    // "The shoulder healed." is 3 words (<5) → merges left
+    // Merged pair is ≥5 words, gap to next is ". " → adjacent → merge all three
+    expect(result).toHaveLength(1);
+    expect(result[0]!.text).toBe('Not injured \u2014 finished. The shoulder healed. The wanting did not.');
+  });
+
+  it('keeps the longest reading among merged constituents', () => {
+    const turnTexts = new Map([
+      [0, 'The shoulder was real. Two surgeries.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'The shoulder was real.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'short', question: '', questionForm: 'deliberative' },
+      { text: 'Two surgeries.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'the longer reading wins', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.reading).toBe('the longer reading wins');
+  });
+
+  it('does not merge proposals from different turns', () => {
+    const turnTexts = new Map([
+      [0, 'First turn text here.'],
+      [1, 'Second turn text here.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'First turn text here.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'First', question: '', questionForm: 'deliberative' },
+      { text: 'Second turn text here.', sourceTurn: 1, facet: 'fact', stance: 'report-of-fact', reading: 'Second', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.text).toBe('First turn text here.');
+    expect(result[1]!.text).toBe('Second turn text here.');
+  });
+
+  it('adjacent full sentences stay separate (shortness is required, adjacency alone is not enough)', () => {
+    const turnTexts = new Map([
+      [0, 'I value autonomy above all else. Being able to choose my own direction is what keeps me engaged.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'I value autonomy above all else.', sourceTurn: 0, facet: 'value', stance: 'avowal', reading: 'Autonomy valued', question: '', questionForm: 'deliberative' },
+      { text: 'Being able to choose my own direction is what keeps me engaged.', sourceTurn: 0, facet: 'value', stance: 'avowal', reading: 'Choice is engagement', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.text).toBe('I value autonomy above all else.');
+    expect(result[1]!.text).toBe('Being able to choose my own direction is what keeps me engaged.');
+  });
+
+  it('recomputes context for merged result', () => {
+    const turnTexts = new Map([
+      [0, 'The Mendoza final. 2019. I stood under the wall and felt nothing. Not nerves, not want.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'I stood under the wall and felt nothing.', sourceTurn: 0, facet: 'episode', stance: 'avowal', reading: 'Stood and felt nothing', question: '', questionForm: 'deliberative' },
+      { text: 'Not nerves, not want.', sourceTurn: 0, facet: 'momentary-state', stance: 'self-observation', reading: 'No nerves, no want', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.context).toBe('The Mendoza final. 2019.');
+  });
+
+  it('handles an empty proposals array', () => {
+    const turnTexts = new Map<number, string>();
+    const result = mergeAdjacent([], turnTexts);
+    expect(result).toHaveLength(0);
+  });
+
+  it('passes through a single proposal unchanged', () => {
+    const turnTexts = new Map([
+      [0, 'The scar on my left shoulder.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'The scar on my left shoulder.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'scar', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.text).toBe('The scar on my left shoulder.');
+  });
+
+  it('preserves non-text fields (facet, stance, question, gap) through merge', () => {
+    const turnTexts = new Map([
+      [0, 'The shoulder was real. Two surgeries.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'The shoulder was real.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Shoulder was real', question: 'Why do you prefer the shoulder story?', questionForm: 'deliberative', questionSource: { channel: 'test', blockId: 1 }, gap: 'missing-evidence' },
+      { text: 'Two surgeries.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Two surgeries', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.facet).toBe('fact');
+    expect(result[0]!.stance).toBe('report-of-fact');
+    expect(result[0]!.question).toBe('Why do you prefer the shoulder story?');
+    expect(result[0]!.questionForm).toBe('deliberative');
+    expect(result[0]!.questionSource).toEqual({ channel: 'test', blockId: 1 });
+    expect(result[0]!.gap).toBe('missing-evidence');
+  });
+
+  it('"Until now." merges with its neighbors (short proposal)', () => {
+    const turnTexts = new Map([
+      [0, 'I recognized it every time. Until now. At Mendoza I stood under the wall and the sequence was blank.'],
+    ]);
+    const proposals: CutProposal[] = [
+      { text: 'I recognized it every time.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Always recognized', question: '', questionForm: 'deliberative' },
+      { text: 'Until now.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'Something changed', question: '', questionForm: 'deliberative' },
+      { text: 'At Mendoza I stood under the wall and the sequence was blank.', sourceTurn: 0, facet: 'episode', stance: 'avowal', reading: 'Blank at Mendoza', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.text).toBe('I recognized it every time. Until now.');
+    expect(result[1]!.text).toBe('At Mendoza I stood under the wall and the sequence was blank.');
+  });
+
+  it('verbatim-substring gate holds after merge (Q-12)', () => {
+    const sourceText = 'The shoulder was real. Two surgeries. It healed. Nobody asks follow-up questions about a shoulder.';
+    const turnTexts = new Map([[0, sourceText]]);
+    const proposals: CutProposal[] = [
+      { text: 'The shoulder was real.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'r', question: '', questionForm: 'deliberative' },
+      { text: 'Two surgeries.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'r', question: '', questionForm: 'deliberative' },
+      { text: 'It healed.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'r', question: '', questionForm: 'deliberative' },
+      { text: 'Nobody asks follow-up questions about a shoulder.', sourceTurn: 0, facet: 'fact', stance: 'report-of-fact', reading: 'r', question: '', questionForm: 'deliberative' },
+    ];
+
+    const result = mergeAdjacent(proposals, turnTexts);
+
+    for (const p of result) {
+      const source = turnTexts.get(p.sourceTurn)!;
+      expect(source.includes(p.text)).toBe(true);
+    }
   });
 });

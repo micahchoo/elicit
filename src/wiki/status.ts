@@ -320,6 +320,15 @@ export function computeStatus(claim: Claim, graph: ClaimGraph, log?: LogFn): Sta
     };
   }
 
+  // Fused claims never auto-grade to evidenced — fusion is an edit, not evidence.
+  if (claim.fusion !== undefined && claim.fusion.length > 0) {
+    return {
+      live: 'unconfirmed',
+      shadow: 'unconfirmed',
+      why: 'unconfirmed: fused from other claims — evidence not clash-judged',
+    };
+  }
+
   // 3 & 4. The cite arithmetic, computed twice: once over every resolving cite
   //        and once with the read-log discount applied.
   const { evidence, unresolved } = resolve(claim, graph);

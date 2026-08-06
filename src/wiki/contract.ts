@@ -79,6 +79,8 @@ export type Claim = {
   /** ARCHIVE keeps the file — evidence, never deletion. `archiveReason` is required with it. */
   archived?: boolean;
   archiveReason?: string;
+  /** Claims fused into this one. Set by MERGE; when present, the claim is capped at `unconfirmed` (non-user-attested, non-contested). */
+  fusion?: string[];
 };
 
 // ── The op vocabulary (Q-29) ──

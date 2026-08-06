@@ -517,6 +517,8 @@ function applyOne(op: ClerkOp, deps: ApplyDeps, now: string, touched: string[]):
         .map((id) => store.readClaim(id))
         .filter((c): c is Claim => c !== null);
 
+      const existingFusion = into.fusion ?? [];
+
       // Facet and referents are `into`'s, untouched (S6). Cites and readings
       // are the union — the evidence merges, the identity does not.
       store.writeClaim({
@@ -524,6 +526,7 @@ function applyOne(op: ClerkOp, deps: ApplyDeps, now: string, touched: string[]):
         body: op.body,
         range: op.range,
         cites: union(into.cites, ...sources.map((s) => s.cites)),
+        fusion: union(existingFusion, op.from),
         fromReadings: union(into.fromReadings, ...sources.map((s) => s.fromReadings), [op.reading]),
         model,
         modelAt: now,

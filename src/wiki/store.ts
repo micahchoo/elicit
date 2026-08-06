@@ -14,7 +14,10 @@
 //     again because belt-and-braces at a storage boundary is cheap and a claim
 //     with no Range is unrecoverable once written (Q-21).
 //   - **No method deletes a file.** ARCHIVE sets frontmatter and the file stays
-//     as evidence (Q-29). There is no `unlink` in this module, and that absence
+//   - **No method deletes a claim/contradiction/candidate file.** ARCHIVE sets
+//     frontmatter and the file stays as evidence (Q-29). The resume marker
+//     (ticket 139) is the one exception — it is docket bookkeeping, not wiki
+//     content, and `clearResumeMarker` removes it.
 //     is the contract.
 //   - **Malformed in, skipped out — never repaired.** A hand-edited or
 //     half-written file is dropped from the load with a warning and left on
@@ -34,6 +37,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -213,6 +217,7 @@ class ClaimStoreImpl implements ClaimStore {
       ...(c.supersedeReason !== undefined ? { supersedeReason: c.supersedeReason } : {}),
       ...(c.archived !== undefined ? { archived: c.archived } : {}),
       ...(c.archiveReason !== undefined ? { archiveReason: c.archiveReason } : {}),
+      ...(c.fusion !== undefined && c.fusion.length > 0 ? { fusion: c.fusion } : {}),
     };
     writeFileSync(join(this.#dir(CLAIMS), `${name}.md`), matter.stringify(c.body, fm), 'utf-8');
   }
@@ -263,6 +268,7 @@ class ClaimStoreImpl implements ClaimStore {
       ...(str(d.supersedeReason) ? { supersedeReason: d.supersedeReason as string } : {}),
       ...(d.archived === true ? { archived: true } : {}),
       ...(str(d.archiveReason) ? { archiveReason: d.archiveReason as string } : {}),
+      ...(strArray(d.fusion) ? { fusion: d.fusion as string[] } : {}),
     };
   }
 
@@ -726,4 +732,45 @@ export function readOutcomeCursor(root: string): number {
   } catch {
     return 0;
   }
+}
+// ── The docket resume marker (ticket 139) ──
+//
+// When a docket run is cut short by the stop switch, the `docket-cut-short`
+// log line says "the remaining jobs wait for resume." This marker makes that
+// promise real: the next run finds it and schedules a drain to finish the
+// skipped work. A missing or malformed file costs one unnecessary drain, never
+// data — a re-drain that finds nothing is a no-op (record-don't-gate).
+
+const RESUME_MARKER = 'docket-resume.json';
+
+export type ResumeMarker = {
+  at: string;
+  pendingReadings: number;
+};
+
+export function writeResumeMarker(root: string, marker: ResumeMarker): void {
+  const dir = join(root, 'wiki');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, RESUME_MARKER), JSON.stringify(marker), 'utf-8');
+}
+
+/** The last resume marker, or null when missing or unparseable. */
+export function readResumeMarker(root: string): ResumeMarker | null {
+  const path = join(root, 'wiki', RESUME_MARKER);
+  if (!existsSync(path)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const rec = parsed as Record<string, unknown>;
+    if (typeof rec.at !== 'string' || typeof rec.pendingReadings !== 'number') return null;
+    return { at: rec.at, pendingReadings: rec.pendingReadings };
+  } catch {
+    return null;
+  }
+}
+
+/** Remove the resume marker after a drain run has picked it up. */
+export function clearResumeMarker(root: string): void {
+  const path = join(root, 'wiki', RESUME_MARKER);
+  try { unlinkSync(path); } catch { /* already gone — fine */ }
 }

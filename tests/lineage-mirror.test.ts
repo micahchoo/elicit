@@ -57,10 +57,15 @@ function fakeQueue(entries: QueueEntry[] = []): QueueStore & { added: QueueDraft
     draw(_mode: Mode, _phase: string): QueueEntry | null { return null; },
     markAsked(_id: string): void {},
     markAnswered(_id: string): void {},
+    markPending() { },
     defer(_id: string): void {},
+    park(_id: string): void {},
+    unpark(_id: string): void {},
     expire(_days: number): number { return 0; },
     expireTailBeyond(_keep: number, _filter?: (e: QueueEntry) => boolean): number { return 0; },
     markExpired(_id: string): void {},
+      recordReplyDisengagement() { return false; },
+    noteSittingStarted() {},
   };
 }
 

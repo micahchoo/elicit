@@ -660,3 +660,108 @@ describe('proposeOps — isolation', () => {
     }
   });
 });
+
+// ── Ticket 146: negation preservation and range guard ──
+
+describe('proposeOps — ticket 146: negation preservation', () => {
+  it('names negation preservation in the system prompt, with the social-worker exemplar', async () => {
+    // §4: "So we do without" → "plans to implement" is the known worst case.
+    // The prompt must name this pattern by name.
+    const { complete, calls } = recorder([JSON.stringify([])]);
+    await proposeOps(baseItem(), complete);
+
+    const system = calls[0]!.system;
+    // The negation rule.
+    expect(system).toContain('Preserve negation and conditional mood');
+    expect(system).toContain('"we do without" means the thing is not done');
+    expect(system).toContain('A hypothetical is never filed as facet "intention"');
+    expect(system).toContain('A refusal is never filed as a plan');
+    // The social-worker exemplar: "I would" is not "plans to".
+    expect(system).toContain('"I would" is not "plans to"');
+  });
+});
+
+describe('proposeOps — ticket 146: range question-text guard', () => {
+  it('drops a MINT whose range contains the cited snippet\'s question text verbatim', async () => {
+    // A snippet harvested from a question ≥10 chars. The model echoes the
+    // question text into the range field — the guard drops the op.
+    const question = 'What do you choose when the stakes are highest?';
+    const item: Item = {
+      reading: makeReading('The person chooses based on values, not outcomes.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'I pick the door that feels honest.', 1, { question }),
+      },
+      relatedClaims: [],
+    };
+
+    // The model returns a MINT whose range contains the question text.
+    const contaminated = mintOp({
+      range: question, // verbatim copy of the question
+    });
+
+    const { complete } = recorder([JSON.stringify([contaminated])]);
+    const { ops, diagnostics } = await proposeOps(item, complete);
+
+    // The op is dropped — `shapeOp` returns `range-contains-question-text`.
+    expect(ops).toHaveLength(0);
+    expect(diagnostics.opsSeen).toBe(1); // model produced 1, guard dropped it
+  });
+
+  it('drops a MINT whose range contains the question text case-insensitively', async () => {
+    const question = 'What makes you return to the same practice?';
+    const item: Item = {
+      reading: makeReading('The person has disciplined habits.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'I do not think about it. I just do it.', 1, { question }),
+      },
+      relatedClaims: [],
+    };
+
+    // Model returns range in different case.
+    const contaminated = mintOp({
+      range: 'what makes you return to the same practice?',
+    });
+
+    const { complete } = recorder([JSON.stringify([contaminated])]);
+    const { ops } = await proposeOps(item, complete);
+    expect(ops).toHaveLength(0);
+  });
+
+  it('does not drop when the range contains a SHORT question fragment (<10 chars)', async () => {
+    // Questions of fewer than 10 characters are too short to be a meaningful
+    // leak — the guard uses a ≥10 threshold to avoid false positives.
+    const shortQ = 'Why?';
+    const item: Item = {
+      reading: makeReading('The person asks fundamental questions.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'I keep asking until it makes sense.', 1, { question: shortQ }),
+      },
+      relatedClaims: [],
+    };
+
+    const op = mintOp({ range: 'when they want to understand something' });
+    const { complete } = recorder([JSON.stringify([op])]);
+    const { ops } = await proposeOps(item, complete);
+
+    // Short question text in range is not rejected.
+    expect(ops).toHaveLength(1);
+  });
+
+  it('does not drop a MINT with a clean range', async () => {
+    const item: Item = {
+      reading: makeReading('The person treats self-direction as worth more than pay.'),
+      snippets: {
+        snipA: makeSnippet('snipA', 'I would leave a job that took my direction away.', 1, {
+          question: 'What would make you leave a job you otherwise enjoy?',
+        }),
+      },
+      relatedClaims: [],
+    };
+
+    // Clean range — no question text leaked.
+    const { complete } = recorder([JSON.stringify([mintOp()])]);
+    const { ops } = await proposeOps(item, complete);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.op).toBe('MINT');
+  });
+});

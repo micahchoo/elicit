@@ -294,6 +294,9 @@ export type PoolReport = {
  perChannel: Record<string, number>;
  suppressed: number;
  reproposed: number;
+ /** Ticket 139: claims the sweep touched that were embedded in this run. */
+ embeddingsAttempted: number;
+ embeddingsFailed: number;
 };
 
 export type WikiJobsReport = WikiReport & { pool: PoolReport };
@@ -415,7 +418,7 @@ function emptyReport(): WikiJobsReport {
    readingsSwept: 0,
   },
   shadow: [],
-  pool: { size: 0, perChannel: {}, suppressed: 0, reproposed: 0 },
+  pool: { size: 0, perChannel: {}, suppressed: 0, reproposed: 0, embeddingsAttempted: 0, embeddingsFailed: 0 },
  };
 }
 
@@ -497,7 +500,7 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   await guardGated('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
   await guardGated('discriminated-answer', () => jobRangeDiscrimination(deps, graph, log, model));
   await guardGated('sweep', () => jobSweep(deps, report, graph, log, model, touched));
-  await guardGated('prime', () => jobPrime(deps, graph, touched, watermark));
+  await guardGated('prime', () => jobPrime(deps, report, graph, touched, watermark));
   await guardGated('lint', () => jobLint(deps, report, graph, log, thresholds));
   await guardGated('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
   // Ticket 076: the watermark is written HERE — after the index passes and
@@ -518,7 +521,8 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
     `unprocessed=${report.unprocessed} oversized=${report.oversized} stuck=${report.stuck} ` +
     `oppositionJudged=${report.oppositionJudged} oppositionOpposed=${report.oppositionOpposed} ` +
     `remeasuresMinted=${report.remeasuresMinted} remeasuresExpired=${report.remeasuresExpired} ` +
-    `contradictionsOpened=${report.contradictionsOpened} candidatesDissolved=${report.candidatesDissolved}`,
+    `contradictionsOpened=${report.contradictionsOpened} candidatesDissolved=${report.candidatesDissolved} ` +
+    `embeddingAttempted=${report.pool.embeddingsAttempted} embeddingFailed=${report.pool.embeddingsFailed}`,
   });
   return report;
  } finally {
@@ -556,16 +560,29 @@ async function jobSweep(
  // S11: a reading the model cannot handle must not sit at the head of a
  // fixed-order queue and eat the whole run quota forever while new material
  // starves. It stays unprocessed (Q-29) — it just stops going first.
+ //
+ // S11 addendum (2026-08-06): stuck readings retry, but never stampede. The
+ // measured at-rest vault re-failed the same 8 readings every docket cycle,
+ // forever — 7-8 model calls per cycle buying nothing. ONE stuck retry per
+ // run keeps every reading eventually reachable (Q-29: unprocessed and
+ // visible, never dropped) at heartbeat cost; `report.stuck` still counts
+ // them all.
  const stuck = pending.filter((r) => (attempts.get(r.id) ?? 0) >= backoff);
  const fresh = pending.filter((r) => (attempts.get(r.id) ?? 0) < backoff);
- const ordered = [...fresh, ...stuck];
+ const ordered = [...fresh, ...stuck.slice(0, 1)];
  report.stuck = stuck.length;
 
- const quota = bound(THRESHOLDS['mint.callsPerRun']);
+ const baseQuota = bound(THRESHOLDS['mint.callsPerRun']);
+ // Ticket 139 — dynamic cap: the per-run quota scales with backlog so a
+ // vault at rest reaches zero. Floor at baseQuota (12), ceiling at 36, and
+ // between them: drain half the pending readings per run. A 130-reading
+ // backlog clears in 5 runs instead of 11. The cap is still a cap — the
+ // quota never exceeds 36 regardless of backlog size.
+ const quota = Math.max(baseQuota, Math.min(36, Math.ceil(ordered.length / 2)));
  if (ordered.length > quota) {
   shadowDecision(
    THRESHOLDS['mint.callsPerRun'],
-   `${ordered.length - quota} readings left for the next run`,
+   `${ordered.length - quota} readings left for the next run (effective quota ${quota})`,
    log,
    true,
   );
@@ -811,6 +828,7 @@ function withModelUpgradeReasons(ops: ClerkOp[], store: ClaimStore, model: strin
  */
 async function jobPrime(
  deps: WikiJobDeps,
+ report: WikiJobsReport,
  graphOf: () => ClaimGraph,
  touched: Set<string>,
  watermark: IndexFingerprint | null,
@@ -819,9 +837,7 @@ async function jobPrime(
  // that shape is tested — see `src/wiki/embedding.ts`.
  const asyncChannels = deps.channels.filter(primeable);
  if (asyncChannels.length === 0) return;
-
  const graph = graphOf();
- // Ticket 076: the watermark's delta joins the sweep's touched set as the
  // embedding work list, so a claim hand-edited between runs is re-embedded
  // even though the sweep did not touch it. A MISSING watermark keeps ticket
  // 067's exact narrowing (the touched set alone): the repair path is a run
@@ -839,9 +855,25 @@ async function jobPrime(
  } else {
   only = touched;
  }
- for (const channel of asyncChannels) await channel.prime(graph, only);
+ let attemptedCount = 0;
+ let failedCount = 0;
+ for (const channel of asyncChannels) {
+  try {
+   await channel.prime(graph, only!);
+   attemptedCount += only!.size;
+  } catch (err) {
+   failedCount++;
+   deps.log({
+    at: nowIso(),
+    actor: 'clerk',
+    kind: 'wiki-embedding-failed',
+    detail: `reason=${err instanceof Error ? err.message : String(err)}`,
+   });
+  }
+ }
+ report.pool.embeddingsAttempted = attemptedCount;
+ report.pool.embeddingsFailed = failedCount;
 }
-
 // ---------------------------------------------------------------------------
 // Job 2 — lint, and its one mechanical consequence (Q-31)
 // ---------------------------------------------------------------------------
@@ -974,6 +1006,8 @@ async function jobCandidates(
   perChannel: pool.perChannel,
   suppressed: pool.suppressed,
   reproposed: pool.reproposed,
+  embeddingsAttempted: report.pool.embeddingsAttempted,
+  embeddingsFailed: report.pool.embeddingsFailed,
  };
 
  const quota = bound(OPPOSITION_QUOTA);

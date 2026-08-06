@@ -135,7 +135,7 @@ describe('isExpeditionCandidate', () => {
     expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(false);
   });
 
-  it('returns false when cited by fewer than 2 asked queue entries', () => {
+  it('returns false when cited by fewer than 2 total queue entries', () => {
     const snippet = makeSnippet();
     const readings: Record<string, Reading> = {
       r1: makeReading({ facet: 'fact', cites: ['s1@3'] }),
@@ -148,7 +148,7 @@ describe('isExpeditionCandidate', () => {
     expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(false);
   });
 
-  it('returns false when cited by 2 entries but one is not asked', () => {
+  it('returns true when cited by ≥2 entries regardless of status', () => {
     const snippet = makeSnippet();
     const readings: Record<string, Reading> = {
       r1: makeReading({ facet: 'fact', cites: ['s1@3'] }),
@@ -159,10 +159,11 @@ describe('isExpeditionCandidate', () => {
     ];
     const allSnippets: Snippet[] = [snippet];
 
-    expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(false);
+    expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(true);
   });
 
-  it('returns false when an episode-facet sibling exists in same session', () => {
+
+  it('returns true even when an episode-facet sibling exists in same session — veto is per-candidate (ticket 140)', () => {
     const snippet = makeSnippet({ id: 's1' });
     const sibling = makeSnippet({ id: 's2', provenance: { ...makeSnippet().provenance, session: 'sess-1' } });
     const readings: Record<string, Reading> = {
@@ -175,7 +176,7 @@ describe('isExpeditionCandidate', () => {
     ];
     const allSnippets: Snippet[] = [snippet, sibling];
 
-    expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(false);
+    expect(isExpeditionCandidate(snippet, readings, queueEntries, allSnippets)).toBe(true);
   });
 
   it('returns true when a non-episode sibling exists in same session', () => {
@@ -315,10 +316,15 @@ function makeQueueStore(entries: QueueEntry[] = []): import('../src/types.js').Q
     draw: vi.fn(),
     markAsked: vi.fn(),
     markAnswered: vi.fn(),
+    markPending: () => { },
     defer: vi.fn(),
+    park: vi.fn(),
+    unpark: vi.fn(),
     expire: vi.fn().mockReturnValue(0),
     expireTailBeyond: vi.fn().mockReturnValue(0),
     markExpired: vi.fn(),
+      recordReplyDisengagement() { return false; },
+    noteSittingStarted() {},
   };
 }
 

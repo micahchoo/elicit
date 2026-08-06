@@ -790,10 +790,15 @@ describe('the draw reaches a sitting', () => {
       draw: () => { drawCalls.push('queue'); return queueDraw; },
       markAsked: () => {},
       markAnswered: () => {},
+      markPending: () => { },
       defer: () => {},
+      park: () => {},
+      unpark: () => {},
       expire: () => 0,
       expireTailBeyond: () => 0,
       markExpired: () => {},
+        recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
     };
     return { turns, drawCalls, vault, queue };
   }

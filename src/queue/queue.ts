@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ulid } from 'ulid';
 import matter from 'gray-matter';
@@ -6,6 +6,7 @@ import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.j
 import { appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/format.js';
 import { elideDisfluencies } from '../clerk/disfluency.js';
+import { contentWordsOf } from '../index/lexical.js';
 import {
  applyFacetBalance,
  facetBalanceIsLive,
@@ -186,11 +187,67 @@ function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
  return [...names];
 }
 
+/**
+ * The sitting-level engagement state (Q-115, ticket 148 reopened). The
+ * strike unit is the SITTING's relationship to the queue: a sitting whose
+ * queue-drawn opener gets a pivoted-away reply is one strike, and two
+ * consecutive strike-sittings pause queue draws for a cooldown measured in
+ * sittings (2, then 4, then 8, capped). After the cooldown the next draw is
+ * the probe: an engaged reply resets everything, another pivot doubles the
+ * cooldown. Persisted beside the queue so a restart forgets nothing —
+ * the measured failure ran one opener per sitting for 20 sittings, and any
+ * in-memory counter dies with the process long before that.
+ */
+type EngagementState = {
+ sittingCounter: number;
+ consecutiveDisengaged: number;
+ lastStrikeSitting: number;
+ pauses: number;
+ pausedUntilSitting: number;
+};
+
+const FRESH_ENGAGEMENT: EngagementState = {
+ sittingCounter: 0,
+ consecutiveDisengaged: 0,
+ lastStrikeSitting: -1,
+ pauses: 0,
+ pausedUntilSitting: 0,
+};
+
 class QueueStoreImpl implements QueueStore {
  #root: string;
+  #deferredSnippets: Set<string> = new Set();
+  #threadStrikes: Map<string, number> = new Map();
 
  constructor(root: string) {
   this.#root = root;
+ }
+
+ #engagementPath(): string {
+  return join(this.#root, 'queue-engagement.json');
+ }
+
+ #readEngagement(): EngagementState {
+  try {
+   const parsed = JSON.parse(readFileSync(this.#engagementPath(), 'utf8')) as Partial<EngagementState>;
+   return { ...FRESH_ENGAGEMENT, ...parsed };
+  } catch {
+   return { ...FRESH_ENGAGEMENT };
+  }
+ }
+
+ #writeEngagement(s: EngagementState): void {
+  try {
+   writeFileSync(this.#engagementPath(), JSON.stringify(s, null, 1) + '\n');
+  } catch {
+   // Never let bookkeeping break a sitting.
+  }
+ }
+
+ noteSittingStarted(): void {
+  const s = this.#readEngagement();
+  s.sittingCounter += 1;
+  this.#writeEngagement(s);
  }
 
  #dir(): string {
@@ -385,18 +442,32 @@ add(draft: QueueDraft): QueueEntry {
   * can never be what emptied the pool.
   */
  draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null {
+  // Q-115: while the sitting-level pause holds, the queue offers nothing —
+  // the caller's fallback (bank / imported material) carries the sitting.
+  const eng = this.#readEngagement();
+  if (eng.sittingCounter < eng.pausedUntilSitting) return null;
+
   const all = this.#readAll();
+  // Ticket 148: skip entries from deferred threads
+  const drawPool = this.#deferredSnippets.size > 0
+    ? all.filter(e => {
+        const fc = e.cites?.[0];
+        if (!fc) return true;
+        return !this.#deferredSnippets.has(fc.split('@')[0]!);
+      })
+    : all;
+
   const filters = drawFilters(mode, phase);
 
   // Step 1: the hard filters, in the order Q-55 fixes.
-  const normal = runChain(all, filters, false);
+  const normal = runChain(drawPool, filters, false);
   let candidates = normal.pool;
 
   // Step 2: rung 2, and only when step 1 came back empty.
   if (candidates.length === 0) {
-   const relaxed = runChain(all, filters, true);
+   const relaxed = runChain(drawPool, filters, true);
    if (relaxed.pool.length === 0) {
-    this.#logFloor(all.length, normal.emptiedBy, mode, phase);
+    this.#logFloor(drawPool.length, normal.emptiedBy, mode, phase);
     return null;
    }
    this.#logRung(
@@ -649,4 +720,92 @@ add(draft: QueueDraft): QueueEntry {
   entry.status = 'expired';
   this.#write(entry);
  }
-}
+ 
+ markPending(id: string): void {
+   const entry = this.#readOne(id);
+   if (!entry) return;
+   entry.status = 'pending';
+   entry.created = new Date().toISOString();
+   this.#write(entry);
+ }
+ 
+ park(id: string): void {
+   const entry = this.#readOne(id);
+   if (!entry || entry.status !== 'pending') return;
+   entry.status = 'parked';
+   this.#write(entry);
+ }
+ 
+ unpark(id: string): void {
+   const entry = this.#readOne(id);
+   if (!entry || entry.status !== 'parked') return;
+   entry.status = 'pending';
+   entry.created = new Date().toISOString();
+   this.#write(entry);
+ }
+ 
+ recordReplyDisengagement(openerEntryId: string, replyText: string): boolean {
+   const entry = this.#readOne(openerEntryId);
+   if (!entry) return false;
+   const openerWords = contentWordsOf(entry.question);
+   const replyWords = contentWordsOf(replyText);
+   const hasOverlap = [...openerWords].some(w => replyWords.has(w));
+
+   // Q-115: the sitting-level ledger, judged on the same overlap. An
+   // engaged reply resets everything; a pivot marks THIS sitting as one
+   // strike (once — a second pivot in the same sitting adds nothing), and
+   // two consecutive strike-sittings pause queue draws for a cooldown of
+   // sittings that doubles per pause (2, 4, 8-cap). The draw after the
+   // cooldown is the probe; this same method scores it.
+   const eng = this.#readEngagement();
+   if (hasOverlap) {
+     if (eng.consecutiveDisengaged > 0 || eng.pauses > 0 || eng.pausedUntilSitting > 0) {
+       this.#writeEngagement({
+         ...eng,
+         consecutiveDisengaged: 0,
+         lastStrikeSitting: -1,
+         pauses: 0,
+         pausedUntilSitting: 0,
+       });
+     }
+   } else if (eng.lastStrikeSitting !== eng.sittingCounter) {
+     eng.consecutiveDisengaged += 1;
+     eng.lastStrikeSitting = eng.sittingCounter;
+     if (eng.consecutiveDisengaged >= 2) {
+       eng.pauses += 1;
+       const cooldown = Math.min(8, 2 ** eng.pauses);
+       eng.pausedUntilSitting = eng.sittingCounter + cooldown + 1;
+       this.#append({
+         kind: 'queue-paused',
+         detail: `sittings=${cooldown} strikes=${eng.consecutiveDisengaged} pause=${eng.pauses}`,
+         refs: [],
+       });
+     }
+     this.#writeEngagement(eng);
+   }
+
+   // Ticket 148's original per-thread deferral, kept as built: it needs a
+   // thread served twice, which the measured one-serve-per-snippet queue
+   // never does, but a queue that DOES re-serve a thread still deserves it.
+   const firstCite = entry.cites?.[0];
+   if (!firstCite) return false;
+   const threadKey = firstCite.split('@')[0]!;
+   if (hasOverlap) { this.#threadStrikes.set(threadKey, 0); return false; }
+   const strikes = (this.#threadStrikes.get(threadKey) ?? 0) + 1;
+   this.#threadStrikes.set(threadKey, strikes);
+   if (strikes >= 2) {
+     this.#deferredSnippets.add(threadKey);
+     const all = this.#readAll();
+     for (const e of all) {
+       if (e.status !== 'pending') continue;
+       const eCite = e.cites?.[0];
+       if (!eCite) continue;
+       if (eCite.split('@')[0] === threadKey) { e.status = 'deferred'; this.#write(e); }
+     }
+     this.#append({ kind: 'thread-deferred', detail: `thread=${threadKey} strikes=${strikes}`, refs: [threadKey] });
+     return true;
+   }
+   return false;
+ }
+ 
+ }

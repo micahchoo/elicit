@@ -112,6 +112,16 @@ text?: string;
 };
 
 /**
+ * A passage the PERSON chose (ruled 2026-08-04): the review surface lets the
+ * reader keep a passage the harvester did not propose — including on a piece
+ * where it proposed nothing. Plain verbatim text, held to exactly the gates a
+ * model cut passes (exact substring of the source body, never inside a
+ * quotation). It writes a Snippet and NO Reading: readings carry the model's
+ * labels, and nothing invents labels for a passage only the person chose.
+ */
+export type ImportAddition = string;
+
+/**
  * Who wrote the prose in a region, DECLARED by the person at Reach time and
  * never detected (Q-70; detection is banned permanently by 046).
  *

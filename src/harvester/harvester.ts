@@ -249,16 +249,30 @@ interface RawCut {
  * fallback that used to live here is gone (measured: 100% parse rate across
  * the ratchet corpus with constraint on). `failed` survives because the API
  * error path and truncated output are not grammar-removable.
+ *
+ * The grammar constrains every emitted token but never masks EOS, so the
+ * model may stop at any grammar-valid PREFIX — measured on gemma4:e4b at
+ * temperature 0.1: long outputs deterministically end `"}]`, one `}` short
+ * of closing the root object, and 11 of one sitting's 14 chunks were lost
+ * to that single character. A valid prefix is completable by appending
+ * closing brackets, so that is the whole repair; anything the braces cannot
+ * fix still reports `failed`.
  */
 function parseChunk(raw: string): { cuts: RawCut[]; mode: ParseMode } {
- try {
-  const parsed: unknown = JSON.parse(stripFences(raw));
-  if (parsed !== null && typeof parsed === 'object' && 'cuts' in parsed) {
-   const maybe: unknown = parsed.cuts;
-   if (Array.isArray(maybe)) return { cuts: maybe as RawCut[], mode: 'json' };
+ // Bracket-only closers: a truncation inside a STRING stays failed — closing
+ // the quote would mint a half-sentence as if the person had said it.
+ const stripped = stripFences(raw);
+ for (const suffix of ['', '}', ']}', '}]}']) {
+  try {
+   const parsed: unknown = JSON.parse(stripped + suffix);
+   if (parsed !== null && typeof parsed === 'object' && 'cuts' in parsed) {
+    const maybe: unknown = parsed.cuts;
+    if (Array.isArray(maybe)) return { cuts: maybe as RawCut[], mode: 'json' };
+   }
+   break; // parsed but not the cuts shape — braces will not change that
+  } catch {
+   // try the next closing suffix
   }
- } catch {
-  // fall through to failed
  }
 
  return { cuts: [], mode: 'failed' };
@@ -331,6 +345,8 @@ export type HarvestDiagnostics = {
  chunksParsed: number;
  /** Chunks where complete() threw; the remaining chunks still harvest. */
  chunkErrors: number;
+ /** Q-107: Correction turns excluded from harvest. */
+ repairSkips: number;
 };
 
 /**
@@ -394,6 +410,119 @@ function tailSentences(text: string, n: number): string | undefined {
 }
 
 /**
+ * Merge adjacent proposals from the same turn when the gap between them is
+ * sentence-ending punctuation and whitespace, or when either proposal is
+ * short (≤4 words). Merged text is verbatim concatenation from the source
+ * turn — the substring gate still verifies the whole (Q-12 intact).
+ *
+ * A proposal under 5 words that does not merge stays as-is: it is
+ * admissible, its source turn was one sentence, and the turn is the
+ * evidence it has.
+ *
+ * Left-preferring — a short proposal with neighbours on both sides merges
+ * with the one behind it.
+ *
+ * Exported for direct testing.
+ */
+export function mergeAdjacent(
+  proposals: CutProposal[],
+  turnTexts: Map<number, string>,
+): CutProposal[] {
+  // Group by sourceTurn
+  const groups = new Map<number, CutProposal[]>();
+  for (const p of proposals) {
+    const g = groups.get(p.sourceTurn);
+    if (g) g.push(p);
+    else groups.set(p.sourceTurn, [p]);
+  }
+
+  const result: CutProposal[] = [];
+
+  for (const [turnIdx, group] of groups) {
+    const sourceText = turnTexts.get(turnIdx);
+    if (!sourceText || group.length <= 1) {
+      result.push(...group);
+      continue;
+    }
+
+    // Sort by position in source text. When two proposals share the same
+    // text, indexOf returns the first match for both — harmless because
+    // the dedup pass removes exact dupes afterward.
+    const positioned = group.map(p => ({
+      proposal: p,
+      start: sourceText.indexOf(p.text),
+    })).sort((a, b) => a.start - b.start);
+
+    const merged: CutProposal[] = [];
+    let i = 0;
+    while (i < positioned.length) {
+      let cur = positioned[i]!;
+      let curEnd = cur.start + cur.proposal.text.length;
+      let bestReading = cur.proposal.reading;
+      let span = 1;
+
+      // Try to merge consecutive proposals from the same turn
+      while (i + span < positioned.length) {
+        const nxt = positioned[i + span]!;
+        const gap = sourceText.substring(curEnd, nxt.start);
+
+        // Adjacent: gap is either sentence-ending punctuation + optional
+        // whitespace, or purely whitespace (left proposal ends with [.!?])
+        const isAdjacent = /^[.!?]\s*$/.test(gap) || /^\s+$/.test(gap);
+
+        // Short: either constituent is ≤4 words
+        const curWords = cur.proposal.text.trim().split(/\s+/).filter(Boolean).length;
+        const nxtWords = nxt.proposal.text.trim().split(/\s+/).filter(Boolean).length;
+        const eitherShort = curWords <= 4 || nxtWords <= 4;
+
+        // Merge only when BOTH hold: a trivial gap (nothing the extractor
+        // dropped) AND a constituent too short to stand alone. Adjacency
+        // alone would re-fuse every neighboring cut the extractor chose to
+        // separate; shortness alone would swallow dropped text into the span.
+        if (!isAdjacent || !eitherShort) break;
+
+        // Merge: verbatim span from source text
+        const mergedText = sourceText.substring(
+          cur.start,
+          nxt.start + nxt.proposal.text.length,
+        );
+
+        // Keep the longer reading
+        if (nxt.proposal.reading.length > bestReading.length) {
+          bestReading = nxt.proposal.reading;
+        }
+
+        cur = {
+          start: cur.start,
+          proposal: {
+            ...cur.proposal,
+            text: mergedText,
+            reading: bestReading,
+          },
+        };
+        curEnd = nxt.start + nxt.proposal.text.length;
+        span++;
+      }
+
+      // Recompute context for the merged result
+      const ctx = extractContext(sourceText, cur.proposal.text);
+      const final: CutProposal = {
+        ...cur.proposal,
+        ...(ctx !== undefined ? { context: ctx } : {}),
+      };
+      merged.push(final);
+      i += span;
+    }
+
+    result.push(...merged);
+  }
+
+  // Sort by sourceTurn to preserve original ordering
+  return result.sort((a, b) => a.sourceTurn - b.sourceTurn);
+}
+
+
+/**
  * One chunk's payload (ticket 091, 074's typed-marker discipline): the turn
  * inside a <snippet> block — the only cuttable material — preceded by the
  * eliciting probe in a <question> block and the prior user turn's tail in a
@@ -437,6 +566,12 @@ export async function propose(
   }
  }
 
+ // Q-107: Exclude correction turns from harvest proposals.
+ // These are meta — the user saying "that is not my story" — and must
+ // never become snippets or fuel wiki claims.
+ const nonRepairTurns = userTurns.filter(({ turn }) => !turn.repairId);
+ let repairSkips = userTurns.length - nonRepairTurns.length;
+
  const proposals: CutProposal[] = [];
  const buds: Bud[] = [];
  let rawChars = 0;
@@ -460,7 +595,7 @@ export async function propose(
  // the model to read a claim into "Yes." (ticket 044). The user-turn index
  // still counts every user turn, so a skipped turn cannot shift the
  // sourceTurn of the turns after it.
- const harvestable = userTurns.filter(({ turn, userIdx: idx }) => {
+ const harvestable = nonRepairTurns.filter(({ turn, userIdx: idx }) => {
   const verdict = admissible(turn.text, { scope: 'turn' });
   if (!verdict.ok) {
    contentFreeSkips++;
@@ -472,6 +607,8 @@ export async function propose(
 
  // Sequential: the local model is a single GPU, so parallel chunks buy
  // nothing and cost tail latency.
+  const turnTexts = new Map<number, string>();
+
  for (const { turn, userIdx: derivedTurn } of harvestable) {
   // Ticket 091: the chunk carries its lineage — the eliciting probe and the
   // prior user turn's tail — typed-marked, so a bare "it" or "that" in the
@@ -479,6 +616,8 @@ export async function propose(
   // checks against the raw turn: lineage informs the reading and the labels,
   // never widens what may be cut.
   const probe = findElicitingProbe(transcript, derivedTurn);
+    turnTexts.set(derivedTurn, turn.text);
+
   const priorTurn = userTurns[derivedTurn - 1]?.turn;
   const payload = buildHarvestPayload(
    turn,
@@ -662,11 +801,15 @@ export async function propose(
   chunks: harvestable.length,
   chunksParsed,
   chunkErrors,
+  repairSkips,
  };
 
- // ── Deduplicate proposals (across chunks as well as within one) ──
- const deduped: CutProposal[] = [];
- for (const p of proposals) {
+  // ── Merge adjacent proposals from the same turn (ticket 143) ──
+  const merged = mergeAdjacent(proposals, turnTexts);
+
+  // ── Deduplicate proposals (across chunks as well as within one) ──
+  const deduped: CutProposal[] = [];
+  for (const p of merged) {
   // Exact dupe: skip
   if (deduped.some((d) => d.text === p.text)) continue;
   // Near-dupe (existing contains new or vice versa): keep the longer
@@ -698,8 +841,20 @@ export function decide(
   * carries no channel.
   */
  channelOf?: (proposal: CutProposal) => CaptureChannel | undefined
-): { snippets: Snippet[]; buds: Bud[] } {
- const snippets: Snippet[] = [];
+ ): { snippets: Snippet[]; buds: Bud[]; duplicateCount: number } {
+  // Best-effort: the dedupe set rides an index read that can fail (a
+  // background docket run may hold or break the index). A failed read
+  // skips dedupe for this batch — it must never block saving what the
+  // user approved (the e2e contract: snippets are saved either way).
+  let existingBodies: Set<string>;
+  try {
+   const index = vault.rebuildIndex();
+   existingBodies = new Set(Object.values(index.snippets).map(s => s.prose));
+  } catch {
+   existingBodies = new Set();
+  }
+  let duplicateCount = 0;
+  const snippets: Snippet[] = [];
 
  for (const decision of decisions) {
   const proposal = proposals[decision.proposal];
@@ -720,6 +875,9 @@ export function decide(
 
   switch (decision.action) {
    case 'approve': {
+
+     // Exact-body dedupe against vault (ticket 145)
+     if (existingBodies.has(proposal.text)) { duplicateCount++; continue; }
     const snippet = vault.saveSnippet(proposal.text, provenance);
     // Reading carries only facet, stance, reading, cites (Q-4 — no questionForm)
     vault.saveReading({
@@ -736,6 +894,7 @@ export function decide(
     if (!decision.text) continue;
     // Trim must be a substring of the proposal text
     if (!proposal.text.includes(decision.text)) continue;
+     if (existingBodies.has(decision.text)) { duplicateCount++; break; }
 
     const snippet = vault.saveSnippet(decision.text, provenance);
     vault.saveReading({
@@ -777,7 +936,7 @@ export function decide(
   }
  }
 
- return { snippets, buds: [] };
+  return { snippets, buds: [], duplicateCount };
 }
 
 // ---------------------------------------------------------------------------

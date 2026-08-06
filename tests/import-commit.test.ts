@@ -187,6 +187,63 @@ describe('import commit — one accepted piece becomes one dated sitting', () =>
   for (const s of snippetsOnDisk()) expect(file).toContain(s.prose);
  });
 
+ it('saves a zero-cut piece as a sitting with a transcript and no snippets', async () => {
+  // Extraction ran and honestly proposed nothing (`{"cuts":[]}`): the piece
+  // still saves — the sitting is dated and its transcript written, and only
+  // a record whose `cuts` never landed refuses as not-extracted.
+  const src = raw('dated-essay.md');
+  const body = bodyOf('dated-essay.md');
+  const hash = bodyHash(body);
+  const sourcePath = join(root, 'sources', 'dated-essay.md');
+  mkdirSync(join(root, 'sources'), { recursive: true });
+  writeFileSync(sourcePath, src);
+  store.admit([
+   { hash, sourcePath, date: '2018-09-01', lastmod: '2018-09-01', title: 'A dated essay', body },
+  ]);
+  await runImportExtraction({
+   store,
+   complete: makeScriptedComplete([response()]),
+   readSource,
+   log: (e) => {
+    logs.push({ kind: e.kind, detail: e.detail });
+   },
+  });
+  expect(store.get(hash)!.cuts).toEqual([]);
+  const r = mustCommit(commitImport(commitDeps(), hash, []));
+  expect(r.snippets).toBe(0);
+  expect(sitting(r.sessionId).started).toBe('2018-09-01T00:00:00.000Z');
+  expect(snippetsOnDisk()).toEqual([]);
+  expect(store.get(hash)!.status).toBe('accepted');
+ });
+
+ it('writes the person\'s own addition as a snippet with no reading, behind the same gate', async () => {
+  const { hash, sourcePath } = await preparedDatedEssay();
+  // P4 is real prose of the source that the scripted extraction kept no cut
+  // for; the person keeps it themselves.
+  const P4 = 'The last paragraph ties the first three together, and I have left it here.';
+  const r = mustCommit(
+   commitImport(commitDeps(), hash, [{ cut: 0, action: 'discard' }, { cut: 1, action: 'discard' }, { cut: 2, action: 'discard' }], [P4]),
+  );
+  expect(r.snippets).toBe(1); // kept = the addition alone
+  const onDisk = snippetsOnDisk();
+  expect(onDisk).toHaveLength(1);
+  expect(onDisk[0]!.prose).toBe(P4);
+  expect(readFileSync(sourcePath, 'utf-8')).toContain(P4);
+  // No reading was written for it: readings carry the model's labels, and
+  // this passage has none.
+  expect(existsSync(join(root, 'wiki', 'readings'))).toBe(false);
+  // Q-59: a later scan of the same source must not re-propose it.
+  expect(store.get(hash)!.kept).toContain(P4);
+ });
+
+ it('refuses the whole item when an addition is not in the source body', async () => {
+  const { hash } = await preparedDatedEssay();
+  const r = commitImport(commitDeps(), hash, [], ['words I never wrote']);
+  expect(r).toMatchObject({ ok: false, reason: 'unverifiable' });
+  expect(existsSync(join(root, 'transcripts'))).toBe(false); // nothing at all
+  expect(existsSync(join(root, 'snippets'))).toBe(false);
+ });
+
  it('refuses the whole item when one kept text is not in the source', async () => {
   const { hash } = await preparedDatedEssay();
   const r = commitImport(commitDeps(), hash, [{ cut: 0, action: 'trim', text: 'words I never wrote' }]);

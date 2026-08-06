@@ -392,6 +392,19 @@ export function clickExclude(surface: ShimElement): void {
   surface.querySelector('.import-exclude-toggle')?.click();
 }
 
+/** Reveal the plain whole-piece rejection ("reject this piece"). */
+export function clickReject(surface: ShimElement): void {
+  surface.querySelector('.import-reject-toggle')?.click();
+}
+
+/** Fill the rejection's reason and press confirm; resolves after the POST lands. */
+export async function confirmReject(surface: ShimElement, reason: string): Promise<void> {
+  const input = surface.querySelector('.import-reject-reason');
+  if (input) input.value = reason;
+  surface.querySelector('.import-reject-confirm')?.click();
+  await flush();
+}
+
 /** Fill the reason field and press confirm; resolves after the POST lands. */
 export async function confirmExclude(surface: ShimElement, reason: string): Promise<void> {
   const input = surface.querySelector('.import-exclude-reason');

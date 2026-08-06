@@ -111,6 +111,10 @@ const RUNG_ANSWERS = [
  'Until I name it, the work keeps circling the same unfinished paragraph.',
  'Late in the afternoon the pull asks again what I am avoiding in the page.',
  'I can hear the work and the pull arguing about being seen in the margins.',
+ 'The margins hold what neither voice could settle before the morning came back.',
+ 'I brought the pull to the window and let the light name it for the first time.',
+ 'Being seen by the work taught me something the room could not hold on its own.',
+ 'The work and the pull, finally quiet together on the same page this morning.',
 ] as const;
 
 /** The rung questions, indexed by the rung they ask. The answers above never
@@ -125,6 +129,10 @@ const RUNG_TAILS = [
  'What would change if nobody watched the page?',
  'What would you notice next if you stayed with the page?',
  'What keeps the pull present in your afternoons?',
+ 'What stays with being seen when the arguing rests?',
+ 'What did the light name when you brought the pull to the window?',
+ 'What happens when the room cannot hold what being seen taught you?',
+ 'What changes now that the work and the pull lie quiet on the same page?',
 ] as const;
 
 /** The phrase the rung-k question quotes (RUNG_ANSWERS[k-1] holds it). Rung 0
@@ -133,7 +141,7 @@ const RUNG_TAILS = [
  * (which quotes THREAD_PHRASES[8 % 3] = 'the work') and once for the accept,
  * so rung 0 quotes a DIFFERENT substring of the same answer ('being seen' is
  * the last half of THREAD[8]). */
-const RUNG_PHRASES = ['being seen', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull'] as const;
+const RUNG_PHRASES = ['being seen', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen'] as const;
 
 function aRichAnswer(i: number): string {
  return RUNG_ANSWERS[i - 1]!;
@@ -150,23 +158,24 @@ function turnScript(phrase: string, question: string): string[] {
  ];
 }
 
-/** Test A's script: nine pre-offer turns, the accept's rung-0 composition,
- * rungs 1-3, the checkpoint continue's composition, rungs 5-7. The checkpoint
- * turn, the cap turn, and the door/bookmark turns compose nothing. */
+/** Test A's script: six pre-offer turns, the accept's rung-0 composition,
+ * rungs 1-5, the checkpoint continue's composition, rungs 7-11. The checkpoint
+ * turn and the cap turn compose nothing. (Allowance 12, checkpoint 6 —
+ * re-derived 2026-08-05 gate-repair.) */
 function capScript(): string[] {
  const out: string[] = [];
- for (let i = 0; i < 9; i++) {
+ for (let i = 0; i < 6; i++) {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  // The accept composes rung 0 from the licensing answer — phrase differs from
  // the pre-offer turn that earned the offer.
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3]) {
+ for (const k of [1, 2, 3, 4, 5]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
- // rung 4 → checkpoint: no calls; the continue composes rung 5's question.
- out.push(...turnScript(RUNG_PHRASES[4]!, followUp(RUNG_PHRASES[4]!, RUNG_TAILS[4]!)));
- for (const k of [5, 6, 7]) {
+ // rung 6 → checkpoint: no calls; the continue composes rung 7's question.
+ out.push(...turnScript(RUNG_PHRASES[6]!, followUp(RUNG_PHRASES[6]!, RUNG_TAILS[6]!)));
+ for (const k of [7, 8, 9, 10, 11]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
  return out;
@@ -177,22 +186,22 @@ function capScript(): string[] {
  * from the last kept rung), and rung 5's own composition. */
 function parkScript(): string[] {
  const out: string[] = [];
- for (let i = 0; i < 9; i++) {
+ for (let i = 0; i < 6; i++) {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3]) {
+ for (const k of [1, 2, 3, 4]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
- // rung 4 → checkpoint: no calls; the continue composes rung 5's question.
- out.push(...turnScript(RUNG_PHRASES[4]!, followUp(RUNG_PHRASES[4]!, RUNG_TAILS[4]!)));
+ // rung 5 → checkpoint: no calls; the continue composes rung 6's question.
+ out.push(...turnScript(RUNG_PHRASES[5]!, followUp(RUNG_PHRASES[5]!, RUNG_TAILS[5]!)));
  // park: no calls. Then the docket's ladder-summary job, one line.
  out.push('it ran from being seen to a shed nobody entered');
  // The second sitting's resume: a question composed FRESH, quoting the last
  // kept answer (the rung the descent was parked on).
- out.push(...turnScript('the pull', followUp('the pull', 'What does the pull need from you this week?')));
- // Rung 5's answer composes rung 6's question.
- out.push(...turnScript(RUNG_PHRASES[5]!, followUp(RUNG_PHRASES[5]!, RUNG_TAILS[5]!)));
+ out.push(...turnScript('being seen', followUp('being seen', 'What does being seen need from you this week?')));
+ // Rung 6's answer composes rung 7's question.
+ out.push(...turnScript(RUNG_PHRASES[6]!, followUp(RUNG_PHRASES[6]!, RUNG_TAILS[6]!)));
  return out;
 }
 
@@ -256,7 +265,7 @@ describe('soundings end to end (Task 13)', () => {
   // 1. Turn until the license fires; the offer arrives with a number in its sentence.
   const { res: offer, licensingAnswer } = await turnUntilLicensed(app, id);
   expect(offer.soundingOffer).toBeDefined();
-  expect(offer.soundingOffer.allowance).toBe(8);
+  expect(offer.soundingOffer.allowance).toBe(12);
   expect(offer.soundingOffer.sentence).toContain(String(offer.soundingOffer.allowance));
 
   // 2. Accept: rung 0's question is composed. The foothold is asserted from
@@ -264,12 +273,12 @@ describe('soundings end to end (Task 13)', () => {
   const accepted = await post(app, `/api/session/${id}/sounding`, { accept: true });
   expect(accepted.kind).toBe('probe');
   expect(accepted.text).toBeTruthy();
-  expect(accepted.sounding).toEqual({ rung: 0, of: 8, checkpoint: false });
+  expect(accepted.sounding).toEqual({ rung: 0, of: 12, checkpoint: false });
 
   // 3. Answer every rung, never pressing park or another-day — the checkpoint's
   //    mandatory continue is the mechanism, not a gate word.
   let soundingId: string | undefined;
-  for (let i = 1; i <= 8; i++) {
+  for (let i = 1; i <= 12; i++) {
    const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) {
     // 4. The cap closed the descent on the eighth answer, with the door
@@ -281,17 +290,17 @@ describe('soundings end to end (Task 13)', () => {
     soundingId = res.soundingId;
     break;
    }
-   if (i === 4) {
+   if (i === 6) {
     expect(res.kind).toBe('checkpoint');
     expect(res.text).toBeUndefined();
-    expect(res.sounding).toEqual({ rung: 4, of: 8, checkpoint: true });
+    expect(res.sounding).toEqual({ rung: 6, of: 12, checkpoint: true });
     const gate = await post(app, `/api/session/${id}/sounding/gate`, { choice: 'continue' });
     expect(gate.kind).toBe('probe');
     expect(gate.text).toBeTruthy();
    } else {
     expect(res.kind).toBe('probe');
     expect(res.text).toBeTruthy();
-    expect(res.sounding).toEqual({ rung: i, of: 8, checkpoint: false });
+    expect(res.sounding).toEqual({ rung: i, of: 12, checkpoint: false });
    }
   }
   expect(soundingId).toBeDefined();
@@ -329,21 +338,21 @@ describe('soundings end to end (Task 13)', () => {
   const id1 = await newSession(app);
   await turnUntilLicensed(app, id1);
   const accepted = await post(app, `/api/session/${id1}/sounding`, { accept: true });
-  expect(accepted.sounding).toEqual({ rung: 0, of: 8, checkpoint: false });
+  expect(accepted.sounding).toEqual({ rung: 0, of: 12, checkpoint: false });
 
-  // 1. Three rungs, each carrying the gate reading and the next question together.
-  for (let i = 1; i <= 3; i++) {
+  // 1. Four rungs, each carrying the gate reading and the next question together.
+  for (let i = 1; i <= 4; i++) {
    const res = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(i) });
    expect(res.kind).toBe('probe');
    expect(res.text).toBeTruthy();
-   expect(res.sounding).toEqual({ rung: i, of: 8, checkpoint: false });
+   expect(res.sounding).toEqual({ rung: i, of: 12, checkpoint: false });
   }
 
   // 2. The checkpoint rung: no question until a gate word arrives.
-  const checkpoint = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(4) });
+  const checkpoint = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(5) });
   expect(checkpoint.kind).toBe('checkpoint');
   expect(checkpoint.text).toBeUndefined();
-  expect(checkpoint.sounding).toEqual({ rung: 4, of: 8, checkpoint: true });
+  expect(checkpoint.sounding).toEqual({ rung: 5, of: 12, checkpoint: true });
 
   // 3. Continue: a probe comes back.
   const cont = await post(app, `/api/session/${id1}/sounding/gate`, { choice: 'continue' });
@@ -362,7 +371,7 @@ describe('soundings end to end (Task 13)', () => {
   const ladder = readLadder(root, soundingId);
   expect(ladder).not.toBeNull();
   expect(ladder!.endedBy).toBe('park');
-  expect(ladder!.rungs.length).toBe(4);
+  expect(ladder!.rungs.length).toBe(5);
   expect(ladder!.licensingAnswer).toContain(ladder!.rungs[0]!.foothold);
   for (let i = 1; i < ladder!.rungs.length; i++) {
    expect(ladder!.rungs[i - 1]!.answer).toContain(ladder!.rungs[i]!.foothold);
@@ -420,15 +429,17 @@ describe('soundings end to end (Task 13)', () => {
   expect(resumed.kind).toBe('probe');
   expect(resumed.text).toBeTruthy();
   expect(resumed.text).not.toBe(ladder!.rungs.at(-1)!.question);
-  expect(ladder!.rungs.at(-1)!.answer).toContain('the pull');
-  expect(resumed.text).toContain('the pull');
+  expect(ladder!.rungs.at(-1)!.answer).toContain('being seen');
+  expect(resumed.text).toContain('being seen');
   expect(resumed.sounding).toEqual({ rung: ladder!.rungs.length, of: 12, checkpoint: false });
 
   // Answer the resumed question: addRung enforces the backwards chain live.
-  const rung5 = await post(app, `/api/session/${id2}/turn`, { text: aRichAnswer(5) });
-  expect(rung5.kind).toBe('probe');
-  expect(rung5.text).toBeTruthy();
-  expect(rung5.sounding).toEqual({ rung: 5, of: 12, checkpoint: false });
+  // The resumed allowance is 12, so its checkpoint is ceil(12/2) = 6 — the
+  // very next rung. The answer lands as the checkpoint, question withheld.
+  const rung6 = await post(app, `/api/session/${id2}/turn`, { text: aRichAnswer(6) });
+  expect(rung6.kind).toBe('checkpoint');
+  expect(rung6.text).toBeUndefined();
+  expect(rung6.sounding).toEqual({ rung: 6, of: 12, checkpoint: true });
 
   // 8. Park again — one descent, one file — and the second sitting still ends
   //    with the door question and then the bookmark question.
@@ -439,9 +450,9 @@ describe('soundings end to end (Task 13)', () => {
   expect(parked2.soundingId).toBe(soundingId);
   const ladder2 = readLadder(root, soundingId);
   expect(ladder2).not.toBeNull();
-  expect(ladder2!.rungs.length).toBe(5);
-  expect(ladder2!.rungs[3]!.answer).toContain(ladder2!.rungs[4]!.foothold);
-  expect(ladder2!.rungs[4]!.question).toContain(ladder2!.rungs[4]!.foothold);
+  expect(ladder2!.rungs.length).toBe(6);
+  expect(ladder2!.rungs[4]!.answer).toContain(ladder2!.rungs[5]!.foothold);
+  expect(ladder2!.rungs[5]!.question).toContain(ladder2!.rungs[5]!.foothold);
 
   const door2 = await post(app, `/api/session/${id2}/turn`, { text: 'Nothing else for now.' });
   expect(door2.kind).toBe('probe');

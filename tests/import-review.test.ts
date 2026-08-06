@@ -3,6 +3,8 @@ import {
   buildReviewSurface,
   clickExclude,
   confirmExclude,
+  clickReject,
+  confirmReject,
   focusCut,
   paragraphsOf,
   verbLabels,
@@ -88,6 +90,36 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
     expect(nav).toContain('import');
   });
 
+  it('offers a plain rejection in the header, beside the authorship refusal', async () => {
+    const { surface, sent, nav } = await buildReviewSurface(item);
+    expect(surface.querySelector('.import-header .import-reject')).not.toBeNull();
+    clickReject(surface);
+    await confirmReject(surface, '');
+    expect(sent).toHaveLength(0); // an empty reason records nothing (Q-51)
+    await confirmReject(surface, 'a project write-up, not diary material');
+    expect(sent[0]).toMatchObject({
+      path: `/api/import/${HASH}/exclude`,
+      body: { reason: 'a project write-up, not diary material' },
+    });
+    expect(nav).toContain('import');
+  });
+
+  it('saves a zero-cut piece as-is: save is live and sends an empty decision list', async () => {
+    const bare: ImportReviewItem = { ...item, cuts: [], marks: [] };
+    const { surface, sent, nav } = await buildReviewSurface(bare);
+    const save = surface.querySelector('.import-save')! as ShimElement;
+    expect(save.disabled).toBe(false); // nothing to decide — no dead end
+    expect(surface.textContent).toContain('nothing in this piece stood out');
+    expect(surface.querySelector('.import-progress')).toBeNull(); // no count of nothing
+    save.click();
+    await flush();
+    expect(sent[sent.length - 1]).toMatchObject({
+      path: `/api/import/${HASH}/decisions`,
+      body: { decisions: [] },
+    });
+    expect(nav).toContain('import');
+  });
+
   it('keeps save disabled until every cut has a decision, then sends one per cut', async () => {
     const { surface, sent, nav } = await buildReviewSurface(item);
     const save = surface.querySelector('.import-save')! as ShimElement;
@@ -122,6 +154,85 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
       ],
     });
     expect(nav).toContain('import'); // same 2fd883a destination as exclude
+  });
+
+  it('counts the undecided cuts beside save, and counts down as decisions land', async () => {
+    const { surface } = await buildReviewSurface(item);
+    const progress = surface.querySelector('.import-progress')!;
+    expect(progress.textContent).toContain('3 of 3 underlined cuts still wait');
+    expect(progress.textContent).toContain('click one, then approve, trim or discard');
+
+    focusCut(surface, 0);
+    clickVerb(surface, 'approve');
+    expect(progress.textContent).toContain('2 of 3');
+
+    focusCut(surface, 1);
+    clickVerb(surface, 'discard');
+    expect(progress.textContent).toContain('1 of 3 underlined cuts still waits');
+
+    focusCut(surface, 2);
+    clickVerb(surface, 'discard');
+    expect(progress.textContent).toBe('all 3 cuts are decided.');
+  });
+
+  it('select-all preselects the waiting cuts without touching decided ones, and commits nothing', async () => {
+    const { surface, sent } = await buildReviewSurface(item);
+    const save = surface.querySelector('.import-save')! as ShimElement;
+
+    // One cut decided by hand first: the bulk verb must not overwrite it.
+    focusCut(surface, 1);
+    clickVerb(surface, 'discard');
+
+    const allApprove = surface
+      .querySelectorAll('.import-decide-all-btn')
+      .find((b) => b.textContent.includes('approve'))!;
+    allApprove.click();
+
+    expect(sent).toHaveLength(0); // preselection is not a commit
+    expect(save.disabled).toBe(false);
+    expect(surface.querySelector('.import-progress')!.textContent).toBe('all 3 cuts are decided.');
+
+    save.click();
+    await flush();
+    expect(sent[sent.length - 1]).toMatchObject({
+      path: `/api/import/${HASH}/decisions`,
+      body: {
+        decisions: [
+          { cut: 0, action: 'approve' },
+          { cut: 1, action: 'discard' }, // the hand decision survived
+          { cut: 2, action: 'approve' },
+        ],
+      },
+    });
+  });
+
+  it('keeps a passage of the reader\'s own — exact source text only — and sends it as an addition', async () => {
+    const bare: ImportReviewItem = { ...item, cuts: [], marks: [] };
+    const { surface, sent } = await buildReviewSurface(bare);
+
+    const toggle = surface.querySelector('.import-add-toggle')! as ShimElement;
+    toggle.click();
+    const editor = surface.querySelector('.import-add-editor')! as ShimElement;
+
+    // Words not in the source are refused in place — no addition records.
+    editor.value = 'words I never wrote';
+    surface.querySelector('.import-add-confirm')!.click();
+    expect(surface.querySelector('.import-addition')).toBeNull();
+    expect(editor.classList.contains('invalid')).toBe(true);
+
+    // An exact passage goes through, and the no-snippets sentence leaves:
+    // its promise no longer holds.
+    editor.value = PARAGRAPHS[1]!;
+    surface.querySelector('.import-add-confirm')!.click();
+    expect(surface.querySelector('.import-addition-text')!.textContent).toBe(PARAGRAPHS[1]);
+    expect((surface.querySelector('.import-no-cuts') as ShimElement & { hidden?: boolean }).hidden).toBe(true);
+
+    (surface.querySelector('.import-save')! as ShimElement).click();
+    await flush();
+    expect(sent[sent.length - 1]).toMatchObject({
+      path: `/api/import/${HASH}/decisions`,
+      body: { decisions: [], additions: [PARAGRAPHS[1]] },
+    });
   });
 
   it('refuses a trim that is not a non-empty substring of the cut', async () => {

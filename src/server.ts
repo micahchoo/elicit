@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Server } from 'node:http';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { loadEnvFile } from './env.js';
 import matter from 'gray-matter';
 import { join, extname, basename } from 'node:path';
@@ -10,6 +10,8 @@ import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
 import { checkQuestion } from './elicitor/guards.js';
+import { writeRepair, readAllRepairs } from './repair/store.js';
+import { repairedSnippetIds } from './repair/consult.js';
 
 // ── The opening pulse (ticket 105) ──
 // Rotated per sitting so a single unchanging wording never breeds pattern
@@ -22,9 +24,11 @@ const PULSE_PROMPTS = [
  "what's on top of mind before we begin?",
  "how does today feel, in a line?",
 ] as const;
-import { CLOSING_DOOR_QUESTION } from './elicitor/protocol.js';
+import { CLOSING_DOOR_QUESTION, CLOSING_ACKNOWLEDGMENT } from './elicitor/protocol.js';
 import { suggestTargetForVault } from './elicitor/target-default.js';
-import { propose, decide, CUTS_RESPONSE_FORMAT, type HarvestDiagnostics } from './harvester/harvester.js';
+import { propose, decide, CUTS_RESPONSE_FORMAT, SYSTEM_PROMPT as HARVEST_SYSTEM_PROMPT, type HarvestDiagnostics } from './harvester/harvester.js';
+import { readProfile, writeProfile, personaLine, profileFrameWords, type Profile } from './profile.js';
+import { setMintPersonaLine } from './clerk/mint.js';
 import {
  writePendingHarvest,
  readPendingHarvest,
@@ -45,7 +49,7 @@ import { runGapFillSweep } from './clerk/gap-fill.js';
 import { runLineageMirrorSweep } from './clerk/lineage-mirror.js';
 import { createAnnotationStore, type AnnotationStore } from './clerk/annotation-store.js';
 import { nextConsolidation, saveSummary, loadSummaries } from './memory/cover.js';
-import { composeOpener, composeStillTrue, composeExpedition } from './clerk/composed.js';
+import { composeOpener, composeStillTrue, composeExpedition, setDraftRejectSink } from './clerk/composed.js';
 import { composeFromCompacted, composeRung } from './clerk/sounding-rung.js';
 import { loadLadderSummary, runLadderSummaries } from './clerk/sounding-summary.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './clerk/wiki-jobs.js';
@@ -81,7 +85,7 @@ import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
 import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
 import { parkPointer, readLadder, writeLadder } from './sounding/park.js';
 import { resumeSounding } from './sounding/resume.js';
-import { initDRM, beginDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, resumeDRM } from './drm/state.js';
+import { initDRM, beginDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, transcriptQuestion, resumeDRM } from './drm/state.js';
 import { writeDRM, readDRM, parkDRMPointer } from './drm/park.js';
 import {
  createClaimStore,
@@ -109,7 +113,8 @@ import { facetHeading, lintNote } from './queue/source-label.js';
 import { FACETS } from './queue/facet-balance.js';
 import type { Claim, ClaimGraph, LintFinding, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
-import { appendEvent, readEvents, type ActivityEvent } from './log/activity.js';
+import { appendEvent, onAppend, readEvents, type ActivityEvent } from './log/activity.js';
+import { streamSSE } from 'hono/streaming';
 import type { EventKind } from './log/format.js';
 import { surfaced } from './log/surfaced.js';
 import { createSttClient, type SttClient } from './stt/client.js';
@@ -123,7 +128,7 @@ import { RANDOMIZER_THRESHOLDS } from './randomizer/thresholds.js';
 import { createV2App } from './v2/router.js';
 import { sweepTripwire } from './loop/tripwire.js';
 import { createCoachStore, readSittingTags } from './coach/store.js';
-import { evaluateOffer, licenseState, type CoachFacts } from './coach/license.js';
+ import { evaluateOffer, licenseState, clusterClaimsByTheme, type CoachFacts } from './coach/license.js';
 import { waitingLines, coachOfferSentence, buildCoachPage } from './coach/page.js';
 import { runCoachAdvice } from './coach/advise.js';
 import { mintReflections } from './coach/reflection.js';
@@ -141,6 +146,8 @@ import type {
  LexicalIndex,
  DocketReport,
  QueueEntry,
+ QuestionForm,
+ RepairRecord,
  Snippet,
  Turn,
  Prosody,
@@ -251,6 +258,7 @@ function getSttClient(deps: ServerDeps): SttClient | null {
 
 /** Session tokens for password-gated access. Maps token → expiry ms. */
 const loginSessions = new Map<string, number>();
+
 const COOKIE_NAME = 'elicit_session';
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -304,6 +312,16 @@ function stampComposedServed(root: string, queue: QueueStore, openQueueEntryId?:
  const entry = queue.list().find((e) => e.id === openQueueEntryId);
  if (!entry || entry.cites === undefined || entry.cites.length === 0) return;
  surfaced(root, entry.cites, 'composed-question');
+}
+
+/**
+ * The quoted fragment of the queue entry whose question is on the table
+ * (ticket 137). Absent when the open question is not a queue draw.
+ */
+function openQueueQuotedFragment(queue: QueueStore, openQueueEntryId?: string): string | undefined {
+ if (!openQueueEntryId) return undefined;
+ const entry = queue.list().find((e) => e.id === openQueueEntryId);
+ return entry?.quotedFragment;
 }
 
 /**
@@ -560,6 +578,28 @@ export async function createApp(deps: ServerDeps): Promise<Hono> {
  // nothing here ever swaps models at runtime, because the stamp would lie.
  const clerkComplete = deps.clerk?.complete ?? deps.complete;
  const clerkModelName = deps.clerk?.modelName ?? deps.modelName;
+
+ // Who the vault is about (src/profile.ts). Loaded once, updated by
+ // POST /api/profile; the mint prompt reads it through its module setter.
+ let profile: Profile = readProfile(deps.vaultRoot);
+ setMintPersonaLine(personaLine(profile));
+ /** The harvest system prompt with the persona line, or undefined = stock. */
+ const harvestPromptNow = (): string | undefined => {
+  const line = personaLine(profile);
+  return line ? `${HARVEST_SYSTEM_PROMPT}\n\n${line}` : undefined;
+ };
+
+ // Draft rejections reach the Activity Log as counts (site + reason
+ // category, never drafted text) — the eval that measured gemma failing the
+ // emit gate twice per descent had only a terminal scrollback to read.
+ setDraftRejectSink((site, reason) => {
+  appendEvent(deps.vaultRoot, {
+   at: new Date().toISOString(),
+   actor: 'elicitor',
+   kind: 'question-rejected',
+   detail: `site=${site} reason=${reason}`,
+  });
+ });
  // Harvest cuts ride the grammar-constrained variant when the deps carry one
  // (ticket 078); everything else the clerk does stays unconstrained.
  const harvestComplete = deps.clerk?.harvestComplete ?? clerkComplete;
@@ -852,8 +892,56 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      complete: clerkComplete,
      queue: deps.queue,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-    }),
-    // Ticket 132: the zero-LLM tripwire sweep (Q-90/Q-95) — guarded-metric
+     }),
+     // Q-110 door 1: cluster wiki claims → un-coached DirectionRecords.
+     // ZERO-LLM — the thunk never receives the Complete. Clustering is
+     // simple content-word overlap; every evaluation logs cluster sizes
+     // (Q-111). Themes with 3+ claims (Q-111 threshold, no distinct-
+     // sitting requirement) mint an un-coached DirectionRecord.
+     coachSeedSweep: () => {
+       const slice = claimStore.loadSlice();
+       const claims = slice.claims.filter((c) => !c.archived && !c.supersededBy);
+       const themes = clusterClaimsByTheme(
+         claims.map(c => ({ id: c.id, body: c.body })),
+         profileFrameWords(profile),
+       );
+       let clustered = 0;
+       let minted = 0;
+       for (const [, theme] of themes) {
+         clustered++;
+         appendEvent(deps.vaultRoot, {
+           at: new Date().toISOString(),
+           actor: 'clerk',
+           kind: 'coach-seed-cluster',
+           detail: `theme=${theme.name} claims=${theme.claims}`,
+           refs: [],
+         });
+         if (theme.claims >= 3) {
+           const dir = coachStore.createUncoached(theme.name, { seeded: true, claimCount: theme.claims });
+           minted++;
+           appendEvent(deps.vaultRoot, {
+             at: new Date().toISOString(),
+             actor: 'clerk',
+             kind: 'coach-seed-minted',
+             detail: `slug=${dir.slug} name=${theme.name} claims=${theme.claims}`,
+             refs: [],
+           });
+         }
+       }
+       // Log aggregate cluster sizes for honest re-tuning (Q-111)
+       const sizes = [...themes.values()].map(t => String(t.claims)).join(',');
+       if (sizes) {
+         appendEvent(deps.vaultRoot, {
+           at: new Date().toISOString(),
+           actor: 'clerk',
+           kind: 'coach-seed-evaluated',
+           detail: `themes=${themes.size} clusterSizes=[${sizes}]`,
+           refs: [],
+         });
+       }
+       return Promise.resolve({ clustered: themes.size, minted });
+     },
+     // Ticket 132: the zero-LLM tripwire sweep (Q-90/Q-95) — guarded-metric
     // baselines vs post-graduation counts, batch demotion by recency. A
     // missing ledger makes it a no-op inside sweepTripwire.
     tripwireSweep: () => {
@@ -955,20 +1043,17 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    // into a failure.
    try {
     const previous = readSweepDeferral(deps.vaultRoot); // read BEFORE appending
-    const { pending, fresh, clipped } = sweepWorkRemaining();
+    const { pending, fresh } = sweepWorkRemaining();
     if (pending > 0) {
-     // The claimable deferral: this much sweep work is left after the run.
      appendSweepDeferral(deps.vaultRoot, pending);
-     // The fresh > 0 gate stops the chain when every remaining reading is at
-     // backoff (Q-29); the previousLive gate is what lets a boot run resume a
-     // chain that a restart interrupted.
-     if (fresh > 0 && (clipped || (previous?.remaining ?? 0) > 0)) {
+     // Ticket 139: schedule a drain whenever fresh pending readings exist,
+     // no clipped/previous gates — the chain is self-limiting: it stops when
+     // pending reaches zero or every reading is stuck at backoff.
+     if (fresh > 0) {
       scheduleDrain();
      }
     } else if ((previous?.remaining ?? 0) > 0) {
-     // Terminal claim — succeeded-no-output: the drain found nothing left, so
-     // record the empty claim and stop. Distinct from a failed run, which
-     // writes no line at all.
+     // Terminal claim — succeeded-no-output: the drain found nothing left.
      appendSweepDeferral(deps.vaultRoot, 0);
     }
    } catch (err) {
@@ -1177,6 +1262,91 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   return next();
  });
 
+ // ── Idempotency for headless callers (145 remainder) ──
+ //
+ // A script whose request times out retries it — and without a dedupe key
+ // the server happily runs the same turn or opens the same sitting twice.
+ // Opt-in: a mutating request carrying an `Idempotency-Key` header runs
+ // once; any repeat of the key (including one arriving WHILE the first is
+ // still in flight — the timeout-retry case, so the PROMISE is shared, not
+ // just the result) gets a copy of the first response. In-memory, half an
+ // hour, capped: single-person local server, and a restart also ends the
+ // retrying script's session. The browser never sends the header.
+ const idempotencyCache = new Map<string, { at: number; response: Promise<{ status: number; contentType: string | null; text: string }> }>();
+ const IDEMPOTENCY_TTL_MS = 30 * 60_000;
+ const IDEMPOTENCY_CAP = 1000;
+ const idempotencyMiddleware = async (c: Context, next: () => Promise<void>): Promise<Response | void> => {
+  const key = c.req.header('idempotency-key');
+  if (!key || c.req.method === 'GET' || c.req.method === 'HEAD') return next();
+  const now = Date.now();
+  for (const [k, v] of idempotencyCache) {
+   if (now - v.at > IDEMPOTENCY_TTL_MS) idempotencyCache.delete(k);
+  }
+  // Scope by route so one key accidentally reused across routes never
+  // replays the wrong response.
+  const scoped = `${c.req.method} ${new URL(c.req.url).pathname} ${key}`;
+  const hit = idempotencyCache.get(scoped);
+  if (hit) {
+   const stored = await hit.response;
+   return new Response(stored.text, {
+    status: stored.status,
+    headers: {
+     ...(stored.contentType ? { 'content-type': stored.contentType } : {}),
+     'idempotency-replayed': 'true',
+    },
+   });
+  }
+  if (idempotencyCache.size >= IDEMPOTENCY_CAP) {
+   const oldest = idempotencyCache.keys().next().value;
+   if (oldest !== undefined) idempotencyCache.delete(oldest);
+  }
+  let settle!: (v: { status: number; contentType: string | null; text: string }) => void;
+  let fail!: (e: unknown) => void;
+  const shared = new Promise<{ status: number; contentType: string | null; text: string }>((res, rej) => { settle = res; fail = rej; });
+  // A rejected shared promise is awaited only by concurrent duplicates;
+  // swallow so a handler throw cannot become an unhandled rejection here.
+  shared.catch(() => {});
+  idempotencyCache.set(scoped, { at: now, response: shared });
+  try {
+   await next();
+   const res = c.res.clone();
+   settle({ status: res.status, contentType: res.headers.get('content-type'), text: await res.text() });
+  } catch (err) {
+   // A failed first attempt must not pin the key — the retry should RUN.
+   idempotencyCache.delete(scoped);
+   fail(err);
+   throw err;
+  }
+ };
+ app.use('/api/*', idempotencyMiddleware);
+ app.use('/v2/*', idempotencyMiddleware);
+
+ // ── Who the vault is about ──
+ //
+ // GET /api/profile → {name?, pronouns?}
+ // POST /api/profile {name?, pronouns?} → the stored profile
+ // Configuration typed into a form, never elicited words — it lives beside
+ // the vault, not in it (Q-1), and readings/claims written after a change
+ // use the new phrasing; nothing already written is rewritten.
+ app.get('/api/profile', (c) => c.json(profile));
+ app.post('/api/profile', async (c) => {
+  const body = await c.req.json<{ name?: unknown; pronouns?: unknown }>().catch(() => null);
+  if (body === null) return c.json({ error: 'a JSON body is required' }, 400);
+  if (body.name !== undefined && typeof body.name !== 'string') {
+   return c.json({ error: 'name must be a string' }, 400);
+  }
+  if (body.pronouns !== undefined && typeof body.pronouns !== 'string') {
+   return c.json({ error: 'pronouns must be a string' }, 400);
+  }
+  profile = writeProfile(deps.vaultRoot, {
+   ...(typeof body.name === 'string' ? { name: body.name } : {}),
+   ...(typeof body.pronouns === 'string' ? { pronouns: body.pronouns } : {}),
+  });
+  setMintPersonaLine(personaLine(profile));
+  serverEmit(deps.vaultRoot, 'elicitor', 'profile-updated', `name=${profile.name !== undefined} pronouns=${profile.pronouns !== undefined}`);
+  return c.json(profile);
+ });
+
  // POST /api/fresh-start {confirm: 'fresh start'} → {ok, archiveDir, moved}
  // Loopback-only, like /api/setup: a fresh start re-runs first-boot setup,
  // which is host-only by design. Every person-derived record is MOVED —
@@ -1225,10 +1395,16 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
  // POST /api/session {mode, shuffle?} → {sessionId, question, target, source?}
  app.post('/api/session', async (c) => {
   const body = await c.req.json<{ mode: Mode; shuffle?: boolean }>();
+
   const mode = body.mode;
   if (!mode || typeof mode.minutes !== 'number' || !mode.energy) {
    return c.json({ error: 'invalid mode' }, 400);
   }
+
+  // Q-115: advance the sitting counter the queue engagement ledger keys on
+  // BEFORE any draw this sitting makes.
+  deps.queue.noteSittingStarted();
+
   // Absent target: fall back to what the corpus asks for, not inward by
   // reflex (Q-19, ticket 042). An explicit target always wins.
   const suggestion = suggestTargetForVault(deps.vaultRoot);
@@ -1257,6 +1433,32 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    return dealt.draw;
   };
 
+  // ── Close abandoned sittings on vault contact (ticket 135) ──
+  (() => {
+   try {
+    const transDir = join(deps.vaultRoot, 'transcripts');
+    if (!existsSync(transDir)) return;
+    const files = readdirSync(transDir)
+     .filter(f => f.endsWith('.md'))
+     .map(f => join(transDir, f))
+     .filter(p => statSync(p).isFile());
+    if (files.length === 0) return;
+    let recent = files[0]!;
+    let recentMtime = statSync(recent).mtimeMs;
+    for (let i = 1; i < files.length; i++) {
+     const mt = statSync(files[i]!).mtimeMs;
+     if (mt > recentMtime) { recent = files[i]!; recentMtime = mt; }
+    }
+    const tail = readFileSync(recent, 'utf8').slice(-500);
+    const sections = tail.match(/^## (\w+)/gm);
+    if (sections && sections.length > 0 && sections[sections.length - 1] === '## agent') {
+     appendFileSync(recent, `\n## closing\n\n${CLOSING_ACKNOWLEDGMENT}\n\n`, 'utf8');
+    }
+   } catch { /* best-effort */ }
+  })();
+
+  const greetingText = PULSE_PROMPTS[Math.floor(Math.random() * PULSE_PROMPTS.length)]!;
+
   const state = startSession(normalized, {
    complete: deps.complete,
    vault: deps.vault,
@@ -1266,11 +1468,11 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    protocolName: selectedProtocol.name,
    randomizer,
    vaultRoot: deps.vaultRoot,
+   greetingText,
    ...(body.shuffle ? { shuffleRequested: true } : {}),
   });
   sessions.set(state.id, state);
-  const opener = state.turns[0]!;
-
+  const opener = state.pendingOpener!;
   serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name} shuffle=${body.shuffle === true}`);
 
   // Usage stamps (015): what this opening actually served to the person.
@@ -1285,14 +1487,15 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   if (draw && draw.draw.kind === 'resurfacing' && draw.question === opener.text) {
    surfaced(deps.vaultRoot, [draw.draw.snippetId], 'draw');
   }
+  const openerQuotedFragment = openQueueQuotedFragment(deps.queue, state.openQueueEntryId);
   return c.json({
    sessionId: state.id,
    question: opener.text,
    target,
-  // The opening pulse (ticket 105): a rotated momentary-state prompt.
-  // The client shows it as a one-line input before the first question;
-  // skipping leaves no record — the prompt never reaches the transcript.
-  pulsePrompt: PULSE_PROMPTS[Math.floor(Math.random() * PULSE_PROMPTS.length)],
+  // The greeting IS the pulse — the client renders it as the momentary-state
+  // input before the opener (ticket 135).
+  pulsePrompt: greetingText,
+   protocol: selectedProtocol.name,
    ...(draw && draw.question === opener.text
     ? {
      source: draw.provenance,
@@ -1302,46 +1505,65 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      ...(draw.context ? { context: draw.context } : {}),
     }
     : {}),
+    ...(openerQuotedFragment ? { quotedFragment: openerQuotedFragment } : {}),
   });
  });
 
 // GET /api/anniversary — the on-this-day card for the Waiting Surface (ticket 107).
 // Returns a draw when a snippet's wroteAt month+day matches today; null otherwise.
 
- // POST /api/session/:id/pulse {text, prompt} → {ok} (ticket 105)
- // The opening pulse: one momentary-state line at sitting start.
- // Harvested like any prose — an agent turn (the prompt, tagged 'pulse')
- // and a user turn (the answer) are inserted before the existing opener.
- // Skipping calls nothing; the prompt rotates but the skip is invisible.
+ // POST /api/session/:id/pulse {text, prompt} → {ok} (ticket 105, 135)
+ // Greeting path (ticket 135): greeting is turn 0, opener is pending.
+ // The pulse route records the greeting answer and appends the opener.
  app.post('/api/session/:id/pulse', async (c) => {
   const sessionId = c.req.param('id');
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
   const body = await c.req.json<{ text: string; prompt: string }>();
   const text = (body.text ?? '').trim();
-  if (!text) return c.json({ ok: true }); // empty answer = skip equivalent
   const now = new Date().toISOString();
-  // Insert the pulse turns after the existing opener in transcript order.
-  // The opener was written first — pulse turns follow. findElicitingProbe
-  // still maps correctly: user turn 0 (pulse answer) → pulse prompt,
-  // user turn 1 (real answer) → opener.
+
+  // ── Greeting path (ticket 135): greeting is turn 0 ──
+  if (state.pendingOpener) {
+   if (text) {
+    const userTurnRecord: Turn = { role: 'user', text, at: now };
+    state.turns.push(userTurnRecord);
+    deps.vault.appendTurn(sessionId, userTurnRecord);
+    serverEmit(deps.vaultRoot, 'elicitor', 'pulse-answered', `chars=${text.length}`);
+   }
+   const openerTurn: Turn = {
+    role: 'agent',
+    text: state.pendingOpener.text,
+    at: now,
+    questionForm: state.pendingOpener.questionForm,
+    ...(state.pendingOpener.questionSource ? { questionSource: state.pendingOpener.questionSource } : {}),
+    ...(state.pendingOpener.gap ? { gap: state.pendingOpener.gap } : {}),
+   };
+   state.turns.push(openerTurn);
+   deps.vault.appendTurn(sessionId, openerTurn);
+   state.questionCount++;
+   delete state.pendingOpener;
+   return c.json({ ok: true });
+  }
+
+  // ── Pre-135 path: pulse prompt follows the opener ──
+  if (!text) return c.json({ ok: true }); // empty answer = skip equivalent
   const agentTurn: Turn = {
    role: 'agent',
    text: body.prompt,
    at: now,
    questionProvenance: 'pulse',
   };
-  const userTurn: Turn = {
+  const userTurnRecord: Turn = {
    role: 'user',
    text,
    at: now,
   };
   state.turns.push(agentTurn);
-  state.turns.push(userTurn);
+  state.turns.push(userTurnRecord);
   state.questionCount++;
-  // Append both to the transcript file
   deps.vault.appendTurn(sessionId, agentTurn);
-  deps.vault.appendTurn(sessionId, userTurn);
+  deps.vault.appendTurn(sessionId, userTurnRecord);
   serverEmit(deps.vaultRoot, 'elicitor', 'pulse-answered', `chars=${text.length}`);
   return c.json({ ok: true });
  });
@@ -1411,38 +1633,46 @@ function closeTheDoor(state: SessionState, at: string): void {
 
   // Detect resonance for juxtaposition info (before userTurn consumes the hit)
   const hits = await resonateHybrid(currentIndex, semanticIndex, body.text);
+  // Q-106: Exclude hits whose snippet is under repair — a repaired snippet
+  // must not surface through resonance either.
+  const allRepairsForHit = readAllRepairs(deps.vaultRoot);
+  const repairedIdsForHit = repairedSnippetIds(allRepairsForHit);
+  const cleanHits = repairedIdsForHit.size > 0
+    ? hits.filter((h) => !repairedIdsForHit.has(h.snippetId))
+    : hits;
 
-  // Ticket 036 item 2. The count is emitted on EVERY turn, zero included:
-  // until now the index was searched on each turn and said nothing when it
-  // found nothing, so "looked and found no echo" and "never looked" reached
-  // the Activity Log identically, which is the one thing Q-23 cannot afford.
-  // The actor is the elicitor, not the clerk — this is a live-session act.
-  // Never the text, only how many (Q-22).
+  const hitCount = cleanHits.length;
   serverEmit(
    deps.vaultRoot,
    'elicitor',
    'resonance-checked',
-   `session=${sessionId} hits=${hits.length}`,
+   `session=${sessionId} hits=${hitCount}`,
   );
 
+  // The rider is built AFTER userTurn. When the elicitor composed a
+  // juxtaposition, the rider shows the snippet it ACTUALLY used
+  // (Probe.juxtaposedSnippet) — the top hit here may be one it skipped
+  // (repairs, per-sitting reuse, failed drafts). Otherwise the 068 contract
+  // stands: resonance surfaces the top hit even when the question came from
+  // elsewhere. Descent rungs and closing questions get no rider at all — it
+  // used to ride on those too, noise beside a question that never used it.
   let juxtaposition: { snippetText: string; snippetDate: string } | undefined;
-  if (hits.length > 0) {
-   const hit = hits[0]!;
-   const snip = snippetMap.get(hit.snippetId);
-   if (snip) {
-    juxtaposition = {
-     snippetText: snip.prose,
-     snippetDate: snip.captured.slice(0, 10),
-    };
-   }
-  }
+  let riderSnippetId: string | undefined;
 
  let turnProsody: Prosody | undefined;
  if (body.spoken && pendingProsody && pendingProsody.text === body.text) {
   turnProsody = pendingProsody.prosody;
   pendingProsody = null;
  }
+ // Thread engagement (ticket 148): the reply answers the entry userTurn is
+ // about to clear — capture its id first, judge the reply against it after.
+ // Two disengaged replies running defer the whole thread (never expire —
+ // dormancy is signal, Q-56).
+ const answeredEntryId = state.openQueueEntryId;
  const result = await userTurn(state, body.text, body.spoken, turnProsody);
+ if (answeredEntryId) {
+  deps.queue.recordReplyDisengagement(answeredEntryId, body.text);
+ }
 
   // Record the capture channel for this turn ordinal, unconditionally —
   // an absent channel pushes undefined so the ordinals never shift (ticket 048).
@@ -1453,8 +1683,25 @@ function closeTheDoor(state: SessionState, at: string): void {
    serverEmit(deps.vaultRoot, 'elicitor', 'close-phase-entered', `session=${sessionId}`);
   }
 
+  const inQuietPhase = state.sounding !== undefined || state.finishedSounding !== undefined
+   || state.phase === 'closing-door' || state.phase === 'closing-bookmark';
+  if (result.kind === 'probe' && result.juxtaposedSnippet) {
+   riderSnippetId = result.juxtaposedSnippet.snippetId;
+  } else if (!inQuietPhase && cleanHits.length > 0) {
+   riderSnippetId = cleanHits[0]!.snippetId;
+  }
+  if (riderSnippetId !== undefined) {
+   const snip = snippetMap.get(riderSnippetId);
+   if (snip) {
+    juxtaposition = {
+     snippetText: snip.prose,
+     snippetDate: snip.captured.slice(0, 10),
+    };
+   }
+  }
+
   if (result.kind === 'saturated') {
-   return c.json({ kind: 'saturated' });
+   return c.json({ kind: 'saturated', ...(result.closingText ? { closingText: result.closingText } : {}) });
   }
 
   // The descent is blocked at its checkpoint: no question until a gate
@@ -1480,8 +1727,8 @@ function closeTheDoor(state: SessionState, at: string): void {
   }
 
   // Activity: question-asked or juxtaposition-offered
-  if (juxtaposition) {
-   serverEmit(deps.vaultRoot, 'elicitor', 'juxtaposition-offered', `session=${sessionId} snippet=${hits[0]!.snippetId} source=juxtaposition`);
+  if (juxtaposition && riderSnippetId !== undefined) {
+   serverEmit(deps.vaultRoot, 'elicitor', 'juxtaposition-offered', `session=${sessionId} snippet=${riderSnippetId} source=juxtaposition`);
   } else {
    serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=${result.provenance}`);
   }
@@ -1504,7 +1751,10 @@ function closeTheDoor(state: SessionState, at: string): void {
     deps.vaultRoot,
     'elicitor',
     'sounding-license',
-    `late=${lic.reasons.late} energy=${lic.reasons.energy} sustained=${lic.reasons.sustained} unoffered=${lic.reasons.unoffered} licensed=${lic.licensed}`,
+    // sustainedValue is the measured mean adjacent Jaccard — the ONLY numeric
+    // evidence the threshold can ever be re-tuned from (Q-62; ticket 142
+    // computed it and this line used to drop it).
+    `late=${lic.reasons.late} energy=${lic.reasons.energy} sustained=${lic.reasons.sustained} sustainedValue=${lic.sustainedValue.toFixed(3)} unoffered=${lic.reasons.unoffered} licensed=${lic.licensed}`,
    );
    if (lic.licensed) {
     state.soundingOffer = 'offered';
@@ -1524,6 +1774,7 @@ function closeTheDoor(state: SessionState, at: string): void {
    }
   }
 
+  const servedQuotedFragment = openQueueQuotedFragment(deps.queue, state.openQueueEntryId);
   return c.json({
    kind: 'probe',
    text: result.text,
@@ -1532,19 +1783,50 @@ function closeTheDoor(state: SessionState, at: string): void {
    ...(juxtaposition ? { juxtaposition } : {}),
    ...(state.sounding ? { sounding: gateStateFor(state.sounding) } : {}),
    ...(soundingOfferWire ? { soundingOffer: soundingOfferWire } : {}),
+   ...(servedQuotedFragment ? { quotedFragment: servedQuotedFragment } : {}),
   });
  });
 
  // POST /api/session/:id/skip → question | exhausted
+ // When the opener is still pending (greeting path, ticket 135), the skip
+ // replaces the pending opener and writes the replaced question as a
+ // skipped turn for audit.
  app.post('/api/session/:id/skip', (c) => {
   const sessionId = c.req.param('id');
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
+  // ── Pending opener path (ticket 135): replace before it fires ──
+  if (state.pendingOpener) {
+   const skippedTurn: Turn = {
+    role: 'agent',
+    text: state.pendingOpener.text,
+    at: new Date().toISOString(),
+    questionForm: state.pendingOpener.questionForm,
+    skipped: true,
+    ...(state.pendingOpener.questionSource ? { questionSource: state.pendingOpener.questionSource } : {}),
+    ...(state.pendingOpener.gap ? { gap: state.pendingOpener.gap } : {}),
+   };
+   state.turns.push(skippedTurn);
+   deps.vault.appendTurn(sessionId, skippedTurn);
+
+   const bank = state.bank ?? [];
+   const used = new Set(state.turns.filter(t => t.role === 'agent').map(t => t.text));
+   const available = bank.filter(st => !used.has(st.text));
+   if (available.length === 0) return c.json({ kind: 'exhausted' });
+   const pick = available[Math.floor(Math.random() * available.length)]!;
+   state.pendingOpener = {
+    text: pick.text,
+    questionForm: pick.questionForm,
+    ...(pick.source ? { questionSource: pick.source } : {}),
+   };
+   delete state.openQueueEntryId;
+   serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=skip`);
+   return c.json({ kind: 'question', text: pick.text, questionForm: pick.questionForm });
+  }
+
+  // ── Pre-135 path: last agent turn is the current question ──
   const result = skipQuestion(state);
-  // The replacement draw carries the 'skip' provenance (src/types.ts) whose
-  // log sentence already exists — without this emit a skip leaves no trace
-  // on disk and the skip-rate guarded metric (Q-90) cannot be counted.
   if (result.kind === 'question') {
    serverEmit(deps.vaultRoot, 'elicitor', 'question-asked', `session=${sessionId} source=skip`);
   }
@@ -1639,10 +1921,18 @@ app.post('/api/session/:id/sounding', async (c) => {
 
  state.soundingOffer = 'entered';
  const now = new Date().toISOString();
- const q = await composeRung(stashed.text, clerkComplete, (question) =>
-  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }));
+ // Up to three drafts before the person sees a failure: a local model's
+ // first-rung draft failing the emit gate is routine (measured: two
+ // consecutive rejections before a clean rung on gemma4:e4b), and a person
+ // who consented to a descent should not have to re-consent because the
+ // drafter stuttered.
+ let q: Awaited<ReturnType<typeof composeRung>> = null;
+ for (let attempt = 0; attempt < 3 && !q; attempt++) {
+  q = await composeRung(stashed.text, clerkComplete, (question) =>
+   checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }));
+ }
  if (!q) {
-  // Composition failed once; the offer goes back on the table so the
+  // Composition failed thrice; the offer goes back on the table so the
   // person can decline it or accept again — the recorded choice for T8.
   state.soundingOffer = 'offered';
   soundingOffers.set(sessionId, stashed);
@@ -1818,6 +2108,112 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
  });
  });
 
+// POST /api/session/:id/repair — the repair verb (Q-104..Q-108)
+// Accepts { snippetRef: string; quotedFragment: string }
+// Writes repair record, expires citing queue entries, emits repair event,
+// and returns a fresh non-callback question (Q-105).
+app.post('/api/session/:id/repair', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+
+ const body = await c.req.json<{ snippetRef?: unknown; quotedFragment?: unknown }>();
+ if (!body.snippetRef || typeof body.snippetRef !== 'string') {
+  return c.json({ error: 'snippetRef is required' }, 400);
+ }
+ if (!body.quotedFragment || typeof body.quotedFragment !== 'string') {
+  return c.json({ error: 'quotedFragment is required' }, 400);
+ }
+
+ // Q-106: Write the repair side-record
+ const repair: RepairRecord = {
+  snippetRef: body.snippetRef,
+  quotedFragment: body.quotedFragment,
+  sitting: sessionId,
+  at: new Date().toISOString(),
+ };
+ writeRepair(deps.vaultRoot, repair);
+
+ // Q-106: Expire open queue entries citing the repaired snippet. A repair on
+ // any version quarantines the whole snippet (consult.ts), so a cite of any
+ // version expires the entry via the store's own markExpired primitive.
+ const repairedIds = repairedSnippetIds(readAllRepairs(deps.vaultRoot));
+ for (const status of ['pending', 'asked'] as const) {
+  for (const entry of deps.queue.list({ status })) {
+   const cites = entry.cites ?? [];
+   if (cites.some((cite) => repairedIds.has(cite.split('@')[0]!))) {
+    deps.queue.markExpired(entry.id);
+   }
+  }
+ }
+
+ // Q-108: Emit the one activity-stream event
+ serverEmit(deps.vaultRoot, 'elicitor', 'repair', `snippet=${body.snippetRef}`);
+
+ // Q-105: The fixed mechanical template turn — acknowledgments, no re-quote,
+ // fresh question. Never carries the fragment (Q-105: never re-quoted).
+ const repairText = `I see — that fragment was not yours. I have unlinked it and it will not appear in future questions.`;
+ const repairTurn: Turn = {
+  role: 'agent',
+  text: repairText,
+  at: new Date().toISOString(),
+  questionProvenance: 'repair',
+  questionForm: 'deliberative',
+  repairId: sessionId,
+ };
+ state.turns.push(repairTurn);
+ deps.vault.appendTurn(sessionId, repairTurn);
+
+ // Q-107: The correction turn is excluded from harvest — mark the last user
+ // turn (the correction) with the repair id.
+ const lastUserTurn = [...state.turns].reverse().find(t => t.role === 'user');
+ if (lastUserTurn) {
+  lastUserTurn.repairId = sessionId;
+ }
+
+ // Q-105: Fresh non-callback question from bank/queue (never a callback).
+ // Serve a bank question that is NOT a queue callback.
+ const bank = state.bank ?? [];
+ const usedTexts = new Set(state.turns.filter(t => t.role === 'agent').map(t => t.text));
+ const available = bank.filter(st => !usedTexts.has(st.text));
+ let nextQuestion: string;
+ let nextForm: QuestionForm;
+ if (available.length > 0) {
+  const pick = available[Math.floor(Math.random() * available.length)]!;
+  nextQuestion = pick.text;
+  nextForm = pick.questionForm;
+ } else {
+  // Fall back to queue draw
+  const draw = deps.queue.draw(state.mode, 'opening');
+  if (draw) {
+   nextQuestion = draw.question;
+   nextForm = draw.questionForm;
+   deps.queue.markAsked(draw.id);
+   state.openQueueEntryId = draw.id;
+  } else {
+   nextQuestion = 'What would you like to talk about?';
+   nextForm = 'deliberative';
+  }
+ }
+
+ const nextTurn: Turn = {
+  role: 'agent',
+  text: nextQuestion,
+  at: new Date().toISOString(),
+  questionForm: nextForm,
+  questionProvenance: 'bank',
+ };
+ state.turns.push(nextTurn);
+ deps.vault.appendTurn(sessionId, nextTurn);
+ state.questionCount++;
+
+ return c.json({
+  kind: 'probe',
+  text: nextQuestion,
+  questionForm: nextForm,
+ });
+});
+
 // ── DRM (Day Reconstruction Method) routes ──
 // Q-85: user-declared entry only, fixed probes, gate always visible,
 // fragments through ordinary harvest review. Follows the Sounding endpoint
@@ -1889,9 +2285,12 @@ app.post('/api/session/:id/drm/enumerate-done', (c) => {
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-enumeration-finished',
   `episodes=${state.drm.episodes.length}`);
 
- const question = probeQuestion(state.drm);
- const now = new Date().toISOString();
- deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+const question = probeQuestion(state.drm);
+const cleanText = transcriptQuestion(state.drm);
+const now = new Date().toISOString();
+const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
+deps.vault.appendTurn(sessionId, agentTurn);
+state.turns.push(agentTurn);
 
  return c.json({
   kind: 'drm-probe',
@@ -1915,12 +2314,19 @@ app.post('/api/session/:id/drm/probe', async (c) => {
   return c.json({ error: 'text is required' }, 400);
  }
 
- const now = new Date().toISOString();
- // Write the user's answer as a turn
- deps.vault.appendTurn(sessionId, { role: 'user', text: body.text, at: now });
+const now = new Date().toISOString();
+// Write the user's answer as a turn — transcript AND in-memory (ticket 147)
+const userTurn: Turn = { role: 'user', text: body.text, at: now };
+deps.vault.appendTurn(sessionId, userTurn);
+state.turns.push(userTurn);
 
- const probeResult = answerProbe(state.drm, body.text);
- state.drm = probeResult.state;
+const probeResult = answerProbe(state.drm, body.text);
+// Push the fragment into the new state BEFORE assigning (ticket 147)
+const nextDrm = probeResult.state;
+if (probeResult.fragment) {
+  nextDrm.fragments.push(probeResult.fragment);
+}
+state.drm = nextDrm;
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-probe-answered',
   `step=${state.drm.probeStep}`);
@@ -1936,12 +2342,12 @@ app.post('/api/session/:id/drm/probe', async (c) => {
   });
  }
 
- // More probes — ask the next one
- // For the affect step with nudge, check if the previous affect answer was thin
- const question = state.drm.probeStep === 'affect' && probeResult.fragment
-  ? probeQuestion(state.drm) // nudge handled in web UI by checking answer shape
-  : probeQuestion(state.drm);
- deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+// More probes — ask the next one
+const question = probeQuestion(state.drm);
+const cleanText = transcriptQuestion(state.drm);
+const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
+deps.vault.appendTurn(sessionId, agentTurn);
+state.turns.push(agentTurn);
 
  return c.json({
   kind: 'drm-probe',
@@ -2018,9 +2424,12 @@ app.post('/api/session/:id/drm/gate', async (c) => {
   });
  }
 
- // Next episode — ask first probe
- const question = probeQuestion(state.drm);
- deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+// Next episode — ask first probe
+const question = probeQuestion(state.drm);
+const cleanText = transcriptQuestion(state.drm);
+const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
+deps.vault.appendTurn(sessionId, agentTurn);
+state.turns.push(agentTurn);
 
  return c.json({
   kind: 'drm-probe',
@@ -2074,9 +2483,12 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   });
  }
 
- const question = probeQuestion(resumed);
- const now = new Date().toISOString();
- deps.vault.appendTurn(sessionId, { role: 'agent', text: question, at: now });
+const question = probeQuestion(resumed);
+const cleanText = transcriptQuestion(resumed);
+const now = new Date().toISOString();
+const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
+deps.vault.appendTurn(sessionId, agentTurn);
+state.turns.push(agentTurn);
 
  return c.json({
   kind: 'drm-probe',
@@ -2106,7 +2518,7 @@ app.post('/api/session/:id/drm/resume', async (c) => {
  }): void {
   serverEmit(deps.vaultRoot, 'harvester', 'harvest-started', `session=${args.sessionId} chunks=${args.turns.length}`);
   setImmediate(() => {
-   propose(args.sessionId, args.turns, harvestComplete)
+   propose(args.sessionId, args.turns, harvestComplete, harvestPromptNow())
     .then((result) => {
      if (result.diagnostics.parseMode === 'failed') {
       serverEmit(deps.vaultRoot, 'harvester', 'harvest-failed', harvestDetail(result));
@@ -2140,12 +2552,30 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
-  // Snapshot the capture channels by value (ticket 048): the sitting may be
-  // gone by the time the background run writes its record.
+  // Close abandoned sittings (ticket 135): if the last turn is an agent
+  // question, write a ## closing section so no transcript ends unanswered.
+  const turns = state.turns;
+  if (turns.length > 0 && turns[turns.length - 1]!.role === 'agent') {
+   const transcriptPath = join(deps.vaultRoot, 'transcripts', `${sessionId}.md`);
+   appendFileSync(transcriptPath, `\n## closing\n\n${CLOSING_ACKNOWLEDGMENT}\n\n`, 'utf8');
+  }
+
+  // asked→pending recovery: return queue entry if sitting ends unanswered (ticket 145)
+  if (state.openQueueEntryId) {
+   deps.queue.markPending(state.openQueueEntryId);
+  }
+
   const turnChannels = state.turnChannels ? [...state.turnChannels] : undefined;
+
+  // Empty sitting guard: zero user turns leaves no trace (ticket 145)
+  const userTurns = turns.filter(t => t.role === 'user');
+  if (userTurns.length === 0) {
+   sessions.delete(sessionId);
+   return c.json({ status: 'empty', sessionId });
+  }
   startBackgroundHarvest({
    sessionId,
-   turns: state.turns,
+   turns,
    protocol: state.protocol,
    started: sessionStartedAt(deps.vaultRoot, sessionId),
    origin: 'harvest',
@@ -2299,6 +2729,57 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   });
   return c.json({ status: 'harvesting', sessionId });
  });
+
+ // GET /api/sweep-backlog → { pendingReadings, freshReadings } (ticket 139)
+ // The waiting surface reads this to show "the wiki is N readings behind."
+ // Cheap: reads the sweep deferral ledger and the claim store's swept set.
+ app.get('/api/sweep-backlog', (c) => {
+  const previous = readSweepDeferral(deps.vaultRoot);
+  const { pending, fresh } = sweepWorkRemaining();
+  return c.json({
+   pendingReadings: pending,
+   freshReadings: fresh,
+   lastRecorded: previous?.remaining ?? 0,
+   at: previous?.at ?? null,
+  });
+ });
+
+ // GET /api/events → SSE liveness feed (ticket 150). Every Activity Log
+ // append (Q-23 — the one audit spine every actor writes through) is
+ // pushed as one event, so open screens refresh instead of waiting for a
+ // manual reload. Read-only; carries kind+at, never payloads — a screen
+ // refetches through its own routes. Q-22 intact: this reaches only a
+ // browser tab the person already has open; nothing walks out.
+ app.get('/api/events', (c) =>
+  streamSSE(c, async (stream) => {
+   let open = true;
+   const off = onAppend(deps.vaultRoot, (e) => {
+    if (!open) return;
+    // `detail` rides along for the client's no-change dedupe: an idle docket
+    // cycle re-emits byte-identical detail strings ("minted 0 openers",
+    // "swept=0 applied=0 …"), and a repeated identical event is by
+    // definition a heartbeat. Details are counts/ids only, never user text
+    // (the harvest-detail contract), and the same client can already read
+    // the full log through GET /api/activity — nothing new is exposed.
+    stream
+     .writeSSE({ data: JSON.stringify({ kind: e.kind, at: e.at, detail: e.detail }) })
+     .catch(() => { open = false; });
+   });
+   stream.onAbort(() => { open = false; off(); });
+   // Keep-alive comments hold proxies and browsers on the line.
+   // (env-tunable so tests are not held hostage by a 25s sleep)
+   const keepalive = Number(process.env.ELICIT_SSE_KEEPALIVE_MS ?? 25_000);
+   while (open) {
+    await stream.sleep(keepalive);
+    try {
+     await stream.writeSSE({ event: 'ping', data: '' });
+    } catch {
+     open = false;
+    }
+   }
+   off();
+  }),
+ );
 
  // ── The four T9 routes: scan a folder, hand the next piece to read, take
  // decisions on it, or take the reason for refusing it whole. No fifth route
@@ -2778,6 +3259,24 @@ app.post('/api/session/:id/drm/resume', async (c) => {
    readings: contents.readings,
   };
 
+  // Repair consultation (ticket 137): the claim ids whose cites include a
+  // repaired snippet, so the wiki surface can mark them. Computed over the
+  // WHOLE graph — a repaired cite taints the claim whether or not the page
+  // shows it. The empty set is omitted from the response, never null.
+  const allRepairs = readAllRepairs(deps.vaultRoot);
+  const repairedIds = repairedSnippetIds(allRepairs);
+  const repairClaimIds = new Set<string>();
+  if (repairedIds.size > 0) {
+   for (const claim of graph.claims) {
+    for (const cite of claim.cites) {
+     if (repairedIds.has(cite.split('@')[0]!)) {
+      repairClaimIds.add(claim.id);
+      break;
+     }
+    }
+   }
+  }
+
   // Coreness over the WHOLE graph, archived claims included, and computed
   // once per claim rather than once per comparison. Scoring the whole graph
   // is also what keeps the order a reader sees from moving when `?all=1`
@@ -2836,6 +3335,7 @@ app.post('/api/session/:id/drm/resume', async (c) => {
    facets,
    contradictions,
    lint: lintNotes,
+   ...(repairClaimIds.size > 0 ? { repairClaimIds: [...repairClaimIds] } : {}),
    // Null means the Clerk has not read the wiki yet in this process, which
    // is a different thing from having read it and found nothing.
    lintedAt: lastLint?.at ?? null,
@@ -2933,9 +3433,24 @@ app.post('/api/session/:id/drm/resume', async (c) => {
    sharpness: 'weak',
    horizon: 'session',
   });
-  return c.json({ ok: true });
+   return c.json({ ok: true });
  });
-
+ 
+ // POST /api/wiki/claim/:id/direction — Q-110 door 2: make a Direction from a
+ // wiki claim. Creates an un-coached DirectionRecord whose name is the claim's
+ // body. Accepting a coach offer later remains the only act that makes it
+ // coached (Q-73). Idempotent on name — a second claim with the same body
+ // returns the existing record.
+ app.post('/api/wiki/claim/:id/direction', async (c) => {
+   const id = c.req.param('id');
+   const claim = claimStore.readClaim(id);
+   if (!claim) return c.json({ error: 'unknown claim' }, 404);
+   const direction = coachStore.createUncoached(claim.body);
+   serverEmit(deps.vaultRoot, 'elicitor', 'direction-created',
+     `slug=${direction.slug} via=wiki-claim claim=${id}`);
+   return c.json({ direction });
+ });
+ 
  // POST /api/transcribe — raw Float32 PCM body, returns {text}
  app.post('/api/transcribe', async (c) => {
   const client = getSttClient(deps);
@@ -3739,6 +4254,19 @@ app.post('/api/coach/:slug/artifact', async (c) => {
  // Boot docket last: the app is wired, so requests that arrive while it runs
  // are served from the index we were handed instead of waiting for a new one.
  startDocket('boot');
+
+ // Ticket 139 — boot-time backup drain: if the last run left sweep work on
+ // disk (deferral ledger) or was cut short mid-run, schedule a drain so the
+ // promise "left for the next run" survives a restart. The boot docket's own
+ // bookkeeping also schedules a drain when fresh > 0; this is a belt-and-braces
+ // backup for the edge case where the boot docket's bookkeeping races or the
+ // previous run wrote a deferral line but never scheduled a drain.
+ {
+  const previous = readSweepDeferral(deps.vaultRoot);
+  if (previous && previous.remaining > 0) {
+   scheduleDrain();
+  }
+ }
 
  return app;
 }

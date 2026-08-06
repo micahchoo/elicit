@@ -496,7 +496,15 @@ describe('HTTP API e2e', () => {
   expect(sessionId).toBeTruthy();
   expect(question).toBeTruthy();
 
-  // 2. Skip the opener — get a new question
+  // 2. Answer the greeting so the opener is appended to transcript (ticket 135)
+  const s1a = await fetch(`${baseUrl}/api/session/${sessionId}/pulse`, {
+   method: 'POST',
+   headers: { 'content-type': 'application/json' },
+   body: JSON.stringify({ text: 'ready', prompt: '' }),
+  });
+  expect(s1a.status).toBe(200);
+
+  // 3. Skip the opener — get a new question
   const s2 = await fetch(`${baseUrl}/api/session/${sessionId}/skip`, {
    method: 'POST',
   });
@@ -509,7 +517,7 @@ describe('HTTP API e2e', () => {
   expect(skipResult.text).toBeTruthy();
   expect(skipResult.text).not.toBe(question);
 
-  // 3. Answer the replacement question
+  // 4. Answer the replacement question
   const s3 = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
    method: 'POST',
    headers: { 'content-type': 'application/json' },
@@ -517,10 +525,9 @@ describe('HTTP API e2e', () => {
   });
   expect(s3.status).toBe(200);
   const turnResult = (await s3.json()) as { kind: string };
-  // Should be probe or saturated depending on scripted responses
   expect(['probe', 'saturated']).toContain(turnResult.kind);
 
-  // 4. End the session
+  // 5. End the session
   const s4 = await fetch(`${baseUrl}/api/session/${sessionId}/end`, {
    method: 'POST',
   });
@@ -528,17 +535,57 @@ describe('HTTP API e2e', () => {
   const endResult = (await s4.json()) as { status: string; sessionId: string };
   expect(endResult.status).toBe('harvesting');
   expect(endResult.sessionId).toBe(sessionId);
-  // The harvest lands in the review queue while the transcript checks follow.
   await waitForProposals((p) => fetch(`${baseUrl}${p}`), sessionId);
 
-  // 5. Verify transcript on disk has the skip marker
+  // 6. Verify transcript has the original question and replacement
+
   const transcriptPath = join(vaultDir, 'transcripts', `${sessionId}.md`);
   expect(existsSync(transcriptPath)).toBe(true);
   const raw = readFileSync(transcriptPath, 'utf-8');
-  // The skipped turn and replacement should be in the transcript
-  // (skipped is an in-memory marker, not on disk — so we just check presence)
   expect(raw).toContain(question); // original question still in transcript
   expect(raw).toContain(skipResult.text!); // replacement in transcript
+ });
+
+ it('no transcript ends on an agent turn; none opens with two consecutive agent turns (ticket 135)', async () => {
+  const s1 = await fetch(`${baseUrl}/api/session`, {
+   method: 'POST',
+   headers: { 'content-type': 'application/json' },
+   body: JSON.stringify({ mode: { minutes: 15, energy: 'medium' } }),
+  });
+  expect(s1.status).toBe(200);
+  const { sessionId } = (await s1.json()) as { sessionId: string };
+
+  // Answer the greeting so the opener fires (ticket 135)
+  await fetch(`${baseUrl}/api/session/${sessionId}/pulse`, {
+   method: 'POST',
+   headers: { 'content-type': 'application/json' },
+   body: JSON.stringify({ text: 'here', prompt: '' }),
+  });
+
+  // Answer the opener to get a probe (2 LLM calls: redLights + generic)
+  const t1 = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
+   method: 'POST',
+   headers: { 'content-type': 'application/json' },
+   body: JSON.stringify({ text: 'Just thinking about things.' }),
+  });
+  expect(t1.status).toBe(200);
+
+  // End the session mid-exchange — last transcript turn is the agent probe
+  await fetch(`${baseUrl}/api/session/${sessionId}/end`, { method: 'POST' });
+
+  // Verify transcript invariants
+  const transcriptPath = join(vaultDir, 'transcripts', `${sessionId}.md`);
+  const raw = readFileSync(transcriptPath, 'utf-8');
+  const sections = raw.match(/^## (\w+)/gm);
+  expect(sections).not.toBeNull();
+
+  // Invariant 1: transcript must not end on ## agent
+  expect(sections![sections!.length - 1]).not.toBe('## agent');
+
+  // Invariant 2: no two consecutive ## agent sections at the start
+  const firstTwo = sections!.slice(0, 2);
+  const startsWithTwoAgents = firstTwo.length === 2 && firstTwo[0] === '## agent' && firstTwo[1] === '## agent';
+  expect(startsWithTwoAgents).toBe(false);
  });
 });
 
@@ -671,6 +718,14 @@ describe('full session with docket and juxtaposition', () => {
   // Opener should be the composed question from the docket (not a bank starter)
   expect(question).toContain('career direction');
 
+
+  // Answer the greeting so the opener is appended to transcript (ticket 135)
+  const pa = await fetch(`${baseUrl}/api/session/${sessionId}/pulse`, {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ text: 'ready', prompt: '' }),
+  });
+  expect(pa.status).toBe(200);
   // ── Step 2: Turn 1 — should trigger juxtaposition ──
   const t1 = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
    method: 'POST',

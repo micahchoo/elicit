@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateOffer, relevantClaims, licenseState, somethingNew, type CoachFacts } from '../src/coach/license.js';
+import { evaluateOffer, relevantClaims, licenseState, somethingNew, clusterClaimsByTheme, type CoachFacts } from '../src/coach/license.js';
 import type { AdviceNote, ArtifactRecord, DirectionRecord, Quest } from '../src/coach/contract.js';
 import type { SittingTag } from '../src/coach/store.js';
 import type { QueueEntry } from '../src/types.js';
@@ -197,13 +197,13 @@ describe('evaluateOffer (T5)', () => {
   expect(ev.offered).toEqual({ slug: 'a', name: 'Archery' });
  });
 
- it('the queue arm contributes distinct slugged directions', () => {
-  const f = facts({
-   queueEntries: [queueEntry({ direction: 'Gardening' }), queueEntry({ direction: 'Waiting' })],
-  });
-  const ev = evaluateOffer(f, noopLog);
-  const slugs = ev.evaluated.map((e) => e.direction).sort();
-  expect(slugs).toEqual(['d-waiting', 'gardening']);
+ it('queue entries do not contribute direction candidates (arm is dead)', () => {
+   const f = facts({
+     queueEntries: [queueEntry({ direction: 'Gardening' }), queueEntry({ direction: 'Waiting' })],
+   });
+   const ev = evaluateOffer(f, noopLog);
+   // Queue arm deleted per Q-110 — directions come from un-coached records only
+   expect(ev.evaluated).toEqual([]);
  });
 
  it('reads the offerMinClaims floor through the register, and the floor is live under Q-62', () => {
@@ -301,5 +301,64 @@ describe('somethingNew (T5)', () => {
 
  it('false for an unknown slug', () => {
   expect(somethingNew(facts(), 'nope')).toBe(false);
+ });
+});
+
+describe('clusterClaimsByTheme (Q-110 door 1, tuned 2026-08-06)', () => {
+ const c = (id: string, body: string) => ({ id, body });
+
+ it('does not union claims on the claim frame — "The user states…" is not a theme', () => {
+  // Regression: with frame words as keys, a one-person corpus collapsed into
+  // a single 104-claim "User" cluster that the coach then offered by name.
+  const themes = clusterClaimsByTheme([
+   c('a', 'The user states that the bakery storefront negotiation is secret.'),
+   c('b', 'The user states that refereeing journal manuscripts continues weekly.'),
+   c('c', 'The user states that morning alarms persist from academia.'),
+  ]);
+  expect(themes.size).toBe(0);
+  for (const [, t] of themes) expect(t.name.toLowerCase()).not.toBe('user');
+ });
+
+ it('requires two shared content words — one is coincidence, two are a topic', () => {
+  const themes = clusterClaimsByTheme([
+   c('a', 'The user describes the storefront lease negotiation with the landlord.'),
+   c('b', 'The user mentions the storefront lease is unsigned after five months.'),
+   c('c', 'The user notes the bakery employs three people.'), // shares nothing twice
+  ]);
+  expect(themes.size).toBe(1);
+  const [theme] = [...themes.values()];
+  expect(theme!.claims).toBe(2);
+  expect(['Storefront', 'Lease']).toContain(theme!.name);
+ });
+
+ it('transitively merges and names by the most common content word', () => {
+  const themes = clusterClaimsByTheme([
+   c('a', 'The user describes the storefront lease negotiation.'),
+   c('b', 'The user mentions the storefront lease is unsigned.'),
+   c('c', 'The user connects the storefront negotiation to ambition.'),
+  ]);
+  expect(themes.size).toBe(1);
+  const [theme] = [...themes.values()];
+  expect(theme!.claims).toBe(3);
+  expect(theme!.name).toBe('Storefront');
+ });
+});
+
+describe('theme naming (rarity-weighted, generic words skipped)', () => {
+ const c = (id: string, body: string) => ({ id, body });
+
+ it('names by the topical word, not the most frequent modifier', () => {
+  // "former" appears in every claim (frequent AND distinctive) but a
+  // modifier is never the topic — the real corpus named the ex-professor
+  // cluster "Former" and the three-employees cluster "Three".
+  const themes = clusterClaimsByTheme([
+   c('a', 'The user misses their former linguistics students at the university.'),
+   c('b', 'The user answers letters from former linguistics students every week.'),
+   c('c', 'The user reads former linguistics students theses on weekends.'),
+  ]);
+  expect(themes.size).toBe(1);
+  const [theme] = [...themes.values()];
+  expect(['Students', 'Linguistics']).toContain(theme!.name);
+  expect(theme!.name).not.toBe('Former');
  });
 });

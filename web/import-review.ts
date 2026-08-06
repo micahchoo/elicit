@@ -3,10 +3,18 @@
  * in its own paragraphs, with the proposed cuts marked where they sit.
  *
  * The document rule: a page of text, controls only at the point of attention.
- * There is no list, no checkbox, no accept-all and no fourth verb — the three
- * margin words (approve · trim · discard) appear only when a cut is focused,
- * and the only whole-piece actions are the header refusal and `save this
- * piece` at the foot.
+ * There is no list, no checkbox and no fourth verb — the three margin words
+ * (approve · trim · discard) appear only when a cut is focused, and the
+ * whole-piece actions are the two header refusals (the Q-51 authorship
+ * exclusion, and the plain rejection for a piece that is yours but stays
+ * out) and `save this piece` at the foot. The foot also carries the bulk
+ * PRESELECTION (`select all — approve` / `select all — discard`): it decides
+ * every cut still waiting but commits nothing — any cut can be reopened and
+ * changed until save. A piece whose extraction proposed no cuts still saves:
+ * the sitting is recorded with its transcript and no snippets — unless the
+ * reader keeps a passage of their OWN (`keep a passage of your own`, ruled
+ * 2026-08-04): exact source text, verified here and again at commit, sent as
+ * `additions` beside the decisions.
  *
  * Injection, not import: `el`, `api` and `beginWait` are module-private in
  * main.ts, and main.ts is edited concurrently by another agent. The seam is
@@ -150,37 +158,48 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     el('p', { class: 'import-date' }, `written ${item.date}; it will be saved as a sitting on that date.`),
   );
 
-  // The refusal lives at the level of the object it acts on: the whole piece,
-  // above the prose — never a fourth word beside approve · trim · discard.
-  const exclude = el('div', { class: 'import-exclude' });
-  const excludeToggle = el('button', { class: 'import-exclude-toggle' }, 'this one is not mine alone');
-  const excludeForm = el('span', { class: 'import-exclude-form' });
-  const excludeReason = el('input', { class: 'import-exclude-reason', placeholder: 'why it is not yours alone' });
-  const excludeConfirm = el('button', { class: 'import-exclude-confirm' }, 'confirm');
-  excludeForm.append(excludeReason, excludeConfirm);
-  exclude.append(excludeToggle, excludeForm);
-  header.append(exclude);
+  // The refusals live at the level of the object they act on: the whole
+  // piece, above the prose — never a fourth word beside approve · trim ·
+  // discard. Two doors to the same act (status 'excluded', with the reader's
+  // reason on the record): the Q-51 authorship exclusion, and the plain
+  // rejection for a piece that is yours but stays out of the diary.
+  function refusal(kind: '' | 'reject', label: string, placeholder: string, waiting: string): HTMLDivElement {
+    // The reject door carries `import-reject-*` beside the shared classes, so
+    // it inherits the exclude styling and stays addressable on its own.
+    const cls = (base: string): string => (kind === '' ? base : `${base} ${base.replace('exclude', kind)}`);
+    const row = el('div', { class: cls('import-exclude') });
+    const toggle = el('button', { class: cls('import-exclude-toggle') }, label);
+    const form = el('span', { class: cls('import-exclude-form') });
+    const reasonInput = el('input', { class: cls('import-exclude-reason'), placeholder });
+    const confirm = el('button', { class: cls('import-exclude-confirm') }, 'confirm');
+    form.append(reasonInput, confirm);
+    row.append(toggle, form);
+    toggle.addEventListener('click', () => {
+      form.classList.add('open');
+      reasonInput.focus();
+    });
+    confirm.addEventListener('click', () => {
+      const reason = reasonInput.value.trim();
+      if (!reason) {
+        // Refused client-side: an empty reason records nothing (Q-51).
+        reasonInput.focus();
+        return;
+      }
+      const wait = deps.beginWait(row, waiting);
+      void deps
+        .api(`/api/import/${item.hash}/exclude`, { reason })
+        .then(() => wait.done())
+        .then(() => deps.navTo('import'))
+        .catch((cause: unknown) => wait.failed(cause));
+    });
+    return row;
+  }
+
+  header.append(
+    refusal('', 'this one is not mine alone', 'why it is not yours alone', 'setting it aside…'),
+    refusal('reject', 'reject this piece', 'why it stays out', 'setting it aside…'),
+  );
   surface.append(header);
-
-  excludeToggle.addEventListener('click', () => {
-    excludeForm.classList.add('open');
-    excludeReason.focus();
-  });
-
-  excludeConfirm.addEventListener('click', () => {
-    const reason = excludeReason.value.trim();
-    if (!reason) {
-      // Refused client-side: an empty reason records nothing (Q-51).
-      excludeReason.focus();
-      return;
-    }
-    const wait = deps.beginWait(exclude, 'setting it aside…');
-    void deps
-      .api(`/api/import/${item.hash}/exclude`, { reason })
-      .then(() => wait.done())
-      .then(() => deps.navTo('import'))
-      .catch((cause: unknown) => wait.failed(cause));
-  });
 
   /* ── the piece — every source paragraph, in order, nothing reflowed ── */
 
@@ -264,6 +283,7 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     else decisions.set(ci, { action, text });
     for (const s of cutSpans[ci] ?? []) s.classList.add('decided');
     save.disabled = decisions.size < item.cuts.length;
+    updateProgress();
     clearFocus();
   }
 
@@ -379,8 +399,126 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
       ),
     );
   }
+  // Zero proposed cuts is a decided state, not a dead end: there is nothing
+  // to rule on, so the save is live from the start and the sitting is
+  // recorded with its transcript and no snippets.
+  const noCutsNote =
+    item.cuts.length === 0
+      ? el(
+          'p',
+          { class: 'import-no-cuts' },
+          'nothing in this piece stood out to keep — saving records it as a sitting with no snippets.',
+        )
+      : null;
+  if (noCutsNote) foot.append(noCutsNote);
+
+  // The running state the page never said out loud: how many cuts still wait,
+  // and — the first time through — the gesture that decides one. Updated on
+  // every decision; save enables exactly when this reaches zero.
+  const progress = el('p', { class: 'import-progress' });
+  function updateProgress(): void {
+    if (item.cuts.length === 0) return;
+    const undecided = item.cuts.length - decisions.size;
+    progress.textContent =
+      undecided === 0
+        ? `all ${item.cuts.length} cuts are decided.`
+        : `${undecided} of ${item.cuts.length} underlined cut${item.cuts.length === 1 ? '' : 's'} still wait${undecided === 1 ? 's' : ''} for a decision — click one, then approve, trim or discard.`;
+  }
+  updateProgress();
+
+  // Bulk preselection, never a commit: one verb lands on every cut still
+  // waiting; cuts already decided keep their decision, and any single cut
+  // can be reopened and changed until save is pressed.
+  const decideAllRow = el('div', { class: 'import-decide-all' });
+  const allApprove = el('button', { class: 'import-decide-all-btn' }, 'select all — approve');
+  const allDiscard = el('button', { class: 'import-decide-all-btn' }, 'select all — discard');
+  decideAllRow.append(allApprove, allDiscard);
+  function decideRest(action: Verb): void {
+    closeEditor();
+    for (let ci = 0; ci < item.cuts.length; ci++) {
+      if (decisions.has(ci)) continue;
+      decisions.set(ci, { action });
+      for (const s of cutSpans[ci] ?? []) s.classList.add('decided');
+    }
+    save.disabled = decisions.size < item.cuts.length;
+    updateProgress();
+    clearFocus();
+  }
+  allApprove.addEventListener('click', () => decideRest('approve'));
+  allDiscard.addEventListener('click', () => decideRest('discard'));
+
+  // A passage of the person's own choosing (ruled 2026-08-04): kept even when
+  // the harvester proposed nothing. The commit gate's substring rule is
+  // applied here, where the typing happens; the server applies it again
+  // inside the all-or-nothing wall.
+  const additions: string[] = [];
+  const additionsList = el('div', { class: 'import-additions' });
+  const addRow = el('div', { class: 'import-add' });
+  const addToggle = el('button', { class: 'import-add-toggle' }, 'keep a passage of your own');
+  addRow.append(addToggle);
+  let addEditor: { ta: HTMLTextAreaElement; wrap: HTMLElement } | null = null;
+
+  // The zero-cut sentence promises "no snippets"; an addition breaks that
+  // promise, so the sentence leaves while any addition stands.
+  function refreshNoCuts(): void {
+    if (noCutsNote) noCutsNote.hidden = additions.length > 0;
+  }
+
+  function renderAddition(text: string): void {
+    const row = el('div', { class: 'import-addition' });
+    const passage = el('span', { class: 'import-addition-text' }, text);
+    const removeWord = el('button', { class: 'import-addition-remove' }, 'remove');
+    removeWord.addEventListener('click', () => {
+      const i = additions.indexOf(text);
+      if (i !== -1) additions.splice(i, 1);
+      row.remove();
+      refreshNoCuts();
+    });
+    row.append(passage, removeWord);
+    additionsList.append(row);
+  }
+
+  addToggle.addEventListener('click', () => {
+    if (addEditor) {
+      // A second press cancels — the same gesture trim uses.
+      addEditor.wrap.remove();
+      addEditor = null;
+      return;
+    }
+    const ta = el('textarea', { class: 'import-add-editor' });
+    // Seed from a live selection in the piece, when the browser offers one.
+    const sel = typeof document !== 'undefined' ? (document.getSelection()?.toString() ?? '') : '';
+    if (sel) ta.value = sel;
+    const hint = el(
+      'p',
+      { class: 'import-add-hint' },
+      'the exact passage, word for word — select it in the piece first, or paste it here.',
+    );
+    const confirm = el('button', { class: 'import-add-confirm' }, 'keep it');
+    const wrap = el('div', { class: 'import-add-editor-wrap' });
+    wrap.append(ta, hint, confirm);
+    addRow.append(wrap);
+    addEditor = { ta, wrap };
+    ta.focus();
+    ta.addEventListener('input', () => ta.classList.remove('invalid'));
+    confirm.addEventListener('click', () => {
+      const text = ta.value.trim();
+      if (text === '' || !item.source.includes(text)) {
+        ta.classList.add('invalid');
+        return;
+      }
+      if (!additions.includes(text)) {
+        additions.push(text);
+        renderAddition(text);
+      }
+      wrap.remove();
+      addEditor = null;
+      refreshNoCuts();
+    });
+  });
+
   const save = el('button', { class: 'import-save' }, 'save this piece');
-  save.disabled = true;
+  save.disabled = item.cuts.length > 0;
   save.addEventListener('click', () => {
     if (decisions.size < item.cuts.length) return;
     save.disabled = true;
@@ -392,6 +530,9 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
           ? { cut: ci, action: 'trim' as const, text: d.text! }
           : { cut: ci, action: d.action };
       }),
+      // Only when any stand: an absent key keeps the wire shape old servers
+      // and old tests know.
+      ...(additions.length > 0 ? { additions: [...additions] } : {}),
     };
     void deps
       .api(`/api/import/${item.hash}/decisions`, payload)
@@ -402,7 +543,8 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
         wait.failed(cause);
       });
   });
-  foot.append(verbs, save);
+  if (item.cuts.length > 0) foot.append(progress, decideAllRow);
+  foot.append(additionsList, addRow, verbs, save);
   surface.append(foot);
 }
 

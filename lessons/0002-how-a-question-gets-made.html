@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson 2 — How a Question Gets Made</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<div class="kicker">Lesson 2 · How Elicit Works</div>
+<h1>How a Question Gets Made</h1>
+
+<p>One win today: trace, from memory, the order Elicit tries things in to
+find your next question. Six research passes went into reading the actual
+control flow rather than trusting doc prose — and the headline is that the
+docs' tidy list of "question sources" is <em>not</em> the order the code
+runs. This lesson walks the real order.</p>
+
+<h2>Eight words first</h2>
+
+<p>These eight carry the whole lesson. Skim them now; they're one click
+away in the <a href="../reference/glossary.html">plain-English glossary</a>
+whenever a later lesson uses them cold.</p>
+
+<table>
+<tr><td><strong><a href="../reference/glossary.html#snippet">Snippet</a></strong></td>
+<td>a saved passage of your own words — exact, dated, never edited again. The atom.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#sitting">Sitting</a></strong></td>
+<td>one sit-down with the app ("session" in code).</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#queue">Queue</a></strong></td>
+<td>the durable to-ask list that survives between sittings.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#bank">Bank</a></strong></td>
+<td>a hand-curated file of opener questions — the fallback of last resort.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#red-light">Red Light</a></strong></td>
+<td>something in your last answer that invites a follow-up: an odd word, a person named but unexplained, an abstraction with no memory under it.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#resonance">Resonance</a></strong></td>
+<td>the every-turn search of your archive for past snippets that echo or clash with what you just said.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#sounding">Sounding</a></strong></td>
+<td>a consent-gated chain of questions, each built from your previous answer — drilling down, 8–12 steps.</td></tr>
+<tr><td><strong><a href="../reference/glossary.html#shadow">Shadow mode</a></strong></td>
+<td>a mechanism that runs and logs what it <em>would</em> do, without doing it — this project's rollout discipline for anything that acts on its own judgment.</td></tr>
+</table>
+
+<h2>The real order, one live turn</h2>
+
+<p>Every turn after the first, <code class="path">userTurn</code>
+(<code>src/elicitor/elicitor.ts:324-513</code>) tries the following in
+order and stops at the first thing that produces a question:</p>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 812" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flowchart of the per-turn question selection cascade" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<defs><marker id="ar1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<rect x="40" y="8" width="300" height="40" rx="20" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="33" text-anchor="middle">your answer lands</text>
+<line x1="190" y1="48" x2="190" y2="82" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+
+<rect x="40" y="88" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="119" text-anchor="middle">1 &#183; budget nearly spent?</text>
+<line x1="340" y1="114" x2="464" y2="114" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="352" y="107" font-size="11" fill="#6b6459">yes</text>
+<rect x="470" y="88" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="119" text-anchor="middle">closing questions begin</text>
+<line x1="190" y1="140" x2="190" y2="162" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="156" font-size="11" fill="#6b6459">no</text>
+
+<rect x="40" y="168" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="199" text-anchor="middle">2 &#183; mid-descent? (Sounding/DRM)</text>
+<line x1="340" y1="194" x2="464" y2="194" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="352" y="187" font-size="11" fill="#6b6459">yes</text>
+<rect x="470" y="168" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="199" text-anchor="middle">the descent owns the turn</text>
+<line x1="190" y1="220" x2="190" y2="242" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="236" font-size="11" fill="#6b6459">no</text>
+
+<rect x="40" y="248" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="279" text-anchor="middle">3 &#183; was the answer a shrug?</text>
+<path d="M 40 274 L 14 274 L 14 610 L 34 610" fill="none" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="8" y="442" font-size="11" fill="#6b6459" text-anchor="middle" transform="rotate(-90 8 442)">shrug &#8594; skip straight to the draw</text>
+<line x1="190" y1="300" x2="190" y2="322" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="316" font-size="11" fill="#6b6459">no</text>
+
+<rect x="40" y="328" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="359" text-anchor="middle">4 &#183; does the archive resonate?</text>
+<line x1="340" y1="354" x2="368" y2="354" stroke="#1c1a17" stroke-width="1.5"/>
+<rect x="370" y="340" width="72" height="28" rx="6" fill="#f0ece3" stroke="#6b6459"/>
+<text x="406" y="358" text-anchor="middle" font-size="12">guard</text>
+<line x1="442" y1="354" x2="464" y2="354" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<rect x="470" y="328" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="350" text-anchor="middle">juxtaposition &#8212; your words</text>
+<text x="595" y="368" text-anchor="middle">now beside your words then</text>
+<line x1="190" y1="380" x2="190" y2="402" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="396" font-size="11" fill="#6b6459">none / rejected</text>
+
+<rect x="40" y="408" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="439" text-anchor="middle">5 &#183; a Red Light in your answer?</text>
+<line x1="340" y1="434" x2="368" y2="434" stroke="#1c1a17" stroke-width="1.5"/>
+<rect x="370" y="420" width="72" height="28" rx="6" fill="#f0ece3" stroke="#6b6459"/>
+<text x="406" y="438" text-anchor="middle" font-size="12">guard</text>
+<line x1="442" y1="434" x2="464" y2="434" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<rect x="470" y="408" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="439" text-anchor="middle">a follow-up quoting you</text>
+<line x1="190" y1="460" x2="190" y2="482" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="476" font-size="11" fill="#6b6459">none / rejected</text>
+
+<rect x="40" y="488" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="519" text-anchor="middle">6 &#183; compose the ordinary probe</text>
+<line x1="340" y1="514" x2="368" y2="514" stroke="#1c1a17" stroke-width="1.5"/>
+<rect x="370" y="500" width="72" height="28" rx="6" fill="#f0ece3" stroke="#6b6459"/>
+<text x="406" y="518" text-anchor="middle" font-size="12">guard&#215;2</text>
+<line x1="442" y1="514" x2="464" y2="514" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<rect x="470" y="488" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="519" text-anchor="middle">the composed probe, asked</text>
+<line x1="190" y1="540" x2="190" y2="578" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="562" font-size="11" fill="#6b6459">rejected twice</text>
+
+<rect x="40" y="584" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="615" text-anchor="middle">7 &#183; Queue draw &#8212; filter, top 3</text>
+<line x1="340" y1="610" x2="464" y2="610" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="352" y="603" font-size="11" fill="#6b6459">hit</text>
+<rect x="470" y="584" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="615" text-anchor="middle">a waiting question, asked</text>
+<line x1="190" y1="636" x2="190" y2="658" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="652" font-size="11" fill="#6b6459">empty</text>
+
+<rect x="40" y="664" width="300" height="52" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="190" y="695" text-anchor="middle">8 &#183; the Bank of curated openers</text>
+<line x1="340" y1="690" x2="464" y2="690" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="352" y="683" font-size="11" fill="#6b6459">hit</text>
+<rect x="470" y="664" width="250" height="52" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="595" y="695" text-anchor="middle">an opener, asked</text>
+<line x1="190" y1="716" x2="190" y2="738" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar1)"/>
+<text x="198" y="732" font-size="11" fill="#6b6459">all used</text>
+
+<rect x="40" y="744" width="300" height="52" rx="8" fill="#8a3324"/>
+<text x="190" y="766" text-anchor="middle" fill="#faf7f2">the fixed floor question</text>
+<text x="190" y="784" text-anchor="middle" fill="#faf7f2" font-size="11">the turn is never empty-handed</text>
+</svg>
+<figcaption>One turn of <code>userTurn</code>
+(<code>elicitor.ts:324&#8211;513</code>): the first gate that produces a
+question wins, and everything below it never runs. The little "guard"
+chips are the mechanical checks of the next section.</figcaption>
+</figure>
+
+<ol>
+  <li><strong>Almost out of time?</strong> (<code>:375</code>) — within two
+    questions of the sitting's budget, everything below is skipped and the
+    closing questions begin.</li>
+  <li><strong>Already mid-descent?</strong> (<code>:382</code>) — if a
+    Sounding (or its cousin the DRM, below) is active, it owns the turn.
+    Nothing else gets considered until the descent ends or you park it.</li>
+  <li><strong>Was your last answer a shrug?</strong> (<code>:401</code>) —
+    a flat, closed answer ("not sure") is detected by a simple heuristic
+    and treated as "change tack, don't push": the app skips composing
+    anything and jumps straight to drawing a waiting question (step 7's
+    fallback).</li>
+  <li><strong>Does the archive have something to say?</strong>
+    (<code>:409</code>) — Resonance search runs every turn. A hit becomes a
+    <strong>juxtaposition</strong>: your words now and your words then,
+    quoted side by side, dated — "same thing?" First juxtaposition to
+    survive the guard wins the turn.</li>
+  <li><strong>Any Red Lights?</strong> (<code>:443</code>) — only if no
+    juxtaposition survived: the app scans your answer for a Red Light and
+    composes a follow-up around your exact phrase.</li>
+  <li><strong>The ordinary probe</strong> (<code>:462</code>) — no signal
+    anywhere? Compose a generic next question for whatever question-style
+    is active, with one retry if the guard rejects it.</li>
+  <li><strong>The floor</strong> (<code>:494</code>, <code>:507</code>) —
+    if even the retried probe fails, draw from the Queue, then the Bank,
+    and if both are empty, a fixed hardcoded question. The turn never comes
+    up empty-handed.</li>
+</ol>
+
+<div class="aside">
+<strong>Opening a sitting uses a different order</strong>
+(<code>startSession</code>, <code>elicitor.ts:126-137</code>): your
+requested shuffle first, then the Queue, then the Bank. Don't conflate
+starting a conversation with continuing one — they're separate code paths.
+</div>
+
+<h2>Nothing composed reaches you unguarded</h2>
+
+<p>Steps 4–6 all share one shape, and it's the single most reusable idea
+in this codebase: <strong>the model composes freely, then a mechanical
+guard — plain string checks, no model — decides if the result is allowed
+out.</strong> The guard can only reject, never fix. For a Red Light
+follow-up (<code class="path">src/clerk/composed.ts</code>,
+<code class="path">src/elicitor/guards.ts</code>), the checks are:</p>
+
+<ul>
+  <li>the quoted phrase is an <em>exact substring</em> of what you typed —
+    a model may have spotted the Red Light, but if the phrase it flagged
+    isn't literally in your answer, it's dropped, no exceptions</li>
+  <li>the question adds something — it can't just parrot your fragment back</li>
+  <li>your words appear in quotes or on their own line, visibly separate
+    from agent prose</li>
+  <li>it's actually a question</li>
+  <li>no "I think" / "I feel" from the agent outside the quoted span</li>
+</ul>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the compose-freely, guard-mechanically shape" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<rect x="30" y="90" width="190" height="70" rx="8" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="125" y="119" text-anchor="middle">the model composes</text>
+<text x="125" y="139" text-anchor="middle" font-size="12" fill="#6b6459">freely &#8212; any creativity</text>
+<line x1="220" y1="125" x2="264" y2="125" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+<rect x="270" y="40" width="240" height="170" rx="8" fill="#fff" stroke="#8a3324" stroke-width="2"/>
+<text x="390" y="66" text-anchor="middle" fill="#8a3324" font-weight="600">THE GUARD</text>
+<text x="390" y="84" text-anchor="middle" font-size="11" fill="#6b6459">plain string checks &#8212; no model</text>
+<text x="286" y="110" font-size="12">&#183; your exact words, verbatim</text>
+<text x="286" y="130" font-size="12">&#183; actually a question</text>
+<text x="286" y="150" font-size="12">&#183; adds something new</text>
+<text x="286" y="170" font-size="12">&#183; quotes visibly set off</text>
+<text x="286" y="190" font-size="12">&#183; no agent &#8220;I&#8221; outside quotes</text>
+
+<line x1="510" y1="125" x2="554" y2="125" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar2)"/>
+<text x="516" y="117" font-size="11" fill="#6b6459">pass</text>
+<rect x="560" y="95" width="170" height="60" rx="8" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="645" y="120" text-anchor="middle">the question</text>
+<text x="645" y="138" text-anchor="middle">reaches you</text>
+
+<line x1="390" y1="210" x2="390" y2="242" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar2)"/>
+<text x="398" y="230" font-size="11" fill="#6b6459">fail</text>
+<rect x="270" y="248" width="240" height="44" rx="8" fill="none" stroke="#6b6459" stroke-dasharray="5 4"/>
+<text x="390" y="274" text-anchor="middle" font-size="12" fill="#6b6459">one retry &#8212; then fall through</text>
+</svg>
+<figcaption>The recurring shape: compose freely, then a mechanical gate
+that can only reject &#8212; never fix, never trust. The same silhouette
+returns in pattern-derived questions
+(<code>src/patterns/decompose.ts</code>) and harvest proposals.</figcaption>
+</figure>
+
+<p>Fail twice and the turn falls to the next step in the order — a worse
+question that's certainly safe beats a better one that might be putting
+words in your mouth. You'll see this compose-freely/guard-mechanically
+shape again wherever the model generates anything.</p>
+
+<h2>Where the waiting questions come from</h2>
+
+<p>Step 7's Queue isn't a dumb list — background work keeps it stocked.
+Three stockers worth knowing, each explained in plain terms:</p>
+
+<h3>Gap-fill: asking about recorded holes</h3>
+
+<p>When a fragment of yours fails the save-worthiness tests — say it can't
+be understood without its conversation — it's kept anyway as a
+<a href="../reference/glossary.html#bud">Bud</a>, with the failure
+recorded. Each recorded failure is a ready-made question ("who is 'she'
+here?"). A background sweep (<code class="path">src/clerk/gap-fill.ts</code>)
+walks the Buds and mints those questions into the Queue. The same sweep
+also catches <a href="../reference/glossary.html#construct">half-Constructs</a>:
+if you said you value being "disciplined" but never named its opposite
+pole, the app asks "what's the opposite of this, for you?" — because in
+the psychology this borrows from, a personal dimension isn't defined until
+both poles are.</p>
+
+<div class="aside">
+Grep for "gap-fill" and you'll actually hit <em>four</em> systems. Besides
+the one above: empty slots in an essay's
+<a href="../reference/glossary.html#arrangement">arrangement</a> (handled
+in <code>clerk/arrangements.ts</code>, minted only when you pick that
+draft), and two "what haven't we talked about" checklists —
+<a href="../reference/glossary.html#territory">territory skeletons and
+atlases</a> (<code>src/ktg/</code>) — which track only asked-or-not per
+topic and are barred from ever computing a score or telling you "you've
+never mentioned X." Same name, four different holes.
+</div>
+
+<h3>Still-true revisits: aging statements get re-asked</h3>
+
+<p>A background job rotates through Snippets older than 90 days and mints
+a fresh question quoting one — worded differently than the original ask,
+so you're answering the question again rather than recognizing your old
+answer. One flipped answer is treated as noise, not a contradiction.</p>
+
+<h3>The Randomizer: shuffle, never invent</h3>
+
+<p>To keep the model of you from overfitting to well-trodden territory,
+a shuffle mechanism resurfaces forgotten Snippets — picking a time-band
+uniformly first (so a quiet five-year-old memory competes evenly with a
+loud recent one), then a sitting, then a snippet — or draws from decks
+you curated. It contains no model call at all (a test literally greps the
+file for model-calling words), and when you trigger it, the agent cannot
+veto the draw.</p>
+
+<h2>Drawing from the Queue: never the single best</h2>
+
+<p>When the Queue is consulted, <code class="path">draw()</code>
+(<code class="path">src/queue/queue.ts</code>) filters what's askable
+right now — does it fit your declared time and energy, is it not parked,
+is its moment right — sorts survivors with your own declared questions
+first, then <strong>takes the top three and picks one at random</strong>
+(<code>pickTopK</code>, <code>queue.ts:65</code>). Never just the top
+one. That's a deliberate, tested rule (the register calls it "never
+argmax"): a deterministic picker would develop favorites, and favorites
+shape the archive.</p>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Funnel diagram of the Queue draw" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#1c1a17">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<polygon points="40,20 520,20 480,76 80,76" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="280" y="45" text-anchor="middle">everything waiting in the Queue</text>
+<text x="280" y="63" text-anchor="middle" font-size="11" fill="#6b6459">minted in the background &#183; deferred &#183; declared by you</text>
+
+<polygon points="80,84 480,84 440,140 120,140" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="280" y="108" text-anchor="middle">still askable right now?</text>
+<text x="280" y="126" text-anchor="middle" font-size="11" fill="#6b6459">fits your time &amp; energy &#183; not parked &#183; its moment</text>
+
+<polygon points="120,148 440,148 400,196 160,196" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="280" y="176" text-anchor="middle">sorted &#8212; your questions first</text>
+
+<polygon points="160,204 400,204 325,248 235,248" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="280" y="230" text-anchor="middle">top 3</text>
+
+<line x1="280" y1="252" x2="280" y2="286" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar3)"/>
+<rect x="320" y="254" width="34" height="34" rx="6" fill="#fff" stroke="#8a3324" stroke-width="1.5"/>
+<circle cx="328" cy="262" r="2.6" fill="#8a3324"/><circle cx="346" cy="262" r="2.6" fill="#8a3324"/>
+<circle cx="337" cy="271" r="2.6" fill="#8a3324"/>
+<circle cx="328" cy="280" r="2.6" fill="#8a3324"/><circle cx="346" cy="280" r="2.6" fill="#8a3324"/>
+<text x="362" y="276" font-size="11" fill="#6b6459">chance picks</text>
+
+<rect x="180" y="292" width="200" height="44" rx="22" fill="#f4e4de" stroke="#8a3324" stroke-width="1.5"/>
+<text x="280" y="318" text-anchor="middle">one question, asked</text>
+
+<text x="545" y="96" font-size="12" fill="#6b6459">&#8220;never argmax&#8221;:</text>
+<text x="545" y="114" font-size="12" fill="#6b6459">the strongest candidate</text>
+<text x="545" y="132" font-size="12" fill="#6b6459">is only ever one of three &#8212;</text>
+<text x="545" y="150" font-size="12" fill="#6b6459">no favorite can form.</text>
+</svg>
+<figcaption>The Queue draw (<code>draw()</code> in
+<code>src/queue/queue.ts</code>): constraints do the narrowing, then
+chance takes the last step &#8212; <code>pickTopK</code> at
+<code>queue.ts:65</code>.</figcaption>
+</figure>
+
+<h2>The two instruments</h2>
+
+<p>Step 2 mentioned descents. There are two, and the contrast teaches the
+shape of both:</p>
+
+<table>
+<tr><th></th><th>Sounding</th><th>DRM</th></tr>
+<tr><td>What it is</td><td>a chain — each answer becomes the seed of the next question</td><td>a fixed routine — list yesterday's episodes, then probe each one the same four ways (where, what, who with, how it felt)</td></tr>
+<tr><td>Direction</td><td>drills <em>down</em> into one belief</td><td>tiles <em>across</em> one day</td></tr>
+<tr><td>Length</td><td>unknown in advance; 8–12 steps, ends at a cap or when your answers start circling back</td><td>bounded by how many episodes you listed</td></tr>
+<tr><td>Ends because</td><td>a structural check — never because a model judged you "done"</td><td>the list runs out</td></tr>
+</table>
+
+<figure class="infographic">
+<svg viewBox="0 0 760 370" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sounding drills down, DRM tiles across" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="12" fill="#1c1a17">
+<defs><marker id="ar4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1c1a17"/></marker></defs>
+
+<line x1="385" y1="20" x2="385" y2="350" stroke="#d8d1c4"/>
+
+<text x="60" y="28" font-size="14" font-weight="600">Sounding &#8212; drills down</text>
+<rect x="60" y="44" width="220" height="32" rx="6" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="64" text-anchor="middle">a question</text>
+<rect x="60" y="90" width="220" height="32" rx="6" fill="#f0ece3"/>
+<text x="170" y="110" text-anchor="middle">your answer &#8212; &#8220;a phrase&#8221;</text>
+<line x1="196" y1="116" x2="266" y2="116" stroke="#8a3324" stroke-width="2"/>
+<line x1="220" y1="122" x2="220" y2="134" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar4)"/>
+<text x="232" y="132" font-size="10" fill="#6b6459">quoted into the next</text>
+<rect x="60" y="140" width="220" height="32" rx="6" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="160" text-anchor="middle">next question, built on it</text>
+<rect x="60" y="186" width="220" height="32" rx="6" fill="#f0ece3"/>
+<text x="170" y="206" text-anchor="middle">another answer&#8230;</text>
+<line x1="220" y1="218" x2="220" y2="230" stroke="#1c1a17" stroke-width="1.5" marker-end="url(#ar4)"/>
+<rect x="60" y="234" width="220" height="32" rx="6" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="170" y="254" text-anchor="middle">&#8230;and down, 8&#8211;12 rungs</text>
+<text x="60" y="290" fill="#6b6459">ends at the cap, or when</text>
+<text x="60" y="306" fill="#6b6459">answers start circling &#8212;</text>
+<text x="60" y="322" fill="#6b6459">never by model judgment</text>
+<rect x="60" y="332" width="290" height="30" rx="15" fill="none" stroke="#6b6459" stroke-dasharray="5 4"/>
+<text x="205" y="351" text-anchor="middle" font-size="10" fill="#6b6459">checkpoint: continue &#183; park &#183; another day</text>
+
+<text x="410" y="28" font-size="14" font-weight="600">DRM &#8212; tiles across</text>
+<rect x="474" y="44" width="88" height="28" rx="14" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="518" y="62" text-anchor="middle" font-size="11">the walk</text>
+<rect x="570" y="44" width="88" height="28" rx="14" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="614" y="62" text-anchor="middle" font-size="11">the call</text>
+<rect x="666" y="44" width="88" height="28" rx="14" fill="#fff" stroke="#1c1a17" stroke-width="1.5"/>
+<text x="710" y="62" text-anchor="middle" font-size="11">dinner</text>
+
+<text x="466" y="103" text-anchor="end" font-size="10" fill="#6b6459">where</text>
+<text x="466" y="141" text-anchor="end" font-size="10" fill="#6b6459">what</text>
+<text x="466" y="179" text-anchor="end" font-size="10" fill="#6b6459">who with</text>
+<text x="466" y="217" text-anchor="end" font-size="10" fill="#8a3324">feeling</text>
+
+<rect x="474" y="84" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="570" y="84" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="666" y="84" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="474" y="122" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="570" y="122" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="666" y="122" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="474" y="160" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="570" y="160" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="666" y="160" width="88" height="30" fill="#fff" stroke="#d8d1c4"/>
+<rect x="474" y="198" width="88" height="30" fill="#fff" stroke="#8a3324"/>
+<rect x="570" y="198" width="88" height="30" fill="#fff" stroke="#8a3324"/>
+<rect x="666" y="198" width="88" height="30" fill="#fff" stroke="#8a3324"/>
+
+<text x="410" y="262" fill="#6b6459">the same four probes for every</text>
+<text x="410" y="278" fill="#6b6459">episode you listed &#8212; start times</text>
+<text x="410" y="294" fill="#6b6459">only, feelings asked open first</text>
+<rect x="410" y="332" width="290" height="30" rx="15" fill="none" stroke="#6b6459" stroke-dasharray="5 4"/>
+<text x="555" y="351" text-anchor="middle" font-size="10" fill="#6b6459">gate after every single episode</text>
+</svg>
+<figcaption>Same consent gate, opposite geometries: a Sounding is a chain
+&#8212; each answer feeds the next question; a DRM is a grid &#8212; a
+fixed probe row replayed across the episodes you enumerated.</figcaption>
+</figure>
+
+<p>Both use the same three-way consent gate — <em>continue / park it /
+another day</em> — and parking keeps all depth: the descent waits in the
+Queue until you explicitly resume it. Two details in the DRM are locked
+design decisions, not accidents: the feelings question is asked open
+("How did that time feel?") with guidance offered only if your answer
+comes back flat, and episode listing takes start times only — asking
+people to estimate durations is rounding theater.</p>
+
+<h2>Built but not yet live</h2>
+
+<p>Several mechanisms above exist in full, tested code and are still in
+shadow mode — evaluating and logging every turn, acting on none of it,
+until the log earns them a graduation:</p>
+
+<table>
+<tr><th>Mechanism</th><th>Status</th></tr>
+<tr><td>Question-variety balancing in the Queue draw (by Facet — the kind of self-knowledge each question targets)</td><td>Shadow, behind an env flag — held back from the 2026-08-03 graduation; its own record shows it never changes a draw while pool entries carry no facet stamp</td></tr>
+<tr><td>Pattern-derived questions (composed via registered content-free moves like "suppose…", "what would X look like in ten years?")</td><td>Gate live (graduated 2026-08-03) — inert until the docket wiring lands (111 remainder)</td></tr>
+<tr><td>Atlas-driven "we haven't talked about…" questions</td><td>Live (graduated 2026-08-03) — mints capped openers, one per region ever</td></tr>
+<tr><td>System-triggered (unrequested) Randomizer draws</td><td>Live (graduated 2026-08-03); your own shuffle button was always live</td></tr>
+<tr><td>Red Lights, juxtapositions, still-true revisits, Bud gap-fill</td><td>Live</td></tr>
+</table>
+
+<p>The shadow-vs-live dividing line is itself a design rule worth knowing
+(register entries Q-35 and Q-62): anything that would <em>act</em> on its
+own judgment shadows first; anything that only <em>offers</em> — where
+ignoring it means nothing happens — ships live immediately.</p>
+
+<div class="check">
+<h3>Self-check: which mechanism fires?</h3>
+<p>Use the turn order from memory first; scroll up to verify after.</p>
+<div id="quiz"></div>
+<div class="result" id="quiz-result"></div>
+</div>
+
+<div class="aside">
+<strong>Primary source:</strong> <code class="path">userTurn</code> in
+<code class="path">src/elicitor/elicitor.ts</code> (the turn order) and
+<code class="path">draw()</code> in
+<code class="path">src/queue/queue.ts</code> (the Queue pick). Both are
+readable in one sitting, and they're ground truth in a way glossary prose
+structurally can't be. Terms: <a href="../reference/glossary.html">the
+plain-English glossary</a>, then <code>CONTEXT.md</code> for the precise
+versions.
+</div>
+
+<div class="ask-agent">
+Anything above still feel like jargon? Say which word — the glossary
+grows to match. And asking your agent to walk
+<code>elicitor.ts:324</code>'s if/else chain with you, live in the file,
+is the fastest way to make the turn order stick.
+</div>
+
+<div class="next-links">
+<strong>Back:</strong> <a href="0001-the-shape-of-elicit.html">Lesson 1 —
+The Shape of Elicit</a> &#183; <strong>Next:</strong>
+<a href="0003-one-docket-run.html">Lesson 3 — One Docket Run</a> — who
+stocks the Queue, when the background Clerk actually wakes (spoiler:
+there's no timer), and how the Wiki changes.
+</div>
+
+</main>
+
+<script>
+const OUTCOMES = [
+  "The active descent (Sounding/DRM) owns the turn — nothing else runs",
+  "A juxtaposition — your words now beside your words then",
+  "A Red Light follow-up around your exact phrase",
+  "Straight to the Queue/Bank draw — no composing at all",
+  "The fixed hardcoded floor question"
+];
+const ITEMS = [
+  { def: "You're three answers into a Sounding descent.", answer: OUTCOMES[0] },
+  { def: "Your last answer was a flat, closed “not sure.”", answer: OUTCOMES[3] },
+  { def: "No descent active, real answer given, and the archive search surfaces a matching snippet from last year.", answer: OUTCOMES[1] },
+  { def: "No descent, no archive hit, but your answer used a loaded word you've never used before.", answer: OUTCOMES[2] },
+  { def: "Nothing fired, and the ordinary composed probe failed its guard twice in a row — and the Queue and Bank are both empty.", answer: OUTCOMES[4] },
+];
+
+const quiz = document.getElementById("quiz");
+ITEMS.forEach((item, i) => {
+  const row = document.createElement("div");
+  row.style.margin = "0.7rem 0";
+  const label = document.createElement("label");
+  label.textContent = item.def + "  ";
+  const select = document.createElement("select");
+  select.id = "q" + i;
+  const blank = document.createElement("option");
+  blank.textContent = "— choose —";
+  blank.value = "";
+  select.appendChild(blank);
+  OUTCOMES.forEach(o => {
+    const opt = document.createElement("option");
+    opt.value = o;
+    opt.textContent = o;
+    select.appendChild(opt);
+  });
+  row.appendChild(label);
+  row.appendChild(select);
+  quiz.appendChild(row);
+});
+
+const btn = document.createElement("button");
+btn.textContent = "Check answers";
+btn.style.marginTop = "0.6rem";
+btn.onclick = () => {
+  let correct = 0;
+  ITEMS.forEach((item, i) => {
+    const sel = document.getElementById("q" + i);
+    if (sel.value === item.answer) correct++;
+  });
+  const result = document.getElementById("quiz-result");
+  result.textContent = correct + " / " + ITEMS.length + " correct.";
+  result.className = "result " + (correct === ITEMS.length ? "correct" : "incorrect");
+};
+quiz.appendChild(btn);
+</script>
+
+</body>
+</html>

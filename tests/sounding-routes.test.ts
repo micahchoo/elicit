@@ -73,6 +73,10 @@ const RUNG_ANSWERS = [
  'Until I name it, the work keeps circling the same unfinished paragraph.',
  'Late in the afternoon the pull asks again what I am avoiding in the page.',
  'I can hear the work and the pull arguing about being seen in the margins.',
+ 'The margins hold what neither voice could settle before the morning came back.',
+ 'I brought the pull to the window and let the light name it for the first time.',
+ 'Being seen by the work taught me something the room could not hold on its own.',
+ 'The work and the pull, finally quiet together on the same page this morning.',
 ] as const;
 
 /**
@@ -89,10 +93,14 @@ const RUNG_TAILS = [
  'What would change if nobody watched the page?',
  'What would you notice next if you stayed with the page?',
  'What keeps the pull present in your afternoons?',
+ 'What stays with being seen when the arguing rests?',
+ 'What did the light name when you brought the pull to the window?',
+ 'What happens when the room cannot hold what being seen taught you?',
+ 'What changes now that the work and the pull lie quiet on the same page?',
 ] as const;
 
 /** The red-light phrase the rung k question quotes (RUNG_ANSWERS[k-1] holds it). */
-const RUNG_PHRASES = ['the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull'] as const;
+const RUNG_PHRASES = ['the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen'] as const;
 
 function aRichAnswer(i: number): string {
  return RUNG_ANSWERS[i - 1]!;
@@ -108,17 +116,17 @@ function turnScript(phrase: string, question: string): string[] {
 
 /**
  * The whole script a session that reaches the cap consumes, in call order:
- * nine pre-offer turns, the accept route's rung-0 composition, turns 1-3,
- * the gate continue past the checkpoint, turns 5-7. The checkpoint turn and
- * the cap turn compose nothing.
+ * six pre-offer turns, the accept route's rung-0 composition, turns 1-5,
+ * the gate continue past the checkpoint, turns 7-11. The checkpoint turn and
+ * the cap turn compose nothing. (Allowance 12, checkpoint 6 — re-derived 2026-08-05 gate-repair.)
  */
 function capScript(): string[] {
  const out: string[] = [];
- for (let i = 0; i < 9; i++) {
+ for (let i = 0; i < 6; i++) {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3, 4, 5, 6, 7]) {
+ for (const k of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
  return out;
@@ -191,10 +199,10 @@ describe('sounding routes', () => {
  async function answerUntilCap(app: Hono, sessionId: string): Promise<any> {
   await turnUntilLicensed(app, sessionId);
   await post(app, `/api/session/${sessionId}/sounding`, { accept: true });
-  for (let i = 1; i <= 8; i++) {
+  for (let i = 1; i <= 12; i++) {
    const res = await post(app, `/api/session/${sessionId}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) return res;
-   if (i === 4) {
+   if (i === 5) {
     const gate = await post(app, `/api/session/${sessionId}/sounding/gate`, { choice: 'continue' });
     expect(gate.kind).toBe('probe');
    }
@@ -265,17 +273,17 @@ describe('sounding routes', () => {
  });
 
  it('the checkpoint rung returns no question until a gate word arrives', async () => {
-  const { app } = await makeApp(capScript().slice(0, 28));
+  const { app } = await makeApp(capScript().slice(0, 30));
   const id = await newSession(app);
   await turnUntilLicensed(app, id);
   await post(app, `/api/session/${id}/sounding`, { accept: true });
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= 4; i++) {
    await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
   }
-  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(4) });
+  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(5) });
   expect(res.kind).toBe('checkpoint');
   expect(res.text).toBeUndefined();
-  expect(res.sounding).toEqual({ rung: 4, of: expect.any(Number), checkpoint: true });
+  expect(res.sounding).toEqual({ rung: 5, of: expect.any(Number), checkpoint: true });
   const gate = await post(app, `/api/session/${id}/sounding/gate`, { choice: 'continue' });
   expect(gate.kind).toBe('probe');
  });
@@ -289,7 +297,7 @@ describe('sounding routes', () => {
   const ladder = readLadder(root, res.soundingId);
   expect(ladder).not.toBeNull();
   expect(ladder!.endedBy).toBe('cap');
-  expect(ladder!.rungs.length).toBe(8);
+  expect(ladder!.rungs.length).toBe(12);
  });
 
  it('park writes the ladder, queues the pointer, and closes with the door question', async () => {

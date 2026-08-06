@@ -227,10 +227,26 @@ main {
  padding-top: 0.5rem;
 }
 
+/* Stop all jobs: quiet like fresh start below it, but reversible, so it
+   sits first and carries no confirm phrase. */
+.stop-jobs-row {
+ margin-top: 3rem;
+ opacity: 0.65;
+}
+.stop-jobs-row:focus-within,
+.stop-jobs-row:hover {
+ opacity: 1;
+}
+
 /* Fresh start: present but recessed — a rare, host-only operation. */
 .fresh-start-row {
  margin-top: 3rem;
  opacity: 0.65;
+}
+/* The two quiet rows share one bottom corner: the 3rem gap belongs to the
+   first of them, not to each. */
+.stop-jobs-row + .fresh-start-row {
+ margin-top: 0.5rem;
 }
 .fresh-start-row:focus-within,
 .fresh-start-row:hover {
@@ -901,6 +917,30 @@ main {
  font-size: 0.65rem;
  color: var(--dim);
  text-transform: lowercase;
+}
+
+/* The row's two quiet verbs: answer in writing, or park it for later. */
+.queue-words {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+}
+
+.queue-answer-editor {
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ line-height: 1.5;
+ color: var(--fg);
+ background: none;
+ border: 1px solid var(--border);
+ padding: 0.4rem 0.5rem;
+ min-height: 4.5rem;
+ resize: vertical;
+ margin-top: 0.3rem;
+}
+
+.queue-answer-confirm {
+ align-self: flex-start;
 }
 
 /* expedition — quiet group above the queue */
@@ -1745,8 +1785,11 @@ main {
  cursor: pointer;
 }
 
+/* A decided cut retires: its underline fades to the hairline color, so the
+   firm underlines that remain ARE the work left to do. Still clickable — a
+   decision can be revisited until the piece is saved. */
 .import-cut.decided {
- text-decoration-thickness: 2px;
+ text-decoration-color: var(--border);
 }
 
 /* Marginalia: dimmed, hidden until the cut is focused. */
@@ -1844,6 +1887,116 @@ main {
  color: var(--dim);
  font-style: italic;
  margin: 0;
+}
+
+/* A piece whose extraction proposed nothing: the save is live, and this one
+   quiet line says what saving does. */
+.import-no-cuts {
+ font-family: var(--font-serif);
+ color: var(--dim);
+ font-style: italic;
+ margin: 0;
+}
+
+/* The running count beside save: how many cuts still wait, and the gesture.
+   The one line that explains a disabled save button. */
+.import-progress {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ margin: 0;
+}
+
+/* A passage the person keeps that the harvester never proposed. */
+.import-add-toggle,
+.import-addition-remove,
+.import-add-confirm {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--accent);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+}
+
+.import-add-toggle:hover,
+.import-addition-remove:hover,
+.import-add-confirm:hover {
+ color: var(--fg);
+}
+
+.import-add-editor-wrap {
+ display: flex;
+ flex-direction: column;
+ gap: 0.3rem;
+ margin-top: 0.4rem;
+}
+
+.import-add-editor {
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ line-height: 1.5;
+ color: var(--fg);
+ background: none;
+ border: 1px solid var(--border);
+ padding: 0.4rem 0.5rem;
+ min-height: 3.5rem;
+ resize: vertical;
+}
+
+.import-add-editor.invalid {
+ border-color: var(--accent);
+}
+
+.import-add-hint {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ margin: 0;
+}
+
+.import-add-confirm {
+ align-self: flex-start;
+}
+
+.import-addition {
+ display: flex;
+ gap: 0.75rem;
+ align-items: baseline;
+}
+
+.import-addition-text {
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ line-height: 1.5;
+}
+
+/* Bulk preselection on the review foot: two quiet verbs, not a commit. */
+.import-decide-all {
+ display: flex;
+ gap: 1.25rem;
+}
+
+.import-decide-all-btn {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--accent);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+}
+
+.import-decide-all-btn:hover {
+ color: var(--fg);
+}
+
+/* The harvest page's twin of the same control. */
+.harvest-decide-all {
+ display: flex;
+ gap: 1.25rem;
+ margin-top: 1rem;
 }
 
 .import-save {
@@ -2316,6 +2469,18 @@ main {
 }
 
 .reach-offer:empty {
+ display: none;
+}
+
+/* The sweep backlog line (ticket 139): the reach offer's idiom — one
+   dimmed line, nothing at zero, and :empty hides it. */
+.sweep-backlog-line {
+ color: #666;
+ font-size: 0.85rem;
+ margin: 0.25rem 0 0.5rem;
+}
+
+.sweep-backlog-line:empty {
  display: none;
 }
 

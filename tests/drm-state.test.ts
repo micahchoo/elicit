@@ -16,6 +16,7 @@ import {
   gateReading,
   probeQuestion,
   buildProbeFragment,
+  transcriptQuestion,
   resumeDRM,
 } from '../src/drm/state.js';
 
@@ -250,6 +251,25 @@ describe('DRM state machine', () => {
     expect(q).toContain('Where were you?');
   });
 
+  it('transcriptQuestion returns the raw probe without episode chrome', () => {
+    const s = initDRM('s1');
+    let state = beginDRM(s).state;
+    state = addEpisode(state, 'lunch with Mira', 12);
+    state = doneEnumerating(state);
+
+    const q = transcriptQuestion(state);
+    expect(q).toBe('Where were you?');
+    expect(q).not.toContain('←');
+    expect(q).not.toContain('·');
+    expect(q).not.toContain('lunch with Mira');
+    expect(q).not.toContain('~12:00');
+    // probeQuestion with chrome still works
+    const chromeQ = probeQuestion(state);
+    expect(chromeQ).toContain('lunch with Mira');
+    expect(chromeQ).toContain('←');
+    expect(chromeQ).toContain('·');
+  });
+
   it('gateReading shows episode position', () => {
     const s = initDRM('s1');
     let state = beginDRM(s).state;
@@ -261,5 +281,42 @@ describe('DRM state machine', () => {
     expect(reading.episode).toBe(1);
     expect(reading.of).toBe(2);
     expect(reading.label).toContain('morning coffee');
+  });
+
+  it('accumulates fragments from answerProbe into state.drm.fragments', () => {
+    let state = initDRM('s1');
+    state = beginDRM(state).state;
+    state = addEpisode(state, 'morning coffee', 7);
+    state = addEpisode(state, 'commute', 8);
+    state = doneEnumerating(state);
+
+    // Answer all 4 probes for episode 1
+    let result = answerProbe(state, 'kitchen table');
+    state = result.state;
+    expect(result.fragment).toBeNull(); // not yet at affect
+    expect(state.fragments).toHaveLength(0);
+
+    result = answerProbe(state, 'drank coffee');
+    state = result.state;
+    expect(result.fragment).toBeNull();
+
+    result = answerProbe(state, 'alone');
+    state = result.state;
+    expect(result.fragment).toBeNull();
+
+    result = answerProbe(state, 'quiet, good');
+    state = result.state;
+    // Final probe (affect) produces a fragment
+    expect(result.fragment).not.toBeNull();
+    expect(result.fragment!.step).toBe('affect');
+    expect(result.fragment!.answer).toBe('quiet, good');
+    expect(result.fragment!.episode).toContain('morning coffee');
+    expect(result.atGate).toBe(true);
+
+    // Push the fragment (as the server route does)
+    if (result.fragment) result.state.fragments.push(result.fragment);
+    state = result.state;
+    expect(state.fragments).toHaveLength(1);
+    expect(state.fragments[0]!.answer).toBe('quiet, good');
   });
 });

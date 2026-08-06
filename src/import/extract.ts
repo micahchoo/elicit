@@ -66,6 +66,10 @@ export type ExtractionDeps = {
    *  src/server.ts (seeding Task 12 Step 3). Until that lands this is inert
    *  on every real run — an optional parameter no caller passes. */
   regionFor?: (sourcePath: string) => RegionRecord | null;
+  /** The stop switch (POST /api/jobs/stop), read between items — never
+   *  mid-item, so a stop can never write a partially-extracted record.
+   *  Absent means never stopped. */
+  shouldStop?: () => boolean;
 };
 
 export type ExtractionResult = { extracted: number; remaining: number; failed: number };
@@ -95,6 +99,7 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
   let failed = 0;
 
   for (let processed = 0; processed < budget; processed++) {
+    if (deps.shouldStop?.() === true) break;
     const record = deps.store.nextPending();
     if (record === null) break;
     const region = deps.regionFor?.(record.sourcePath) ?? null;

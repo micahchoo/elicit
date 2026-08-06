@@ -220,6 +220,22 @@ describe('import extraction (the real harvest path, ahead of review)', () => {
     expect(logs.map((e) => e.kind)).toContain('threshold-clipped');
   });
 
+  it('stops between items when the stop switch is on, leaving records untouched', async () => {
+    store.admit(fixtureItems);
+    // Stop before the first item: nothing is extracted, nothing is failed,
+    // no attempts counter moves — the queue just waits for resume.
+    const r = await runImportExtraction({
+      ...deps(makeScriptedComplete(Array(12).fill(response()))),
+      shouldStop: () => true,
+    });
+    expect(r).toMatchObject({ extracted: 0, failed: 0, remaining: 3 });
+    for (const item of fixtureItems) {
+      const rec = store.get(item.hash)!;
+      expect(rec.status).toBe('pending');
+      expect(rec.attempts).toBe(0);
+    }
+  });
+
   it('fails an item after three attempts instead of blocking the head of the queue', async () => {
     store.admit([fixtureItems[0]!]);
     const throwing = deps(async () => {

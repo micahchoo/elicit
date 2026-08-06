@@ -39,6 +39,13 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'index-rebuilt', detail: 'rebuilt index from 12 snippets', reads: 'rebuilt the index from 12 snippets' },
  { kind: 'docket-run', detail: 'minted 3, expired 1', reads: 'ran the docket: minted 3 questions, expired 1' },
  { kind: 'docket-run-failed', detail: `post-harvest docket failed: Error at ${ULID}`, reads: 'could not finish the docket run' },
+ { kind: 'jobs-stopped', detail: 'inFlight=true', reads: 'stopped all background jobs — the run in flight finishes, then nothing new starts' },
+ { kind: 'jobs-stopped', detail: 'inFlight=false', reads: 'stopped all background jobs' },
+ { kind: 'jobs-resumed', detail: '', reads: 'resumed background jobs' },
+ { kind: 'docket-cut-short', detail: 'jobs stopped mid-run — the remaining jobs wait for resume', reads: 'stopped the docket run midway — the remaining jobs wait for resume' },
+ { kind: 'question-parked', detail: `id=${ULID}`, reads: 'parked an open question — it rests until you put it back' },
+ { kind: 'question-unparked', detail: `id=${ULID}`, reads: 'put a parked question back among the open ones' },
+ { kind: 'question-answered-direct', detail: `session=${ULID} chars=340`, reads: 'answered an open question in writing — the harvest reads it now' },
  { kind: 'opener-minted', detail: 'minted 2 openers', reads: 'minted 2 openers' },
  { kind: 'opener-failed', detail: `composeOpener for snippet ${ULID} failed: boom`, reads: 'could not mint an opener' },
  { kind: 'still-true-minted', detail: 'minted 1 still-true', reads: 'minted 1 still-true question' },
@@ -83,6 +90,13 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'lineage-mirror-failed', detail: 'boom', reads: 'could not mint a mirror question' },
  { kind: 'pulse-answered', detail: '', reads: 'answered the opening pulse' },
  { kind: 'pattern-decompose-rejection', detail: 'reason=presupposition pattern=scenario question-preview=When you...', reads: 'pattern question refused: presupposition' },
+
+// ── Repair verb (ticket 137, Q-104..Q-108) ──
+// One event only (Q-108): citing-entry expiry rides inside the repair,
+// never as its own kind.
+{ kind: 'repair', detail: `snippet=${ULID}@1`, reads: 'you unlinked a fragment you did not say' },
+// ── Thread-aware draw (ticket 148) ──
+{ kind: 'thread-deferred', detail: `thread=${ULID} strikes=2`, reads: 'deferred a thread after two disengaged replies' },
 {
   kind: 'session-started',
   detail: 'mode=25m/high target=self protocol=ladder',
@@ -90,6 +104,21 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  },
  { kind: 'close-phase-entered', detail: `session=${ULID}`, reads: 'entered the closing phase' },
  { kind: 'question-asked', detail: `session=${ULID} source=composed`, reads: 'asked a composed question' },
+ {
+  kind: 'question-rejected',
+  detail: 'site=juxtaposition reason=emit-form',
+  reads: 'a drafted juxtaposition failed the emit-form gate and was not asked',
+ },
+ {
+  kind: 'profile-updated',
+  detail: 'name=true pronouns=true',
+  reads: 'updated the profile — who the vault is about',
+ },
+ {
+  kind: 'queue-paused',
+  detail: 'sittings=2 strikes=2 pause=1',
+  reads: 'paused queue openers for 2 sittings — two sittings running pivoted away from them',
+ },
  {
   kind: 'juxtaposition-offered',
   detail: `session=${ULID} snippet=01KZ0DJ3MJVD6PDDKM3JTYGGWA source=juxtaposition`,
@@ -245,6 +274,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'wiki-jobs-failed',
   detail: `job=opposition pair=${ULID},${SECOND_ULID} TypeError: cannot read properties of undefined`,
   reads: 'could not finish the opposition step of the wiki run',
+ },
+ {
+  kind: 'wiki-embedding-failed',
+  detail: 'reason=connection refused',
+  reads: 'could not write claim embedding: connection refused',
  },
  {
   kind: 'wiki-job-skipped',
@@ -638,8 +672,8 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
 // identifier (the two T8 tests below sweep every sounding kind).
 {
   kind: 'sounding-license',
-  detail: 'late=true energy=true sustained=true unoffered=true licensed=true',
-  reads: 'ran the entry license: late true, energy true, sustained true, unoffered true — licensed',
+  detail: 'late=true energy=true sustained=true sustainedValue=0.132 unoffered=true licensed=true',
+  reads: 'ran the entry license: late true, energy true, sustained true (jaccard 0.132), unoffered true — licensed',
 },
 {
   kind: 'sounding-offered',
@@ -788,10 +822,18 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'pattern-selection-live',
   detail: 'eligible=3 selected=counterfactual',
   reads: 'composed with pattern counterfactual (3 eligible)',
-},
-];
-
-describe('formatEvent', () => {
+ },
+ // Q-110: coach seed clustering (docket job)
+ { kind: 'coach-seed-cluster', detail: 'theme=Rest claims=4', reads: 'clustered wiki claims into a theme' },
+ { kind: 'coach-seed-minted', detail: 'slug=rest name=Rest claims=4', reads: 'minted an un-coached direction from a claim cluster' },
+ { kind: 'coach-seed-evaluated', detail: 'themes=3 clusterSizes=[4,2,3]', reads: 'evaluated coach seeding — cluster sizes logged' },
+ { kind: 'coach-seed-failed', detail: 'directory missing', reads: 'coach seed sweep failed' },
+ { kind: 'coach-seeded-reoffer', detail: 'slug=rest parkedClaims=3 currentClaims=6', reads: 're-offered a parked seeded direction' },
+ // Q-110 door 2: user-declared direction from wiki claim
+ { kind: 'direction-created', detail: 'slug=rest via=wiki-claim claim=01KZ...', reads: 'you made a direction from a wiki claim' },
+ ];
+ 
+ describe('formatEvent', () => {
  for (const c of EMITTED) {
   it(`${c.kind} reads as a sentence`, () => {
    expect(formatEvent(ev(c.kind, c.detail))).toBe(c.reads);
@@ -928,7 +970,7 @@ describe('formatEvent', () => {
  /** One event per sounding kind, with the detail shapes the routes emit. */
  function everySoundingEvent(): FormattableEvent[] {
   return [
-   ev('sounding-license', 'late=true energy=true sustained=true unoffered=true licensed=true', 'elicitor'),
+   ev('sounding-license', 'late=true energy=true sustained=true sustainedValue=0.132 unoffered=true licensed=true', 'elicitor'),
    ev('sounding-offered', `session=${ULID} rungs=9`, 'elicitor'),
    ev('sounding-declined', `session=${ULID}`, 'elicitor'),
    ev('sounding-entered', `session=${ULID} sounding=${SECOND_ULID} rungs=9`, 'elicitor'),

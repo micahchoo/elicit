@@ -42,6 +42,8 @@ export type CoachStore = {
  listDirections(): DirectionRecord[]; // coached and not — the offer needs both
  recordVisit(slug: string, at: string): void;
  recordOfferDeclined(slug: string): void; // creates the stub if the Direction was never declared
+ /** Q-110 door 2: create an un-coached DirectionRecord. Idempotent on slug. */
+ createUncoached(name: string, opts?: { seeded?: boolean; claimCount?: number }): DirectionRecord;
  addDeclinedOption(slug: string, text: string): void; // stores normalizeOption(text)
 
  adoptQuest(input: { direction: string; act: string; cites: string[] }): Quest;
@@ -126,8 +128,6 @@ class CoachStoreImpl implements CoachStore {
   return d;
  }
 
- // ── directions ──
-
  #parseDirection(data: Record<string, unknown>): DirectionRecord {
   return {
    slug: data.slug as string,
@@ -136,7 +136,12 @@ class CoachStoreImpl implements CoachStore {
    ...(data.coachedAt ? { coachedAt: data.coachedAt as string } : {}),
    ...(data.uncoachedAt ? { uncoachedAt: data.uncoachedAt as string } : {}),
    ...(data.offerDeclinedAt ? { offerDeclinedAt: data.offerDeclinedAt as string } : {}),
-   ...(data.lastVisit ? { lastVisit: data.lastVisit as string } : {}),
+   ...(data.seededOfferParkedAt ? { seededOfferParkedAt: data.seededOfferParkedAt as string } : {}),
+   ...(data.seededOfferParkedClaimCount !== undefined
+    ? { seededOfferParkedClaimCount: data.seededOfferParkedClaimCount as number }
+     : {}),
+    ...(data.seeded ? { seeded: true } : {}),
+    ...(data.lastVisit ? { lastVisit: data.lastVisit as string } : {}),
    declinedOptions: Array.isArray(data.declinedOptions) ? (data.declinedOptions as string[]) : [],
   };
  }
@@ -160,6 +165,9 @@ class CoachStoreImpl implements CoachStore {
   if (rec.coachedAt) fm.coachedAt = rec.coachedAt;
   if (rec.uncoachedAt) fm.uncoachedAt = rec.uncoachedAt;
   if (rec.offerDeclinedAt) fm.offerDeclinedAt = rec.offerDeclinedAt;
+  if (rec.seededOfferParkedAt) fm.seededOfferParkedAt = rec.seededOfferParkedAt;
+  if (rec.seededOfferParkedClaimCount !== undefined) fm.seededOfferParkedClaimCount = rec.seededOfferParkedClaimCount;
+  if (rec.seeded) fm.seeded = true;
   if (rec.lastVisit) fm.lastVisit = rec.lastVisit;
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#directionsDir(), `${rec.slug}.md`), content, 'utf-8');
@@ -220,13 +228,24 @@ class CoachStoreImpl implements CoachStore {
  }
 
  /**
-  * A declined coached-offer; this Direction is never offered again (Q-77).
-  * A never-declared name gets a stub record — the offer can only decline a
-  * candidate it surfaced, and the stub keeps the candidate on disk so the
-  * decline survives a restart.
+  * Q-112: a seeded offer declined parks, never permanently declines.
+  * A coached-direction offer declined is permanent (Q-77). A never-declared
+  * name gets a stub record — the offer can only decline a candidate it
+  * surfaced, and the stub keeps the candidate on disk so the decline
+  * survives a restart.
   */
  recordOfferDeclined(slug: string): void {
   const existing = this.#readDirection(slug);
+  if (existing && existing.seeded) {
+   // Q-112: park seeded directions (decline is temporary)
+   existing.seededOfferParkedAt = new Date().toISOString();
+   if (existing.seededOfferParkedClaimCount === undefined) {
+    existing.seededOfferParkedClaimCount = 0;
+   }
+   this.#writeDirection(existing);
+   return;
+  }
+  // Coached direction or no existing record: permanent decline (Q-77)
   const rec: DirectionRecord = existing ?? {
    slug,
    name: slug, // a stub has only the slug to speak for it
@@ -235,6 +254,20 @@ class CoachStoreImpl implements CoachStore {
   };
   rec.offerDeclinedAt = new Date().toISOString();
   this.#writeDirection(rec);
+ }
+
+ /** Q-110 door 2: create an un-coached DirectionRecord. Idempotent on slug. */
+ createUncoached(name: string, opts?: { seeded?: boolean; claimCount?: number }): DirectionRecord {
+   const slug = directionSlugFor(name);
+   const existing = this.#readDirection(slug);
+   if (existing) return existing;
+   const rec: DirectionRecord = {
+     slug, name, coached: false, declinedOptions: [],
+     ...(opts?.seeded ? { seeded: true as const } : {}),
+     ...(opts?.claimCount !== undefined ? { seededOfferParkedClaimCount: opts.claimCount } : {}),
+   };
+   this.#writeDirection(rec);
+   return rec;
  }
 
  /** Normalized texts of declined options — never re-offered (Q-77). */

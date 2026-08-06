@@ -69,10 +69,15 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
   draw: () => null,
   markAsked: () => { },
   markAnswered: () => { },
+  markPending: () => { },
   defer: () => { },
+  park: () => { },
+  unpark: () => { },
   expire: () => 0,
   expireTailBeyond: () => 0,
   markExpired: () => { },
+    recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
   _adds: adds,
  };
 }
@@ -697,10 +702,15 @@ describe('guards', () => {
    },
    markAsked: () => { },
    markAnswered: () => { },
+   markPending: () => { },
    defer: () => { },
+   park: () => { },
+   unpark: () => { },
    expire: () => 0,
    expireTailBeyond: () => 0,
    markExpired: () => { },
+    recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
   };
   const idx = makeFakeIndex();
   const session = startSession(
@@ -720,6 +730,9 @@ describe('guards', () => {
 describe('guard scope — every branch, not just the generic probe', () => {
  /** A snippet whose phrase the user is about to echo, so resonance fires. */
  function makeEchoIndex(): LexicalIndex {
+  // Two snippets sharing the phrase: the per-sitting reuse guard retires a
+  // snippet after one juxtaposition, so the near-duplicate test below needs
+  // a SECOND resonating snippet for turn 2 to attempt a juxtaposition at all.
   return buildIndex([
    {
     id: 's1',
@@ -732,6 +745,18 @@ describe('guard scope — every branch, not just the generic probe', () => {
      questionForm: 'deliberative' as const,
     },
     prose: 'I default to hedging in whichever direction is socially cheaper.',
+   },
+   {
+    id: 's2',
+    version: 1,
+    captured: '2026-03-08T10:00:00Z',
+    provenance: {
+     kind: 'harvest' as const,
+     session: 'sess-0',
+     question: 'And when the room disagrees?',
+     questionForm: 'deliberative' as const,
+    },
+    prose: 'Hedging in whichever direction is socially cheaper is my reflex.',
    },
   ]);
  }
@@ -983,10 +1008,15 @@ describe('the open queue entry — which question the next turn answers (041)', 
    draw: () => remaining.shift() ?? null,
    markAsked: () => { },
    markAnswered: (id) => { answered.push(id); },
+   markPending: () => { },
    defer: () => { },
+   park: () => { },
+   unpark: () => { },
    expire: () => 0,
    expireTailBeyond: () => 0,
    markExpired: () => { },
+    recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
    answered,
   };
  }

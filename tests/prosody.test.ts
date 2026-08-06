@@ -66,10 +66,15 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
   draw: () => null,
   markAsked: () => { },
   markAnswered: () => { },
+  markPending: () => { },
   defer: () => { },
+  park: () => { },
+  unpark: () => { },
   expire: () => 0,
   expireTailBeyond: () => 0,
   markExpired: () => { },
+    recordReplyDisengagement: () => false,
+    noteSittingStarted: () => {},
   _adds: adds,
  };
 }

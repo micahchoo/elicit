@@ -25,8 +25,9 @@ function sitting(opts: {
   energy: 'low' | 'medium' | 'high';
   userTurns: string[];
   soundingOffer?: 'offered' | 'declined' | 'entered';
+  phase?: 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
 }): SessionState {
-  const { questionCount, minutes, energy, userTurns, soundingOffer } = opts;
+  const { questionCount, minutes, energy, userTurns, soundingOffer, phase = 'mid' } = opts;
   const turns: Turn[] = [];
   userTurns.forEach((text, i) => {
     turns.push({
@@ -48,7 +49,7 @@ function sitting(opts: {
     },
     turns,
     questionCount,
-    phase: 'mid',
+    phase,
     ...(soundingOffer ? { soundingOffer } : {}),
   };
 }
@@ -69,9 +70,15 @@ describe('the entry license', () => {
     expect(licenseSounding(s).reasons.late).toBe(false);
   });
 
+  test('a sitting at questionCount 6 is late — re-derived 2026-08-05 (gate-repair)', () => {
+    const s = sitting({ questionCount: 6, minutes: 20, energy: 'high', userTurns: threeOnOneThread() });
+    const v = licenseSounding(s);
+    expect(v.reasons.late).toBe(true);
+    expect(v.licensed).toBe(true); // late + energy + sustained + unoffered
+  });
   test('a sitting already in its close is not licensed either', () => {
-    // budget 20, close begins at 18 — an offer here would eat the two close moves (Q-47)
-    const s = sitting({ questionCount: 18, minutes: 20, energy: 'high', userTurns: threeOnOneThread() });
+    // Phase guard: closing-door and closing-bookmark are excluded from late.
+    const s = sitting({ questionCount: 18, minutes: 20, energy: 'high', userTurns: threeOnOneThread(), phase: 'closing-door' });
     expect(licenseSounding(s).reasons.late).toBe(false);
   });
 
