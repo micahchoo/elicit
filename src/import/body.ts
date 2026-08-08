@@ -7,21 +7,54 @@
 
 import type { Turn } from '../types.js';
 
+/**
+ * The line-drop vocabulary, in one copy: `clean` deletes by it and the
+ * review surface (server.ts `droppedRegions`) names dropped regions by it,
+ * so a bugfix to either cannot drift from the other.
+ */
+export const IMAGE_LINE = /^!\[/;
+export const LINK_ONLY_LINE = /^\[.*\]\(.*\)$/;
+export const BARE_URL_LINE = /^https?:\/\//;
+export const RAW_HTML_LINE = /^<.*>$/;
+export const SHORTCODE = /\{\{[<%][\s\S]*?[>%]\}\}/;
+export const BULLET_ONLY_LINE = /^[-*]\s*$/;
+
+/** The two citation shapes `dropCitedParagraphs` drops on. */
+export const INLINE_CITE = /\[\([A-Z][^)]*\d{4}\)\]\(#/;
+export const PAREN_CITE = /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/;
+
+export type DroppedRunKind = 'quoted' | 'cited' | 'not-prose';
+
+/**
+ * Classify one run of dropped lines the way the review surface names them:
+ * quoted beats cited beats not-prose. A line `clean` deletes that matches
+ * no rule here — the bullet-only line — falls to 'not-prose', which is
+ * what the review marks showed before this vocabulary moved home.
+ */
+export function classifyDroppedRun(lines: string[]): DroppedRunKind {
+  const trimmed = lines.map((l) => l.trim());
+  const any = (re: RegExp): boolean => trimmed.some((t) => re.test(t));
+  if (trimmed.every((t) => t.startsWith('>'))) return 'quoted';
+  if (any(IMAGE_LINE) || any(LINK_ONLY_LINE) || any(BARE_URL_LINE) || any(RAW_HTML_LINE) || any(SHORTCODE)) return 'not-prose';
+  if (any(INLINE_CITE) || any(PAREN_CITE)) return 'cited';
+  return 'not-prose';
+}
+
 /** Strip Hugo shortcodes, images, bare links and HTML. */
 export function clean(md: string, keepQuotes: boolean): string {
   return md
     // {{< card >}}…{{< /card >}} and self-closing shortcodes
-    .replace(/\{\{[<%][\s\S]*?[>%]\}\}/g, '')
+    .replace(new RegExp(SHORTCODE.source, 'g'), '')
     .split('\n')
     .filter((l) => {
       const t = l.trim();
       if (t.length === 0) return true;
       if (!keepQuotes && t.startsWith('>')) return false;   // other people's words
-      if (/^!\[/.test(t)) return false;                      // images
-      if (/^\[.*\]\(.*\)$/.test(t)) return false;            // link-only lines
-      if (/^https?:\/\//.test(t)) return false;              // bare URLs
-      if (/^[-*]\s*$/.test(t)) return false;
-      if (/^<.*>$/.test(t)) return false;                    // raw HTML
+      if (IMAGE_LINE.test(t)) return false;                  // images
+      if (LINK_ONLY_LINE.test(t)) return false;              // link-only lines
+      if (BARE_URL_LINE.test(t)) return false;               // bare URLs
+      if (BULLET_ONLY_LINE.test(t)) return false;
+      if (RAW_HTML_LINE.test(t)) return false;               // raw HTML
       return true;
     })
     .join('\n');
@@ -64,7 +97,7 @@ export function dropCitedParagraphs(text: string, orphanQuotes: string[]): { kep
     // loss. Unmarked quotations, which neither rule can see, stay the
     // manifest's job (`dropSections`, `ORPHAN_QUOTES`); Q-51 says that
     // judgement is not automatable, and this is where that bites.
-    const cited = /\[\([A-Z][^)]*\d{4}\)\]\(#/.test(p) || /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/.test(p);
+    const cited = INLINE_CITE.test(p) || PAREN_CITE.test(p);
     const orphan = orphanQuotes.some((q) => p.includes(q));
     if (cited || orphan) { dropped++; return false; }
     return true;

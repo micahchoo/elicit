@@ -20,6 +20,6 @@ export function repairedSnippetIds(repairs: RepairRecord[]): Set<string> {
 }
 
 /** The set of full snippetRefs (snippetId@version) under repair. */
-export function repairedSnippetRefs(repairs: RepairRecord[]): Set<string> {
+function repairedSnippetRefs(repairs: RepairRecord[]): Set<string> {
   return new Set(repairs.map(r => r.snippetRef));
 }

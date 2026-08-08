@@ -24,6 +24,7 @@
 import type { QueueStore, QueueDraft } from '../types.js';
 import type { AtlasInstrument, AtlasRegion } from './atlas-types.js';
 import type { CoverageStore } from './coverage.js';
+import { runGapFillSweepCore, type GapFillCandidate } from './sweep-core.js';
 
 /** The docket log sink, narrowed to what the sweep emits. */
 export type AtlasGapFillLog = (e: {
@@ -56,74 +57,69 @@ export function runAtlasGapFillSweep(deps: {
   const { atlas, coverage, queue, log, now } = deps;
   const shadowMode = deps.shadowMode ?? true; // default: shadow-first (Q-35)
 
-  let candidateCount = 0;
-  let minted = 0;
-
-  // Collect explicit coverage statuses from stored readings
-  const statusCache = new Map<string, string>();
-  for (const region of atlas.regions) {
-    statusCache.set(
-      region.id,
-      coverage.readReading(region.id)?.status ?? 'unprobed',
-    );
-  }
-
-  // One question per region, ever — any status blocks re-minting.
-  const existing = new Set<string>();
-  for (const entry of queue.list()) {
-    if (entry.source === 'atlas-gap-fill' && entry.atlasRegion) {
-      existing.add(entry.atlasRegion);
-    }
-  }
-
-  // Scan unprobed regions and mint (or log) candidate questions
-  for (const region of atlas.regions) {
-    if (candidateCount >= ATLAS_MINT_CAP) break;
-    if (statusCache.get(region.id) !== 'unprobed') continue;
-    if (existing.has(region.id)) continue;
-
-    const question = atlasRegionQuestion(region);
-    if (!question) continue;
-
-    candidateCount++;
-
-    if (shadowMode) {
-      log({
-        at: now,
-        actor: 'clerk',
-        kind: 'atlas-gap-fill-candidate',
-        detail: `shadow candidate for atlas "${atlas.instrument}" region ${region.id}: "${question}"`,
-        refs: [region.id, atlas.instrument],
-      });
-      continue;
-    }
-
-    const draft: QueueDraft = {
+  const result = runGapFillSweepCore(
+    {
+      nodeIds: atlas.regions.map((region) => region.id),
       source: 'atlas-gap-fill',
-      license: `atlas gap: region ${region.id} (${atlas.instrument})`,
-      question,
-      questionForm: 'deliberative',
-      sharpness: 'weak',
-      horizon: 'session',
-      atlasRegion: region.id,
-    };
+      pointerKey: 'atlasRegion',
+      cap: ATLAS_MINT_CAP,
+      coverage,
+      queue,
+      log,
+      now,
+      shadowMode,
+    },
+    atlasCandidates(atlas),
+  );
 
-    queue.add(draft);
-    existing.add(region.id);
-    minted++;
-    log({
-      at: now,
-      actor: 'clerk',
-      kind: 'atlas-gap-fill-minted',
-      detail: `minted question for atlas "${atlas.instrument}" region ${region.id}`,
-      refs: [region.id, atlas.instrument],
-    });
-  }
+  return {
+    candidateCount: result.processed,
+    scanned: atlas.regions.length,
+    minted: result.minted.length,
+  };
+}
 
-  // All regions were scanned via the status cache read above
-  const scanned = atlas.regions.length;
+/**
+ * The atlas candidate stream: every unprobed region whose template produces
+ * a question. Status eligibility is decided here against the core's
+ * coverage cache; the core applies the cap and the queue dedupe.
+ */
+function atlasCandidates(
+  atlas: AtlasInstrument,
+): (status: ReadonlyMap<string, string>) => Generator<GapFillCandidate> {
+  return function* atlasCandidatesInner(
+    status: ReadonlyMap<string, string>,
+  ): Generator<GapFillCandidate> {
+    for (const region of atlas.regions) {
+      if (status.get(region.id) !== 'unprobed') continue;
 
-  return { candidateCount, scanned, minted };
+      const question = atlasRegionQuestion(region);
+      if (!question) continue;
+
+      yield {
+        nodeId: region.id,
+        draft: {
+          source: 'atlas-gap-fill',
+          license: `atlas gap: region ${region.id} (${atlas.instrument})`,
+          question,
+          questionForm: 'deliberative',
+          sharpness: 'weak',
+          horizon: 'session',
+          atlasRegion: region.id,
+        },
+        mintLog: {
+          kind: 'atlas-gap-fill-minted',
+          detail: `minted question for atlas "${atlas.instrument}" region ${region.id}`,
+          refs: [region.id, atlas.instrument],
+        },
+        shadowLog: {
+          kind: 'atlas-gap-fill-candidate',
+          detail: `shadow candidate for atlas "${atlas.instrument}" region ${region.id}: "${question}"`,
+          refs: [region.id, atlas.instrument],
+        },
+      };
+    }
+  };
 }
 
 // ── Question template (ZERO-LLM, never quote region labels, Q-79 opener form) ──

@@ -141,7 +141,7 @@ import {
  type EmbeddingIndexStore,
  type EmbeddingRecord,
 } from '../wiki/embedding.js';
-import { shadowDecision } from '../wiki/thresholds.js'
+import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
 import type { Threshold, ThresholdLogFn } from '../domain/thresholds.js';
 import type { LexicalIndex, ResonanceHit, Snippet } from '../types.js';
 import { resonate } from './lexical.js';
@@ -209,103 +209,23 @@ export function quotablePhrase(snippetText: string): string {
 // ── The bounds (Q-56: a bound ships LIVE and owes a clip record) ──
 
 /**
- * How many snippets one `prime` run may embed.
+ * The four bounds this channel acts under — `resonance.semanticFloor`,
+ * `resonance.primeCap`, `resonance.primeBudgetMs`, `resonance.queryBudgetMs`
+ * — are declared in `src/wiki/thresholds.ts` (Q-35/Q-56: one declaration
+ * site, no threshold value read except through `THRESHOLDS`). This file only
+ * reads them, through `shadowDecision`, exactly like every other wiki module.
  *
- * **This is deliberately NOT T18's recency window, and the difference matters.**
- * `EMBEDDING_WINDOW` keeps the 400 most recently updated claims and drops the
- * rest permanently — correct there, because that channel is quadratic and an
- * old claim is still reachable through two other channels. Applying it here
- * would delete the product: Q-18 stratifies resurfacing by the AGE of the
- * writing, and the vault holds 2017–2026. A recency window would make the
- * channel structurally unable to surface the nine-year-old material that is the
- * entire reason it exists.
- *
- * So the bound is per-RUN, not per-corpus, and `prime` is resumable: every
- * completed batch is persisted before the next one starts, so a clipped run
- * loses no work and the next run continues where it stopped. Over a few runs
- * the whole corpus is embedded, however large it grows. What the bound protects
- * is a single run's wall clock, not the corpus's reach.
- *
- * 500 is a ceiling, not a measurement: at the eval's warm throughput (~170
- * ms/text) it is about 85 seconds, and today's corpus of 139 snippets fits in
- * one run with room to grow. The clip record is what would resize it.
+ * The prime cap is per-RUN, never a recency window: a window would make the
+ * channel structurally unable to surface the 2017-2026 material Q-18
+ * stratifies by age, and `prime` is resumable — every completed batch
+ * persists before the next starts, so a clipped run loses no work.
  */
-export const PRIME_CAP = 500;
-
-/**
- * How long one `prime` may spend embedding before it stops for this run.
- * Ticket 007's cold-start trap: the first request against an unloaded
- * `qwen3-embedding` took 370 seconds and THEN returned HTTP 500. Warm, the same
- * call is 100–120 ms.
- */
-export const PRIME_BUDGET_MS = 300_000;
-
-/**
- * How long `resonate` may wait for the query's own vector before giving up and
- * returning nothing.
- *
- * This is the bound the clash channel does not need and this one cannot do
- * without: `prime` runs in the background, but the query is embedded DURING A
- * LIVE TURN with a person waiting. `localEmbedder`'s own ceiling is 120 seconds,
- * which is right for a batch job and unacceptable here. Warm is 100–120 ms, so
- * 3 seconds is 25× headroom and still shorter than a person's patience.
- *
- * A cold model therefore costs the first turn its semantic hits and warms the
- * model for the second — the request keeps running after this returns, and the
- * eval measured that even a failed cold request loads the weights into VRAM.
- */
-export const QUERY_BUDGET_MS = 3_000;
 
 /** Default `k`, matching `resonate()`'s so the two channels agree by default. */
 export const TOP_N = 5;
 
 /** Texts per request — T18's batch size, for the same reasons. */
 const EMBED_BATCH = 16;
-
-// ── The register entries (Q-35 / Q-56) ──
-
-/**
- * These four belong in `src/wiki/thresholds.ts`, which this task does not own.
- * They are declared here in the register's own shape and passed through
- * `shadowDecision` like every other threshold in the system, so moving each one
- * into the table is a copy of the literal below and nothing else. The invariant
- * that matters — no mechanism reads a number without a `live` flag and a
- * `graduatesWhen` beside it — holds either way.
- */
-export const SEMANTIC_FLOOR: Threshold = {
- name: 'resonance.semanticFloor',
- value: 0.5,
- live: true,
- graduatesWhen:
-  'LIVE by decision (2026-08-03, Micah), on the measurement already in hand: 0.50 sits below every true pair on the paraphrase fixture (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064). Demote if the threshold-clipped record shows it dropping hits a reader wanted.',
-};
-
-/** Live. A per-run bound; see `PRIME_CAP` for why it is not a recency window. */
-export const PRIME_CAP_BOUND: Threshold = {
- name: 'resonance.primeCap',
- value: PRIME_CAP,
- live: true,
- graduatesWhen:
-  'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
-};
-
-/** Live. The cold-start ceiling for a background pass. */
-export const PRIME_BUDGET_BOUND: Threshold = {
- name: 'resonance.primeBudgetMs',
- value: PRIME_BUDGET_MS,
- live: true,
- graduatesWhen:
-  'Already live per Q-56. The value is ticket 007\'s cold-start measurement — 370 s then HTTP 500 on an unloaded model — and the clip record says how often a run stops here rather than finishing.',
-};
-
-/** Live. The one bound a person waits on. */
-export const QUERY_BUDGET_BOUND: Threshold = {
- name: 'resonance.queryBudgetMs',
- value: QUERY_BUDGET_MS,
- live: true,
- graduatesWhen:
-  'Already live per Q-56, and this one is not a background bound: it is how long a person waits mid-turn for a channel that is warm in 100-120 ms. A clip here means the model was cold or the box was busy, and the clip record is how often that costs a turn its hits.',
-};
 
 // ── The cache file ──
 
@@ -378,13 +298,13 @@ export type SemanticDeps = {
  model: string;
  store: EmbeddingIndexStore;
  log: ThresholdLogFn;
- /** Overrides `PRIME_CAP`. */
+ /** Overrides `THRESHOLDS['resonance.primeCap']`. */
  primeCap?: number;
- /** Overrides `PRIME_BUDGET_MS`. */
+ /** Overrides `THRESHOLDS['resonance.primeBudgetMs']`. */
  primeBudgetMs?: number;
- /** Overrides `QUERY_BUDGET_MS`. */
+ /** Overrides `THRESHOLDS['resonance.queryBudgetMs']`. */
  queryBudgetMs?: number;
- /** Overrides `SEMANTIC_FLOOR`, so a test can exercise the live branch. */
+ /** Overrides `THRESHOLDS['resonance.semanticFloor']`, so a test can exercise the live branch. */
  floor?: Threshold;
  /** Injectable clock, for the prime budget only. Never used to order anything. */
  now?: () => number;
@@ -416,10 +336,10 @@ export interface SemanticIndex {
  */
 export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): SemanticIndex {
  const { embed, model, store, log } = deps;
- const cap = deps.primeCap ?? PRIME_CAP;
- const primeBudgetMs = deps.primeBudgetMs ?? PRIME_BUDGET_MS;
- const queryBudgetMs = deps.queryBudgetMs ?? QUERY_BUDGET_MS;
- const floor = deps.floor ?? SEMANTIC_FLOOR;
+ const cap = deps.primeCap ?? (typeof THRESHOLDS['resonance.primeCap'].value === 'number' ? THRESHOLDS['resonance.primeCap'].value : 0);
+ const primeBudgetMs = deps.primeBudgetMs ?? (typeof THRESHOLDS['resonance.primeBudgetMs'].value === 'number' ? THRESHOLDS['resonance.primeBudgetMs'].value : 0);
+ const queryBudgetMs = deps.queryBudgetMs ?? (typeof THRESHOLDS['resonance.queryBudgetMs'].value === 'number' ? THRESHOLDS['resonance.queryBudgetMs'].value : 0);
+ const floor = deps.floor ?? THRESHOLDS['resonance.semanticFloor'];
  const clock = deps.now ?? (() => Date.now());
 
  // A boolean floor would be a misconfiguration. It must drop NOTHING rather
@@ -488,7 +408,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
 
   if (outcome === 'expired') {
    shadowDecision(
-    QUERY_BUDGET_BOUND,
+    THRESHOLDS['resonance.queryBudgetMs'],
     `stop waiting for the query vector after ${queryBudgetMs}ms and return no semantic hits`,
     log,
     true,
@@ -522,7 +442,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
    let todo = missing;
    if (todo.length > cap) {
     shadowDecision(
-     PRIME_CAP_BOUND,
+     THRESHOLDS['resonance.primeCap'],
      `embed ${missing.length} snippets in one run; ${missing.length - cap} wait for the next`,
      log,
      true,
@@ -537,7 +457,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
    for (let i = 0; i < todo.length; i += EMBED_BATCH) {
     if (clock() >= deadline) {
      shadowDecision(
-      PRIME_BUDGET_BOUND,
+      THRESHOLDS['resonance.primeBudgetMs'],
       `stop embedding: ${embedded} done, ${todo.length - embedded} still waiting`,
       log,
       true,

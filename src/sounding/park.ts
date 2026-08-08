@@ -3,6 +3,13 @@ import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { ParkedLadder, QueueEntry, QueueStore, Rung, Target } from '../types.js';
 
+/**
+ * The pointer-source kind a parked sounding mints. Owned here, not by the
+ * queue's draw: the queue filters parked pointers by the kinds configured
+ * at construction, and the composition root passes this one in.
+ */
+export const PARKED_SOURCE = 'parked-sounding' as const;
+
 /** `{root}/soundings/{id}.md` — the whole ladder, frontmatter only. */
 function ladderPath(root: string, id: string): string {
   return join(root, 'soundings', `${id}.md`);
@@ -72,7 +79,7 @@ export function readLadder(root: string, id: string): ParkedLadder | null {
 export function parkPointer(queue: QueueStore, l: ParkedLadder, target?: Target): QueueEntry {
   const last = l.rungs[l.rungs.length - 1]!;
   return queue.add({
-    source: 'parked-sounding',
+    source: PARKED_SOURCE,
     license: 'user',
     question: last.question,
     questionForm: 'deliberative',

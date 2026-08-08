@@ -29,7 +29,7 @@ export function writeRepair(root: string, record: RepairRecord): void {
 }
 
 /** Read all repair records for one snippet id. */
-export function readRepairs(root: string, snippetId: string): RepairRecord[] {
+function readRepairs(root: string, snippetId: string): RepairRecord[] {
   const file = join(root, REPAIRS_DIR, `${snippetId}.jsonl`);
   if (!existsSync(file)) return [];
   const lines = readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean);

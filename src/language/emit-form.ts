@@ -12,7 +12,7 @@
  * bug, not a conversational quality adjustment.
  */
 
-import { setOffSpans } from './guards.js';
+import { checkQuestion, setOffSpans, type GuardContext, type GuardVerdict } from './guards.js';
 
 // ── Mid-phrase detection ─────────────────────────────────────────────────
 
@@ -157,4 +157,48 @@ export function checkEmitForm(question: string): EmitFormResult {
 
   if (failures.length > 0) return { ok: false, failures };
   return { ok: true };
+}
+
+// ── The composed gate ─────────────────────────────────────────────────────
+
+export type ComposedGateVerdict = 'ok' | 'emit-form' | GuardVerdict;
+
+export type ComposedGateResult =
+  | { ok: true; verdict: 'ok' }
+  | { ok: false; verdict: Exclude<ComposedGateVerdict, 'ok'> };
+
+/**
+ * The one compose-through-gate helper: the emit-form gate, then the session
+ * guards, with the caller's context. Replaces the repeated
+ * `checkEmitForm` + `checkQuestion` + warn/return-null blocks that used to
+ * live at every composed path (composed.ts, compose-pattern.ts, the
+ * elicitor's machine seam, the server's rung guards).
+ *
+ * `label` is the per-path message prefix — reject messages stay per-path
+ * because they are the audit trail ('Composed: follow-up rejected',
+ * 'ComposePattern: guard rejected', ...). The helper appends the reason in
+ * the same voice: `(emit-form: <failures>)` or `(<verdict>)`.
+ *
+ * `log` receives the final message. composed.ts passes `warnReject` so
+ * rejections also reach the activity-log sink; the elicitor's machine seam
+ * passes a no-op because it logs its own retry line. Defaults to
+ * console.warn.
+ */
+export function guardComposed(
+  question: string,
+  ctx: GuardContext,
+  label: string,
+  log: (message: string) => void = console.warn,
+): ComposedGateResult {
+  const form = checkEmitForm(question);
+  if (!form.ok) {
+    log(`${label} (emit-form: ${form.failures.join('; ')})`);
+    return { ok: false, verdict: 'emit-form' };
+  }
+  const verdict = checkQuestion(question, ctx);
+  if (verdict !== 'ok') {
+    log(`${label} (${verdict})`);
+    return { ok: false, verdict };
+  }
+  return { ok: true, verdict: 'ok' };
 }

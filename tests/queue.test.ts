@@ -101,7 +101,7 @@ describe('QueueStore', () => {
   }));
 
   const mode = makeMode({ minutes: 15 });
-  const drawn = store.draw(mode, 'opening');
+  const drawn = store.draw(mode);
   expect(drawn).not.toBeNull();
   // The drawn entry should have modeNeeds.minMinutes <= 15
   expect(drawn!.modeNeeds?.minMinutes).toBeLessThanOrEqual(15);
@@ -121,7 +121,7 @@ describe('QueueStore', () => {
   }));
 
   const mode = makeMode({ energy: 'low' });
-  const drawn = store.draw(mode, 'opening');
+  const drawn = store.draw(mode);
   expect(drawn).not.toBeNull();
   expect(drawn!.modeNeeds?.energy).toBe('low');
  });
@@ -134,7 +134,7 @@ describe('QueueStore', () => {
   }));
 
   const mode = makeMode({ energy: 'high' });
-  const drawn = store.draw(mode, 'opening');
+  const drawn = store.draw(mode);
   expect(drawn).not.toBeNull();
  });
 
@@ -146,17 +146,17 @@ describe('QueueStore', () => {
   }));
 
   const mode = makeMode({ minutes: 5 });
-  const drawn = store.draw(mode, 'opening');
+  const drawn = store.draw(mode);
   expect(drawn).toBeNull();
  });
 
- // ── draw: opening/mid never returns sharp ──
+ // ── draw: never returns sharp ──
 
  it('opening draw excludes sharp entries', () => {
   store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
   store.add(makeDraft({ sharpness: 'weak', horizon: 'now' }));
 
-  const drawn = store.draw(makeMode(), 'opening');
+  const drawn = store.draw(makeMode());
   expect(drawn).not.toBeNull();
   expect(drawn!.sharpness).toBe('weak');
  });
@@ -165,25 +165,16 @@ describe('QueueStore', () => {
   store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
   store.add(makeDraft({ sharpness: 'weak', horizon: 'now' }));
 
-  const drawn = store.draw(makeMode(), 'mid');
+  const drawn = store.draw(makeMode());
   expect(drawn).not.toBeNull();
   expect(drawn!.sharpness).toBe('weak');
  });
 
- it('late draw allows sharp entries', () => {
-  store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
-  store.add(makeDraft({ sharpness: 'weak', horizon: 'now' }));
-
-  const drawn = store.draw(makeMode(), 'late');
-  expect(drawn).not.toBeNull();
-  // Should return one of the two — both are eligible
-  expect(['weak', 'sharp']).toContain(drawn!.sharpness);
- });
 
  it('opening draw returns null when only sharp entries exist', () => {
   store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
 
-  const drawn = store.draw(makeMode(), 'opening');
+  const drawn = store.draw(makeMode());
   expect(drawn).toBeNull();
  });
 
@@ -193,7 +184,7 @@ describe('QueueStore', () => {
   store.add(makeDraft({ horizon: 'days', sharpness: 'weak' }));
   store.add(makeDraft({ horizon: 'session', sharpness: 'weak' }));
 
-  const drawn = store.draw(makeMode(), 'opening');
+  const drawn = store.draw(makeMode());
   expect(drawn).not.toBeNull();
   expect(drawn!.horizon).toBe('session');
  });
@@ -201,7 +192,7 @@ describe('QueueStore', () => {
  it('draw returns null when all pending entries are days-horizon', () => {
   store.add(makeDraft({ horizon: 'days', sharpness: 'weak' }));
 
-  const drawn = store.draw(makeMode(), 'opening');
+  const drawn = store.draw(makeMode());
   expect(drawn).toBeNull();
  });
 
@@ -211,7 +202,7 @@ describe('QueueStore', () => {
   const e1 = store.add(makeDraft({ question: 'Q1' }));
   const e2 = store.add(makeDraft({ question: 'Q2' }));
 
-  const first = store.draw(makeMode(), 'opening');
+  const first = store.draw(makeMode());
   expect(first).not.toBeNull();
 
   // Verify status on disk is 'asked'
@@ -230,8 +221,8 @@ describe('QueueStore', () => {
   const e1 = store.add(makeDraft({ question: 'Q1' }));
   const e2 = store.add(makeDraft({ question: 'Q2' }));
 
-  const first = store.draw(makeMode(), 'opening');
-  const second = store.draw(makeMode(), 'opening');
+  const first = store.draw(makeMode());
+  const second = store.draw(makeMode());
 
   expect(first).not.toBeNull();
   expect(second).not.toBeNull();
@@ -259,7 +250,7 @@ describe('QueueStore', () => {
   // Mock Math.random → 0: always picks top-3[0], which is UD (sorts first)
   const randSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
 
-  const first = store.draw(makeMode(), 'opening');
+  const first = store.draw(makeMode());
   expect(first).not.toBeNull();
   expect(first!.source).toBe('user-declared');
   expect(first!.id).toBe(ud.id);
@@ -268,7 +259,7 @@ describe('QueueStore', () => {
 
   // remaining 3 composed → draw 2 more; 3rd remains pending in top-3 pool
   for (let i = 0; i < 2; i++) {
-   const d = store.draw(makeMode(), 'opening');
+   const d = store.draw(makeMode());
    expect(d).not.toBeNull();
   }
 
@@ -294,7 +285,7 @@ describe('QueueStore', () => {
   vi.useRealTimers();
 
   vi.spyOn(Math, 'random').mockReturnValue(0);
-  const first = store.draw(makeMode(), 'opening');
+  const first = store.draw(makeMode());
   expect(first).not.toBeNull();
   expect(first!.source).toBe('gap-declared');
   expect(first!.id).toBe(declared.id);
@@ -316,7 +307,7 @@ describe('QueueStore', () => {
   vi.useRealTimers();
 
   vi.spyOn(Math, 'random').mockReturnValue(0);
-  const first = store.draw(makeMode(), 'opening');
+  const first = store.draw(makeMode());
   expect(first).not.toBeNull();
   expect(first!.source).toBe('composed');
   expect(first!.question).toBe('C3');
@@ -592,7 +583,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   store.markAsked(e.id);
   store.defer(e.id);
 
-  const drawn = store.draw(makeMode(), 'opening');
+  const drawn = store.draw(makeMode());
   expect(drawn).not.toBeNull();
   expect(drawn!.id).toBe(e.id);
  });
@@ -614,7 +605,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   const e = store.add(makeDraft());
   store.park(e.id);
 
-  expect(store.draw(makeMode(), 'opening')).toBeNull();
+  expect(store.draw(makeMode())).toBeNull();
 
   // Age it far past any cutoff: the sweep only expires pending entries.
   expect(store.expire(0)).toBe(0);
@@ -687,42 +678,42 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   it('a domain sitting is never served self material', () => {
    store.add(makeDraft({ question: 'self Q', target: 'self' }));
 
-   expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+   expect(store.draw(makeMode({ target: 'domain' }))).toBeNull();
   });
 
   it('a self sitting is never served domain material', () => {
    store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
 
-   expect(store.draw(makeMode({ target: 'self' }), 'opening')).toBeNull();
+   expect(store.draw(makeMode({ target: 'self' }))).toBeNull();
   });
 
   it('filters the other target out of the pool without consuming it', () => {
    const domain = store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
    store.add(makeDraft({ question: 'self Q', target: 'self' }));
 
-   const drawn = store.draw(makeMode({ target: 'domain' }), 'opening');
+   const drawn = store.draw(makeMode({ target: 'domain' }));
    expect(drawn!.id).toBe(domain.id);
 
    // The self entry was never a candidate, so it is still there to be asked
    // in a self sitting — filtered, not spent.
-   expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+   expect(store.draw(makeMode({ target: 'domain' }))).toBeNull();
    const pending = store.list({ status: 'pending' });
    expect(pending.map((e) => e.question)).toEqual(['self Q']);
-   expect(store.draw(makeMode({ target: 'self' }), 'opening')!.question).toBe('self Q');
+   expect(store.draw(makeMode({ target: 'self' }))!.question).toBe('self Q');
   });
 
   it('an entry with no target is eligible for either sitting', () => {
    const e = store.add(makeDraft({ question: 'untargeted' }));
 
-   expect(store.draw(makeMode({ target: 'domain' }), 'opening')!.id).toBe(e.id);
+   expect(store.draw(makeMode({ target: 'domain' }))!.id).toBe(e.id);
    store.defer(e.id);
-   expect(store.draw(makeMode({ target: 'self' }), 'opening')!.id).toBe(e.id);
+   expect(store.draw(makeMode({ target: 'self' }))!.id).toBe(e.id);
   });
 
   it('a mode declaring no target draws either kind', () => {
    store.add(makeDraft({ question: 'domain Q', target: 'domain' }));
 
-   expect(store.draw(makeMode(), 'opening')!.question).toBe('domain Q');
+   expect(store.draw(makeMode())!.question).toBe('domain Q');
   });
 
   it('target and topic roundtrip through the store', () => {
@@ -757,7 +748,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
 
    const store2 = createQueueStore(root);
    expect(store2.list()[0]!.target).toBeUndefined();
-   expect(store2.draw(makeMode({ target: 'domain' }), 'opening')!.id).toBe(id);
+   expect(store2.draw(makeMode({ target: 'domain' }))!.id).toBe(id);
   });
 
   it('the other filters still apply inside the target pool', () => {
@@ -770,10 +761,10 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    }));
 
    const mode = makeMode({ target: 'domain', minutes: 15 });
-   expect(store.draw(mode, 'opening')).toBeNull();
+   expect(store.draw(mode)).toBeNull();
 
    store.add(makeDraft({ question: 'eligible', target: 'domain' }));
-   expect(store.draw(mode, 'opening')!.question).toBe('eligible');
+   expect(store.draw(mode)!.question).toBe('eligible');
   });
 
   it('chance still runs inside the target pool — the pick is not argmax', () => {
@@ -789,9 +780,9 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    const mode = makeMode({ target: 'domain' });
 
    vi.spyOn(Math, 'random').mockReturnValue(0);
-   const first = store.draw(mode, 'opening')!;
+   const first = store.draw(mode)!;
    vi.spyOn(Math, 'random').mockReturnValue(0.99);
-   const last = store.draw(mode, 'opening')!;
+   const last = store.draw(mode)!;
 
    // Both come from the three-entry domain pool, and a different roll
    // reaches a different entry — the filter constrains, chance chooses.
@@ -827,7 +818,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    vi.useRealTimers();
    vi.spyOn(Math, 'random').mockReturnValue(0);
 
-   const picked = store.draw(makeMode({ target: 'domain' }), 'opening')!;
+   const picked = store.draw(makeMode({ target: 'domain' }))!;
 
    expect(picked.id).toBe(domainEpisode.id);
    expect(picked.id).not.toBe(selfEpisode.id);
@@ -884,7 +875,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    const { episodeId, newestConstructId } = seedQueue();
    vi.spyOn(Math, 'random').mockReturnValue(0);
 
-   const picked = store.draw(makeMode(), 'opening');
+   const picked = store.draw(makeMode());
 
    // Behaviour is untouched: the top-3 pool is still the three constructs.
    expect(picked!.id).toBe(newestConstructId);
@@ -907,7 +898,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    const { episodeId } = seedQueue();
    vi.spyOn(Math, 'random').mockReturnValue(0);
 
-   const picked = store.draw(makeMode(), 'opening');
+   const picked = store.draw(makeMode());
 
    // The episode is last by recency and would never reach the top-3 pool;
    // the filter removes the over-represented constructs first.
@@ -921,7 +912,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    writeConstructHeavyVault();
    store.add(makeDraft({ question: 'untagged' }));
 
-   const picked = store.draw(makeMode(), 'opening');
+   const picked = store.draw(makeMode());
 
    expect(picked).not.toBeNull();
    expect(picked!.question).toBe('untagged');
@@ -931,7 +922,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
 
   it('logs the distribution even when the filter has nothing to say', () => {
    store.add(makeDraft({ question: 'only one' }));
-   expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+   expect(store.draw(makeMode())).not.toBeNull();
    const events = readLog().map((l) => JSON.parse(l) as { kind: string; detail: string });
    const shadow = events.find((e) => e.kind === 'facet-balance-shadow');
    expect(shadow!.detail).toContain('dist=empty');
@@ -1113,7 +1104,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
     makeDraft({ source: 'user-declared', question: 'the bookmark', sharpness: 'sharp' }),
    );
 
-   const drawn = store.draw(makeMode(), 'opening');
+   const drawn = store.draw(makeMode());
 
    expect(drawn).not.toBeNull();
    expect(drawn!.id).toBe(ud.id);
@@ -1137,7 +1128,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
     }),
    );
 
-   const drawn = store.draw(makeMode({ minutes: 15, energy: 'low' }), 'opening');
+   const drawn = store.draw(makeMode({ minutes: 15, energy: 'low' }));
 
    expect(drawn!.id).toBe(ud.id);
    expect(rungs()).toHaveLength(1);
@@ -1153,7 +1144,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
     }),
    );
 
-   expect(store.draw(makeMode({ minutes: 15 }), 'opening')).not.toBeNull();
+   expect(store.draw(makeMode({ minutes: 15 }))).not.toBeNull();
    const detail = rungs()[0]!.detail;
    expect(detail).toContain('modeNeeds');
    expect(detail).toContain('sharpness');
@@ -1173,9 +1164,9 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    vi.useRealTimers();
 
    vi.spyOn(Math, 'random').mockReturnValue(0);
-   const first = store.draw(makeMode(), 'opening')!;
+   const first = store.draw(makeMode())!;
    vi.spyOn(Math, 'random').mockReturnValue(0.99);
-   const last = store.draw(makeMode(), 'opening')!;
+   const last = store.draw(makeMode())!;
 
    expect(first.id).not.toBe(last.id);
    // Newest first: the roll of 0 takes U4, and the roll of 0.99 reaches the
@@ -1188,7 +1179,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
     makeDraft({ source: 'gap-declared', question: 'the gap bookmark', sharpness: 'sharp' }),
    );
 
-   const drawn = store.draw(makeMode(), 'opening');
+   const drawn = store.draw(makeMode());
 
    expect(drawn).not.toBeNull();
    expect(drawn!.id).toBe(gd.id);
@@ -1203,7 +1194,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   it('never re-admits a gap-fill entry the sharpness filter excluded', () => {
    store.add(makeDraft({ source: 'gap-fill', question: 'model-marked gap', sharpness: 'sharp' }));
 
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
 
    expect(rungs()).toHaveLength(0);
    expect(floors()).toHaveLength(1);
@@ -1215,7 +1206,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   it('an agent-minted pool draws nothing and the floor names the emptying filter', () => {
    store.add(makeDraft({ source: 'composed', sharpness: 'sharp' }));
 
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
 
    expect(rungs()).toHaveLength(0);
    expect(floors()).toHaveLength(1);
@@ -1225,7 +1216,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   it('a user-declared entry excluded by Target is not re-admitted', () => {
    store.add(makeDraft({ source: 'user-declared', question: 'self Q', target: 'self' }));
 
-   expect(store.draw(makeMode({ target: 'domain' }), 'opening')).toBeNull();
+   expect(store.draw(makeMode({ target: 'domain' }))).toBeNull();
    expect(rungs()).toHaveLength(0);
    expect(floors()[0]!.detail).toContain('emptiedBy=target');
   });
@@ -1236,8 +1227,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    );
    store.markAnswered(ud.id);
 
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
-   expect(store.draw(makeMode(), 'late')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
    expect(rungs()).toHaveLength(0);
    expect(floors()[0]!.detail).toContain('emptiedBy=status');
   });
@@ -1245,13 +1235,13 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   it('a user-declared days-horizon entry is not re-admitted', () => {
    store.add(makeDraft({ source: 'user-declared', horizon: 'days', sharpness: 'sharp' }));
 
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
    expect(rungs()).toHaveLength(0);
    expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
   });
 
   it('an empty queue reaches the floor without blaming a filter', () => {
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
 
    expect(floors()).toHaveLength(1);
    expect(floors()[0]!.detail).toContain('emptiedBy=none');
@@ -1264,7 +1254,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    writeConstructHeavyVault();
    store.add(makeDraft({ question: 'untagged' }));
 
-   expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+   expect(store.draw(makeMode())).not.toBeNull();
 
    expect(rungs()).toHaveLength(1);
    expect(rungs()[0]!.detail).toContain('rung=1');
@@ -1277,7 +1267,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    writeConstructHeavyVault();
    store.add(makeDraft({ question: 'an episode', targetFacet: 'episode' }));
 
-   expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+   expect(store.draw(makeMode())).not.toBeNull();
    expect(rungs()).toHaveLength(0);
   });
 
@@ -1286,7 +1276,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    // because it has nothing to say, not because it would empty the pool.
    store.add(makeDraft({ question: 'only one' }));
 
-   expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+   expect(store.draw(makeMode())).not.toBeNull();
    expect(rungs()).toHaveLength(0);
    expect(floors()).toHaveLength(0);
   });
@@ -1310,39 +1300,39 @@ describe('sitting-level queue pause (Q-115)', () => {
  it('two consecutive strike-sittings pause the draw; an engaged reply resets', () => {
   const e1 = addOpener(1);
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  expect(store.draw(makeMode())).not.toBeNull();
   store.recordReplyDisengagement(e1.id!, PIVOT);
 
   const e2 = addOpener(2);
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  expect(store.draw(makeMode())).not.toBeNull();
   store.recordReplyDisengagement(e2.id!, PIVOT);
 
   // Sitting 3 and 4: the cooldown (2 sittings) holds — nothing drawn.
   addOpener(3);
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).toBeNull();
+  expect(store.draw(makeMode())).toBeNull();
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).toBeNull();
+  expect(store.draw(makeMode())).toBeNull();
 
   // Sitting 5: the probe. It serves, and an ENGAGED reply resets everything.
   store.noteSittingStarted();
-  const probe = store.draw(makeMode(), 'opening');
+  const probe = store.draw(makeMode());
   expect(probe).not.toBeNull();
   store.recordReplyDisengagement(probe!.id!, ENGAGED);
   addOpener(4); // draw marks served entries asked — the pool needs a fresh one
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  expect(store.draw(makeMode())).not.toBeNull();
  });
 
  it('a failed probe doubles the cooldown', () => {
   const e1 = addOpener(1);
   store.noteSittingStarted();
-  store.draw(makeMode(), 'opening');
+  store.draw(makeMode());
   store.recordReplyDisengagement(e1.id!, PIVOT);
   const e2 = addOpener(2);
   store.noteSittingStarted();
-  store.draw(makeMode(), 'opening');
+  store.draw(makeMode());
   store.recordReplyDisengagement(e2.id!, PIVOT);
 
   // Cooldown 1: sittings 3-4 quiet, probe at 5 — pivoted again.
@@ -1350,7 +1340,7 @@ describe('sitting-level queue pause (Q-115)', () => {
   store.noteSittingStarted();
   addOpener(3);
   store.noteSittingStarted();
-  const probe = store.draw(makeMode(), 'opening');
+  const probe = store.draw(makeMode());
   expect(probe).not.toBeNull();
   store.recordReplyDisengagement(probe!.id!, PIVOT);
 
@@ -1358,10 +1348,10 @@ describe('sitting-level queue pause (Q-115)', () => {
   addOpener(4); // a fresh pending opener, so quiet draws prove the pause, not an empty pool
   for (let i = 0; i < 4; i++) {
    store.noteSittingStarted();
-   expect(store.draw(makeMode(), 'opening')).toBeNull();
+   expect(store.draw(makeMode())).toBeNull();
   }
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  expect(store.draw(makeMode())).not.toBeNull();
  });
 
  it('one pivot per sitting counts once — two brush-offs in one sitting are one strike', () => {
@@ -1372,7 +1362,7 @@ describe('sitting-level queue pause (Q-115)', () => {
   store.recordReplyDisengagement(e2.id!, PIVOT);
   // Still one strike: the next sitting draws normally.
   store.noteSittingStarted();
-  expect(store.draw(makeMode(), 'opening')).not.toBeNull();
+  expect(store.draw(makeMode())).not.toBeNull();
  });
 
  it('the pause survives a restart — the ledger is on disk', () => {
@@ -1385,7 +1375,7 @@ describe('sitting-level queue pause (Q-115)', () => {
 
   const reopened = createQueueStore(root);
   reopened.noteSittingStarted();
-  expect(reopened.draw(makeMode(), 'opening')).toBeNull();
+  expect(reopened.draw(makeMode())).toBeNull();
  });
 
  it('logs queue-paused with the cooldown length', () => {

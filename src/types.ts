@@ -593,7 +593,7 @@ export interface QueueStore {
   * callers must NOT call markAsked on the result (a second call is a
   * redundant second write of the same file).
   */
- draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null;
+ draw(mode: Mode): QueueEntry | null;
  /** Mark one entry asked. Called by the draw itself, or by a caller marking an entry it picked some other way. */
  markAsked(id: string): void;
  markAnswered(id: string): void;

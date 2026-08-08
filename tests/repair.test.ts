@@ -151,7 +151,7 @@ describe('repair verb (ticket 137, Q-104..Q-109)', () => {
     });
     expect(repairRes.status).toBe(200);
 
-    const drawn = queue.draw({ minutes: 25, energy: 'medium', target: 'self' }, 'opening');
+    const drawn = queue.draw({ minutes: 25, energy: 'medium', target: 'self' });
     if (drawn) {
       expect(drawn.id).not.toBe(qid);
     }

@@ -22,7 +22,7 @@ import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { makeFakeComplete } from '../src/fake-responder.js';
 import type { TerritoryNode, TerritoryResponse } from '../src/territory.js';
-import { stateWord, nodeLine, renderTerritory } from '../web/territory.js';
+import { initTerritory, stateWord, nodeLine, renderTerritory } from '../web/territory.js';
 
 /** One NodeReading file, byte-shaped like src/ktg/coverage.ts writes it. */
 function writeReading(
@@ -263,6 +263,16 @@ describe('renderTerritory (152 prototype)', () => {
       },
     };
     vi.stubGlobal('document', stubDocument);
+    // The renderer takes its DOM verb through the seam now (web/deps.ts):
+    // wire the stub-document-based el exactly as main.ts wires its own.
+    initTerritory({
+      el: (tag: string, className: string | null, text: string) => {
+        const node = stubDocument.createElement(tag);
+        if (className !== null) node.className = className;
+        node.textContent = text;
+        return node as unknown as HTMLElement;
+      },
+    });
     try {
       const container: {
         children: Array<{ textContent: string }>;

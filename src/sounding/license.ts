@@ -44,8 +44,8 @@ export type LicenseReasons = {
  * 1-exchange sittings will never reach the late window.
  */
 
-/** The sustained-thread bar, from the register (Q-35). */
-const SUSTAINED_THRESHOLD = SOUNDING_THRESHOLDS['sounding.sustainedOverlap'].value as number;
+/** The sustained-thread bar, from the register (Q-35). Honors the live flag. */
+const SUSTAINED = SOUNDING_THRESHOLDS['sounding.sustainedOverlap'];
 
 /** The last three user turns, newest last — the thread the license reads. */
 function lastThreeUserTurns(s: SessionState): Turn[] {
@@ -137,8 +137,10 @@ export function licenseSounding(
   // Ticket 135's greeting turn is free (questionCount starts at 0 and the
   // greeting never counts), so every count here runs one lower than
   // pre-135 at the same depth.
+  const lateEntry = SOUNDING_THRESHOLDS['sounding.lateQuestionCount'];
   const late =
-    s.questionCount >= (SOUNDING_THRESHOLDS['sounding.lateQuestionCount'].value as number) &&
+    lateEntry.live &&
+    s.questionCount >= (lateEntry.value as number) &&
     s.phase !== 'closing-door' &&
     s.phase !== 'closing-bookmark';
   const energy = s.mode.energy !== 'low';
@@ -146,7 +148,7 @@ export function licenseSounding(
   const thread = lastThreeUserTurns(s);
   // A thread needs three turns to be sustained; fewer cannot clear the bar.
   const value = thread.length >= 3 ? meanAdjacentJaccard(thread) : 0;
-  const sustained = value >= SUSTAINED_THRESHOLD;
+  const sustained = SUSTAINED.live && value >= (SUSTAINED.value as number);
   const licensed = late && energy && sustained && unoffered;
   const construct = constructOf(thread);
   return {

@@ -15,34 +15,35 @@ import type { DatingRule, RefusalReason } from './contract.js';
 export const DEFAULT_DATING: DatingRule = { kind: 'frontmatter', key: 'date' };
 
 /** `YYYY-MM-DD` — the day shape the corpus sits prose on. */
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+export const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Same round-trip check as scan.ts isoDay — a duplicate, deliberately:
- * dating.ts cannot import scan.ts (scan.ts imports dating.ts); keep the two
- * in lockstep. The Date round-trip is the witness that a day is real: a day
- * like `2021-02-31` rolls forward in the calendar, so it fails the check and
- * is refused rather than silently dated to March.
+ * The calendar witness that a day is real: `2021-02-31` rolls forward in
+ * the calendar, so it fails the round-trip and is refused rather than
+ * silently dated to March.
  */
 function isCalendarDay(day: string): boolean {
   return new Date(`${day}T00:00:00.000Z`).toISOString().slice(0, 10) === day;
 }
 
 /**
- * Frontmatter dates arrive from YAML as `Date` objects or strings depending
- * on quoting. Normalise BOTH to `YYYY-MM-DD`; anything else is unreadable —
- * the same handling scan.ts's isoDay has, kept here for the same reason the
- * round-trip check above is.
+ * The ONE normaliser for a date value (Q-57): a `Date` object — how YAML
+ * hands an unquoted date to gray-matter — an exact `YYYY-MM-DD` string, or
+ * a full ISO datetime whose day is the first ten characters (the
+ * transcripts' `started`, a generator's site-wide `lastmod`). Anything
+ * else is unreadable, and a day that is not a real calendar day is refused
+ * rather than rolled. scan.ts and adopt.ts import this instead of keeping
+ * their own copies — one home, one lockstep.
  */
-function isoDay(value: unknown): string | null {
+export function isoDay(value: unknown): string | null {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return null;
     return value.toISOString().slice(0, 10);
   }
-  if (typeof value === 'string' && ISO_DAY.test(value)) {
-    return isCalendarDay(value) ? value : null;
-  }
-  return null;
+  if (typeof value !== 'string') return null;
+  const day = value.slice(0, 10);
+  if (!ISO_DAY.test(day)) return null;
+  return isCalendarDay(day) ? day : null;
 }
 
 /** One date token of a filename pattern. */

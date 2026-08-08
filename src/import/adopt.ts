@@ -8,7 +8,8 @@
  * exclusion one piece at a time.
  *
  * `adoptPriorIngest` reconciles the staging store with that run. It is
- * called from the scan route (T9) once per scan, and it is idempotent: the
+ * called by the scan pipeline (src/import/pipeline.ts) once per scan, and
+ * it is idempotent: the
  * second call adds nothing. `folder` — the scanned folder path — is known
  * only at request time, which is why adoption cannot run at store
  * construction.
@@ -31,6 +32,7 @@ import matter from 'gray-matter';
 
 import type { ImportRecord } from './contract.js';
 import { bodyHash } from './scan.js';
+import { isoDay } from './dating.js';
 import type { ImportStore } from './store.js';
 import { EXCLUDED, MANIFEST } from './prior-ingest.js';
 import type { LogFn } from '../wiki/contract.js';
@@ -56,26 +58,6 @@ export type AdoptResult = {
   excluded: number;
   unresolved: string[];
 };
-
-/** `YYYY-MM-DD` — the day shape the corpus sits prose on. */
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Frontmatter dates arrive from YAML as `Date` objects or strings depending
- * on quoting. Normalise BOTH to `YYYY-MM-DD`; anything else is unreadable
- * and is reported rather than guessed (Q-57).
- */
-function isoDay(value: unknown): string | null {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === 'string') {
-    const day = value.slice(0, 10);
-    return ISO_DAY.test(day) ? day : null;
-  }
-  return null;
-}
 
 /**
  * A slug resolves to two possible file layouts and both are tried:

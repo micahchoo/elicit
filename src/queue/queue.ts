@@ -7,6 +7,7 @@ import { appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/kinds.js';
 import { elideDisfluencies } from '../language/disfluency.js';
 import { EngagementLedger } from './engagement.js';
+import { ENERGY_LEVEL } from './mode-needs.js';
 import { contentWordsOf } from '../index/lexical.js';
 import {
  applyFacetBalance,
@@ -46,8 +47,20 @@ export function distinctFieldKeys<K extends keyof QueueEntry>(
   return out as Set<NonNullable<QueueEntry[K]> extends string | number ? string : never>;
 }
 
-export function createQueueStore(root: string): QueueStore {
- return new QueueStoreImpl(root);
+/**
+ * The parked-pointer sources the draw never serves, by default. Each park
+ * module owns its kind ('parked-sounding' in src/sounding/park.ts,
+ * 'parked-machine' in src/protocols/park.ts); 'parked-drm' is the legacy
+ * source — slice 6 migrated drm parks to 'parked-machine', but old
+ * pointers in the store must stay undrawable too.
+ */
+const DEFAULT_PARKED_POINTER_KINDS = ['parked-sounding', 'parked-machine', 'parked-drm'] as const;
+
+export function createQueueStore(
+ root: string,
+ options: { parkedPointerKinds?: readonly string[] } = {},
+): QueueStore {
+ return new QueueStoreImpl(root, options.parkedPointerKinds ?? DEFAULT_PARKED_POINTER_KINDS);
 }
 
 /**
@@ -81,12 +94,6 @@ function compareOpenEntries(a: QueueEntry, b: QueueEntry): number {
  return b.created.localeCompare(a.created);
 }
 
-const ENERGY_LEVEL: Record<NonNullable<Mode['energy']>, number> = {
- low: 0,
- medium: 1,
- high: 2,
-};
-
 /** How far ahead the shadow blueprint plans. Only its first slot is ever asked. */
 const SESSION_BLUEPRINT_SLOTS = 6;
 
@@ -117,7 +124,7 @@ type DrawFilter = {
  * by the normal path, by rung 2, and by the floor's "which filter emptied the
  * pool" — one list, no re-implementation.
  */
-function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[] {
+function drawFilters(mode: Mode, parkedPointerKinds: readonly string[]): DrawFilter[] {
  const modeEnergy = ENERGY_LEVEL[mode.energy];
  return [
   {
@@ -128,13 +135,13 @@ function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[
   // A parked ladder, parked machine or legacy parked DRM is a pointer, not
   // a question. Rung 2 of the degradation ladder (Q-55) exists to admit the
   // person's own declared questions past a preference, never a pointer as if
-  // it were a question — relaxable: false is the whole point. 'parked-drm'
-  // is the legacy source: slice 6 migrated drm parks to 'parked-machine',
-  // but old pointers in the store must stay undrawable too.
+  // it were a question — relaxable: false is the whole point. The kinds are
+  // the park modules' own consts, configured at construction (the default
+  // keeps legacy 'parked-drm' undrawable too).
   {
    name: 'sounding',
    relaxable: false,
-   keep: (e) => e.source !== 'parked-sounding' && e.source !== 'parked-machine' && e.source !== 'parked-drm',
+   keep: (e) => !parkedPointerKinds.includes(e.source),
   },
   {
    name: 'modeNeeds',
@@ -151,7 +158,7 @@ function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[
   {
    name: 'sharpness',
    relaxable: true,
-   keep: (e) => phase === 'late' || e.sharpness === 'weak',
+   keep: (e) => e.sharpness === 'weak',
   },
   // Never drawn into an exchange, at any rung: a days-horizon question is
   // not a question for now.
@@ -235,13 +242,16 @@ function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
 
 class QueueStoreImpl implements QueueStore {
  #root: string;
+  /** The parked-pointer sources the draw never serves (set at construction). */
+  #parkedPointerKinds: readonly string[];
   #deferredSnippets: Set<string> = new Set();
   #threadStrikes: Map<string, number> = new Map();
   /** The sitting-level engagement ledger (Q-115) — its own module. */
   #engagement: EngagementLedger;
 
- constructor(root: string) {
+ constructor(root: string, parkedPointerKinds: readonly string[]) {
   this.#root = root;
+  this.#parkedPointerKinds = parkedPointerKinds;
   this.#engagement = new EngagementLedger(root);
  }
 
@@ -458,7 +468,7 @@ add(draft: QueueDraft): QueueEntry {
   * lives at step 4, because line-order already guarantees the facet filter
   * can never be what emptied the pool.
   */
- draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null {
+ draw(mode: Mode): QueueEntry | null {
   // Q-115: while the sitting-level pause holds, the queue offers nothing —
   // the caller's fallback (bank / imported material) carries the sitting.
   const eng = this.#engagement.read();
@@ -474,7 +484,7 @@ add(draft: QueueDraft): QueueEntry {
       })
     : all;
 
-  const filters = drawFilters(mode, phase);
+  const filters = drawFilters(mode, this.#parkedPointerKinds);
 
   // Step 1: the hard filters, in the order Q-55 fixes.
   const normal = runChain(drawPool, filters, false);
@@ -484,7 +494,7 @@ add(draft: QueueDraft): QueueEntry {
   if (candidates.length === 0) {
    const relaxed = runChain(drawPool, filters, true);
    if (relaxed.pool.length === 0) {
-    this.#logFloor(drawPool.length, normal.emptiedBy, mode, phase);
+    this.#logFloor(drawPool.length, normal.emptiedBy, mode);
     return null;
    }
    this.#logRung(
@@ -568,14 +578,12 @@ add(draft: QueueDraft): QueueEntry {
   poolSize: number,
   emptiedBy: FilterName | null,
   mode: Mode,
-  phase: 'opening' | 'mid' | 'late',
  ): void {
   this.#append({
    kind: 'queue-floor',
    detail: [
     `emptiedBy=${emptiedBy ?? 'none'}`,
     `pool=${poolSize}`,
-    `phase=${phase}`,
     `target=${mode.target ?? 'none'}`,
     `mode=${mode.minutes}m/${mode.energy}`,
    ].join(' '),

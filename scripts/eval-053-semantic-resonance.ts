@@ -38,8 +38,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { buildIndex, resonate } from '../src/index/lexical.js';
-import { buildSemanticIndex, SEMANTIC_FLOOR } from '../src/index/semantic.js';
+import { buildSemanticIndex } from '../src/index/semantic.js';
 import { bodyHash, cosine, localEmbedder, type EmbeddingIndexStore, type EmbeddingRecord } from '../src/wiki/embedding.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { Snippet } from '../src/types.js';
 import { PAIRS, DISTRACTORS } from '../tests/fixtures/paraphrase-pairs.js';
 
@@ -168,7 +169,7 @@ async function main(): Promise<void> {
   console.log(`semantic recall@5  : ${atFive}/${PAIRS.length}`);
   console.log(`semantic @cos>=0.70: ${atSeventy}/${PAIRS.length}   (the instrument 007 recommended against)`);
   console.log(`lexical  recall@5  : ${lexicalHits}/${PAIRS.length}   (the incumbent)`);
-  console.log(`shadow floor       : ${SEMANTIC_FLOOR.name}=${String(SEMANTIC_FLOOR.value)} live=${SEMANTIC_FLOOR.live}`);
+  console.log(`shadow floor       : ${THRESHOLDS['resonance.semanticFloor'].name}=${String(THRESHOLDS['resonance.semanticFloor'].value)} live=${THRESHOLDS['resonance.semanticFloor'].live}`);
 
   // ── The opposite pole: the eval's single most interesting data point ──
   const opposed = await index.resonate(PAIRS[0]!.restated, 11);

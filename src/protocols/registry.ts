@@ -1,7 +1,6 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import matter from 'gray-matter';
+import { createDefRegistry, type DefSource } from '../defs/loader.js';
 import type { Target, QuestionForm } from '../types.js';
 import type { PhaseDef } from './machine.js';
 
@@ -62,8 +61,6 @@ export const DEFAULT_FLOOR_PROBE = 'What makes you say that?';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFS_DIR = join(__dirname, 'defs');
-
-let _defs: Map<string, ProtocolDef> | undefined;
 
 /** Parse frontmatter targets field — handles YAML array or single string. */
 function parseTargets(raw: unknown): Target[] {
@@ -138,78 +135,70 @@ function parsePhases(raw: unknown): PhaseDef[] | undefined {
  return phases;
 }
 
-function loadFromDisk(): Map<string, ProtocolDef> {
- const defs = new Map<string, ProtocolDef>();
- let files: string[];
+function parseProtocolFile(file: string, source: DefSource): ProtocolDef | null {
+ const data = source.frontmatter ?? {};
+ const name = typeof data.name === 'string' ? data.name : file.replace(/\.md$/, '');
+ // A declared-but-malformed phases list is a programming error: fail the
+ // load, naming the def, instead of silently serving a broken machine.
+ let phases: PhaseDef[] | undefined;
  try {
-  files = readdirSync(DEFS_DIR);
- } catch {
-  return defs; // no defs directory — empty
+  phases = parsePhases(data.phases);
+ } catch (err) {
+  throw new Error(`def "${name}" (${file}): ${(err as Error).message}`);
  }
-
- for (const file of files) {
-  if (!file.endsWith('.md')) continue;
-  const path = join(DEFS_DIR, file);
-  const raw = readFileSync(path, 'utf-8');
-  const parsed = matter(raw);
-  const data = parsed.data as Record<string, unknown>;
-
-  const name = typeof data.name === 'string' ? data.name : file.replace(/\.md$/, '');
-  // A declared-but-malformed phases list is a programming error: fail the
-  // load, naming the def, instead of silently serving a broken machine.
-  let phases: PhaseDef[] | undefined;
-  try {
-   phases = parsePhases(data.phases);
-  } catch (err) {
-   throw new Error(`def "${name}" (${file}): ${(err as Error).message}`);
-  }
-  const floorProbe =
-   typeof data.floorProbe === 'string' && data.floorProbe.trim().length > 0
-    ? data.floorProbe.trim()
-    : DEFAULT_FLOOR_PROBE;
-  const presentation =
-   typeof data.presentation === 'string' ? data.presentation : undefined;
-  // The title is the surface word; a def without one renders under its
-  // registry key (ticket 157).
-  const title =
-   typeof data.title === 'string' && data.title.trim().length > 0
-    ? data.title.trim()
-    : name;
-  const blurb =
-   typeof data.blurb === 'string' && data.blurb.trim().length > 0
-    ? data.blurb.trim()
-    : undefined;
-  const def: ProtocolDef = {
-   name,
-   title,
-   targets: parseTargets(data.targets),
-   prerequisites: parsePrerequisites(data.prerequisites),
-   questionForm: parseQuestionForm(data.questionForm),
-   prompt: (parsed.content ?? '').trim(),
-   floorProbe,
-   // rotation defaults to true; false for user-declared-only instruments (Q-85)
-   rotation: data.rotation !== false,
-   ...(blurb !== undefined ? { blurb } : {}),
-   ...(presentation !== undefined ? { presentation } : {}),
-   ...(phases !== undefined ? { phases } : {}),
-  };
-
-  if (def.name.length > 0) {
-   defs.set(def.name, def);
-  }
- }
-
- return defs;
+ const floorProbe =
+  typeof data.floorProbe === 'string' && data.floorProbe.trim().length > 0
+   ? data.floorProbe.trim()
+   : DEFAULT_FLOOR_PROBE;
+ const presentation =
+  typeof data.presentation === 'string' ? data.presentation : undefined;
+ // The title is the surface word; a def without one renders under its
+ // registry key (ticket 157).
+ const title =
+  typeof data.title === 'string' && data.title.trim().length > 0
+   ? data.title.trim()
+   : name;
+ const blurb =
+  typeof data.blurb === 'string' && data.blurb.trim().length > 0
+   ? data.blurb.trim()
+   : undefined;
+ const def: ProtocolDef = {
+  name,
+  title,
+  targets: parseTargets(data.targets),
+  prerequisites: parsePrerequisites(data.prerequisites),
+  questionForm: parseQuestionForm(data.questionForm),
+  prompt: (source.body ?? '').trim(),
+  floorProbe,
+  // rotation defaults to true; false for user-declared-only instruments (Q-85)
+  rotation: data.rotation !== false,
+  ...(blurb !== undefined ? { blurb } : {}),
+  ...(presentation !== undefined ? { presentation } : {}),
+  ...(phases !== undefined ? { phases } : {}),
+ };
+ return def.name.length > 0 ? def : null;
 }
+
+/** The shared def loader: enumerate defs/*.md, parse, cache forever. */
+const registry = createDefRegistry<ProtocolDef, Map<string, ProtocolDef>>({
+ name: 'Protocol registry',
+ dir: () => DEFS_DIR,
+ match: (file) => file.endsWith('.md'),
+ markdown: true,
+ strict: true,
+ empty: () => new Map(),
+ parse: parseProtocolFile,
+ add: (result, def) => {
+  result.set(def.name, def);
+ },
+});
 
 /**
  * Load all protocol definitions from `defs/*.md`.
  * Result is cached; subsequent calls return the same map.
  */
 export function loadProtocolDefinitions(): Map<string, ProtocolDef> {
- if (_defs) return _defs;
- _defs = loadFromDisk();
- return _defs;
+ return registry.load();
 }
 
 /**

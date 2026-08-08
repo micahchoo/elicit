@@ -29,7 +29,7 @@ import { readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { basename, join } from 'node:path';
 import matter from 'gray-matter';
 
-import { dateFor, DEFAULT_DATING } from './dating.js';
+import { dateFor, DEFAULT_DATING, isoDay } from './dating.js';
 import type { DatingRule, RefusalReason, ScannedItem } from './contract.js';
 
 /** The body's identity (Q-59): SHA-256 of the prose, frontmatter excluded. */
@@ -41,27 +41,6 @@ export type ScanResult = {
   items: ScannedItem[];
   refused: { sourcePath: string; reason: RefusalReason }[];
 };
-
-/** `YYYY-MM-DD` — the day shape the corpus sits prose on. */
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Frontmatter dates arrive from YAML as `Date` objects or strings depending
- * on quoting. Normalise BOTH to `YYYY-MM-DD`; anything else is unreadable.
- * A string day is checked as a real calendar day, so `2020-02-31` is refused
- * rather than silently rolled to March 2.
- */
-function isoDay(value: unknown): string | null {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === 'string' && ISO_DAY.test(value)) {
-    const day = new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10);
-    return day === value ? value : null;
-  }
-  return null;
-}
 
 /** One file's fate: a ScannedItem, or the reason it did not become one. */
 type ScanOutcome = ScannedItem | { reason: RefusalReason };

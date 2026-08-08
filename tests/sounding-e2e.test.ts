@@ -372,7 +372,7 @@ describe('soundings end to end (Task 13)', () => {
   const pointers = queue.list({ source: 'parked-sounding' });
   expect(pointers).toHaveLength(1);
   const pointer = pointers[0]!;
-  const draw = queue.draw({ minutes: 20, energy: 'medium', target: 'self' }, 'opening');
+  const draw = queue.draw({ minutes: 20, energy: 'medium', target: 'self' });
   expect(draw).toBeNull();
 
   // 5. Run the docket: the ladder-summary job stamps one line for the parked

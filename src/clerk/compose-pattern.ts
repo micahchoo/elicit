@@ -14,7 +14,7 @@ import { loadPatterns } from '../patterns/registry.js';
 import { selectCheapPattern } from '../patterns/select.js';
 import { decomposeDerived } from '../patterns/decompose.js';
 import type { LicensingContext, Pattern, Operator } from '../patterns/types.js';
-import { checkQuestion } from '../language/guards.js';
+import { guardComposed } from '../language/emit-form.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -156,11 +156,13 @@ export async function composeWithPattern(
     return null;
   }
 
-  const guardVerdict = checkQuestion(question, { asked: [] });
-  if (guardVerdict !== 'ok') {
-    console.warn(`ComposePattern: guard rejected (${guardVerdict}) for ${selected.id}`);
-    return null;
-  }
+  const gate = guardComposed(
+    question,
+    { asked: [] },
+    'ComposePattern: guard rejected',
+    (message) => console.warn(`${message} for ${selected.id}`),
+  );
+  if (!gate.ok) return null;
 
   return buildPatternDraft(question, selected, result.quotedSpans, result.operatorsUsed, sitting);
 }

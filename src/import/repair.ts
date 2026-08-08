@@ -97,7 +97,7 @@ export function runImportRepair(deps: {
 
  // READ the ledger first: the ledger is the memory, and a re-run over the
  // same snippets Buds nothing and re-mints nothing.
- const ledger = readLedger(deps.vaultRoot);
+ const ledger = readRepairLedger(deps.vaultRoot);
  const lastSeen = new Map<string, LedgerLine>();
  for (const line of ledger) lastSeen.set(line.snippetId, line);
  const seen = new Set(lastSeen.keys());
@@ -191,7 +191,7 @@ export function runImportRepair(deps: {
  // the ULID ids keep bounded.
  const now = new Date().toISOString();
  for (const { snippet, budId } of budded) {
-  appendLedger(deps.vaultRoot, {
+  appendRepairLedger(deps.vaultRoot, {
    at: now,
    snippetId: snippet.id,
    budId,
@@ -200,7 +200,7 @@ export function runImportRepair(deps: {
   });
  }
  for (const m of reminted) {
-  appendLedger(deps.vaultRoot, {
+  appendRepairLedger(deps.vaultRoot, {
    at: now,
    snippetId: m.snippetId,
    budId: m.budId,
@@ -253,7 +253,7 @@ function readBud(vaultRoot: string, budId: string): { fragment: string } | null 
  }
 }
 
-function readLedger(vaultRoot: string): LedgerLine[] {
+function readRepairLedger(vaultRoot: string): LedgerLine[] {
  let text: string;
  try {
   text = readFileSync(join(vaultRoot, LEDGER_REL), 'utf-8');
@@ -281,7 +281,7 @@ function readLedger(vaultRoot: string): LedgerLine[] {
  return lines;
 }
 
-function appendLedger(vaultRoot: string, line: LedgerLine): void {
+function appendRepairLedger(vaultRoot: string, line: LedgerLine): void {
  const file = join(vaultRoot, LEDGER_REL);
  mkdirSync(join(vaultRoot, 'imports'), { recursive: true });
  appendFileSync(file, `${JSON.stringify(line)}\n`, 'utf-8');

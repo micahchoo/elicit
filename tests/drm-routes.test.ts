@@ -11,9 +11,10 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import matter from 'gray-matter';
 import type { Hono } from 'hono';
 
 import { createVault } from '../src/vault/vault.js';
@@ -23,7 +24,6 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { readMachineState } from '../src/protocols/park.js';
-import { writeDRM } from '../src/drm/park.js';
 import type { DRMParkedState, DrmUi } from '../src/drm/types.js';
 import type { QueueEntry, QueueStore } from '../src/types.js';
 
@@ -99,6 +99,35 @@ async function makeApp(script: string[]): Promise<{ app: Hono; root: string; que
  const authStore = createFileAuth(join(root, '.auth.json'));
  const app = await createApp({ vault, complete, queue, index, vaultRoot: root, authStore });
  return { app, root, queue };
+}
+
+/** Write a legacy {root}/drm/<id>.md record — the shape writeDRM used to
+ * produce, written directly so the compat read has a fixture to read. */
+function writeLegacyPark(root: string, parked: DRMParkedState): void {
+ const fm: Record<string, unknown> = {
+  id: parked.id,
+  session: parked.session,
+  yesterday: parked.yesterday,
+  started: parked.started,
+  ended: parked.ended,
+  endedBy: parked.endedBy,
+  episodes: parked.episodes.map((ep) => ({
+   name: ep.name,
+   startHour: ep.startHour,
+   probes: { ...ep.probes },
+  })),
+  currentEpisodeIdx: parked.currentEpisodeIdx,
+  probeStep: parked.probeStep,
+  fragments: parked.fragments.map((f) => ({
+   episode: f.episode,
+   aboutWhen: f.aboutWhen,
+   step: f.step,
+   question: f.question,
+   answer: f.answer,
+  })),
+ };
+ mkdirSync(join(root, 'drm'), { recursive: true });
+ writeFileSync(join(root, 'drm', `${parked.id}.md`), matter.stringify('', fm), 'utf-8');
 }
 
 async function post<T>(app: Hono, path: string, body?: unknown): Promise<T> {
@@ -339,7 +368,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
    ended: '2026-08-05T18:30:00.000Z',
    endedBy: 'park',
   };
-  writeDRM(root, legacy);
+  writeLegacyPark(root, legacy);
   const pointer: QueueEntry = queue.add({
    source: 'parked-drm',
    license: 'user',

@@ -40,15 +40,15 @@
  *   does.
  * - Bounds (Q-56) are data with their own exposure flag: a `Threshold`
  *   carries `live` and `graduatesWhen` beside its value, and decisions
- *   pass through `shadowDecision`. The bound entries below therefore
- *   mirror their own `live` flag rather than the channel's wiring.
+ *   pass through `shadowDecision`. Threshold-valued bounds live in the
+ *   `THRESHOLDS` table (registered as data), not as per-symbol entries.
  * - Callers are found by identifier on blanked source, so a same-named
  *   private symbol elsewhere reads as a caller. That class has bitten
  *   twice (`userTurn`, `nameSimilarity`, `quotedSpans`) and is harmless
  *   as long as the real status stays live.
- * - Callers inside an unwired module count. The semantic bounds are
- *   declared live by Q-56 even though the channel that reads them is
- *   unwired — the channel entries below carry that truth.
+ * - Callers inside an unwired module count. The resonance bounds are data
+ *   in `THRESHOLDS` with their own `live` flags (Q-35/Q-56), carried by
+ *   the table's own registry entry rather than by per-symbol entries.
  */
 
 export type MechanismStatus = 'live' | 'shadow' | 'unwired';
@@ -108,7 +108,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/loop/graduations', name: 'isGraduated', status: 'live', reason: 'wired: thresholds isLive() consults it at read time (Q-99)' },
  { module: 'src/loop/verdicts', name: 'validateVerdict', status: 'unwired', reason: 'ticket 131: the paired-trial harness that renders and weighs verdicts is not built; the record plane ships ahead of it' },
  { module: 'src/loop/verdicts', name: 'keepRule', status: 'unwired', reason: 'ticket 131: same — weighed by the loop at run time' },
- { module: 'src/loop/tripwire', name: 'sweepTripwire', status: 'live', reason: 'wired: createApp constructs the docket tripwireSweep thunk with it (132)' },
+ { module: 'src/loop/tripwire', name: 'sweepTripwire', status: 'unwired', reason: '132: createApp imports it but never constructs the docket tripwireSweep thunk — no caller ships yet' },
  { module: 'src/loop/tripwire', name: 'readTripwireState', status: 'live', reason: 'wired: scripts/loop-status.ts renders state through it' },
  { module: 'src/loop/tripwire', name: 'dwellUntil', status: 'live', reason: 'wired: sweepTripwire stamps demotions through it' },
  { module: 'src/loop/tripwire', name: 'underDwell', status: 'live', reason: 'wired: sweepTripwire skips dwelling mechanisms through it' },
@@ -131,6 +131,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/clerk/composed', name: 'composeOtherMindsExpedition', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeDiscriminatingQuestion', status: 'live' },
  { module: 'src/clerk/composed', name: 'composeNarrowedRanges', status: 'live' },
+ { module: 'src/clerk/composed', name: 'setDraftRejectSink', status: 'live', reason: 'wired: createApp registers the draft-reject log sink through it' },
+ { module: 'src/clerk/composed', name: 'checkQuotesSource', status: 'live', reason: 'wired: the opener/still-true/expedition gates quote their source through it' },
  {
   module: 'src/clerk/composed',
   name: 'stillTrueForm',
@@ -219,6 +221,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
  // ── src/clerk/mint.ts ──
  { module: 'src/clerk/mint', name: 'proposeOps', status: 'live' },
+ { module: 'src/clerk/mint', name: 'setMintPersonaLine', status: 'live', reason: 'wired: createApp sets the mint persona from the profile at boot and after POST /api/profile' },
 
  // ── src/clerk/sitting.ts ──
  { module: 'src/clerk/sitting', name: 'readSitting', status: 'live' },
@@ -231,12 +234,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
  },
  { module: 'src/clerk/wiki-jobs', name: 'runWikiJobs', status: 'live' },
- {
-  module: 'src/clerk/wiki-jobs',
-  name: 'OPPOSITION_QUOTA',
-  status: 'live',
-  reason: 'Q-56 bound, ships live (a quota in shadow is not a quota); clip records resize it',
- },
+
+// ── src/coach/license.ts ──
+ { module: 'src/coach/license', name: 'clusterClaimsByTheme', status: 'live', reason: 'wired: the coach-seed sweep clusters claims by theme through it (clerk/coach-seed.ts)' },
 
  // ── src/language/thin-answer.ts ──
  { module: 'src/language/thin-answer', name: 'isContentFree', status: 'live' },
@@ -249,6 +249,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/elicitor/elicitor', name: 'userTurn', status: 'live' },
  { module: 'src/elicitor/elicitor', name: 'skipQuestion', status: 'live' },
  { module: 'src/elicitor/elicitor', name: 'machineTurn', status: 'live', reason: 'wired by 159 T5: the machine resume route composes the resumed question with the turn seam' },
+ { module: 'src/elicitor/elicitor', name: 'parseTriadPair', status: 'live', reason: 'wired: POST /turn parses the tapped triad pair through it' },
 
  // ── src/elicitor/facet-intent.ts ──
  {
@@ -297,6 +298,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/harvester/harvester.ts ──
  { module: 'src/harvester/harvester', name: 'propose', status: 'live' },
  { module: 'src/harvester/harvester', name: 'decide', status: 'live' },
+ { module: 'src/harvester/harvester', name: 'mergeAdjacent', status: 'live', reason: 'wired: the harvest flow merges adjacent same-turn proposals through it (ticket 143)' },
 
  // ── src/harvester/pending.ts (ticket 084 — the review queue on disk) ──
  { module: 'src/harvester/pending', name: 'writePendingHarvest', status: 'live' },
@@ -353,30 +355,6 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
   reason: '068 ruling — the elicitor quotes a semantic hit through it: the snippet own words, never an invented phrase',
  },
- {
-  module: 'src/index/semantic',
-  name: 'SEMANTIC_FLOOR',
-  status: 'live',
-  reason: 'graduated 2026-08-03 on the ticket-064 measurement: live noise floor under the ranker, read by buildSemanticIndex through shadowDecision on every turn',
- },
- {
-  module: 'src/index/semantic',
-  name: 'PRIME_CAP_BOUND',
-  status: 'live',
-  reason: 'Q-56 bound, live:true by declaration — enforced inside the semantic channel, which 068 wired into the boot path',
- },
- {
-  module: 'src/index/semantic',
-  name: 'PRIME_BUDGET_BOUND',
-  status: 'live',
-  reason: 'Q-56 bound, live:true by declaration — enforced inside the semantic channel, which 068 wired into the boot path',
- },
- {
-  module: 'src/index/semantic',
-  name: 'QUERY_BUDGET_BOUND',
-  status: 'live',
-  reason: 'Q-56 bound, live:true by declaration — enforced inside the semantic channel, which 068 wired into the boot path',
- },
 
  // ── src/import/body.ts ──
  {
@@ -396,6 +374,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   name: 'toTurns',
   status: 'live',
   reason: 'called by the extraction job (src/import/extract.ts, T5) — the real harvest path',
+ },
+ {
+  module: 'src/import/body',
+  name: 'classifyDroppedRun',
+  status: 'live',
+  reason: 'the review route names dropped regions through it (src/server.ts droppedRegions) — the clean() vocabulary, one copy',
  },
 
  // ── src/import/scan.ts ──
@@ -470,6 +454,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'the default scanFolder rule — frontmatter date, today\'s behaviour',
  },
  {
+  module: 'src/import/dating',
+  name: 'isoDay',
+  status: 'live',
+  reason: 'the ONE normaliser for a date value — scan.ts and adopt.ts import it (Q-57)',
+ },
+ {
   module: 'src/import/scan',
   name: 'walkMarkdown',
   status: 'live',
@@ -530,6 +520,19 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  reason: 'called by POST /api/import/:hash/decisions (server.ts) after a clean commit — never before',
 },
 
+// ── src/import/pipeline.ts (the route-facing choreography, 014) ──
+{ module: 'src/import/pipeline', name: 'pipelineScan', status: 'live', reason: 'the scan route\'s whole sequence — adoption first (T8), then the region rule dates the scan, then admit' },
+{ module: 'src/import/pipeline', name: 'pipelineCommit', status: 'live', reason: 'the decisions route\'s sequence — a clean commit, then the repair pass (014 T10), never before' },
+{ module: 'src/import/pipeline', name: 'pipelineSurvey', status: 'live', reason: 'the survey route\'s sequence — compute the map, then snapshot unless the read is pure (129)' },
+{ module: 'src/import/pipeline', name: 'pipelineReach', status: 'live', reason: 'GET /api/reach\'s sequence — the snapshot and the live queue meet in one offer' },
+
+// ── src/repair/consult.ts (Q-106 — the repair consultation helpers) ──
+ { module: 'src/repair/consult', name: 'isUnderRepair', status: 'live', reason: 'wired: the composed minting gate quarantines repaired snippets through it' },
+ { module: 'src/repair/consult', name: 'repairedSnippetIds', status: 'live', reason: 'wired: resonance draws and queue-entry expiry filter repaired snippets through it' },
+// ── src/repair/store.ts (Q-106 — the repair vault) ──
+ { module: 'src/repair/store', name: 'writeRepair', status: 'live', reason: 'wired: POST /api/repair records the disavowal through it' },
+ { module: 'src/repair/store', name: 'readAllRepairs', status: 'live', reason: 'wired: every draw point reads the repair set through it' },
+
  // ── src/llm.ts ──
  { module: 'src/llm', name: 'roleConfig', status: 'live' },
  { module: 'src/llm', name: 'describeRole', status: 'live' },
@@ -538,6 +541,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/log/activity.ts ──
  { module: 'src/log/activity', name: 'appendEvent', status: 'live' },
  { module: 'src/log/activity', name: 'readEvents', status: 'live' },
+ { module: 'src/log/activity', name: 'onAppend', status: 'live', reason: 'wired: createApp streams the live-event feed through it' },
 
  // ── src/log/cadence.ts ──
  { module: 'src/log/cadence', name: 'readCadence', status: 'live' },
@@ -605,15 +609,30 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'wired by 010 T10: the docket\'s dormancy sweep decides set-down with it (Q-41)',
  },
 
+// ── src/profile.ts ──
+ { module: 'src/profile', name: 'readProfile', status: 'live', reason: 'wired: createApp loads the profile at boot and POST /api/profile reads through it' },
+ { module: 'src/profile', name: 'writeProfile', status: 'live', reason: 'wired: POST /api/profile writes through it' },
+ { module: 'src/profile', name: 'personaLine', status: 'live', reason: 'wired: the mint and harvest prompts compose the persona line through it' },
+ { module: 'src/profile', name: 'profileFrameWords', status: 'live', reason: 'wired: the coach-seed sweep frames theme clustering with it' },
+
  // ── src/protocols/registry.ts ──
  { module: 'src/protocols/registry', name: 'loadProtocolDefinitions', status: 'live' },
  { module: 'src/protocols/registry', name: 'selectProtocolForTarget', status: 'live' },
  { module: 'src/protocols/registry', name: 'getProtocol', status: 'live' },
 
+// ── src/protocols/machine.ts (ticket 159 — the protocol state machine) ──
+ { module: 'src/protocols/machine', name: 'parseMachineMarker', status: 'live', reason: 'wired: the elicitor ratifies markers and the machine composes through it' },
+ { module: 'src/protocols/machine', name: 'composeMachineSystemPrompt', status: 'live', reason: 'wired: the elicitor builds the machine system prompt through it' },
+ { module: 'src/protocols/machine', name: 'startMachine', status: 'live', reason: 'wired: the elicitor and the DRM/POST machine routes start machines through it' },
+ { module: 'src/protocols/machine', name: 'recordExchange', status: 'live', reason: 'wired: the elicitor bumps the current phase count through it' },
+ { module: 'src/protocols/machine', name: 'machineQuestion', status: 'live', reason: 'wired: the elicitor composes the next machine question through it' },
+ { module: 'src/protocols/machine', name: 'advanceMachine', status: 'live', reason: 'wired: the elicitor ratifies advance markers through it' },
+
  // ── src/language/weak-form.ts ──
  { module: 'src/language/weak-form', name: 'isWeakForm', status: 'live' },
  // ── src/language/emit-form.ts ──
- { module: 'src/language/emit-form', name: 'checkEmitForm', status: 'live', reason: 'moved with the question-language layer (Phase 1): the emit-form gate acts at the queue\'s one write gate and every composed path' },
+ { module: 'src/language/emit-form', name: 'checkEmitForm', status: 'live', reason: 'moved with the question-language layer (Phase 1): the emit gate runs at every composed path through guardComposed' },
+ { module: 'src/language/emit-form', name: 'guardComposed', status: 'live', reason: 'the one compose-through-gate helper: every composed path (composed.ts, compose-pattern.ts, elicitor.ts, server.ts) runs checkEmitForm + checkQuestion through it' },
 
  // ── src/queue/facet-balance.ts (one Q-35 mechanism, nine declarations) ──
  {
@@ -683,13 +702,18 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  // ── src/queue/queue.ts ──
  { module: 'src/queue/queue', name: 'createQueueStore', status: 'live' },
 { module: 'src/queue/engagement', name: 'FRESH_ENGAGEMENT', status: 'live', reason: 'data: the Q-115 sitting-engagement ledger\'s fresh state — the queue store composes the ledger (Phase 5: sitting policy named as itself)' },
-{ module: 'src/queue/queue', name: 'distinctFieldKeys', status: 'live', reason: 'wired (Phase 5): the shared dedupe primitive for the minting sweeps\' one-question-per-X sets' },
+{ module: 'src/queue/queue', name: 'distinctFieldKeys', status: 'unwired', reason: 'Phase 5: the shared dedupe primitive has no caller — the minting sweeps\' one-question-per-X sets do not compose it yet' },
  { module: 'src/queue/queue', name: 'isUserDeclaredWeight', status: 'live' },
 
  // ── src/queue/source-label.ts ──
  { module: 'src/queue/source-label', name: 'sourceLabel', status: 'live' },
  { module: 'src/queue/source-label', name: 'facetHeading', status: 'live' },
  { module: 'src/queue/source-label', name: 'lintNote', status: 'live' },
+
+ // ── src/queue/mode-needs.ts ──
+ { module: 'src/queue/mode-needs', name: 'moreMinutesThan', status: 'live' },
+ { module: 'src/queue/mode-needs', name: 'moreEnergyThan', status: 'live' },
+ { module: 'src/queue/mode-needs', name: 'ENERGY_LEVEL', status: 'live' },
 
  // ── src/randomizer/decks.ts ──
  { module: 'src/randomizer/decks', name: 'loadJsonlDecks', status: 'live' },
@@ -807,10 +831,14 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/wiki/store', name: 'createClaimStore', status: 'live' },
  { module: 'src/wiki/store', name: 'appendSweepDeferral', status: 'live' },
  { module: 'src/wiki/store', name: 'readSweepDeferral', status: 'live' },
+ { module: 'src/wiki/store', name: 'readSweepDeferrals', status: 'live', reason: 'wired: the docket status endpoint renders the deferral list through it' },
  { module: 'src/wiki/store', name: 'writeStillTrueCursor', status: 'live' },
  { module: 'src/wiki/store', name: 'readStillTrueCursor', status: 'live' },
  { module: 'src/wiki/store', name: 'writeOutcomeCursor', status: 'live' },
  { module: 'src/wiki/store', name: 'readOutcomeCursor', status: 'live' },
+ { module: 'src/wiki/store', name: 'writeResumeMarker', status: 'unwired', reason: 'ticket 139: the drain run that writes the marker is not wired; the store ships ahead of it' },
+ { module: 'src/wiki/store', name: 'readResumeMarker', status: 'unwired', reason: 'ticket 139: same — read by the drain run when it lands' },
+ { module: 'src/wiki/store', name: 'clearResumeMarker', status: 'unwired', reason: 'ticket 139: same — the drain run removes the marker after pickup' },
 
  // ── src/wiki/thresholds.ts (Q-35 turned into data) ──
  {
@@ -910,10 +938,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/drm/state', name: 'affectQuestionWithNudge', status: 'unwired', reason: 'nudge handled in web UI; server route uses probeQuestion' },
 
 // ── src/drm/park.ts (Q-85 — the LEGACY DRM park format) ──
-// Slice 6: drm parks persist the machine side-record instead; writeDRM
-// survives as the legacy format's writer for the roundtrip test, readDRM is
-// the compat read in the drm resume route.
-{ module: 'src/drm/park', name: 'writeDRM', status: 'unwired', reason: 'legacy pre-slice-6 format; nothing writes it in production since drm parks the machine side-record' },
+// Slice 6: drm parks persist the machine side-record instead; nothing
+// writes the legacy format in production, and readDRM is the compat read
+// in the drm resume route.
 { module: 'src/drm/park', name: 'readDRM', status: 'live', reason: 'the drm resume route reads legacy pre-slice-6 park records through it' },
 
 // ── src/clerk/sounding-rung.ts (012 Task 12 — the resumed rung's composition) ──
@@ -970,6 +997,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/ktg/atlas-validator', name: 'validateAtlasInstrument', status: 'live', reason: 'pure, no I/O — the guard at load time (110)' },
 { module: 'src/ktg/coverage', name: 'createAtlasCoverageStore', status: 'live', reason: 'wired by 110: server creates atlas coverage stores for the sweep — the atlas store is the one parameterized implementation (Phase 8)' },
 { module: 'src/ktg/atlas-gap-fill', name: 'runAtlasGapFillSweep', status: 'live', reason: 'graduated 2026-08-03: server passes shadowMode:false — mints capped questions, one per region ever, deduped by atlasRegion' },
+{ module: 'src/ktg/sweep-core', name: 'runGapFillSweepCore', status: 'live', reason: 'the shared cap/dedupe/coverage core behind both gap-fill sweeps (094/110) — called by runTerritoryGapFillSweep and runAtlasGapFillSweep' },
 // ── src/territory.ts (152 — territory surface prototype) ──
 { module: 'src/territory', name: 'buildTerritoryResponse', status: 'live', reason: 'wired by 152: pure read surface joining ktg/atlas nodes with coverage readings (GET /api/territory)' },
 // ── src/clerk/coach-seed.ts (Q-111 door-1 seeding, extracted from server.ts) ──
@@ -996,4 +1024,6 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/patterns/decompose', name: 'decomposeDerived', status: 'live', reason: 'pure predicate with no I/O — the Q-81 boundary guard; callers outside tests do not yet exist (111 T4)' },
 // ── src/clerk/compose-pattern.ts (111 — pattern-aware composition) ──
 { module: 'src/clerk/compose-pattern', name: 'composeWithPattern', status: 'live', reason: 'LLM-calling composition path with decomposition guard — shadow gate in caller, function ships live (111 T5)' },
+// ── src/defs/loader.ts (the shared def-registry loader) ──
+{ module: 'src/defs/loader', name: 'createDefRegistry', status: 'live', reason: 'the shared enumeration/parse/cache loader behind the pattern and protocol disk registries' },
 ];

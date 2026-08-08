@@ -57,13 +57,12 @@
  * places a claim reaches disk. The exported routine is also better than the
  * copy that was here: it propagates to a contradiction's partner claim.
  *
- * **Two bounds live here rather than in `THRESHOLDS`.** Q-56: bounds ship live
- * from day one, so there is no shadow for them to graduate out of. The
- * opposition judgment quota is declared below as a `Threshold`-shaped literal
- * and passed through `shadowDecision` so that every clip leaves the same
- * `threshold-clipped` record any register entry would — the precedent is
- * `REFERENT_FANOUT_CAP` in `src/wiki/clash.ts`. Moving either into the
- * register is a one-line change in a file this task does not own.
+ * **The opposition judgment quota lives in `THRESHOLDS` as
+ * `clash.judgmentsPerRun`.** Q-56: a quota ships live at birth and owes a
+ * clip record, so every clip passes through `shadowDecision` and leaves the
+ * same `threshold-clipped` line any register entry would — the remaining
+ * bound declared outside the table is `REFERENT_FANOUT_CAP` in
+ * `src/wiki/clash.ts`.
  *
  * **Q-54 is half-built, deliberately.** `range-discriminated` is a
  * `ClashOutcome` and this file persists it like any other: `dissolutionOutcome`
@@ -152,26 +151,18 @@ const JOB_FAILED = 'wiki-jobs-failed';
 export const RANGE_DISCRIMINATED = 'range-discriminated';
 
 /**
- * How many opposition judgments one run may spend (Q-56).
+ * How many opposition judgments one run may spend (Q-56) —
+ * `THRESHOLDS['clash.judgmentsPerRun']` in `src/wiki/thresholds.ts`.
  *
- * A BOUND, not a selection threshold: it ships live at birth, because a quota
- * in shadow is not a quota. What it owes instead is the record, so it is shaped
- * as a `Threshold` and passed through `shadowDecision` with `clips: true` — a
- * clip therefore leaves the same `threshold-clipped` line a register entry
- * would, and moving it into `src/wiki/thresholds.ts` later changes one import.
- *
- * Since ticket 083 this quota also bounds the POOL: `poolCandidates` receives
- * it and cuts the ordered, filtered union to its top-N before the loop below
- * ever runs. The loop's own `bound(OPPOSITION_QUOTA)` check stays as a safety
- * net for an injected poolCandidates that returns more than the quota.
+ * A BOUND, not a selection threshold: it ships live at birth (a quota in
+ * shadow is not a quota) and is passed through `shadowDecision` with
+ * `clips: true`, so a clip leaves the same `threshold-clipped` line any
+ * register entry would. Since ticket 083 it also bounds the POOL:
+ * `poolCandidates` receives it and cuts the ordered, filtered union to its
+ * top-N before the loop below ever runs. The loop's own
+ * `bound(THRESHOLDS['clash.judgmentsPerRun'])` check stays as a safety net
+ * for an injected poolCandidates that returns more than the quota.
  */
-export const OPPOSITION_QUOTA: Threshold = {
- name: 'clash.judgmentsPerRun',
- value: 3,
- live: true,
- graduatesWhen:
-  'Already live: Q-56 makes quotas live at birth, since a quota in shadow lets the run it was meant to bound proceed unbounded. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Every clip emits threshold-clipped, and that record is what resizes it.',
-};
 
 /** At most this many existing claims are shown to the model beside one reading. */
 const RELATED_CLAIMS_SHOWN = 3;
@@ -999,7 +990,7 @@ async function jobCandidates(
  spend: { opposition: number },
 ): Promise<void> {
  const graph = graphOf();
- const pool = deps.poolCandidates(graph, deps.channels, deps.store, log, OPPOSITION_QUOTA);
+ const pool = deps.poolCandidates(graph, deps.channels, deps.store, log, THRESHOLDS['clash.judgmentsPerRun']);
 
  report.candidates = pool.perChannel;
  report.pool = {
@@ -1011,13 +1002,13 @@ async function jobCandidates(
   embeddingsFailed: report.pool.embeddingsFailed,
  };
 
- const quota = bound(OPPOSITION_QUOTA);
+ const quota = bound(THRESHOLDS['clash.judgmentsPerRun']);
  for (let i = 0; i < pool.pairs.length; i++) {
   const pooled = pool.pairs[i];
   if (!pooled) continue;
   if (spend.opposition >= quota) {
    shadowDecision(
-    OPPOSITION_QUOTA,
+    THRESHOLDS['clash.judgmentsPerRun'],
     `${pool.pairs.length - i} pooled pairs left without a judgment this run`,
     log,
     true,
@@ -1199,7 +1190,7 @@ async function recoverPoles(
  b: Claim,
  graph: ClaimGraph,
 ): Promise<{ poleA: string; poleB: string } | null> {
- if (spend.opposition >= bound(OPPOSITION_QUOTA)) return null;
+ if (spend.opposition >= bound(THRESHOLDS['clash.judgmentsPerRun'])) return null;
 
  const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
  if (quotes.a === '' || quotes.b === '') return null;

@@ -206,7 +206,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  },
  {
   kind: 'queue-floor',
-  detail: 'emptiedBy=target pool=12 phase=mid target=self mode=25m/high',
+  detail: 'emptiedBy=target pool=12 target=self mode=25m/high',
   reads: 'composed a fresh question: none of the 12 in the queue got past what this sitting is for',
  },
 

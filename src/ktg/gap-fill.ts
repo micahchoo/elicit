@@ -24,6 +24,7 @@
 import type { QueueStore, QueueDraft } from '../types.js';
 import type { KtgSkeleton, KtgNode } from './types.js';
 import type { CoverageStore } from './coverage.js';
+import { runGapFillSweepCore, type GapFillCandidate } from './sweep-core.js';
 
 /** The docket log sink, narrowed to what the sweep emits. */
 export type TerritoryGapFillLog = (e: {
@@ -49,152 +50,150 @@ export function runTerritoryGapFillSweep(deps: {
 }): { minted: number; frontierQuestions: number; failureQuestions: number } {
   const { skeleton, coverage, queue, log, now } = deps;
 
-  let minted = 0;
-  let frontierQuestions = 0;
-  let failureQuestions = 0;
-
   const nodesById = new Map<string, KtgNode>();
   for (const node of skeleton.nodes) {
     nodesById.set(node.id, node);
   }
 
-  // Collect explicit coverage statuses from stored readings
-  const statusCache = new Map<string, string>();
-  for (const node of skeleton.nodes) {
-    statusCache.set(
-      node.id,
-      coverage.readReading(node.id)?.status ?? 'unprobed',
-    );
-  }
+  const result = runGapFillSweepCore(
+    {
+      nodeIds: skeleton.nodes.map((node) => node.id),
+      source: 'territory-gap-fill',
+      pointerKey: 'territoryNode',
+      cap: TERRITORY_MINT_CAP,
+      coverage,
+      queue,
+      log,
+      now,
+    },
+    territoryCandidates(skeleton, nodesById),
+  );
 
-  // Load existing queue entries to dedupe
-  const existing = new Set<string>();
-  for (const entry of queue.list()) {
-    if (entry.territoryNode && entry.source === 'territory-gap-fill') {
-      existing.add(entry.territoryNode);
+  const frontierQuestions = result.minted.filter(
+    (cand) => cand.category === 'frontier',
+  ).length;
+  const failureQuestions = result.minted.filter(
+    (cand) => cand.category === 'failure',
+  ).length;
+  return { minted: result.minted.length, frontierQuestions, failureQuestions };
+}
+
+/**
+ * The territory candidate stream: pass 1 (unprobed hard prereqs of evidenced
+ * nodes), pass 2 (unprobed frontier nodes with an evidenced successor),
+ * pass 3 (common-failure probes on evidenced nodes). Status eligibility is
+ * decided here against the core's coverage cache; the core applies the cap
+ * and the queue dedupe across the whole stream.
+ */
+function territoryCandidates(
+  skeleton: KtgSkeleton,
+  nodesById: Map<string, KtgNode>,
+): (status: ReadonlyMap<string, string>) => Generator<GapFillCandidate> {
+  return function* territoryCandidatesInner(
+    status: ReadonlyMap<string, string>,
+  ): Generator<GapFillCandidate> {
+    // Pass 1: unprobed hard prereqs of evidenced nodes (the prereq is the gap)
+    for (const node of skeleton.nodes) {
+      if (status.get(node.id) !== 'evidenced') continue;
+      for (const prereqId of node.prereqs) {
+        if (status.get(prereqId) !== 'unprobed') continue;
+        const prereqNode = nodesById.get(prereqId);
+        if (!prereqNode) continue;
+
+        const question = frontierQuestion(prereqNode);
+        if (!question) continue;
+
+        yield {
+          nodeId: prereqNode.id,
+          draft: {
+            source: 'territory-gap-fill',
+            license: `territory gap: ${prereqNode.id} (prereq of ${node.id})`,
+            question,
+            questionForm: 'deliberative',
+            sharpness: 'weak',
+            horizon: 'session',
+            territoryNode: prereqNode.id,
+            target: 'domain',
+            topic: skeleton.domain,
+          },
+          mintLog: {
+            kind: 'territory-gap-fill',
+            detail: `minted frontier question for node ${prereqNode.id} (hard prereq of evidenced ${node.id})`,
+            refs: [prereqNode.id, node.id],
+          },
+          category: 'frontier',
+        };
+      }
     }
-  }
 
-  // Pass 1: unprobed hard prereqs of evidenced nodes
-  for (const node of skeleton.nodes) {
-    if (minted >= TERRITORY_MINT_CAP) break;
-    if (statusCache.get(node.id) !== 'evidenced') continue;
-    for (const prereqId of node.prereqs) {
-      if (minted >= TERRITORY_MINT_CAP) break;
-      if (statusCache.get(prereqId) !== 'unprobed') continue;
-      if (existing.has(prereqId)) continue;
+    // Pass 2: unprobed frontier nodes adjacent to evidenced ones
+    for (const node of skeleton.nodes) {
+      if (status.get(node.id) !== 'unprobed') continue;
 
-      const prereqNode = nodesById.get(prereqId);
-      if (!prereqNode) continue;
+      const hasEvidencedSuccessor = skeleton.nodes.some(
+        (other) =>
+          other.prereqs.includes(node.id) &&
+          status.get(other.id) === 'evidenced',
+      );
+      if (!hasEvidencedSuccessor) continue;
 
-      const question = frontierQuestion(prereqNode);
+      const question = frontierQuestion(node);
       if (!question) continue;
 
-      const draft: QueueDraft = {
-        source: 'territory-gap-fill',
-        license: `territory gap: ${prereqNode.id} (prereq of ${node.id})`,
-        question,
-        questionForm: 'deliberative',
-        sharpness: 'weak',
-        horizon: 'session',
-        territoryNode: prereqNode.id,
-        target: 'domain',
-        topic: skeleton.domain,
+      yield {
+        nodeId: node.id,
+        draft: {
+          source: 'territory-gap-fill',
+          license: `territory frontier: ${node.id}`,
+          question,
+          questionForm: 'deliberative',
+          sharpness: 'weak',
+          horizon: 'session',
+          territoryNode: node.id,
+          target: 'domain',
+          topic: skeleton.domain,
+        },
+        mintLog: {
+          kind: 'territory-gap-fill',
+          detail: `minted frontier question for node ${node.id} (adjacent to evidenced)`,
+          refs: [node.id],
+        },
+        category: 'frontier',
       };
-
-      queue.add(draft);
-      existing.add(prereqNode.id);
-      minted++;
-      frontierQuestions++;
-      log({
-        at: now,
-        actor: 'clerk',
-        kind: 'territory-gap-fill',
-        detail: `minted frontier question for node ${prereqNode.id} (hard prereq of evidenced ${node.id})`,
-        refs: [prereqNode.id, node.id],
-      });
     }
-  }
 
-  // Pass 2: unprobed frontier nodes adjacent to evidenced ones
-  for (const node of skeleton.nodes) {
-    if (minted >= TERRITORY_MINT_CAP) break;
-    if (statusCache.get(node.id) !== 'unprobed') continue;
-    if (existing.has(node.id)) continue;
+    // Pass 3: common_failure probes on evidenced nodes
+    for (const node of skeleton.nodes) {
+      if (status.get(node.id) !== 'evidenced') continue;
 
-    const hasEvidencedSuccessor = skeleton.nodes.some(
-      (other) =>
-        other.prereqs.includes(node.id) &&
-        statusCache.get(other.id) === 'evidenced',
-    );
-    if (!hasEvidencedSuccessor) continue;
+      const failure = (node as Record<string, unknown>).commonFailure;
+      if (typeof failure !== 'string' || failure.trim() === '') continue;
 
-    const question = frontierQuestion(node);
-    if (!question) continue;
+      const question = failureProbe(node);
+      if (!question) continue;
 
-    const draft: QueueDraft = {
-      source: 'territory-gap-fill',
-      license: `territory frontier: ${node.id}`,
-      question,
-      questionForm: 'deliberative',
-      sharpness: 'weak',
-      horizon: 'session',
-      territoryNode: node.id,
-      target: 'domain',
-      topic: skeleton.domain,
-    };
-
-    queue.add(draft);
-    existing.add(node.id);
-    minted++;
-    frontierQuestions++;
-    log({
-      at: now,
-      actor: 'clerk',
-      kind: 'territory-gap-fill',
-      detail: `minted frontier question for node ${node.id} (adjacent to evidenced)`,
-      refs: [node.id],
-    });
-  }
-
-  // Pass 3: common_failure probes on evidenced nodes
-  for (const node of skeleton.nodes) {
-    if (minted >= TERRITORY_MINT_CAP) break;
-    if (statusCache.get(node.id) !== 'evidenced') continue;
-    if (existing.has(node.id)) continue;
-
-    const failure = (node as Record<string, unknown>).commonFailure;
-    if (typeof failure !== 'string' || failure.trim() === '') continue;
-
-    const question = failureProbe(node);
-    if (!question) continue;
-
-    const draft: QueueDraft = {
-      source: 'territory-gap-fill',
-      license: `territory common-failure: ${node.id}`,
-      question,
-      questionForm: 'deliberative',
-      sharpness: 'sharp',
-      horizon: 'now',
-      territoryNode: node.id,
-      target: 'domain',
-      topic: skeleton.domain,
-    };
-
-    queue.add(draft);
-    existing.add(node.id);
-    minted++;
-    failureQuestions++;
-    log({
-      at: now,
-      actor: 'clerk',
-      kind: 'territory-gap-fill',
-      detail: `minted common-failure probe for evidenced node ${node.id}`,
-      refs: [node.id],
-    });
-  }
-
-  return { minted, frontierQuestions, failureQuestions };
+      yield {
+        nodeId: node.id,
+        draft: {
+          source: 'territory-gap-fill',
+          license: `territory common-failure: ${node.id}`,
+          question,
+          questionForm: 'deliberative',
+          sharpness: 'sharp',
+          horizon: 'now',
+          territoryNode: node.id,
+          target: 'domain',
+          topic: skeleton.domain,
+        },
+        mintLog: {
+          kind: 'territory-gap-fill',
+          detail: `minted common-failure probe for evidenced node ${node.id}`,
+          refs: [node.id],
+        },
+        category: 'failure',
+      };
+    }
+  };
 }
 
 // Question templates (ZERO-LLM, never quote node labels)

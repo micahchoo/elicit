@@ -5,46 +5,26 @@
  * This module keeps the OLD {root}/drm/{id}.md frontmatter format so a
  * pre-slice-6 parked DRM still resumes: the drm resume route's compat
  * branch reads it with readDRM and rebuilds the machine. Nothing writes a
- * legacy record in production anymore — writeDRM survives as the format's
- * writer for the roundtrip test and for symmetry with the reader.
+ * legacy record in production anymore; readDRM is the compat read and the
+ * format's only remaining half.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { DRMParkedState, DRMProbeStep } from '../types.js';
 import type { DRMEpisode, DRMFragment } from '../types.js';
 
+/**
+ * The pointer-source kind of a LEGACY DRM park (pre-slice-6). Nothing
+ * writes it in production anymore — drm parks now mint 'parked-machine'
+ * pointers — but old pointers stay in the store and must stay undrawable.
+ * Owned here, not by the queue's draw.
+ */
+export const PARKED_DRM_SOURCE = 'parked-drm' as const;
+
 /** {root}/drm/{id}.md — the whole DRM state, frontmatter only. */
 function drmPath(root: string, id: string): string {
   return join(root, 'drm', `${id}.md`);
-}
-
-export function writeDRM(root: string, parked: DRMParkedState): void {
-  const fm: Record<string, unknown> = {
-    id: parked.id,
-    session: parked.session,
-    yesterday: parked.yesterday,
-    started: parked.started,
-    ended: parked.ended,
-    endedBy: parked.endedBy,
-    episodes: parked.episodes.map((ep: DRMEpisode) => ({
-      name: ep.name,
-      startHour: ep.startHour,
-      probes: { ...ep.probes },
-    })),
-    currentEpisodeIdx: parked.currentEpisodeIdx,
-    probeStep: parked.probeStep,
-    fragments: parked.fragments.map((f: DRMFragment) => ({
-      episode: f.episode,
-      aboutWhen: f.aboutWhen,
-      step: f.step,
-      question: f.question,
-      answer: f.answer,
-    })),
-  };
-  mkdirSync(join(root, 'drm'), { recursive: true });
-  writeFileSync(drmPath(root, parked.id), matter.stringify('', fm), 'utf-8');
 }
 
 export function readDRM(root: string, id: string): DRMParkedState | null {

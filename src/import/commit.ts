@@ -57,11 +57,11 @@ export type CommitDeps = {
   readSource: (p: string) => string;
   log: LogFn;
   /** Injected, not imported: the region store, so a test hands one region.
-   *  Injection site: the commitImport deps literal in POST
-   *  /api/import/:hash/decisions (src/server.ts, seeding Task 12 Step 3).
-   *  Without that step every imported snippet ships with no `authorship`
-   *  key and Tasks 1, 2, 7 and 13 amount to a form the vault never hears
-   *  about. */
+   *  Injection site: the deps literal pipelineCommit builds
+   *  (src/import/pipeline.ts, seeding Task 12 Step 3) — the decisions
+   *  route hands it the server's region store. Without that line every
+   *  imported snippet ships with no `authorship` key and Tasks 1, 2, 7
+   *  and 13 amount to a form the vault never hears about. */
   regionFor?: (sourcePath: string) => RegionRecord | null;
 };
 

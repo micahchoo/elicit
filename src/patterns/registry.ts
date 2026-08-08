@@ -6,13 +6,10 @@
  * file, not editing a switch statement.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { createDefRegistry, type DefSource } from '../defs/loader.js';
 import type { Facet } from '../types.js';
 import type { Pattern, PatternId, PatternTier, Operator } from './types.js';
-
-/** Cache: load once, hold forever (patterns are data, not mutable state). */
-let _cache: Pattern[] | undefined;
 
 function parsePatternTier(raw: unknown): PatternTier {
   if (raw === 'cheap' || raw === 'deep') return raw;
@@ -55,71 +52,64 @@ function parseGraduation(raw: unknown): 'live' | 'shadow' {
   return 'shadow';
 }
 
-function loadFromDisk(dataDir: string): Pattern[] {
-  let files: string[];
+/**
+ * Parse one pattern file into a Pattern. Returns null — with a warning —
+ * when the file is not a pattern (unreadable JSON, missing id); throws
+ * when the JSON parses but field validation fails, and the loader's
+ * non-strict policy turns that into the same warn-and-skip the registry
+ * has always used.
+ */
+function parsePatternFile(file: string, source: DefSource): Pattern | null {
+  let parsed: Record<string, unknown>;
   try {
-    files = readdirSync(dataDir);
+    parsed = JSON.parse(source.content) as Record<string, unknown>;
   } catch {
-    return []; // no directory — empty set
+    console.warn(`Pattern registry: invalid JSON in ${file}`);
+    return null;
   }
 
-  const patterns: Pattern[] = [];
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue;
-    const path = join(dataDir, file);
-    let raw: string;
-    try {
-      raw = readFileSync(path, 'utf-8');
-    } catch {
-      console.warn(`Pattern registry: could not read ${file}`);
-      continue;
-    }
-
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      console.warn(`Pattern registry: invalid JSON in ${file}`);
-      continue;
-    }
-
-    try {
-      const id = String(parsed.id ?? '');
-      if (id.length === 0) {
-        console.warn(`Pattern registry: ${file} missing id`);
-        continue;
-      }
-
-      const df = (parsed.derivesFrom ?? {}) as Record<string, unknown>;
-
-      const pattern: Pattern = {
-        id: id as PatternId,
-        name: String(parsed.name ?? id),
-        tier: parsePatternTier(parsed.tier),
-        operators: parseOperators(parsed.operators),
-        derivesFrom: {
-          minSnippets: Math.max(1, Number(df['minSnippets'] ?? 1)),
-          facets: parseFacets(df['facets']),
-          ...(df['alsoNeeds'] ? { alsoNeeds: parseFacets(df['alsoNeeds']) } : {}),
-        },
-        requiredQuotes: parseRequiredQuotes(parsed.requiredQuotes),
-        questionForm: (['deliberative', 'theoretical', 'why'] as const).includes(
-          parsed.questionForm as 'deliberative',
-        )
-          ? (parsed.questionForm as 'deliberative' | 'theoretical' | 'why')
-          : 'deliberative',
-        contaminationRisk: parseRisk(parsed.contaminationRisk),
-        graduation: parseGraduation(parsed.graduation),
-      };
-
-      patterns.push(pattern);
-    } catch (err) {
-      console.warn(`Pattern registry: ${file} validation failed — ${String(err)}`);
-    }
+  const id = String(parsed.id ?? '');
+  if (id.length === 0) {
+    console.warn(`Pattern registry: ${file} missing id`);
+    return null;
   }
 
-  return patterns;
+  const df = (parsed.derivesFrom ?? {}) as Record<string, unknown>;
+
+  return {
+    id: id as PatternId,
+    name: String(parsed.name ?? id),
+    tier: parsePatternTier(parsed.tier),
+    operators: parseOperators(parsed.operators),
+    derivesFrom: {
+      minSnippets: Math.max(1, Number(df['minSnippets'] ?? 1)),
+      facets: parseFacets(df['facets']),
+      ...(df['alsoNeeds'] ? { alsoNeeds: parseFacets(df['alsoNeeds']) } : {}),
+    },
+    requiredQuotes: parseRequiredQuotes(parsed.requiredQuotes),
+    questionForm: (['deliberative', 'theoretical', 'why'] as const).includes(
+      parsed.questionForm as 'deliberative',
+    )
+      ? (parsed.questionForm as 'deliberative' | 'theoretical' | 'why')
+      : 'deliberative',
+    contaminationRisk: parseRisk(parsed.contaminationRisk),
+    graduation: parseGraduation(parsed.graduation),
+  };
 }
+
+/** The shared def loader: enumerate data/patterns/, parse, cache, clear. */
+const registry = createDefRegistry<Pattern, Pattern[]>({
+  name: 'Pattern registry',
+  dir: (root) => (root ? resolve(root) : resolve('data', 'patterns')),
+  match: (file) => file.endsWith('.json'),
+  markdown: false,
+  strict: false,
+  empty: () => [],
+  parse: parsePatternFile,
+  add: (result, def) => {
+    result.push(def);
+  },
+});
 
 /**
  * Load all pattern definitions from `dataDir` (default: cwd-relative
@@ -130,10 +120,7 @@ function loadFromDisk(dataDir: string): Pattern[] {
  * an empty set is an error.
  */
 export function loadPatterns(dataDir?: string): Pattern[] {
-  if (_cache) return _cache;
-  const dir = dataDir ? resolve(dataDir) : resolve('data', 'patterns');
-  _cache = loadFromDisk(dir);
-  return _cache;
+  return registry.load(dataDir);
 }
 
 /**
@@ -141,7 +128,7 @@ export function loadPatterns(dataDir?: string): Pattern[] {
  * Exported for test isolation only.
  */
 export function clearPatternCache(): void {
-  _cache = undefined;
+  registry.clear();
 }
 
 /**

@@ -234,6 +234,53 @@ export const THRESHOLDS = {
   graduatesWhen:
    'LIVE at birth under Q-86 — 3 content words catches phrase lifts while missing topic-only overlap; every evaluation is logged and the record retunes the number.',
  },
+
+// ── Resonance channel bounds (moved from src/index/semantic.ts — the table is the single declaration site) ──
+//
+// The prime cap is per-RUN, never a recency window: a window would make the
+// channel structurally unable to surface the 2017-2026 material Q-18
+// stratifies by age, and prime is resumable — every completed batch persists
+// before the next starts, so a clipped run loses no work. 500 is a ceiling,
+// not a measurement (~85 s warm at ~170 ms/text); the clip record resizes it.
+
+ 'resonance.semanticFloor': {
+  name: 'resonance.semanticFloor',
+  value: 0.5,
+  live: true,
+  graduatesWhen:
+   'LIVE by decision (2026-08-03, Micah), on the measurement already in hand: 0.50 sits below every true pair on the paraphrase fixture (0.507) and above the bottom of the non-pair distribution (0.330, mean 0.454), so it costs zero recall there. It is a NOISE floor under a ranker, never a selector — if it is ever asked to choose, the instrument is wrong again (ticket 064). Demote if the threshold-clipped record shows it dropping hits a reader wanted.',
+ },
+ 'resonance.primeCap': {
+  name: 'resonance.primeCap',
+  value: 500,
+  live: true,
+  graduatesWhen:
+   'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
+ },
+ 'resonance.primeBudgetMs': {
+  name: 'resonance.primeBudgetMs',
+  value: 300_000,
+  live: true,
+  graduatesWhen:
+   "Already live per Q-56. The value is ticket 007's cold-start measurement — 370 s then HTTP 500 on an unloaded model — and the clip record says how often a run stops here rather than finishing.",
+ },
+ 'resonance.queryBudgetMs': {
+  name: 'resonance.queryBudgetMs',
+  value: 3_000,
+  live: true,
+  graduatesWhen:
+   'Already live per Q-56, and this one is not a background bound: it is how long a person waits mid-turn for a channel that is warm in 100-120 ms. A clip here means the model was cold or the box was busy, and the clip record is how often that costs a turn its hits.',
+ },
+
+// ── The clash judgment quota (Q-56; ticket 083 — bounds the pool AND the loop) ──
+
+ 'clash.judgmentsPerRun': {
+  name: 'clash.judgmentsPerRun',
+  value: 3,
+  live: true,
+  graduatesWhen:
+   'Already live: Q-56 makes quotas live at birth, since a quota in shadow lets the run it was meant to bound proceed unbounded. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Every clip emits threshold-clipped, and that record is what resizes it.',
+ },
 } satisfies Record<string, Threshold>;
 
 export type ThresholdName = keyof typeof THRESHOLDS;

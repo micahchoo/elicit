@@ -6,15 +6,17 @@
  * .json (src/protocols/park.ts). The first block pins that roundtrip.
  * The legacy {root}/drm/<id>.md frontmatter format survives as the compat
  * read for pre-slice-6 parks (the drm resume route's legacy branch); the
- * second block pins writeDRM/readDRM roundtripping it.
+ * second block pins the compat read against a fixture legacy record
+ * written directly to disk (writeDRM is gone — nothing writes the format).
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import matter from 'gray-matter';
 import { initDRM, addEpisode, doneEnumerating, answerProbe, applyGate } from '../src/drm/state.js';
-import { writeDRM, readDRM } from '../src/drm/park.js';
+import { readDRM } from '../src/drm/park.js';
 import { writeMachineState, readMachineState } from '../src/protocols/park.js';
 import type { DrmUi, DRMParkedState } from '../src/drm/types.js';
 import type { MachineState } from '../src/protocols/machine.js';
@@ -50,6 +52,35 @@ function parkedRecord(overrides: Partial<DRMParkedState> = {}): DRMParkedState {
     endedBy: 'park',
     ...overrides,
   };
+}
+
+/** Write a legacy {root}/drm/<id>.md record — the shape writeDRM used to
+ * produce, written directly so the compat read has a fixture to read. */
+function writeLegacyPark(root: string, parked: DRMParkedState): void {
+  const fm: Record<string, unknown> = {
+    id: parked.id,
+    session: parked.session,
+    yesterday: parked.yesterday,
+    started: parked.started,
+    ended: parked.ended,
+    endedBy: parked.endedBy,
+    episodes: parked.episodes.map((ep) => ({
+      name: ep.name,
+      startHour: ep.startHour,
+      probes: { ...ep.probes },
+    })),
+    currentEpisodeIdx: parked.currentEpisodeIdx,
+    probeStep: parked.probeStep,
+    fragments: parked.fragments.map((f) => ({
+      episode: f.episode,
+      aboutWhen: f.aboutWhen,
+      step: f.step,
+      question: f.question,
+      answer: f.answer,
+    })),
+  };
+  mkdirSync(join(root, 'drm'), { recursive: true });
+  writeFileSync(join(root, 'drm', `${parked.id}.md`), matter.stringify('', fm), 'utf-8');
 }
 
 describe('DRM machine-record persistence (slice 6)', () => {
@@ -117,30 +148,13 @@ describe('DRM legacy park format (the compat read)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('roundtrips a legacy parked DRM through disk', () => {
-    const parked = parkedRecord();
-
-    // Write to disk
-    writeDRM(root, parked);
-
-    // Read back
-    const loaded = readDRM(root, parked.id);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.id).toBe(parked.id);
-    expect(loaded!.yesterday).toBe(parked.yesterday);
-    expect(loaded!.episodes).toHaveLength(2);
-    expect(loaded!.currentEpisodeIdx).toBe(1);
-    expect(loaded!.probeStep).toBe('place');
-    expect(loaded!.endedBy).toBe('park');
-  });
-
   it('returns null for missing DRM file', () => {
     expect(readDRM(root, 'no-such-id')).toBeNull();
   });
 
-  it('preserves fragments through roundtrip', () => {
+  it('preserves fragments through the compat read', () => {
     const parked = parkedRecord();
-    writeDRM(root, parked);
+    writeLegacyPark(root, parked);
     const loaded = readDRM(root, parked.id)!;
     expect(loaded.fragments).toHaveLength(1);
     expect(loaded.fragments[0]!.episode).toContain('morning coffee');
@@ -148,9 +162,9 @@ describe('DRM legacy park format (the compat read)', () => {
     expect(loaded.fragments[0]!.answer).toBe('calm and present');
   });
 
-  it('preserves episode probe answers through roundtrip', () => {
+  it('preserves episode probe answers through the compat read', () => {
     const parked = parkedRecord();
-    writeDRM(root, parked);
+    writeLegacyPark(root, parked);
     const loaded = readDRM(root, parked.id)!;
     expect(loaded.episodes[0]!.probes.place).toBe('kitchen');
     expect(loaded.episodes[0]!.probes.activity).toBe('drinking coffee');

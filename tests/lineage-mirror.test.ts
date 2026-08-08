@@ -54,7 +54,7 @@ function fakeQueue(entries: QueueEntry[] = []): QueueStore & { added: QueueDraft
         })),
       ];
     },
-    draw(_mode: Mode, _phase: string): QueueEntry | null { return null; },
+    draw(_mode: Mode): QueueEntry | null { return null; },
     markAsked(_id: string): void {},
     markAnswered(_id: string): void {},
     markPending() { },

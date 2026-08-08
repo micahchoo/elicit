@@ -21,7 +21,7 @@ import {
 import { contentWordSequence } from '../index/lexical.js';
 import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
 import type { ThresholdLogFn } from '../domain/thresholds.js';
-import { checkEmitForm } from '../language/emit-form.js';
+import { guardComposed } from '../language/emit-form.js';
 import { readAllRepairs } from '../repair/store.js';
 import { isUnderRepair } from '../repair/consult.js';
 
@@ -436,11 +436,7 @@ Return only the question text. No markdown, no commentary.`;
 
  let rejection = checkAroundPhrase(question, light.phrase, turnText);
  if (!rejection) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: follow-up rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: follow-up rejected', warnReject).ok) return null;
   return question;
  }
 
@@ -454,11 +450,7 @@ Return only the question text. No markdown, no commentary.`;
 
  rejection = checkAroundPhrase(question, light.phrase, turnText);
  if (!rejection) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: follow-up retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: follow-up retry rejected', warnReject).ok) return null;
   return question;
  }
 
@@ -515,11 +507,7 @@ Return only the question text. No markdown, no commentary.`;
 
  let rejection = checkAroundPhrase(question, hit.sharedPhrase, turnText);
  if (!rejection) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: juxtaposition rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: juxtaposition rejected', warnReject).ok) return null;
   return question;
  }
 
@@ -533,11 +521,7 @@ Return only the question text. No markdown, no commentary.`;
 
  rejection = checkAroundPhrase(retryQuestion, hit.sharedPhrase, turnText);
  if (!rejection) {
-  const f = checkEmitForm(retryQuestion);
-  if (!f.ok) {
-   warnReject(`Composed: juxtaposition retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(retryQuestion, { asked: [] }, 'Composed: juxtaposition retry rejected', warnReject).ok) return null;
   return retryQuestion;
  }
 
@@ -622,11 +606,7 @@ Return only the question text. No markdown, no commentary.`;
    check = { ok: false, rejection: 'summary-echo' };
    warnReject(`Composed: opener rejected (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
   } else {
-   const f = checkEmitForm(question);
-   if (!f.ok) {
-    warnReject(`Composed: opener rejected (emit-form: ${f.failures.join('; ')})`);
-    return null;
-   }
+   if (!guardComposed(question, { asked: [] }, 'Composed: opener rejected', warnReject).ok) return null;
    return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
   }
  }
@@ -646,11 +626,7 @@ Return only the question text. No markdown, no commentary.`;
    check = { ok: false, rejection: 'summary-echo' };
    warnReject(`Composed: opener retry also rejected (summary-echo) — shares span with: "${echoLine2.slice(0, 80)}"`);
   } else {
-   const f = checkEmitForm(question);
-   if (!f.ok) {
-    warnReject(`Composed: opener retry rejected (emit-form: ${f.failures.join('; ')})`);
-    return null;
-   }
+   if (!guardComposed(question, { asked: [] }, 'Composed: opener retry rejected', warnReject).ok) return null;
    return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
   }
  }
@@ -697,11 +673,7 @@ Return only the question text. No markdown, no commentary.`;
  const question1 = stripFences(raw).trim();
  const attempt1 = tryBuildStillTrue(snippet, question1, sitting, form);
  if (attempt1.ok) {
-  const f = checkEmitForm(question1);
-  if (!f.ok) {
-   warnReject(`Composed: still-true rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question1, { asked: [] }, 'Composed: still-true rejected', warnReject).ok) return null;
   return attempt1.draft;
  }
 
@@ -712,11 +684,7 @@ Return only the question text. No markdown, no commentary.`;
  const question2 = stripFences(retryRaw).trim();
  const attempt2 = tryBuildStillTrue(snippet, question2, sitting, form);
  if (attempt2.ok) {
-  const f = checkEmitForm(question2);
-  if (!f.ok) {
-   warnReject(`Composed: still-true retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question2, { asked: [] }, 'Composed: still-true retry rejected', warnReject).ok) return null;
   return attempt2.draft;
  }
 
@@ -859,11 +827,7 @@ Return only the question text. No markdown, no commentary.`;
 
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: expedition rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: expedition rejected', warnReject).ok) return null;
   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
@@ -879,11 +843,7 @@ Return only the question text. No markdown, no commentary.`;
  check = checkQuotesSource(question, snippet.prose);
 
  if (check.ok) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: expedition retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: expedition retry rejected', warnReject).ok) return null;
   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
  }
 
@@ -954,11 +914,7 @@ Return only the question text. No markdown, no commentary.`;
  let question = stripFences(raw).trim();
  let check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: other-minds expedition rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: other-minds expedition rejected', warnReject).ok) return null;
   const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
   draft.errandKind = 'other-minds';
   draft.errandPerson = personName;
@@ -971,11 +927,7 @@ Return only the question text. No markdown, no commentary.`;
  question = stripFences(retryRaw).trim();
  check = checkQuotesSource(question, snippet.prose);
  if (check.ok) {
-  const f = checkEmitForm(question);
-  if (!f.ok) {
-   warnReject(`Composed: other-minds expedition retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question, { asked: [] }, 'Composed: other-minds expedition retry rejected', warnReject).ok) return null;
   const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
   draft.errandKind = 'other-minds';
   draft.errandPerson = personName;
@@ -1064,11 +1016,7 @@ Return only the question text. No markdown, no commentary.`;
  const question1 = stripFences(raw).trim();
  const attempt1 = tryBuildDiscriminating(claims, prose, question1);
  if (attempt1.ok) {
-  const f = checkEmitForm(question1);
-  if (!f.ok) {
-   warnReject(`Composed: discriminating rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question1, { asked: [] }, 'Composed: discriminating rejected', warnReject).ok) return null;
   return attempt1.draft;
  }
 
@@ -1079,11 +1027,7 @@ Return only the question text. No markdown, no commentary.`;
  const question2 = stripFences(retryRaw).trim();
  const attempt2 = tryBuildDiscriminating(claims, prose, question2);
  if (attempt2.ok) {
-  const f = checkEmitForm(question2);
-  if (!f.ok) {
-   warnReject(`Composed: discriminating retry rejected (emit-form: ${f.failures.join('; ')})`);
-   return null;
-  }
+  if (!guardComposed(question2, { asked: [] }, 'Composed: discriminating retry rejected', warnReject).ok) return null;
   return attempt2.draft;
  }
 
@@ -1207,11 +1151,7 @@ Return only the question text. No markdown, no commentary.`;
   const question1 = stripFences(raw).trim();
   const attempt1 = tryBuildOutcome(snippet, question1, horizon, sitting);
   if (attempt1.ok) {
-   const f = checkEmitForm(question1);
-   if (!f.ok) {
-    warnReject(`Composed: outcome question rejected (emit-form: ${f.failures.join('; ')})`);
-    return null;
-   }
+   if (!guardComposed(question1, { asked: [] }, 'Composed: outcome question rejected', warnReject).ok) return null;
    return attempt1.draft;
   }
 
@@ -1222,11 +1162,7 @@ Return only the question text. No markdown, no commentary.`;
   const question2 = stripFences(retryRaw).trim();
   const attempt2 = tryBuildOutcome(snippet, question2, horizon, sitting);
   if (attempt2.ok) {
-   const f = checkEmitForm(question2);
-   if (!f.ok) {
-    warnReject(`Composed: outcome question retry rejected (emit-form: ${f.failures.join('; ')})`);
-    return null;
-   }
+   if (!guardComposed(question2, { asked: [] }, 'Composed: outcome question retry rejected', warnReject).ok) return null;
    return attempt2.draft;
   }
 

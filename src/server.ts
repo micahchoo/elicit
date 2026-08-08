@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
 import { startSession, userTurn, skipQuestion, machineTurn, parseTriadPair } from './elicitor/elicitor.js';
-import { checkQuestion } from './language/guards.js';
+import { guardComposed } from './language/emit-form.js';
 import { writeRepair, readAllRepairs } from './repair/store.js';
 import { repairedSnippetIds } from './repair/consult.js';
 
@@ -36,6 +36,7 @@ import {
  removePendingHarvest,
 } from './harvester/pending.js';
 import { createQueueStore, isUserDeclaredWeight, MAX_OPEN_QUESTIONS } from './queue/queue.js';
+import { moreMinutesThan, moreEnergyThan } from './queue/mode-needs.js';
 import { buildIndex } from './index/lexical.js';
 import {
  buildSemanticIndex,
@@ -66,30 +67,20 @@ import { extractEntities, entityId } from './clerk/gazetteer.js';
 import { runGazetteerFrontier } from './clerk/gazetteer-frontier.js';
 import { runGazetteerExtraction } from './clerk/gazetteer-extraction.js';
 import { runCoachSeedSweep } from './clerk/coach-seed.js';
-import { createImportStore } from './import/store.js';
 import { chronological } from './piece/arrange.js';
 import { createPieceStore } from './piece/store.js';
 import { toMarkdown } from './piece/export.js';
 import type { Arrangement, ArrangementEntry, Gap, Piece } from './piece/contract.js';
-import { runImportExtraction } from './import/extract.js';
-import { scanFolder, bodyHash, type ScanResult } from './import/scan.js';
-import { adoptPriorIngest, type AdoptResult } from './import/adopt.js';
-import { commitImport } from './import/commit.js';
-import { createRegionStore } from './import/region.js';
-import { surveyFolder, writeSurvey, readSurvey } from './import/survey.js';
-import { reachOffer, appendReachDecline, reachDeclines, termsOf } from './import/reach.js';
-import { runImportRepair } from './import/repair.js';
-import { compilePattern } from './import/dating.js';
 import type { Authorship, DatingRule, ImportDecision } from './import/contract.js';
 import { proposeOps } from './clerk/mint.js';
 import { judgeOpposition, composeRemeasure, judgeConfirmation } from './clerk/contradiction.js';
 import { licenseSounding } from './sounding/license.js';
 import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
 import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
-import { parkPointer, readLadder, writeLadder } from './sounding/park.js';
+import { parkPointer, PARKED_SOURCE as PARKED_SOUNDING_SOURCE, readLadder, writeLadder } from './sounding/park.js';
 import { resumeSounding } from './sounding/resume.js';
 import { initDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, transcriptQuestion, resumeDRM } from './drm/state.js';
-import { readDRM } from './drm/park.js';
+import { readDRM, PARKED_DRM_SOURCE } from './drm/park.js';
 import type { DRMParkedState, DRMState, DrmUi } from './drm/types.js';
 import type { MachineState } from './protocols/machine.js';
 import {
@@ -130,7 +121,7 @@ import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { archiveFreshStart } from './reset/fresh-start.js';
 import { loadProtocolDefinitions, selectProtocolForTarget, getProtocol } from './protocols/registry.js';
 import { startMachine } from './protocols/machine.js';
-import { writeMachineState, readMachineState, removeMachineState, parkMachinePointer } from './protocols/park.js';
+import { writeMachineState, readMachineState, removeMachineState, parkMachinePointer, PARKED_SOURCE as PARKED_MACHINE_SOURCE } from './protocols/park.js';
 import { anniversaryDraw, createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
 import { datedSnippets, readSittingDates } from './randomizer/strata.js';
 import { RANDOMIZER_THRESHOLDS } from './randomizer/thresholds.js';
@@ -164,6 +155,23 @@ import type {
  ParkedLadder,
  SoundingEnd,
 } from './types.js';
+
+import {
+ appendReachDecline,
+ bodyHash,
+ classifyDroppedRun,
+ compilePattern,
+ createImportStore,
+ createRegionStore,
+ pipelineCommit,
+ pipelineReach,
+ pipelineScan,
+ pipelineSurvey,
+ runImportExtraction,
+ type CommitResult,
+ type ScanPipelineResult,
+ type Survey,
+} from './import/pipeline.js';
 export interface ServerDeps {
  vault: Vault;
  /** Foreground model: probes, red-lights, live composition. A person waits on it (Q-48). */
@@ -378,22 +386,6 @@ function harvestDetail(result: {
   `episodeBlindTurns=${d.episodeBlindTurns}`,
  ].join(' ');
 }
-// ── Defer: turning a declared need into Mode needs ──
-
-/** The sitting lengths the Mode screen offers. A deferred question asks for the next one up. */
-const MINUTE_LADDER = [10, 25, 45];
-
-/** The next sitting length above the current one — capped at the longest the Mode screen offers. */
-function moreMinutesThan(minutes: number): number {
- return MINUTE_LADDER.find((m) => m > minutes) ?? MINUTE_LADDER[MINUTE_LADDER.length - 1]!;
-}
-
-/** The next energy level above the current one — capped at 'high'. */
-function moreEnergyThan(energy: Mode['energy']): Mode['energy'] {
- if (energy === 'low') return 'medium';
- return 'high';
-}
-
 /** The channels a client may declare for a turn's arrival (ticket 048). */
 const CAPTURE_CHANNELS: readonly CaptureChannel[] = ['typed', 'spoken', 'pasted'];
 
@@ -475,36 +467,12 @@ function readVersion(root: string, snippetId: string, version: number): string |
  */
 type DroppedRegion = { at: number; length: number; why: 'quoted' | 'cited' | 'not-prose' };
 
-/** A line preparation deletes outright, in `clean`'s own terms (body.ts). */
-const IMAGE_LINE = /^!\[/;
-const LINK_ONLY_LINE = /^\[.*\]\(.*\)$/;
-const BARE_URL_LINE = /^https?:\/\//;
-const RAW_HTML_LINE = /^<.*>$/;
-const SHORTCODE = /\{\{[<%][\s\S]*?[>%]\}\}/;
-
-/** The two citation shapes `dropCitedParagraphs` drops on (body.ts). */
-const INLINE_CITE = /\[\([A-Z][^)]*\d{4}\)\]\(#/;
-const PAREN_CITE = /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/;
-
-/** Classify one run of dropped lines: quoted beats cited beats not-prose. */
-function classifyRun(body: string, runStart: number, runEnd: number): DroppedRegion {
- const trimmed = body.slice(runStart, runEnd).split('\n').map((l) => l.trim());
- const any = (re: RegExp): boolean => trimmed.some((t) => re.test(t));
- const why: DroppedRegion['why'] = trimmed.every((t) => t.startsWith('>'))
-  ? 'quoted'
-  : any(IMAGE_LINE) || any(LINK_ONLY_LINE) || any(BARE_URL_LINE) || any(RAW_HTML_LINE) || any(SHORTCODE)
-   ? 'not-prose'
-   : any(SHORTCODE) || any(INLINE_CITE) || any(PAREN_CITE)
-    ? 'cited'
-    : 'not-prose';
- return { at: runStart, length: runEnd - runStart, why };
-}
-
 /**
  * The regions of a source body that preparation dropped. A line survives
  * iff its trailing-whitespace-stripped text is empty (blank lines are
  * separators, never marks) or appears in the prepared prose; consecutive
- * non-surviving lines form one mark.
+ * non-surviving lines form one mark. Each run is named by the shared
+ * classifier in body.ts — the same vocabulary `clean` deletes by.
  */
 function droppedRegions(body: string, prepared: string): DroppedRegion[] {
  const preparedLines = new Set(prepared.split('\n').map((l) => l.trimEnd()));
@@ -516,9 +484,14 @@ function droppedRegions(body: string, prepared: string): DroppedRegion[] {
  let runStart = -1;
  let runEnd = 0;
  let at = 0;
+ const mark = (): DroppedRegion => ({
+  at: runStart,
+  length: runEnd - runStart,
+  why: classifyDroppedRun(body.slice(runStart, runEnd).split('\n')),
+ });
  for (const line of body.split('\n')) {
   if (survives(line)) {
-   if (runStart !== -1) marks.push(classifyRun(body, runStart, runEnd));
+   if (runStart !== -1) marks.push(mark());
    runStart = -1;
   } else if (runStart === -1) {
    runStart = at;
@@ -528,7 +501,7 @@ function droppedRegions(body: string, prepared: string): DroppedRegion[] {
   }
   at += line.length + 1;
  }
- if (runStart !== -1) marks.push(classifyRun(body, runStart, runEnd));
+ if (runStart !== -1) marks.push(mark());
  return marks;
 }
 
@@ -1912,7 +1885,11 @@ function machinePhaseMeta(st: SessionState):
    return c.json({ error: `invalid need "${String(need)}" — expected "time" or "energy"` }, 400);
   }
 
-  const deferred = [...state.turns].reverse().find((t) => t.role === 'agent');
+  // The question on the table: the pending opener while the greeting holds
+  // the first turn (ticket 135), else the last agent turn.
+  const deferred = state.pendingOpener
+    ? state.pendingOpener
+    : [...state.turns].reverse().find((t) => t.role === 'agent');
   if (!deferred) return c.json({ error: 'no question to defer' }, 400);
 
   const modeNeeds: QueueEntry['modeNeeds'] | undefined =
@@ -1940,6 +1917,16 @@ function machinePhaseMeta(st: SessionState):
   );
 
   const result = skipQuestion(state);
+  // While the greeting still holds the first turn (ticket 135), the
+  // replacement becomes the new pending opener — a deferral swaps the
+  // question on the table the same way the skip route's pending-opener
+  // path does, so the next defer defers the new question, not the stale one.
+  if (result.kind === 'question' && state.pendingOpener) {
+    state.pendingOpener = {
+      text: result.text,
+      questionForm: result.questionForm,
+    };
+  }
   return c.json(result);
  });
 
@@ -1990,7 +1977,7 @@ app.post('/api/session/:id/sounding', async (c) => {
  let q: Awaited<ReturnType<typeof composeRung>> = null;
  for (let attempt = 0; attempt < 3 && !q; attempt++) {
   q = await composeRung(stashed.text, clerkComplete, (question) =>
-   checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }));
+   guardComposed(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }, 'Composed: rung rejected').verdict);
  }
  if (!q) {
   // Composition failed thrice; the offer goes back on the table so the
@@ -2054,7 +2041,7 @@ app.post('/api/session/:id/sounding/gate', async (c) => {
  const { end } = applyGate(state.sounding, choice);
  const now = new Date().toISOString();
  const guard = (question: string) =>
-  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) });
+  guardComposed(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }, 'Composed: rung rejected').verdict;
 
  if (choice === 'continue') {
   if (end) {
@@ -2144,7 +2131,7 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
  }
 
  const guard = (question: string) =>
-  checkQuestion(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) });
+  guardComposed(question, { asked: state.turns.filter((t) => t.role === 'agent').map((t) => t.text) }, 'Composed: resumed rung rejected').verdict;
  const q = await composeFromCompacted(resumed.compacted, clerkComplete, guard);
  if (!q) {
   // A resume that cannot compose is a failed call, not a closed descent.
@@ -2332,7 +2319,7 @@ app.post('/api/session/:id/repair', async (c) => {
   nextForm = pick.questionForm;
  } else {
   // Fall back to queue draw
-  const draw = deps.queue.draw(state.mode, 'opening');
+  const draw = deps.queue.draw(state.mode);
   if (draw) {
    nextQuestion = draw.question;
    nextForm = draw.questionForm;
@@ -3216,53 +3203,28 @@ state.turns.push(agentTurn);
   if (regionSlug.length > 0 && regionRecord === null) {
    return c.json({ error: `unknown region ${regionSlug}` }, 400);
   }
-  // Adoption FIRST, and with this folder: the path arrives here or nowhere
-  // (T8), and adoption is idempotent so a re-scan can never skip it. A bad
-  // folder path throws — answer 400 with what it said.
-  let adopted: AdoptResult;
-  let scanned: ScanResult;
+  // The pipeline owns the sequence — adoption FIRST and with this folder
+  // (T8), then the region's rule dates the scan (Anchor, 014 T3), then
+  // admit. A bad folder path throws — answer 400 with what it said.
+  let result: ScanPipelineResult;
   try {
-   adopted = adoptPriorIngest({
+   result = pipelineScan({
     store: importStore,
     vaultRoot: deps.vaultRoot,
     folder,
+    region: regionRecord,
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
    });
-   // The region's rule dates the scan (Anchor, 014 T3): every file that does
-   // not match the declared rule is refused BY NAME, never dated by guess.
-   scanned = regionRecord === null ? scanFolder(folder) : scanFolder(folder, regionRecord.dating);
   } catch (err) {
    return c.json({ error: String(err) }, 400);
   }
-  const { added, skipped, refused } = importStore.admit(scanned.items, regionRecord?.slug);
   startDocket('import');
-  // Two refusal sources, one list: scanFolder refuses on the file alone;
-  // admit refuses on what the store knows (Q-59's no-lastmod). To the
-  // reader they are one thing — a file that did not come in, and why.
-  serverEmit(
-   deps.vaultRoot,
-   'elicitor',
-   'import-scanned',
-   'files=' + (scanned.items.length + scanned.refused.length) +
-    ' toImport=' + added.length +
-    ' refused=' + (scanned.refused.length + refused.length),
-  );
-  if (regionRecord !== null && scanned.refused.length > 0) {
-   // The rule and the count, never a file's content or path — the per-file
-   // list already came back in the response body whole.
-   const ruleRepr = regionRecord.dating.kind === 'filename' ? regionRecord.dating.pattern : regionRecord.dating.key;
-   serverEmit(
-    deps.vaultRoot,
-    'clerk',
-    'import-refused-by-rule',
-    `rule=${ruleRepr} count=${scanned.refused.length}`,
-   );
-  }
+  const { adopted, scanned, admitted } = result;
   return c.json({
-   pending: added.length,
-   skipped: skipped.length,
+   pending: admitted.added.length,
+   skipped: admitted.skipped.length,
    adopted: adopted.accepted + adopted.excluded,
-   refused: [...scanned.refused, ...refused].map((r) => ({ file: basename(r.sourcePath), reason: r.reason })),
+   refused: [...scanned.refused, ...admitted.refused].map((r) => ({ file: basename(r.sourcePath), reason: r.reason })),
   });
  });
 
@@ -3311,7 +3273,7 @@ state.turns.push(agentTurn);
 
  // POST /api/import/:hash/decisions {decisions} → {sessionId, snippets}
  // One decision per proposed cut, validated like the harvest route's
- // (ticket 024). Everything else is commitImport's gate: a stale or
+ // (ticket 024). Everything else is the commit gate: a stale or
  // unverifiable item is refused whole and nothing is written.
  app.post('/api/import/:hash/decisions', async (c) => {
   const hash = c.req.param('hash');
@@ -3340,10 +3302,15 @@ state.turns.push(agentTurn);
     );
    }
   }
-  const result = commitImport(
+  // The pipeline owns the sequence — the commit, and only on a CLEAN
+  // commit the repair pass over the snippets just written (014 T10),
+  // never before.
+  const result = pipelineCommit(
    {
     vault: deps.vault,
     store: importStore,
+    queue: deps.queue,
+    vaultRoot: deps.vaultRoot,
     readSource: (p) => readFileSync(p, 'utf-8'),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     // The authorship seam (014 T9): the region's declared authorship is
@@ -3354,21 +3321,6 @@ state.turns.push(agentTurn);
    body.decisions,
   );
   if (result.ok) {
-   // The repair pass (014 T10) runs after a CLEAN commit and never before: a
-   // repair minted for an item that refused to commit is a question about
-   // prose that is not in the corpus. Every unresolvable dangler among the
-   // snippets just written becomes a Bud; the queue question is capped by
-   // repair.liveCap.
-   const committed = Object.values(deps.vault.rebuildIndex().snippets).filter(
-    (s) => s.provenance.session === result.sessionId,
-   );
-   runImportRepair({
-    vault: deps.vault,
-    queue: deps.queue,
-    vaultRoot: deps.vaultRoot,
-    log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-    snippets: committed,
-   });
    return c.json({ sessionId: result.sessionId, snippets: result.snippets });
   }
   return c.json({ error: result.detail, reason: result.reason }, 409);
@@ -3409,15 +3361,19 @@ state.turns.push(agentTurn);
   if (folder.length === 0) {
    return c.json({ error: 'folder is required' }, 400);
   }
-  let survey;
+  let survey: Survey;
   try {
-   survey = surveyFolder(folder, importStore);
+   survey = pipelineSurvey({
+    store: importStore,
+    vaultRoot: deps.vaultRoot,
+    folder,
+    // A pure read computes the map and keeps nothing (129): under /v2 the
+    // snapshot is written by act {v:'survey'}, which is why that verb exists.
+    snapshot: !isPureRead(c),
+   });
   } catch (err) {
    return c.json({ error: String(err) }, 400);
   }
-  // A pure read computes the map and keeps nothing (129): under /v2 the
-  // snapshot is written by act {v:'survey'}, which is why that verb exists.
-  if (!isPureRead(c)) writeSurvey(deps.vaultRoot, survey);
   return c.json({ survey });
  };
  app.get('/api/import/survey', importSurvey);
@@ -3470,27 +3426,13 @@ state.turns.push(agentTurn);
  // it to open the map AT the offered region (014 T14); null when never
  // surveyed.
  app.get('/api/reach', (c) => {
-  const survey = readSurvey(deps.vaultRoot);
-  const pending = deps.queue.list({ status: 'pending' });
   // A pure read offers and records nothing (129) — same rule as the coach
   // offer: the evaluation record belongs to the server clock, not to a read.
   const log: LogFn = isPureRead(c) ? () => {} : (e) => appendEvent(deps.vaultRoot, e as ActivityEvent);
-  const offer = reachOffer({
-   survey,
-   // The live Direction (Q-69): the pending queue's question text — the
-   // closest running thing this codebase has to a line of inquiry. Injected
-   // so the swap to real Directions is one call site.
-   liveTerms: () => {
-    const terms = new Set<string>();
-    for (const e of pending) {
-     for (const t of termsOf(e.question)) terms.add(t);
-    }
-    return terms;
-   },
-   declined: (p) => reachDeclines(deps.vaultRoot).get(p) ?? null,
-   log,
-  });
-  return c.json({ offer, root: survey?.root ?? null });
+  // The pipeline owns the meeting — the survey snapshot and the live
+  // pending queue become exactly one offer (Q-62), never the folder.
+  const { offer, root } = pipelineReach({ vaultRoot: deps.vaultRoot, queue: deps.queue, log });
+  return c.json({ offer, root });
  });
 
  // POST /api/reach/decline {path} → {ok: true}
@@ -4944,7 +4886,13 @@ if (isDirect) {
   roleLines = ['elicitor: fake', 'clerk: fake'];
  }
  const queueRoot = process.env.ELICIT_QUEUE_DIR ?? vaultRoot;
- const queue = createQueueStore(queueRoot);
+ const queue = createQueueStore(queueRoot, {
+ // The parked-pointer kinds the draw must never serve, each owned by the
+ // module that mints it. 'parked-drm' is the legacy source: slice 6
+ // migrated drm parks to 'parked-machine', but old pointers in the store
+ // must stay undrawable too.
+ parkedPointerKinds: [PARKED_SOUNDING_SOURCE, PARKED_MACHINE_SOURCE, PARKED_DRM_SOURCE],
+});
  const indexData = vault.rebuildIndex();
  const index = buildIndex(Object.values(indexData.snippets));
  // The semantic resonance channel (Q-17, ticket 068), beside the lexical

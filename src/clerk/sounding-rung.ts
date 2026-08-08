@@ -29,7 +29,7 @@ import { decomposeDerived } from '../patterns/decompose.js';
 export async function composeRung(
   answer: string,
   complete: Complete,
-  guard: (q: string) => GuardVerdict,
+  guard: (q: string) => GuardVerdict | 'emit-form',
   pattern?: Pattern,
 ): Promise<{ text: string; foothold: string } | null> {
   // Deep pattern path: use composeWithPattern with the given deep pattern
@@ -92,7 +92,7 @@ export async function composeRung(
 export async function composeFromCompacted(
   c: CompactedLadder,
   complete: Complete,
-  guard: (q: string) => GuardVerdict,
+  guard: (q: string) => GuardVerdict | 'emit-form',
   pattern?: Pattern,
 ): Promise<{ text: string; foothold: string } | null> {
   const last = c.verbatim.at(-1)!.answer;

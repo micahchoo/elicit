@@ -701,15 +701,19 @@ describe('guards', () => {
    'What do you value the most?',
    'What do you value above all?',
   ]);
-  // Queue that returns a fallback draw
+  // Queue that returns a fallback draw. The opener draw (session start)
+  // finds the queue empty, so the bank supplies the opener; the fallback
+  // entry only exists for the probe-point draw.
   const fallbackText = 'What matters to you?';
+  let queueDraws = 0;
   const q: QueueStore & { _adds: Array<{ question: string }> } = {
    _adds: [],
    add(draft) { this._adds.push({ question: draft.question }); return { ...draft, id: 'q', created: '', status: 'pending' as const }; },
    list: () => [],
-   draw: (_mode, phase) => {
-    if (phase === 'mid') return { id: 'fb', question: fallbackText, questionForm: 'deliberative' as const, source: 'composed', license: 'machine', sharpness: 'sharp', horizon: 'now', status: 'pending', created: '' };
-    return null;
+   draw: () => {
+    queueDraws += 1;
+    if (queueDraws === 1) return null;
+    return { id: 'fb', question: fallbackText, questionForm: 'deliberative' as const, source: 'composed', license: 'machine', sharpness: 'sharp', horizon: 'now', status: 'pending', created: '' };
    },
    markAsked: () => { },
    markAnswered: () => { },

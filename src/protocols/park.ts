@@ -4,6 +4,13 @@ import type { QueueEntry, QueueStore, Target } from '../types.js';
 import type { MachineState } from './machine.js';
 
 /**
+ * The pointer-source kind a parked machine mints. Owned here, not by the
+ * queue's draw: the queue filters parked pointers by the kinds configured
+ * at construction, and the composition root passes this one in.
+ */
+export const PARKED_SOURCE = 'parked-machine' as const;
+
+/**
  * The machine side-record (ticket 159, slice 5): `{root}/machines/
  * <sessionId>.json` carrying the whole MachineState, written on park AND on
  * every ratified phase advance (the ladder's durability register). Reads are
@@ -89,7 +96,7 @@ export function parkMachinePointer(
   ? `${phase.label} (${state.protocol}, phase ${state.phaseIndex + 1} of ${phases.length})`
   : `${state.protocol} machine parked`;
  return queue.add({
-  source: 'parked-machine',
+  source: PARKED_SOURCE,
   license: 'user',
   question: label,
   questionForm: 'deliberative',

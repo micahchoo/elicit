@@ -8,13 +8,10 @@ import {
   buildSemanticIndex,
   fileSnippetVectorStore,
   resonateHybrid,
-  PRIME_CAP_BOUND,
-  PRIME_BUDGET_BOUND,
-  QUERY_BUDGET_BOUND,
-  SEMANTIC_FLOOR,
   type SemanticHit,
   type SemanticDeps,
 } from '../src/index/semantic.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import { bodyHash, type Embed, type EmbeddingIndexStore, type EmbeddingRecord } from '../src/wiki/embedding.js';
 import type { ThresholdLogFn } from '../src/domain/thresholds.js';
 import type { Snippet } from '../src/types.js';
@@ -571,11 +568,11 @@ describe('the bounds act, and leave the record that would resize them', () => {
   const map = Object.fromEntries(many.map((s, i) => [s.prose, [i, 1]]));
 
   it('all four bounds and the floor are declared live (floor graduated 2026-08-03)', () => {
-    expect(PRIME_CAP_BOUND.live).toBe(true);
-    expect(PRIME_BUDGET_BOUND.live).toBe(true);
-    expect(QUERY_BUDGET_BOUND.live).toBe(true);
-    expect(SEMANTIC_FLOOR.live).toBe(true);
-    expect(SEMANTIC_FLOOR.value).toBe(0.5);
+    expect(THRESHOLDS['resonance.primeCap'].live).toBe(true);
+    expect(THRESHOLDS['resonance.primeBudgetMs'].live).toBe(true);
+    expect(THRESHOLDS['resonance.queryBudgetMs'].live).toBe(true);
+    expect(THRESHOLDS['resonance.semanticFloor'].live).toBe(true);
+    expect(THRESHOLDS['resonance.semanticFloor'].value).toBe(0.5);
   });
 
   it('clips the prime run at the cap and logs how many wait', async () => {
@@ -643,7 +640,7 @@ describe('the noise floor acts (graduated 2026-08-03), and demotes cleanly', () 
 
   it('keeps a below-floor hit when demoted to shadow, and writes what it would have dropped', async () => {
     const { log, lines } = collector();
-    const index = await primed({ log, floor: { ...SEMANTIC_FLOOR, live: false } });
+    const index = await primed({ log, floor: { ...THRESHOLDS['resonance.semanticFloor'], live: false } });
     const hits = await index.resonate('query', 5);
     expect(hits.map((h) => h.snippetId)).toEqual(['near', 'far']);
     const shadow = lines.find((l) => l.kind === 'shadow-decision');
@@ -672,7 +669,7 @@ describe('the noise floor acts (graduated 2026-08-03), and demotes cleanly', () 
   });
 
   it('a misconfigured boolean floor drops nothing rather than everything', async () => {
-    const index = await primed({ floor: { ...SEMANTIC_FLOOR, value: true, live: true } });
+    const index = await primed({ floor: { ...THRESHOLDS['resonance.semanticFloor'], value: true, live: true } });
     expect(await index.resonate('query', 5)).toHaveLength(2);
   });
 });

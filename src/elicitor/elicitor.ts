@@ -41,7 +41,7 @@ import {
  type TriadSelection,
 } from '../protocols/machine.js';
 import { writeMachineState } from '../protocols/park.js';
-import { checkEmitForm } from '../language/emit-form.js';
+import { guardComposed } from '../language/emit-form.js';
 import { appendEvent } from '../log/activity.js';
 import { readAllRepairs } from '../repair/store.js';
 import { repairedSnippetIds } from '../repair/consult.js';
@@ -173,7 +173,7 @@ export function startSession(
 
   // Determine the opener but do NOT write it yet.
   const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
-  const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode, 'opening');
+  const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode);
   const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
   const randomDraw = shuffled ?? offered;
   let pendingOpener: SessionState['pendingOpener'];
@@ -227,7 +227,7 @@ export function startSession(
 
  // ── Pre-135 path: no greeting, opener fires first ──
  const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
- const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode, 'opening');
+ const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode);
  const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
  const randomDraw = shuffled ?? offered;
  let openerTurn: Turn;
@@ -520,8 +520,15 @@ export async function machineTurn(
   return base === null ? '' : annotate(base);
  };
  const guarded = (q: string): GuardVerdict | 'emit-form' => {
-  if (!checkEmitForm(q).ok) return 'emit-form';
-  return guardQuestion(s, q, systemFor());
+  // The caller logs its own retry line ('Elicitor: machine question rejected
+  // by <verdict> guard — retrying'), so the helper logs nothing here.
+  const verdict = guardComposed(
+   q,
+   { asked: s.turns.filter((t) => t.role === 'agent').map((t) => t.text), systemPrompt: systemFor() },
+   'Elicitor: machine question rejected by',
+   () => {},
+  ).verdict;
+  return verdict;
  };
 
  const composeOnce = async (
@@ -891,7 +898,7 @@ function emitGuardFloor(s: SessionState, verdict: GuardVerdict): void {
  */
 function drawFallback(s: SessionState): Probe | null {
  // Try queue first
- const queueDraw = s.deps.queue.draw(s.mode, 'mid');
+ const queueDraw = s.deps.queue.draw(s.mode);
  if (queueDraw) {
    s.openQueueEntryId = queueDraw.id;
   return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank', {

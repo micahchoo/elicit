@@ -12,6 +12,11 @@
  * carries; an instrument the archive has never touched gets a quiet
  * invitation to sit (154's convention — empty state and error state are
  * distinct), never a silence and never a "you".
+ *
+ * Injection, not import (the seam, web/deps.ts): the renderer's DOM verb
+ * arrives via initTerritory at boot, never a global document — this file
+ * was the pre-seam holdout (a different el() signature, document direct),
+ * and the deps comment that named it that way is corrected with it.
  */
 
 import type { TerritoryNode, TerritoryResponse } from '../src/territory.js';
@@ -19,28 +24,39 @@ import type { NodeCoverageStatus } from '../src/ktg/coverage.js';
 
 /** The state word for a coverage status — archive facts only (Q-79). */
 export function stateWord(state: NodeCoverageStatus): string {
-  switch (state) {
-    case 'evidenced':
-      return 'the archive carries two or more sittings of this';
-    case 'touched':
-      return 'one sitting in the archive touches this';
-    case 'unprobed':
-      return 'nothing in the archive touches this yet';
-  }
+ switch (state) {
+  case 'evidenced':
+   return 'the archive carries two or more sittings of this';
+  case 'touched':
+   return 'one sitting in the archive touches this';
+  case 'unprobed':
+   return 'nothing in the archive touches this yet';
+ }
 }
 
 /** One outline line: indented name, state word, cite count. */
 export function nodeLine(node: TerritoryNode): string {
-  const name = `${'  '.repeat(node.depth - 1)}${node.name}`.padEnd(28);
-  const cites = node.citeCount === 1 ? '1 cite' : `${node.citeCount} cites`;
-  return `${name}${stateWord(node.state)} · ${cites}`;
+ const name = `${'  '.repeat(node.depth - 1)}${node.name}`.padEnd(28);
+ const cites = node.citeCount === 1 ? '1 cite' : `${node.citeCount} cites`;
+ return `${name}${stateWord(node.state)} · ${cites}`;
 }
 
-function el(tag: string, className: string | null, text: string): HTMLElement {
-  const node = document.createElement(tag);
-  if (className !== null) node.className = className;
-  node.textContent = text;
-  return node;
+/** The DOM verb the renderer needs, injected once at boot (web/deps.ts). */
+export interface TerritoryDeps {
+ el: (tag: string, className: string | null, text: string) => HTMLElement;
+}
+
+let renderDeps: TerritoryDeps | null = null;
+
+/**
+ * Wire the renderer's DOM verb. main.ts passes an el adapter (its own
+ * el(tag, attrs?, ...kids) bound to this module's (tag, className, text)
+ * signature) once at boot; renderTerritory throws before painting if it
+ * was never wired, so a forgotten init is a loud failure, never a silent
+ * global-document fallback.
+ */
+export function initTerritory(deps: TerritoryDeps): void {
+ renderDeps = deps;
 }
 
 /**
@@ -49,33 +65,37 @@ function el(tag: string, className: string | null, text: string): HTMLElement {
  * invitation line; a vault with no instruments shows the same at the top.
  */
 export function renderTerritory(container: HTMLElement, data: TerritoryResponse): void {
-  container.replaceChildren();
-  if (data.instruments.length === 0) {
-    container.append(
-      el(
-        'p',
-        'territory-hint',
-        'nothing in the archive touches any mapped territory yet — a sitting would start to.',
-      ),
-    );
-    return;
+ const deps = renderDeps;
+ if (deps === null) {
+  throw new Error('territory not initialized — call initTerritory(el) before rendering');
+ }
+ container.replaceChildren();
+ if (data.instruments.length === 0) {
+  container.append(
+   deps.el(
+    'p',
+    'territory-hint',
+    'nothing in the archive touches any mapped territory yet — a sitting would start to.',
+   ),
+  );
+  return;
+ }
+ for (const instrument of data.instruments) {
+  container.append(deps.el('h3', 'territory-instrument', instrument.name));
+  const totalCites = instrument.nodes.reduce((n, node) => n + node.citeCount, 0);
+  if (totalCites === 0) {
+   container.append(
+    deps.el(
+     'p',
+     'territory-hint',
+     `nothing in the archive touches ${instrument.name} yet — a sitting would start to.`,
+    ),
+   );
+   continue;
   }
-  for (const instrument of data.instruments) {
-    container.append(el('h3', 'territory-instrument', instrument.name));
-    const totalCites = instrument.nodes.reduce((n, node) => n + node.citeCount, 0);
-    if (totalCites === 0) {
-      container.append(
-        el(
-          'p',
-          'territory-hint',
-          `nothing in the archive touches ${instrument.name} yet — a sitting would start to.`,
-        ),
-      );
-      continue;
-    }
-    for (const node of instrument.nodes) {
-      const className = node.role === 'cluster' ? 'territory-cluster' : 'territory-node';
-      container.append(el('div', className, nodeLine(node)));
-    }
+  for (const node of instrument.nodes) {
+   const className = node.role === 'cluster' ? 'territory-cluster' : 'territory-node';
+   container.append(deps.el('div', className, nodeLine(node)));
   }
+ }
 }
