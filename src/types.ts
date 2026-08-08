@@ -2,8 +2,9 @@
 // Encode invariants from CONTEXT.md as visible type constraints
 
 import type { SemanticIndex } from './index/semantic.js';
-import type { DRMState, DRMParkedState } from './drm/types.js';
+import type { DRMParkedState } from './drm/types.js';
 import type { PatternId, Operator } from './patterns/types.js';
+import type { MachineState } from './protocols/machine.js';
 
 export type Facet =
  | 'episode'
@@ -49,13 +50,15 @@ export type QuestionProvenance =
  | 'deck'
  | 'resurfacing'
  // Territory-gap-fill questions minted from KTG instrument data (094)
- | 'territory'
+ // (the dead 'territory' member was deleted in Phase 8 — nothing minted with it)
  // The opening pulse — momentary-state convention at sitting start (105)
  | 'pulse'
 // The greeting turn — one framing line at sitting start (ticket 135)
 | 'greeting'
 // Lineage mirror — a question composed from usage facts (Q-83)
  | 'lineage-mirror'
+// The phase machine's current-phase question (ticket 159, slice 3)
+ | 'machine'
  // Repair — the fixed template turn acknowledging a pressed not-mine (Q-105)
  | 'repair';
 
@@ -399,6 +402,7 @@ source:
  | 'lint-undiscriminated-range'
  | 'parked-sounding'
  | 'parked-drm'
+ | 'parked-machine'
  | 'claim-challenged'
  | 'import-repair'
  | 'quest-reflection'
@@ -512,6 +516,20 @@ soundingId?: string;
  */
 drmId?: string;
 /**
+ * The sitting whose machine side-record a parked-machine pointer points at.
+ * Optional: only `parked-machine` entries carry one, and a pointer without
+ * one is a broken record (Q-3: the record file is the truth, the pointer
+ * derived). The record lives at vault/machines/<machineId>.json.
+ */
+machineId?: string;
+/**
+ * The protocol the parked machine runs — carried ON the pointer so a corrupt
+ * side-record can still restart the machine at phase 0 under the instrument
+ * the person parked, rather than whatever the resumed sitting happens to run.
+ * Optional: only `parked-machine` entries carry one.
+ */
+machineProtocol?: string;
+/**
  * The KTG territory node this entry was minted for. Optional, because
  * only 'territory-gap-fill' entries carry one — and load-bearing, because
  * "one question per node" is not expressible without it: the node id
@@ -568,7 +586,15 @@ export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
 export interface QueueStore {
  add(e: QueueDraft): QueueEntry;
  list(filter?: { status?: QueueEntry['status']; source?: QueueEntry['source'] }): QueueEntry[];
+ /**
+  * Pick one pending question by the draw pipeline (Q-55: filter, relax,
+  * balance, top-k random — never argmax). THE DRAW OWNS the pending→asked
+  * transition: the picked entry is marked asked before draw returns, so
+  * callers must NOT call markAsked on the result (a second call is a
+  * redundant second write of the same file).
+  */
  draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null;
+ /** Mark one entry asked. Called by the draw itself, or by a caller marking an entry it picked some other way. */
  markAsked(id: string): void;
  markAnswered(id: string): void;
  markPending(id: string): void;
@@ -707,6 +733,15 @@ export type SessionState = {
    * file stays free of runtime dependencies.
    */
   semantic?: SemanticIndex;
+  /**
+   * People-source thunk for the phase machine (ticket 159, slice 3):
+   * returns the gazetteer's named people (kind 'person'). The machine's
+   * triad phase annotates its composed prompt with them; fewer than three
+   * at session start degrades people-grid to reflective. Absent means no
+   * people index — the machine composes generically and people-grid
+   * degrades (the instrument cannot present triads without names).
+   */
+  peopleSource?: () => string[];
  };
  turns: Turn[];
  /** Question bank for opener/skip selection (session-local) */
@@ -735,9 +770,11 @@ export type SessionState = {
  * from `finishedSounding` being absent (no descent ended on this turn).
  */
 sounding?: SoundingState;
-/** A live DRM instrument session, when one is running. */
-drm?: DRMState;
-/** The finished DRM state, carried from the route when a DRM closes. */
+/**
+ * The finished DRM state, carried from the route when a DRM closes (ticket
+ * 159, slice 6: a running DRM no longer lives in a bespoke field — the
+ * session's phase machine IS the store, with the DrmUi inside machine.ui).
+ */
 finishedDRM?: DRMParkedState;
 /**
  * Whether a descent was offered this sitting and what came of it. Absent
@@ -766,6 +803,35 @@ pendingOpener?: { text: string; questionForm: QuestionForm; questionSource?: Que
  * three consecutive questions (measured). Sitting-scoped by construction.
  */
 juxtaposedSnippetIds?: string[];
+/**
+ * The protocol phase machine (ticket 159, slice 3): present when the
+ * sitting's protocol declares phases. While present, the machine's
+ * current-phase question is the elicitor's first priority. Absent on
+ * non-machine sittings (reflective is formalized in slice 4).
+ */
+protocolMachine?: MachineState;
+/**
+ * Whether the question most recently served this sitting came from the
+ * machine. Set when the machine serves; cleared when a fallback channel
+ * serves. The next machine turn counts an exchange ONLY when this was set
+ * — a fallback turn must not advance the machine (the person answered a
+ * non-machine question).
+ */
+machineLastServed?: boolean;
+/**
+ * Whether this sitting parked its machine (ticket 159, slice 5). Set by the
+ * park gate route, which also writes the side-record. The record survives
+ * the sitting's end ONLY when this is set — the park act is the whole of
+ * 'depth kept'; any other end removes the record.
+ */
+machineParked?: boolean;
+/**
+ * The side-record this sitting resumed (the parked sitting's id, ticket 159,
+ * slice 5). Set by the machine resume route. Cleanup removes that record
+ * when the resumed sitting finishes (another-day / end / the saturated
+ * close) or supersedes it when the resumed sitting parks again.
+ */
+resumedMachineId?: string;
 };
 
 // ── Soundings ──

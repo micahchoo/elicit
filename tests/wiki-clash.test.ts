@@ -19,7 +19,8 @@ import type {
  Registry,
  SweepLine,
 } from '../src/wiki/contract.js';
-import { THRESHOLDS, type Threshold } from '../src/wiki/thresholds.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
+import type { Threshold } from '../src/domain/thresholds.js';
 import { embeddingChannel, type Embed, type EmbeddingIndexStore, type EmbeddingRecord } from '../src/wiki/embedding.js';
 import { PAIRS } from './fixtures/paraphrase-pairs.js';
 

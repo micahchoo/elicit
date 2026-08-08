@@ -18,6 +18,7 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
+import { readTranscripts } from '../vault/transcripts.js';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
@@ -43,30 +44,17 @@ const IMPORT_PROTOCOL = 'import';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function readCadence(root: string, now: number = Date.now()): Cadence {
-  const dir = join(root, 'transcripts');
-  let files: string[];
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith('.md'));
-  } catch {
-    return { inLastMonth: 0, total: 0 };
-  }
-
+  // The single transcript read owner does the parse; this reader keeps the
+  // sitting census's own policies: imports are not sittings, and a transcript
+  // with no parseable date is skipped — undercounting is the safe direction
+  // (this number must never claim more activity than there was).
   const started: string[] = [];
-  for (const f of files) {
-    let data: { started?: unknown; protocol?: unknown };
-    try {
-      data = matter(readFileSync(join(dir, f), 'utf-8')).data as typeof data;
-    } catch {
-      // A transcript we cannot parse is not a sitting we can date. Skipping it
-      // undercounts, which is the safe direction: this number must never claim
-      // more activity than there was.
-      continue;
-    }
-    if (data.protocol === IMPORT_PROTOCOL) continue;
-    if (typeof data.started !== 'string' || data.started.length === 0) continue;
-    const t = Date.parse(data.started);
-    if (Number.isNaN(t)) continue;
-    started.push(data.started);
+  for (const t of readTranscripts(root)) {
+    if (t.protocol === IMPORT_PROTOCOL) continue;
+    if (t.started === '') continue;
+    const parsed = Date.parse(t.started);
+    if (Number.isNaN(parsed)) continue;
+    started.push(t.started);
   }
 
   if (started.length === 0) return { inLastMonth: 0, total: 0 };

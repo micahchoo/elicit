@@ -25,7 +25,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { classifyFacetIntent } from "../src/elicitor/facet-intent.js";
-import { isWeakForm } from "../src/queue/bank-filter.js";
+import { isWeakForm } from "../src/language/weak-form.js";
 import type { DeckEntry, Facet } from "../src/types.js";
 
 // ── quality gates ──────────────────────────────────────────────────────────

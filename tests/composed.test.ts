@@ -8,6 +8,7 @@ import {
   stillTrueForm,
   composeExpedition,
 } from '../src/clerk/composed.js';
+import { loadProtocolDefinitions } from '../src/protocols/registry.js';
 import type {
   Complete,
   RedLight,
@@ -634,5 +635,85 @@ describe('composeStillTrue form shadow gate (Q-35)', () => {
         (e) => e.kind === 'shadow-decision' && e.detail.includes('stillTrue.formSelection') && e.detail.includes('theoretical'),
       ),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Protocol-aware composition (ticket 158)
+// ---------------------------------------------------------------------------
+
+describe('protocol-aware composition (158)', () => {
+  const defs = loadProtocolDefinitions();
+  const six = ['reflective', 'cdm', 'concept-sorting', 'people-grid', 'laddered-grid', 'drm'];
+
+  it('has all six defs the ticket names', () => {
+    for (const name of six) expect(defs.has(name)).toBe(true);
+  });
+
+  it('rides the def body into the P2 follow-up system prompt, per protocol', async () => {
+    const light: RedLight = { kind: 'odd-term', phrase: RESONANCE_FRAGMENT };
+    for (const name of six) {
+      const def = defs.get(name)!;
+      const seen: string[] = [];
+      const spy: Complete = async (system) => {
+        seen.push(system);
+        return FRAMED;
+      };
+
+      const result = await composeFollowUp(TURN_RESONANCE, light, spy, def);
+
+      expect(result).toBe(FRAMED);           // the emit-gate/shape path still binds
+      expect(seen).toHaveLength(1);          // first-try acceptance, no retry
+      expect(seen[0]).toContain(`## The sitting's method — the ${name} protocol`);
+      expect(seen[0]).toContain(def.prompt); // the full def body reaches the prompt
+      expect(seen[0]).toContain('ONE step of this method'); // never the multi-turn script
+      expect(seen[0]).toContain('inside quotation marks');  // Q-12 shape rule intact
+      expect(seen[0]).toContain('frame the quote, never splice it');
+    }
+  });
+
+  it('rides the def body into the P1 juxtaposition system prompt, per protocol', async () => {
+    const hit = makeResonanceHit({
+      sharedPhrase: RESONANCE_FRAGMENT,
+      snippetText: TURN_RESONANCE,
+    });
+    for (const name of six) {
+      const def = defs.get(name)!;
+      const seen: string[] = [];
+      const spy: Complete = async (system) => {
+        seen.push(system);
+        return FRAMED;
+      };
+
+      const result = await composeJuxtaposition(TURN_RESONANCE, hit, spy, undefined, def);
+
+      expect(result).toBe(FRAMED);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toContain(`## The sitting's method — the ${name} protocol`);
+      expect(seen[0]).toContain(def.prompt);
+      expect(seen[0]).toContain('ONE step of this method');
+      expect(seen[0]).toContain('inside quotation marks');
+      expect(seen[0]).toContain('frame the quote, never splice it');
+    }
+  });
+
+  it('leaves the legacy prompts untouched when no protocol is given', async () => {
+    const seen: string[] = [];
+    const spy: Complete = async (system) => {
+      seen.push(system);
+      return FRAMED;
+    };
+
+    await composeFollowUp(TURN_RESONANCE, { kind: 'odd-term', phrase: RESONANCE_FRAGMENT }, spy);
+    await composeJuxtaposition(
+      TURN_RESONANCE,
+      makeResonanceHit({ sharedPhrase: RESONANCE_FRAGMENT, snippetText: TURN_RESONANCE }),
+      spy,
+    );
+
+    for (const prompt of seen) {
+      expect(prompt).not.toContain("The sitting's method");
+      expect(prompt).not.toContain('ONE step of this method');
+    }
   });
 });

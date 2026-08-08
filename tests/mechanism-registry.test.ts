@@ -399,7 +399,7 @@ describe('mechanism exposure registry (ticket 077)', () => {
 
  it('fails on a synthetic unwired mechanism with a caller (stale declaration)', () => {
   const forged: MechanismEntry[] = [
-   { module: 'src/queue/bank-filter', name: 'isWeakForm', status: 'unwired' },
+   { module: 'src/language/weak-form', name: 'isWeakForm', status: 'unwired' },
   ];
   const violations = checkExposures(forged, FILES, EMITTED.kinds);
   expect(violations.join('\n')).toContain('declared unwired but called');

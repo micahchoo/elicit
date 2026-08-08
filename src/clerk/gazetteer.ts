@@ -86,28 +86,31 @@ export async function extractEntities(
 
   let entities: EntityExtraction[] = [];
 
-  try {
-    const parsed = JSON.parse(text.trim());
-    if (Array.isArray(parsed?.entities)) {
-      for (const e of parsed.entities) {
-        if (e === null || typeof e !== 'object') continue;
-        const name = typeof e.name === 'string' ? e.name.trim() : '';
-        if (name === '') continue;
-        const kind = typeof e.kind === 'string' ? e.kind.trim().toLowerCase() : '';
-        if (kind !== 'person' && kind !== 'place' && kind !== 'project' && kind !== 'institution') continue;
-        const aliases: string[] = [];
-        if (Array.isArray(e.aliases)) {
-          for (const a of e.aliases) {
-            if (typeof a === 'string' && a.trim() !== '') {
-              aliases.push(a.trim());
-            }
-          }
+  // A malformed whole answer (non-JSON, or no entities array) is a MODEL
+  // FAILURE, never an empty result — a dead endpoint must show in the run
+  // report as a counted failure, or the gazetteer silently stops learning.
+  // The docstring's "throws on failure" is the contract; the sweep's
+  // try/catch counts the throw. An explicit {"entities": []} stays valid.
+  const parsed: unknown = JSON.parse(text.trim());
+  if (parsed === null || typeof parsed !== 'object' || !Array.isArray((parsed as { entities?: unknown }).entities)) {
+    throw new Error('extractEntities: model returned no entities array');
+  }
+  for (const raw of (parsed as { entities: unknown[] }).entities) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const e = raw as Record<string, unknown>;
+    const name = typeof e.name === 'string' ? e.name.trim() : '';
+    if (name === '') continue;
+    const kind = typeof e.kind === 'string' ? e.kind.trim().toLowerCase() : '';
+    if (kind !== 'person' && kind !== 'place' && kind !== 'project' && kind !== 'institution') continue;
+    const aliases: string[] = [];
+    if (Array.isArray(e.aliases)) {
+      for (const a of e.aliases) {
+        if (typeof a === 'string' && a.trim() !== '') {
+          aliases.push(a.trim());
         }
-        entities.push({ name, kind: kind as EntityKind, aliases });
       }
     }
-  } catch {
-    // Model returned non-JSON — treat as no entities found.
+    entities.push({ name, kind: kind as EntityKind, aliases });
   }
 
   return {

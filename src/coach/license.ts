@@ -20,7 +20,8 @@ import {
 import type { SittingTag } from './store.js';
  import type { QueueEntry, Snippet } from '../types.js';
  import { contentWordsOf } from '../index/lexical.js';
- import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
+ import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import type { ThresholdLogFn } from '../domain/thresholds.js';
 
 /**
  * The disk facts every licence decision is recomputed from (Q-3). `advice`
@@ -235,6 +236,17 @@ export function relevantClaims(
   * Q-112: a parked seeded Direction may re-offer when its relevant-claim
   * count has grown by 3+ since it was parked. The re-offer is logged.
   *
+  * Measured 2026-08-05 across six archive vaults (gate-repair): the gate
+  * FIRES once claims exist. 1003 `coach-offer` evaluations; every early one
+  * read `directions=0 qualified=0 offered=none` because no DirectionRecord
+  * existed, and the same vault that seeded 13 directions qualified 12 and
+  * offered. `offerMinClaims=3` sits below the real per-theme claim counts
+  * (Tomas vault: clusterSizes=[15,5,5,4,2,2,2,3,2,4,2,2,4] — 7 of 13 themes
+  * clear the bar). The binding constraint is NOT coach math: it is sweep
+  * throughput (`mint.callsPerRun=12`), which starved three of five eval
+  * personas to zero claims. A door that opens onto a starved room is still
+  * closed.
+  *
   * Empty corpus: `{ evaluated: [], qualified: [], offered: null }`,
   * never a throw (090's data note).
   */
@@ -286,23 +298,16 @@ export function relevantClaims(
 }
 
 /**
- * The newest Q-77 event after the current note's mintedAt (or after
- * coachedAt when no note). Null = nothing licenses. Elapsed time appears in
- * no predicate: comparisons are between recorded event times only.
- * Ties sort by the event's insertion order below (quest-return first) —
- * two events sharing one timestamp are both true, and either answers the
- * route's question.
+ * Every Q-77 event for one direction strictly after `baseline`, newest
+ * first. The ONE walk of the four collections (sitting tags, artifacts,
+ * queue entries, last visit) — licenseState and somethingNew read this
+ * instead of each re-walking them with a different baseline, so "what
+ * happened since" has one implementation.
  */
-export function licenseState(
- facts: CoachFacts,
- slug: string,
-): { event: CoachLicenseEvent; at: string } | null {
- const direction = facts.directions.find((d) => d.slug === slug);
- if (!direction) return null;
- const baseline = facts.advice.get(slug)?.mintedAt ?? direction.coachedAt;
- if (baseline === undefined) return null;
+type DirectionEvent = { event: CoachLicenseEvent; at: string };
 
- const events: { event: CoachLicenseEvent; at: string }[] = [];
+function directionEventsSince(facts: CoachFacts, slug: string, baseline: string): DirectionEvent[] {
+ const events: DirectionEvent[] = [];
  const questIds = new Set(facts.quests.filter((q) => q.direction === slug).map((q) => q.id));
  for (const t of facts.sittingTags) {
   if (t.quest !== undefined && questIds.has(t.quest) && t.started > baseline) {
@@ -322,11 +327,33 @@ export function licenseState(
    events.push({ event: 'sitting-touched', at: e.answeredAt });
   }
  }
- if (direction.lastVisit !== undefined && direction.lastVisit > baseline) {
-  events.push({ event: 'page-opened', at: direction.lastVisit });
+ const dir = facts.directions.find((d) => d.slug === slug);
+ if (dir !== undefined && dir.lastVisit !== undefined && dir.lastVisit > baseline) {
+  events.push({ event: 'page-opened', at: dir.lastVisit });
  }
- if (events.length === 0) return null;
  events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+ return events;
+}
+
+/**
+ * The newest Q-77 event after the current note's mintedAt (or after
+ * coachedAt when no note). Null = nothing licenses. Elapsed time appears in
+ * no predicate: comparisons are between recorded event times only.
+ * Ties sort by the event's insertion order below (quest-return first) —
+ * two events sharing one timestamp are both true, and either answers the
+ * route's question.
+ */
+export function licenseState(
+ facts: CoachFacts,
+ slug: string,
+): { event: CoachLicenseEvent; at: string } | null {
+ const direction = facts.directions.find((d) => d.slug === slug);
+ if (!direction) return null;
+ const baseline = facts.advice.get(slug)?.mintedAt ?? direction.coachedAt;
+ if (baseline === undefined) return null;
+
+ const events = directionEventsSince(facts, slug, baseline);
+ if (events.length === 0) return null;
  return events[0]!;
 }
 
@@ -343,18 +370,9 @@ export function somethingNew(facts: CoachFacts, slug: string): boolean {
  const since = direction.lastVisit;
  if (since === undefined) return false;
 
- const questIds = new Set(facts.quests.filter((q) => q.direction === slug).map((q) => q.id));
- for (const t of facts.sittingTags) {
-  if ((t.quest !== undefined && questIds.has(t.quest)) || t.direction === slug) {
-   if (t.started > since) return true;
-  }
- }
- for (const a of facts.artifacts) {
-  if (a.direction === slug && a.declaredAt > since) return true;
- }
- for (const e of facts.queueEntries) {
-  if (e.direction === slug && e.answeredAt !== undefined && e.answeredAt > since) return true;
- }
+ // The shared events view walks the four collections; the unread note is
+ // the one extra source (a newer note without a visit is still new).
+ if (directionEventsSince(facts, slug, since).length > 0) return true;
  if (note && note.mintedAt > since) return true;
  return false;
 }

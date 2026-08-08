@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Hono } from 'hono';
 
-import type { GuardVerdict } from '../src/elicitor/guards.js';
+import type { GuardVerdict } from '../src/language/guards.js';
 import type { ParkedLadder, QueueEntry, Rung, Turn } from '../src/types.js';
 import { createVault } from '../src/vault/vault.js';
 import { makeScriptedComplete } from './fakes.js';

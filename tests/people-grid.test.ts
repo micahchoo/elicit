@@ -28,6 +28,12 @@ describe('people-grid protocol', () => {
     expect(def.rotation).toBe(false);
   });
 
+  test('triads phase declares the chip renderer (ticket 159, slice 7)', () => {
+    const def = loadProtocolDefinitions().get('people-grid')!;
+    const triads = def.phases?.find((p) => p.id === 'triads');
+    expect(triads?.renderer).toBe('triads');
+  });
+
   test('existing defs carry no presentation hint', () => {
     const defs = loadProtocolDefinitions();
     for (const name of ['laddered-grid', 'cdm', 'concept-sorting']) {

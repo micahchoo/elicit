@@ -3,7 +3,7 @@ import { loadPatterns, clearPatternCache } from '../src/patterns/registry.js';
 import { licensePattern } from '../src/patterns/license.js';
 import { selectCheapPattern, selectDeepPattern } from '../src/patterns/select.js';
 import { decomposeDerived } from '../src/patterns/decompose.js';
-import { isNearDuplicate } from '../src/elicitor/guards.js';
+import { isNearDuplicate } from '../src/language/guards.js';
 import type { LicensingContext } from '../src/patterns/types.js';
 
 const QR2_FIXTURES = [

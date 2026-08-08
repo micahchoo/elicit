@@ -1,14 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
+import { readMarginaliaLine, writeMarginaliaLine } from '../vault/marginalia.js';
 import type { Complete, ParkedLadder } from '../types.js';
 
 /** `{root}/marginalia/sounding-summaries/{id}.md` — the one line, Marginalia-class (Q-8, Q-20, Q-45). */
 const SUMMARIES_DIR = 'marginalia/sounding-summaries';
-
-function summaryPath(root: string, id: string): string {
-  return join(root, SUMMARIES_DIR, `${id}.md`);
-}
 
 /**
  * One line standing for the rungs a compaction drops (T10). Written in the
@@ -55,14 +52,7 @@ export function saveLadderSummary(
   id: string,
   s: { line: string; model: string; at: string },
 ): void {
-  mkdirSync(join(root, SUMMARIES_DIR), { recursive: true });
-  const content = `---
-model: ${s.model}
-at: ${s.at}
----
-${s.line}
-`;
-  writeFileSync(summaryPath(root, id), content, 'utf-8');
+  writeMarginaliaLine(root, 'sounding-summaries', `${id}.md`, s);
 }
 
 /**
@@ -71,12 +61,7 @@ ${s.line}
  * resume degrades to less context, never a stale or invented line.
  */
 export function loadLadderSummary(root: string, id: string): string | null {
-  try {
-    const line = matter.read(summaryPath(root, id)).content.trim();
-    return line === '' ? null : line;
-  } catch {
-    return null;
-  }
+  return readMarginaliaLine(root, 'sounding-summaries', `${id}.md`)?.line ?? null;
 }
 
 /**
@@ -102,7 +87,7 @@ export async function runLadderSummaries(deps: {
   for (const file of readdirSync(dir).sort()) {
     if (!file.endsWith('.md')) continue;
     const id = file.slice(0, -3);
-    if (existsSync(summaryPath(deps.root, id))) continue;
+    if (readMarginaliaLine(deps.root, 'sounding-summaries', `${id}.md`) !== null) continue;
     const data = matter(readFileSync(join(dir, file), 'utf-8')).data as Record<string, unknown>;
     if (typeof data.ended !== 'string') continue;
     const s = await summarizeLadder(data as unknown as ParkedLadder, deps.complete, deps.model);

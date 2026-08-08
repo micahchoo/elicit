@@ -114,8 +114,14 @@ The every-turn search of the vault for past Snippets that echo or clash with wha
 **Juxtaposition**:
 The question a Resonance clash licenses: present utterance and past Snippet quoted verbatim, side by side — "same thing?" A live convergence check; its answer feeds Contradiction detection in the open rather than silently.
 
+**Emit Form**:
+The gate on what shape a question may take before it enters the Queue: every composed question must quote a verbatim substring of the turn that licensed it (except the lexical channel, whose shared phrase is the connection), must not parrot the turn back, must not be conversation-referential, and must not be a degenerate composition. Enforced at `queue.add()` time by one predicate pipeline, so a question that violates a gate never reaches the person. The gate and the form it enforces live together in `src/language/` — the question's shape is a language property, not a queue concern.
+
 **Queue**:
 The durable store of pending questions, surviving sessions. Holds deferred questions, open Expeditions, and parked Soundings (depth kept). Each entry carries its Source license, Mode needs, sharpness, Direction, and horizon. Drawing is filtered (license, Mode, Facet balance, weak-early ordering, exposure control) then picked top-k at random — never argmax.
+
+**Engagement**:
+The sitting-policy ledger the draw consults: when a sitting started and how the person has been replying. A fresh sitting draws without penalty; a thread that got two disengaged replies in a row is deferred rather than pushed again. The ledger is the Queue's own state (`src/queue/engagement.ts`), not a transcript read — the draw decides from policy, the archive records what actually happened.
 
 **Clerk**:
 The agent's background role: it works the Docket continuously, between and during sittings. Single writer to the Wiki — parallel helpers never write.

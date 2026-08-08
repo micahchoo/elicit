@@ -1,15 +1,18 @@
 /**
- * DRM park/resume persistence — follows the Sounding park.ts pattern.
- *
- * Parks: writes {root}/drm/{id}.md (frontmatter-only, Q-3 truth)
- * Resumes: reads from disk, rebuilds state
- * Park pointer: mints a QueueEntry with source 'parked-drm'
+ * The legacy DRM park record — ticket 159, slice 6: DRM parks now persist
+ * the phase machine itself (src/protocols/park.ts writes the machine side-
+ * record with the DrmUi inside, and the pointer source is 'parked-machine').
+ * This module keeps the OLD {root}/drm/{id}.md frontmatter format so a
+ * pre-slice-6 parked DRM still resumes: the drm resume route's compat
+ * branch reads it with readDRM and rebuilds the machine. Nothing writes a
+ * legacy record in production anymore — writeDRM survives as the format's
+ * writer for the roundtrip test and for symmetry with the reader.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
-import type { DRMParkedState, DRMProbeStep, QueueEntry, QueueStore, Target } from '../types.js';
+import type { DRMParkedState, DRMProbeStep } from '../types.js';
 import type { DRMEpisode, DRMFragment } from '../types.js';
 
 /** {root}/drm/{id}.md — the whole DRM state, frontmatter only. */
@@ -63,29 +66,4 @@ export function readDRM(root: string, id: string): DRMParkedState | null {
   } catch {
     return null;
   }
-}
-
-/**
- * The 'park' word mints this: a pointer whose `question` records the last
- * episode probed — what was on the table — never a composed next probe.
- * The draw never serves it; resumption reads the DRM file, not the pointer
- * (Q-3, following Q-64's Sounding pattern).
- */
-export function parkDRMPointer(
-  queue: QueueStore,
-  parked: DRMParkedState,
-  target?: Target,
-): QueueEntry {
-  const lastEp = parked.episodes[parked.currentEpisodeIdx - 1] ?? parked.episodes.at(-1);
-  const label = lastEp ? `DRM: ${lastEp.name}` : 'DRM parked';
-  return queue.add({
-    source: 'parked-drm' as QueueEntry['source'],
-    license: 'user',
-    question: label,
-    questionForm: 'deliberative',
-    sharpness: 'weak',
-    horizon: 'session',
-    drmId: parked.id,
-    ...(target ? { target } : {}),
-  });
 }

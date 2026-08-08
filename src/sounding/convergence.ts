@@ -1,24 +1,6 @@
-import type { Rung, Snippet, SoundingEnd, SoundingState } from '../types.js';
-import { isContentFree } from '../elicitor/answer-shape.js';
-import { buildIndex, resonate } from '../index/lexical.js';
-
-/**
- * Adapter: rung answers are NOT Snippets — they have not passed admissibility,
- * they are not evidence, and none of them is ever written to vault/snippets/.
- * buildIndex reads only snippet.prose/id/version (lexical.ts:174), so a
- * minimal construction suffices; `captured`/`provenance` are not read and no
- * real provenance exists for words that were never admitted, which is what the
- * narrow cast marks. The `rung:` id prefix makes a stray one obvious in a
- * debugger — if these values are ever found escaping this module, that is a
- * bug, not a feature.
- */
-function rungsAsIndexInput(rungs: Rung[]): Snippet[] {
-  return rungs.map((rung, i) => ({
-    id: `rung:${i}`,
-    version: 1,
-    prose: rung.answer,
-  }) as Snippet);
-}
+import type { Rung, SoundingEnd, SoundingState } from '../types.js';
+import { isContentFree } from '../language/thin-answer.js';
+import { echoesAny } from '../index/lexical.js';
 
 /**
  * Structural end conditions (Q-46): a descent ends because a counter ran out
@@ -48,9 +30,10 @@ export function descentEnd(s: SoundingState): SoundingEnd | null {
   if (s.rungs.length < 4) return null;
 
   const earlier = s.rungs.slice(0, s.rungs.length - 2);
-  const index = buildIndex(rungsAsIndexInput(earlier));
-  for (const rung of s.rungs.slice(-2)) {
-    if (resonate(index, rung.answer).length === 0) return null;
-  }
+  const lastTwo = s.rungs.slice(-2);
+  // echoesAny shares the lexical tokenizer/trigram keying with buildIndex —
+  // a boolean check, no ranked index, no Snippet-shaped inputs.
+  if (!echoesAny(lastTwo[0]!.answer, earlier.map((r) => r.answer))) return null;
+  if (!echoesAny(lastTwo[1]!.answer, earlier.map((r) => r.answer))) return null;
   return 'convergence';
 }

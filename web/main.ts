@@ -4,7 +4,6 @@ import type {
  GateReading,
  HarvestDecision,
  Mode,
- QuestionForm,
  Snippet,
  SoundingEnd,
  Target,
@@ -14,10 +13,18 @@ import type { Claim, Contradiction } from '../src/wiki/contract.ts';
 import type { AnnotationRecord } from '../src/clerk/annotation-store.js';
 import { formatEvent, relativeTime } from '../src/log/format.js';
 import { sourceLabel } from '../src/queue/source-label.js';
+import { descentCloseWord, originWord, sourceWord, type HarvestOrigin, type OpenerSource } from './provenance.js';
 import { renderImportEntry } from './import-entry.js';
 import { declinePath, offerSentence, reachItNav, type ReachOfferLine } from './reach-line.js';
 import { renderCoachPage } from './coach.js';
 import { ulid } from 'ulid';
+import { panelLine, type PanelLine } from './panel-line.js';
+import { renderTerritory } from './territory.js';
+import type { TerritoryResponse } from '../src/territory.js';
+import { HARVEST_FAILED_SENTENCE, harvestFailedFor } from './harvest-failure.js';
+import { protocolOptionRows, type ProtocolRow } from './protocol-options.js';
+import { validTrim as validTrimRule } from './trim-validity.js';
+import { triadSurface, toggleTriad, type PhaseMetaLike } from './triad-surface.js';
 
 /* ─── API types ─── */
 
@@ -25,7 +32,7 @@ interface SessionResponse {
  sessionId: string;
  question: string;
  /** Present when the Randomizer dealt the opener (Q-18). */
- source?: 'deck' | 'resurfacing';
+ source?: OpenerSource;
  /** Display-only lineage of a resurfaced opener (080) — never part of the question. */
  snippetQuestion?: string;
  context?: string;
@@ -40,10 +47,8 @@ interface SessionResponse {
 }
 
 interface TurnData {
- kind: 'probe' | 'saturated' | 'checkpoint' | 'descent-closed' | 'declined';
+ kind: 'probe' | 'saturated' | 'checkpoint' | 'descent-closed' | 'declined' | 'door' | 'continue';
  text?: string;
- questionForm?: QuestionForm;
- phase?: string;
  juxtaposition?: { snippetText: string; snippetDate: string };
  /** Live descent reading (012 T9): present on every rung, never cached. */
  sounding?: GateReading;
@@ -51,16 +56,21 @@ interface TurnData {
  soundingOffer?: { construct: string; allowance: number; sentence: string };
  /** The descent closed on this answer (012 T9) — cap or convergence, no gate press. */
  descentClosed?: SoundingEnd;
- /** Ladder identity, riding with `descentClosed` (012 T9). */
- soundingId?: string;
- /** The gate word that closed a descent (012 T9) — on descent-closed responses. */
- endedBy?: SoundingEnd;
  /** Closing acknowledgment rendered before navigating to reviews (ticket 135). */
  closingText?: string;
  /** Fragment quoted in the question (Q-104): present on probe responses, carries the "not mine" verb. */
  quotedFragment?: string;
  /** Snippet ref for the current question's quoted fragment (Q-109): rides with quotedFragment. */
  snippetRef?: string;
+ /**
+  * The machine phase meta (ticket 159, slice 4): every sitting now carries
+  * a machine (reflective formalized), so the turn response's `phase` field
+  * is always the machine shape { id, label, step, of } — the polymorphic
+  * session-phase-string wire is retired. Other routes that reuse the type
+  * (the sounding gate) still send the session phase string, which
+ *  applyProbe ignores.
+ */
+phase?: PhaseMetaLike;
 }
 
 /**
@@ -71,35 +81,73 @@ interface TurnData {
 type WikiSnippet = Snippet & { annotation?: AnnotationRecord };
 
 interface EndResponse {
- status: string;
  sessionId: string;
 }
 
 interface HarvestQueueEntry {
  sessionId: string;
- at: string;
  started: string;
  protocol: string;
- origin: 'harvest' | 'unprompted';
+ origin: HarvestOrigin;
  proposalCount: number;
 }
 
 interface HarvestQueueRecord {
  sessionId: string;
- at: string;
- started: string;
- protocol: string;
- origin: 'harvest' | 'unprompted';
  proposals: CutProposal[];
 }
 
+/** GET /api/sweep-backlog — ticket 139, with the dated sittings of 156. */
+interface SweepBacklogResponse {
+ pendingReadings: number;
+ freshReadings: number;
+ lastRecorded: number;
+ at: string | null;
+ /** The sittings that left sweep work, most recent day first (ticket 156). */
+ sittings: { date: string; readings: number }[];
+}
+
+/** GET /api/protocols — the open set the mode row renders (tickets 153/157). */
+interface ProtocolsResponse {
+ protocols: ProtocolRow[];
+}
+
+/**
+ * The once-fetched protocol metadata (ticket 157): the exchange label, the
+ * DRM screen, and the mode picker all render the def TITLE mapped client-side
+ * from GET /api/protocols. Fetched once, cached in module state; a failed
+ * fetch falls back to the registry key, which still renders. `protocolRows`
+ * doubles as the picker's row source, so the picker and the labels can never
+ * disagree about the set.
+ */
+const protocolRows: ProtocolRow[] = [];
+let protocolMetaPromise: Promise<void> | null = null;
+
+function ensureProtocolMeta(): Promise<void> {
+ if (!protocolMetaPromise) {
+  protocolMetaPromise = api<ProtocolsResponse>('/api/protocols')
+   .then((res) => {
+    protocolRows.length = 0;
+    protocolRows.push(...res.protocols);
+   })
+   .catch((e) => {
+    console.error('could not fetch protocol titles \u2014 surfaces render with registry ids', e);
+   });
+ }
+ return protocolMetaPromise;
+}
+
+/** The def's title for a registry key; the key itself when unknown (ticket 157). */
+function protocolTitle(id: string): string {
+ const row = protocolRows.find((p) => p.id === id);
+ return row ? (row.title || row.name) : id;
+}
+
 interface HarvestResponse {
- snippets: unknown[];
  buds: unknown[];
 }
 
 interface QueueData {
- pending: Array<QueueEntry & { rungsKept?: number }>;
  open: Array<QueueEntry & { rungsKept?: number }>;
  /** Questions the person parked from the open pane — held until put back. */
  parked?: QueueEntry[];
@@ -195,16 +243,14 @@ interface AppState {
  question: string | null;
  proposals: CutProposal[];
  decisions: HarvestDecision[];
- turnPhase: string | null;
  juxtaposition: { snippetText: string; snippetDate: string } | null;
  /** Lineage of a resurfaced opener (080): shown dimmed above the question, cleared on the next turn. */
  lineageQuestion: string | null;
  lineageContext: string | null;
+ /** How the opener was dealt (Q-18): set from SessionResponse.source, cleared on the next turn. */
+ openerSource: OpenerSource | null;
  sttAvailable: boolean;
- dictating: boolean;
  turnHadSpeech: boolean;
- /** Minutes declared for the sitting; the session clock counts down from it. */
- sessionMinutes: number | null;
  /** Epoch ms when the sitting's countdown runs out; set when the sitting begins. */
  sessionDeadline: number | null;
  /** Session whose harvest is running behind the /end response (084). */
@@ -227,6 +273,12 @@ interface AppState {
  quotedFragment: string | null;
  /** Snippet ref for the current question's quoted fragment (Q-109): rides with quotedFragment. */
  snippetRef: string | null;
+ /**
+  * The machine phase meta (ticket 159, slice 3): set from the turn response
+  * while a machine is active — { id, label, step, of } — rendered dimmed
+  * above the question block. Null on non-machine sittings.
+  */
+ phaseMeta: PhaseMetaLike | null;
 }
 const state: AppState = {
  screen: 'mode',
@@ -234,14 +286,12 @@ const state: AppState = {
  question: null,
  proposals: [],
  decisions: [],
- turnPhase: null,
  juxtaposition: null,
  lineageQuestion: null,
  lineageContext: null,
+ openerSource: null,
  sttAvailable: false,
- dictating: false,
  turnHadSpeech: false,
- sessionMinutes: null,
  sessionDeadline: null,
  pendingReviewSession: null,
  sounding: null,
@@ -253,6 +303,7 @@ const state: AppState = {
  pendingBuds: [],
  quotedFragment: null,
  snippetRef: null,
+ phaseMeta: null,
 };
 
 const main = $('main')!;
@@ -444,7 +495,7 @@ class ApiError extends Error {
  * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
  * the same path and is the one write the wiki surface makes.
  */
-const GET_PREFIXES = ['/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary', '/api/sweep-backlog'];
+const GET_PREFIXES = ['/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary', '/api/protocols', '/api/territory', '/api/sweep-backlog'];
 
 function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
@@ -806,7 +857,6 @@ function renderMode(showSetupHint?: boolean) {
  clear();
  state.screen = 'mode';
  renderShell();
- state.turnPhase = null;
  state.juxtaposition = null;
 
  const div = el('div', { class: 'screen active mode-form' });
@@ -836,6 +886,41 @@ function renderMode(showSetupHint?: boolean) {
  tgtSelect.append(el('option', { value: 'self' }, 'myself'));
  tgtSelect.append(el('option', { value: 'domain' }, 'something I know'));
  targetRow.append(tgtLabel, tgtSelect);
+
+ // The protocol row (tickets 153/157): one quiet radio list in the mode
+ // grammar — "let it choose" first (rotation — no protocol sent), then one
+ // row per protocol from the open set the ROUTE returns, never a hardcoded
+ // list: the TITLE as the option label, the blurb dimmed under it,
+ // "(explicit only)" for rotation:false instruments (drm, people-grid —
+ // Q-85) the server never picks on its own. The row enters the DOM only
+ // when the fetch succeeds; a failure logs to the console and renders no
+ // row — rotation still works, and the row's absence is not an error state.
+ const protocolRow = el('div', { class: 'mode-row protocol-row' });
+ const protoLabel = el('label', {}, 'protocol?');
+ const optionList = el('div', { class: 'protocol-options' });
+ protocolRow.append(protoLabel, optionList);
+
+ /** One quiet radio: the title as the label, the blurb dimmed under it. */
+ function protocolRadio(id: string, label: string, blurb: string | undefined, explicitOnly: boolean): HTMLLabelElement {
+  const input = el('input', { type: 'radio', name: 'protocol-pick', value: id });
+  if (id === '') input.checked = true;
+  const labelSpan = el('span', { class: 'protocol-option-label' }, label);
+  if (explicitOnly) labelSpan.append(el('span', { class: 'protocol-explicit-only' }, ' (explicit only)'));
+  const option = el('label', { class: 'protocol-option' });
+  option.append(input, labelSpan);
+  if (blurb !== undefined) option.append(el('span', { class: 'protocol-option-blurb' }, blurb));
+  return option;
+ }
+
+ void ensureProtocolMeta()
+  .then(() => {
+   if (protocolRows.length === 0) return;
+   optionList.append(protocolRadio('', 'let it choose', undefined, false));
+   for (const row of protocolOptionRows(protocolRows)) {
+    optionList.append(protocolRadio(row.id, row.label, row.blurb, row.explicitOnly));
+   }
+   div.insertBefore(protocolRow, topicInput);
+  });
 
  const topicInput = el('input', {
   class: 'topic-input',
@@ -874,19 +959,27 @@ function renderMode(showSetupHint?: boolean) {
    const t = topicInput.value.trim();
    if (t) mode.topic = t;
 
-   const res = await api<SessionResponse>(
-    '/api/session',
-    shuffle ? { mode, shuffle: true } : { mode },
-   );
+   // The protocol rides the session when the person picked one; "let it
+   // choose" sends nothing — absent means rotation, exactly as before
+   // (ticket 153). exactOptionalPropertyTypes: the field is added, never
+   // assigned undefined.
+   const body: { mode: Mode; shuffle?: boolean; protocol?: string } =
+    shuffle ? { mode, shuffle: true } : { mode };
+   const checked = optionList.querySelector<HTMLInputElement>('input[name="protocol-pick"]:checked');
+   const protocolId = checked?.value ?? '';
+   if (protocolId !== '') body.protocol = protocolId;
+   const res = await api<SessionResponse>('/api/session', body);
    state.sessionId = res.sessionId;
    state.sessionProtocol = res.protocol ?? null;
+   // A fresh sitting starts with no machine phase meta (ticket 159, slice 3).
+   state.phaseMeta = null;
    state.quotedFragment = res.quotedFragment ?? null;
    state.snippetRef = res.snippetRef ?? null;
    state.lineageQuestion = res.snippetQuestion ?? null;
    state.lineageContext = res.context ?? null;
+   state.openerSource = res.source ?? null;
    // The clock counts down from the declared minutes; the deadline is set
    // once, here, so re-rendering the exchange screen does not reset it.
-   state.sessionMinutes = mode.minutes;
    state.sessionDeadline = Date.now() + mode.minutes * 60_000;
    // Pulse prompt present (ticket 105): hold the question, show pulse first
    if (res.pulsePrompt) {
@@ -1128,7 +1221,6 @@ function renderUnprompted() {
   micBtn,
   micStatus,
   errorSlot,
-  onDictatingChange: (dictating) => { state.dictating = dictating; },
   onSpeech: () => { state.turnHadSpeech = true; },
  });
 
@@ -1253,7 +1345,6 @@ function wireDictation(opts: {
  micBtn: HTMLButtonElement;
  micStatus: HTMLSpanElement;
  errorSlot: HTMLElement;
- onDictatingChange?: (dictating: boolean) => void;
  onSpeech?: () => void;
 }) {
  const { textarea, micBtn, micStatus, errorSlot } = opts;
@@ -1285,7 +1376,6 @@ function wireDictation(opts: {
     dictationActive = true;
     micBtn.classList.add('active');
     micStatus.textContent = 'listening\u2026';
-    opts.onDictatingChange?.(true);
    } catch (e) {
     console.error(e);
     showQuietError(errorSlot, 'the microphone did not open — check permission');
@@ -1310,7 +1400,6 @@ function wireDictation(opts: {
    dictationBusy = false;
    micBtn.disabled = false;
    micStatus.textContent = '';
-   opts.onDictatingChange?.(false);
   }
  };
 
@@ -1477,7 +1566,6 @@ function renderExchange() {
  }
  exchangeTurnCount = 0;
  state.turnHadSpeech = false;
- state.dictating = false;
  // A fresh exchange screen starts with no descent and no offer (012 T9);
  // re-rendering must not inherit either from a previous screen.
  state.sounding = null;
@@ -1500,12 +1588,73 @@ function renderExchange() {
   state.lineageContext ?? undefined,
  );
  if (openerLineage) header.append(openerLineage);
+ // The Randomizer's provenance (Q-18): one muted margin word when the opener
+ // was dealt rather than composed — the deck draw or the resurfaced past.
+ // It lives and dies with the opener, exactly like the resurfacing lineage.
+ const dealtLine = state.openerSource !== null
+  ? el('div', { class: 'lineage-provenance' }, el('div', { class: 'lineage-context' }, sourceWord(state.openerSource)))
+  : null;
+ if (dealtLine) header.append(dealtLine);
  const questionBlock = el('div', { class: 'question-block' }, state.question!);
 
   if (state.sessionProtocol) {
-   header.append(el('div', { class: 'exchange-protocol' }, `protocol: ${state.sessionProtocol}`));
+   // The dimmed label above the question block renders the def TITLE
+   // (ticket 157); the once-cached fetch updates it in place when it
+   // lands, and a failed fetch leaves the registry id as the fallback.
+   const protocolLabel = el('div', { class: 'exchange-protocol' }, protocolTitle(state.sessionProtocol));
+   void ensureProtocolMeta().then(() => {
+    if (!state.sessionProtocol) return;
+    protocolLabel.textContent = protocolTitle(state.sessionProtocol);
+   });
+   header.append(protocolLabel);
   }
+ // The machine phase line (ticket 159, slice 3), in the DRM probe-meta
+ // grammar — quiet, 0.75rem, muted. Rendered only while a machine is
+ // active; the empty line is invisible, so the question block is never
+ // disturbed.
+ const phaseMetaLine = el('div', { class: 'exchange-phase-meta' });
+ if (state.phaseMeta) {
+  phaseMetaLine.textContent = `${state.phaseMeta.label} \u2014 phase ${state.phaseMeta.step} of ${state.phaseMeta.of}`;
+ }
+ header.append(phaseMetaLine);
  header.append(questionBlock);
+ // The triad chip surface (ticket 159, slice 7): the three names as tappable
+ // chips under the question, rendered only while the active phase declares
+ // the 'triads' renderer and the meta carries the names. Any other meta —
+ // an unknown renderer included — leaves the row empty and the generic
+ // question block stands: prose is always the floor, never a crash.
+ const triadRow = el('div', { class: 'triad-row' });
+ const triadChips = el('div', { class: 'triad-chips' });
+ const triadHint = el('span', { class: 'triad-hint' });
+ triadRow.append(triadChips, triadHint);
+ header.append(triadRow);
+ let selectedTriad: string[] = [];
+ function paintTriadChips() {
+  for (const chip of triadChips.querySelectorAll<HTMLButtonElement>('.triad-chip')) {
+   const name = chip.textContent ?? '';
+   chip.classList.toggle('selected', selectedTriad.includes(name));
+  }
+  triadHint.textContent = selectedTriad.length === 2
+   ? 'tap to change \u2014 the pair rides your answer'
+   : 'tap two who are alike';
+ }
+ function renderTriadSurface(meta: PhaseMetaLike | null) {
+  selectedTriad = [];
+  triadChips.innerHTML = '';
+  triadHint.textContent = '';
+  const surface = triadSurface(meta);
+  if (surface === null) return;
+  for (const name of surface.names) {
+   const chip = el('button', { class: 'triad-chip', type: 'button' }, name);
+   chip.addEventListener('click', () => {
+    selectedTriad = toggleTriad(selectedTriad, name);
+    paintTriadChips();
+   });
+   triadChips.append(chip);
+  }
+  paintTriadChips();
+ }
+ renderTriadSurface(state.phaseMeta);
  // Q-104: "not mine" margin verb on questions carrying a quotedFragment
  if (state.quotedFragment) {
   const repairRow = el('div', { class: 'repair-row' });
@@ -1590,24 +1739,9 @@ function renderExchange() {
  const micStatus = el('span', { class: 'mic-status' });
  // A visible send, beside the mic: the Enter path in word form.
  const sendBtn = el('button', { class: 'send-btn', type: 'button' }, 'send \u21b5');
- const harvestBtn = el('button', { class: 'harvest-now' }, 'harvest now');
- const skipBtn = el('button', { class: 'harvest-now' }, 'skip');
- const laterBtn = el('button', { class: 'harvest-now' }, 'later');
-
- // Margin follow-up: what the question needs before it can be answered.
- const deferRow = el('div', { class: 'defer-row' });
- const deferPrompt = el('span', { class: 'defer-prompt' }, 'when I have more');
- const timeWord = el('button', { class: 'defer-need' }, 'time');
- const energyWord = el('button', { class: 'defer-need' }, 'energy');
- const plainWord = el('button', { class: 'defer-need' }, 'just later');
- deferRow.append(deferPrompt, timeWord, energyWord, plainWord);
 
  // The writing grammar allows one hint line: how Enter behaves, in dim ink.
  const answerHint = el('div', { class: 'answer-hint' }, 'Enter sends \u00b7 Shift+Enter for a new line');
- // Leaving is not harvesting: the transcript already lives server-side, so
- // this word only navigates — it must never call /api/session/:id/end.
- const leaveWord = el('button', { class: 'nav-link exchange-leave' }, 'leave \u2014 your words keep');
- leaveWord.addEventListener('click', () => navTo('mode'));
 
 // ── The sounding offer (012 T9): one sentence, two words, in the margin ──
 // Shown once per sitting, below the question block. Both words are one
@@ -1672,15 +1806,25 @@ async function consent(accept: boolean) {
 // state.sounding is set on every rung and never cached, so the row is born
 // on the first reading and rewritten in place on every rung after that.
 
+// The gate row is the standard control surface on EVERY sitting (ticket
+// 159, slice 4): always visible, continue enabled — the person just
+// answers, and the words park / another day end the sitting. The skip
+// route survives as the quiet nav-link beside the gate (the skip-rate
+// metrics stay live). While a descent runs, the same row renders the
+// sounding gate (012 T9): the rung reading, continue only at the
+// checkpoint, park / another-day under every rung.
 const gateRow = el('div', { class: 'gate-row' });
 const gateReading = el('span', { class: 'gate-reading' });
 const continueWord = el('button', { class: 'gate-word continue', type: 'button' }, 'continue');
 const parkWord = el('button', { class: 'gate-word park', type: 'button' }, 'park, depth kept');
 const anotherDayWord = el('button', { class: 'gate-word another-day', type: 'button' }, 'another day');
-continueWord.hidden = true; // 'continue' is a control only at the checkpoint
-gateRow.append(gateReading, continueWord, parkWord, anotherDayWord);
+const skipLink = el('button', { class: 'nav-link gate-skip', type: 'button' }, 'skip');
+gateRow.append(gateReading, continueWord, parkWord, anotherDayWord, skipLink);
+gateRow.classList.add('visible');
 
-let gateControls: HTMLButtonElement[] = [];
+// The standard surface's controls; renderGate narrows the set while a
+// descent runs, and removeGateRow restores it.
+let gateControls: HTMLButtonElement[] = [continueWord, parkWord, anotherDayWord];
 let checkpointActive = false;
 
 /** Render the gate row for the current reading, in the checkpoint state or out. */
@@ -1706,14 +1850,16 @@ function renderGate(checkpoint: boolean) {
  }
 }
 
-/** Take the gate off the screen and restore the ordinary controls. */
+/** Take the gate off the screen and restore the standard surface: visible,
+ *  continue enabled, the quiet skip beside it. */
 function removeGateRow() {
- gateRow.classList.remove('visible');
  gateRow.classList.remove('checkpoint');
- continueWord.hidden = true;
- gateControls = [];
+ continueWord.hidden = false;
+ gateControls = [continueWord, parkWord, anotherDayWord];
  checkpointActive = false;
+ gateReading.textContent = '';
  textarea.disabled = false;
+ answerArea.append(gateRow);
 }
 
 /** Apply the sounding fields of a turn response (012 T9). `sounding` is
@@ -1742,11 +1888,23 @@ function applyProbe(res: TurnData) {
  // The lineage belonged to the resurfaced opener; later questions have none.
  state.lineageQuestion = null;
  state.lineageContext = null;
+ state.openerSource = null;
  openerLineage?.remove();
- state.turnPhase = res.phase ?? null;
+ dealtLine?.remove();
  state.quotedFragment = res.quotedFragment ?? null;
  state.snippetRef = res.snippetRef ?? null;
  state.juxtaposition = res.juxtaposition ?? null;
+ // The machine phase meta rides every turn response (ticket 159, slice 4 —
+ // every sitting now carries a machine). The typeof check stays defensive:
+ // other routes that reuse TurnData (the sounding gate) still send the
+ // session phase string, which is not the meta and clears the line.
+ state.phaseMeta = typeof res.phase === 'object' && res.phase !== null ? res.phase : null;
+ phaseMetaLine.textContent = state.phaseMeta
+  ? `${state.phaseMeta.label} \u2014 phase ${state.phaseMeta.step} of ${state.phaseMeta.of}`
+  : '';
+ // The chip surface follows the ACTIVE phase: a triad question re-renders
+ // the three chips (fresh tap state), anything else hides the row.
+ renderTriadSurface(state.phaseMeta);
 
  // Update question + juxtaposition display
  questionBlock.textContent = res.text!;
@@ -1767,13 +1925,19 @@ function applyProbe(res: TurnData) {
 
 /** The gate route closed the descent (park / another-day / the counter at
  *  the gate). No question text rides the response; the door question is the
- *  known close sentence (Q-46: the descent closes, never the person stops). */
-function closeByGate() {
+ *  known close sentence (Q-46: the descent closes, never the person stops).
+ *  A turn-route close rides `descentClosed` — the descent ended on its own
+ *  (cap or convergence), the one close the person did not perform — and a
+ *  quiet margin word says how (012 T9). */
+function closeByGate(closedBy?: SoundingEnd) {
  state.sounding = null;
  removeGateRow();
  state.question = DOOR_QUESTION;
  questionBlock.textContent = DOOR_QUESTION;
  appendTurn('agent', DOOR_QUESTION);
+ if (closedBy) {
+  header.append(el('div', { class: 'lineage-provenance' }, el('div', { class: 'lineage-context' }, descentCloseWord(closedBy))));
+ }
 }
 
 async function pressGate(choice: 'continue' | 'park' | 'another-day') {
@@ -1809,19 +1973,80 @@ async function pressGate(choice: 'continue' | 'park' | 'another-day') {
  }
 }
 
-continueWord.addEventListener('click', () => pressGate('continue'));
-parkWord.addEventListener('click', () => pressGate('park'));
-anotherDayWord.addEventListener('click', () => pressGate('another-day'));
+/** The everyday sitting's gate (ticket 159, slice 4), the standard surface
+ *  under every question:
+ *  - 'continue' is the default — the next question is one answer away, so
+ *    the word only brings the field back (no wire; the person just answers).
+ *  - 'park' enters the closing door through the gate route (the machine
+ *    side-record lands in slice 5; harvest happens at /end).
+ *  - 'another-day' is the old harvest-now wire verbatim (VERB MAPPING):
+ *    POST /api/session/:id/end → the harvest runs behind the response and
+ *    the review queue is the destination.
+ */
+async function pressEverydayGate(choice: 'continue' | 'park' | 'another-day') {
+ if (choice === 'continue') {
+  textarea.focus();
+  return;
+ }
+ setControlsBusy(true);
+ const wait = beginWait(
+  answerArea,
+  choice === 'another-day' ? 'reading back what you said\u2026' : 'putting it away\u2026',
+ );
+ try {
+  if (choice === 'another-day') {
+   const res = await api<EndResponse>(
+    `/api/session/${state.sessionId}/end`,
+   );
+   state.pendingReviewSession = res.sessionId;
+   wait.done();
+   navTo('reviews');
+   return;
+  }
+  // park — depth kept: the gate route enters the closing door; the door
+  // question is the known close sentence, rendered like a descent's close.
+  // Already on the door, a second park stays put (the route no-ops).
+  const res = await api<TurnData>(
+   `/api/session/${state.sessionId}/gate`,
+   { choice: 'park' },
+  );
+  wait.done();
+  if (res.kind === 'door' && state.question !== DOOR_QUESTION) {
+   closeByGate(undefined);
+  } else {
+   textarea.focus();
+  }
+  setControlsBusy(false);
+ } catch (e) {
+  wait.failed(e);
+  setControlsBusy(false);
+ }
+}
+
+/** The gate words: while a descent runs they are the sounding gate
+ *  (continue at the checkpoint / park / another-day close the ladder);
+ *  otherwise the standard surface — continue nudges the answer field,
+ *  park enters the closing door, another day ends and harvests. */
+function onGateWord(choice: 'continue' | 'park' | 'another-day') {
+ if (state.sounding) {
+  pressGate(choice);
+  return;
+ }
+ pressEverydayGate(choice);
+}
+
+continueWord.addEventListener('click', () => onGateWord('continue'));
+parkWord.addEventListener('click', () => onGateWord('park'));
+anotherDayWord.addEventListener('click', () => onGateWord('another-day'));
 
  answerRow.append(textarea, micBtn, micStatus, sendBtn);
- answerArea.append(answerRow, harvestBtn, skipBtn, laterBtn, deferRow, answerHint, leaveWord, gateRow);
- // The end-of-sitting words group into one row, right-aligned under a
- // hairline; appending moves them without touching the append above.
- const actionRow = el('div', { class: 'action-row' });
- actionRow.append(harvestBtn, skipBtn, laterBtn, leaveWord);
- answerArea.append(actionRow);
+ answerArea.append(answerRow, answerHint, gateRow);
 
-  const drmOffer = el('button', { class: 'nav-link exchange-drm-offer' }, 'day reconstruction \u2192');
+  // The offer carries the DRM title, never the jargon (ticket 157).
+  const drmOffer = el('button', { class: 'nav-link exchange-drm-offer' }, `${protocolTitle('drm')} \u2192`);
+  void ensureProtocolMeta().then(() => {
+   drmOffer.textContent = `${protocolTitle('drm')} \u2192`;
+  });
   drmOffer.addEventListener('click', () => navTo('drm'));
   answerArea.append(drmOffer);
 
@@ -1849,10 +2074,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   const pasted = turnTracker.isPasted(text);
   turnTracker.reset();
   textarea.disabled = true;
-  harvestBtn.disabled = true;
-  skipBtn.disabled = true;
-  laterBtn.disabled = true;
-  deferRow.classList.remove('active');
+  skipLink.disabled = true;
   if (state.sttAvailable) micBtn.disabled = true;
   sendBtn.disabled = true;
 
@@ -1867,6 +2089,13 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
    channel: pasted ? 'pasted' : state.turnHadSpeech ? 'spoken' : 'typed',
   };
   if (state.turnHadSpeech) body.spoken = true;
+  // The tapped pair rides the answer (ticket 159, slice 7): present only
+  // when the chips are live AND exactly two are selected. Fewer than two
+  // is a prose-only turn — the answer text stands alone and the server
+  // records no pair, exactly as if no chips existed.
+  if (triadSurface(state.phaseMeta) !== null && selectedTriad.length === 2) {
+   body.pair = [selectedTriad[0]!, selectedTriad[1]!];
+  }
 
   const wait = beginWait(answerArea, 'thinking…');
 
@@ -1888,7 +2117,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
     state.sounding = res.sounding ?? null;
     if (state.sounding) renderGate(true);
    } else if (res.kind === 'descent-closed') {
-    closeByGate();
+    closeByGate(res.descentClosed);
    } else {
     // saturated — the sitting is over. The closing acknowledgment
     // (ticket 135) renders as the final agent turn before harvest.
@@ -1925,9 +2154,7 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   }
 
   textarea.disabled = checkpointActive;
-  harvestBtn.disabled = false;
-  skipBtn.disabled = false;
-  laterBtn.disabled = false;
+  skipLink.disabled = false;
   if (state.sttAvailable) micBtn.disabled = false;
   sendBtn.disabled = checkpointActive;
   textarea.focus();
@@ -1948,31 +2175,11 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   *  twice; the textarea stays disabled at the checkpoint either way. */
  function setControlsBusy(busy: boolean) {
   textarea.disabled = busy || checkpointActive;
-  harvestBtn.disabled = busy;
-  skipBtn.disabled = busy;
-  laterBtn.disabled = busy;
+  skipLink.disabled = busy;
   if (state.sttAvailable) micBtn.disabled = busy;
   sendBtn.disabled = busy;
   for (const c of gateControls) c.disabled = busy;
  }
-
- harvestBtn.addEventListener('click', async () => {
-  setControlsBusy(true);
-  // Near-instant now: the harvest runs behind the response and lands in the
-  // review queue (084), whose cards await the person's decisions.
-  const wait = beginWait(answerArea, 'reading back what you said…');
-  try {
-   const res = await api<EndResponse>(
-    `/api/session/${state.sessionId}/end`,
-   );
-   state.pendingReviewSession = res.sessionId;
-   wait.done();
-   navTo('reviews');
-  } catch (e) {
-   wait.failed(e);
-   setControlsBusy(false);
-  }
- });
 
  /** Show the replacement question skip and defer both return, or close the exchange. */
  function takeNextQuestion(res: { kind: string; text?: string }) {
@@ -1980,7 +2187,9 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
    state.question = res.text!;
    state.lineageQuestion = null;
    state.lineageContext = null;
+   state.openerSource = null;
    openerLineage?.remove();
+   dealtLine?.remove();
    state.juxtaposition = null;
    juxDiv.classList.remove('active');
    juxDiv.innerHTML = '';
@@ -1991,17 +2200,18 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   } else {
    questionBlock.textContent = '';
    questionBlock.append(
-    el('p', { class: 'skip-exhausted' }, 'No more starters. Consider harvesting.'),
+    el('p', { class: 'skip-exhausted' }, 'No more starters \u2014 another day gathers them.'),
    );
-   skipBtn.disabled = true;
-   laterBtn.disabled = true;
-   harvestBtn.disabled = true;
+   skipLink.disabled = true;
    textarea.disabled = true;
   }
  }
 
- skipBtn.addEventListener('click', async () => {
-  skipBtn.disabled = true;
+ // ── Skip (the quiet link beside the gate): the skip route unchanged, so
+ // the skip-rate metrics stay live (ticket 159, slice 4) ──
+
+ skipLink.addEventListener('click', async () => {
+  skipLink.disabled = true;
   const wait = beginWait(answerArea, 'finding another…');
   try {
    const res = await api<{ kind: string; text?: string }>(
@@ -2011,38 +2221,9 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
    takeNextQuestion(res);
   } catch (e) {
    wait.failed(e);
-   skipBtn.disabled = false;
+   skipLink.disabled = false;
   }
  });
-
- // ── Defer: the question goes back to the queue with what it needs ──
-
- laterBtn.addEventListener('click', () => {
-  deferRow.classList.toggle('active');
- });
-
- async function defer(need?: 'time' | 'energy') {
-  laterBtn.disabled = true;
-  skipBtn.disabled = true;
-  const wait = beginWait(answerArea, 'putting it back…');
-  try {
-   const res = await api<{ kind: string; text?: string }>(
-    `/api/session/${state.sessionId}/defer`,
-    need ? { need } : undefined,
-   );
-   wait.done();
-   deferRow.classList.remove('active');
-   takeNextQuestion(res);
-  } catch (e) {
-   wait.failed(e);
-   laterBtn.disabled = false;
-   skipBtn.disabled = false;
-  }
- }
-
- timeWord.addEventListener('click', () => defer('time'));
- energyWord.addEventListener('click', () => defer('energy'));
- plainWord.addEventListener('click', () => defer());
 
  // ── Mic toggle ──
 
@@ -2051,7 +2232,6 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
   micBtn,
   micStatus,
   errorSlot: answerArea,
-  onDictatingChange: (dictating) => { state.dictating = dictating; },
   onSpeech: () => { state.turnHadSpeech = true; },
  });
 
@@ -2069,60 +2249,90 @@ anotherDayWord.addEventListener('click', () => pressGate('another-day'));
  }
 }
 
+/** The machine phase meta the drm routes carry (ticket 159, slice 6): the
+ *  same PhaseMetaLike shape as the turn response — the phase id/label/step/
+ *  of plus the phase's renderer when it declares one (the day-map during
+ *  enumeration, the triad names during people-grid's triads). Absent on an
+ *  older server. */
+type DrmPhaseMeta = PhaseMetaLike;
+
+/** A parked DRM picked up from the waiting surface: its first probe, shown
+ *  by renderDRM directly (the resume route already composed it). */
+let drmResumeProbe: {
+  text: string;
+  episode: number;
+  of: number;
+  step: string;
+  gate: { episode: number; of: number; label: string };
+} | null = null;
+
 function renderDRM() {
   clear();
   state.screen = 'drm';
   renderShell();
 
   const div = el('div', { class: 'screen active drm-screen' });
-  const header = el('h2', { class: 'exchange-heading' });
+  // The screen reads as the def title (ticket 157), never the jargon.
+  const header = el('h2', { class: 'exchange-heading' }, protocolTitle('drm'));
+  void ensureProtocolMeta().then(() => {
+   header.textContent = protocolTitle('drm');
+  });
   div.append(header);
 
-  // ── DRM intro ──
-  const introBlock = el('div', { class: 'drm-intro' });
-  const yesterdaySpan = el('span', { class: 'drm-yesterday' });
-  const beginBtn = el('button', { class: 'nav-link drm-begin-btn' }, 'begin →');
+  // ── Intro ──
+  // Yesterday, computed the way the server anchors it (src/drm/state.ts
+  // initDRM): the previous calendar day in ISO date form. Display-only —
+  // the wire contract is untouched.
+  const yesterdayIso = new Date(Date.now() - 86400000).toISOString().split('T')[0]!;
+  const introBlock = el('div', { class: 'drm-phase drm-intro' });
+  const beginBtn = el('button', { class: 'nav-link drm-begin-btn' }, 'begin');
   introBlock.append(
-    el('p', { class: 'drm-intro-prompt' }, 'Yesterday was '),
-    yesterdaySpan,
-    el('p', { class: 'drm-intro-hint' }, 'Walk through your day, hour by hour.'),
-    beginBtn,
+   el('p', { class: 'drm-intro-prompt' },
+    'Yesterday was ',
+    el('span', { class: 'drm-yesterday' }, yesterdayIso),
+    ' \u2014 walk through your day, hour by hour.'),
+   beginBtn,
   );
 
   // ── Enumeration ──
-  const enumBlock = el('div', { class: 'drm-enum' });
+  const enumBlock = el('div', { class: 'drm-phase drm-enum' });
   const nameInput = el('input', {
-    class: 'drm-episode-name',
-    type: 'text',
-    placeholder: 'episode name',
+   class: 'drm-episode-name',
+   type: 'text',
+   placeholder: 'block name',
   });
   const hourSelect = el('select', { class: 'drm-hour' });
   for (let h = 5; h <= 23; h++) {
-    const opt = el('option', { value: String(h) }, `~${h}:00`);
-    hourSelect.append(opt);
+   const opt = el('option', { value: String(h) }, `~${h}:00`);
+   hourSelect.append(opt);
   }
-  const addBtn = el('button', { class: 'drm-add-btn', type: 'button' }, 'add episode');
-  const doneBtn = el('button', { class: 'drm-done-btn', type: 'button' }, 'done enumerating');
+  const addBtn = el('button', { class: 'drm-add-btn', type: 'button' }, 'add a block');
+  const doneBtn = el('button', { class: 'drm-done-btn', type: 'button' }, "that's the day");
   const episodeList = el('div', { class: 'drm-episode-list' });
   const enumRow = el('div', { class: 'drm-enum-row' });
   enumRow.append(nameInput, hourSelect, addBtn, doneBtn);
   enumBlock.append(enumRow, episodeList);
 
-  // ── Probe area ──
-  const probeBlock = el('div', { class: 'drm-probe' });
-  const probeHeader = el('div', { class: 'drm-probe-header' });
-  const probeQuestion = el('div', { class: 'drm-probe-question' });
-  const probeMeta = el('div', { class: 'drm-probe-meta' });
-  probeHeader.append(probeMeta, probeQuestion);
-
-  const textarea = el('textarea', {
-    class: 'drm-textarea',
-    placeholder: '…',
-    rows: '3',
+  // ── Probe area — the exchange grammar (ticket 157): dimmed protocol
+  // title above the question, question block, dictation, send, beginWait.
+  const probeBlock = el('div', { class: 'drm-phase drm-probe' });
+  const protocolLabel = el('div', { class: 'exchange-protocol' }, protocolTitle('drm'));
+  void ensureProtocolMeta().then(() => {
+   protocolLabel.textContent = protocolTitle('drm');
   });
-  const sendBtn = el('button', { class: 'send-btn', type: 'button' }, 'send ↵');
-  const answerRow = el('div', { class: 'drm-answer-row' });
-  answerRow.append(textarea, sendBtn);
+  const probeMeta = el('div', { class: 'drm-probe-meta' });
+  const probeQuestion = el('div', { class: 'question-block' });
+  const textarea = el('textarea', {
+   class: 'answer-textarea',
+   placeholder: '\u2026',
+   rows: '3',
+  });
+  const micBtn = el('button', { class: 'mic-toggle', type: 'button', title: 'dictate' }, '\u{1F399}');
+  const micStatus = el('span', { class: 'mic-status' });
+  const sendBtn = el('button', { class: 'send-btn', type: 'button' }, 'send \u21b5');
+  const answerRow = el('div', { class: 'answer-row' });
+  answerRow.append(textarea, micBtn, micStatus, sendBtn);
+  probeBlock.append(protocolLabel, probeMeta, probeQuestion, answerRow);
 
   // ── Gate-row (Q-44: always visible, replicate Sounding pattern) ──
   const gateBlock = el('div', { class: 'gate-row drm-gate' });
@@ -2133,244 +2343,286 @@ function renderDRM() {
   gateBlock.append(gateReading, continueWord, parkWord, anotherDayWord);
   // Gate not visible until probe phase
   gateBlock.classList.remove('visible');
-
-  const errorSlot = el('div', { class: 'error-slot' });
-  probeBlock.append(probeHeader, answerRow, gateBlock, errorSlot);
+  probeBlock.append(gateBlock);
 
   div.append(introBlock, enumBlock, probeBlock);
   surface.append(div);
 
   // ── DRM episode data, held locally ──
   let episodes: { name: string; startHour: number }[] = [];
-  let drmPhase: 'intro' | 'enumerate' | 'probe' = 'intro';
-  let currentEpisode = 0;
-  let totalEpisodes = 0;
-  let currentStep = '';
-  let gateAtEnd = false;
 
+  // Phases re-render with a quiet transition (ticket 157): only the active
+  // phase is in the flow; the newly shown one fades in.
   function showPhase(phase: 'intro' | 'enumerate' | 'probe') {
-    drmPhase = phase;
-    introBlock.style.display = phase === 'intro' ? '' : 'none';
-    enumBlock.style.display = phase === 'enumerate' ? '' : 'none';
-    probeBlock.style.display = phase === 'probe' ? '' : 'none';
+   const phases: [HTMLElement, 'intro' | 'enumerate' | 'probe'][] = [
+    [introBlock, 'intro'],
+    [enumBlock, 'enumerate'],
+    [probeBlock, 'probe'],
+   ];
+   for (const [block, name] of phases) {
+    const active = name === phase;
+    block.classList.toggle('active', active);
+    block.classList.remove('fade-in');
+    if (active) {
+     // Restart the fade on every re-show.
+     void block.offsetWidth;
+     block.classList.add('fade-in');
+    }
+   }
   }
 
   function setBusy(busy: boolean) {
-    textarea.disabled = busy;
-    sendBtn.disabled = busy;
-    beginBtn.disabled = busy;
-    addBtn.disabled = busy;
-    doneBtn.disabled = busy;
-    continueWord.disabled = busy;
-    parkWord.disabled = busy;
-    anotherDayWord.disabled = busy;
+   textarea.disabled = busy;
+   sendBtn.disabled = busy;
+   micBtn.disabled = busy;
+   beginBtn.disabled = busy;
+   addBtn.disabled = busy;
+   doneBtn.disabled = busy;
+   continueWord.disabled = busy;
+   parkWord.disabled = busy;
+   anotherDayWord.disabled = busy;
   }
 
-  function showError(msg: string) {
-    errorSlot.textContent = msg;
+  // ── The renderer contract (ticket 159, slice 6) ──
+  // The screen dispatches on the ACTIVE phase's renderer: 'drm-day-map'
+  // shows the day-map UI (episodes list + add-block row); every other
+  // renderer — an unknown one included — falls back to the generic question
+  // block, never a crash. Without a phase meta (an older server) the
+  // response kind still says where the flow is.
+  function showPhaseFor(meta: DrmPhaseMeta | undefined, kind: string) {
+   if (meta?.renderer === 'drm-day-map') {
+    showPhase('enumerate');
+    return;
+   }
+   if (meta !== undefined) {
+    showPhase('probe');
+    return;
+   }
+   showPhase(kind === 'drm-enumerate' ? 'enumerate' : 'probe');
   }
 
-  // ── Intro: begin DRM ──
+  // ── Intro: begin ──
   beginBtn.addEventListener('click', async () => {
-    setBusy(true);
-    showError('');
-    try {
-      const res = await api<{ kind: string; yesterday: string }>(
-        `/api/session/${state.sessionId}/drm/start`,
-      );
-      yesterdaySpan.textContent = res.yesterday;
-      header.textContent = 'Day Reconstruction';
-      showPhase('enumerate');
-      nameInput.focus();
-    } catch (e) {
-      showError('could not start');
-    } finally {
-      setBusy(false);
-    }
+   setBusy(true);
+   const wait = beginWait(introBlock, 'starting\u2026', 150);
+   try {
+    const res = await api<{ kind: string; machinePhase?: DrmPhaseMeta }>(`/api/session/${state.sessionId}/drm/start`);
+    wait.done();
+    showPhaseFor(res.machinePhase, res.kind);
+    nameInput.focus();
+   } catch (e) {
+    wait.failed(e, 'could not start');
+    setBusy(false);
+   }
   });
 
-  // ── Enumeration: add episode ──
+  // ── Enumeration: add a block ──
   function refreshEpisodeList() {
-    episodeList.innerHTML = '';
-    for (let i = 0; i < episodes.length; i++) {
-      const ep = episodes[i]!;
-      const row = el('div', { class: 'drm-episode-item' },
-        `${ep.name} ~${ep.startHour}:00`,
-      );
-      episodeList.append(row);
-    }
+   episodeList.innerHTML = '';
+   for (let i = 0; i < episodes.length; i++) {
+    const ep = episodes[i]!;
+    const row = el('div', { class: 'drm-episode-item' });
+    row.append(
+     el('span', { class: 'drm-episode-name-text' }, ep.name),
+     el('span', { class: 'drm-episode-meta' }, `~${ep.startHour}:00`),
+    );
+    episodeList.append(row);
+   }
   }
 
-  async function doAddEpisode() {
-    const name = nameInput.value.trim();
-    if (!name) return;
-    const startHour = parseInt(hourSelect.value, 10);
+  async function doAddBlock() {
+   const name = nameInput.value.trim();
+   if (!name) return;
+   const startHour = parseInt(hourSelect.value, 10);
 
-    setBusy(true);
-    showError('');
-    try {
-      await api(`/api/session/${state.sessionId}/drm/episode`, { name, startHour });
-      episodes.push({ name, startHour });
-      refreshEpisodeList();
-      nameInput.value = '';
-      nameInput.focus();
-    } catch (e) {
-      showError('could not add');
-    } finally {
-      setBusy(false);
-    }
+   setBusy(true);
+   const wait = beginWait(enumBlock, 'adding\u2026', 150);
+   try {
+    await api(`/api/session/${state.sessionId}/drm/episode`, { name, startHour });
+    wait.done();
+    episodes.push({ name, startHour });
+    refreshEpisodeList();
+    nameInput.value = '';
+    nameInput.focus();
+   } catch (e) {
+    wait.failed(e, 'could not add the block');
+    setBusy(false);
+   }
   }
 
-  addBtn.addEventListener('click', doAddEpisode);
+  addBtn.addEventListener('click', doAddBlock);
   nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doAddEpisode();
+   if (e.key === 'Enter') doAddBlock();
   });
 
-  // ── Enumeration: done ──
+  // ── Enumeration: that's the day ──
   doneBtn.addEventListener('click', async () => {
-    if (episodes.length === 0) return;
-    setBusy(true);
-    showError('');
-    try {
-      const res = await api<{
-        kind: string;
-        text: string;
-        episode: number;
-        of: number;
-        step: string;
-        gate: { episode: number; of: number; label: string };
-      }>(`/api/session/${state.sessionId}/drm/enumerate-done`);
-      totalEpisodes = res.of;
-      currentEpisode = res.episode;
-      currentStep = res.step;
-      showPhase('probe');
-      probeQuestion.textContent = res.text;
-      probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
-      gateReading.textContent = res.gate.label;
-      gateBlock.classList.add('visible');
-      textarea.focus();
-    } catch (e) {
-      showError('could not start probes');
-    } finally {
-      setBusy(false);
-    }
+   if (episodes.length === 0) return;
+   setBusy(true);
+   const wait = beginWait(enumBlock, 'reading the day back\u2026', 150);
+   try {
+    const res = await api<{
+     kind: string;
+     text: string;
+     episode: number;
+     of: number;
+     step: string;
+     gate: { episode: number; of: number; label: string };
+     machinePhase?: DrmPhaseMeta;
+    }>(`/api/session/${state.sessionId}/drm/enumerate-done`);
+    wait.done();
+    showPhaseFor(res.machinePhase, res.kind);
+    probeQuestion.textContent = res.text;
+    probeMeta.textContent = `block ${res.episode} of ${res.of} \u00b7 ${res.step}`;
+    gateReading.textContent = res.gate.label;
+    gateBlock.classList.add('visible');
+    textarea.focus();
+   } catch (e) {
+    wait.failed(e, 'could not start the probes');
+    setBusy(false);
+   }
   });
 
   // ── Probe: answer ──
   async function sendAnswer() {
-    const text = textarea.value.trim();
-    if (!text) return;
+   const text = textarea.value.trim();
+   if (!text) return;
 
-    setBusy(true);
-    showError('');
-    try {
-      const res = await api<{
-        kind: string;
-        text?: string;
-        episode?: number;
-        of?: number;
-        step?: string;
-        gate?: { episode: number; of: number; label: string };
-        atEnd?: boolean;
-      }>(`/api/session/${state.sessionId}/drm/probe`, { text });
+   setBusy(true);
+   const wait = beginWait(probeBlock, 'thinking\u2026', 150);
+   try {
+    const res = await api<{
+     kind: string;
+     text?: string;
+     episode?: number;
+     of?: number;
+     step?: string;
+     gate?: { episode: number; of: number; label: string };
+     atEnd?: boolean;
+    }>(`/api/session/${state.sessionId}/drm/probe`, { text });
 
-      textarea.value = '';
+    textarea.value = '';
 
-      if (res.kind === 'drm-gate') {
-        // At episode gate
-        showPhase('probe');
-        gateAtEnd = res.atEnd ?? false;
-        if (gateAtEnd) {
-          continueWord.hidden = false;
-          continueWord.textContent = 'finish';
-        } else {
-          continueWord.hidden = false;
-          continueWord.textContent = 'continue';
-        }
-        gateBlock.classList.add('checkpoint');
-        gateReading.textContent = res.gate?.label ?? '';
-        textarea.disabled = true;
-        sendBtn.disabled = true;
-      } else if (res.kind === 'drm-probe') {
-        // More probes
-        currentStep = res.step ?? '';
-        probeQuestion.textContent = res.text ?? '';
-        probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
-        gateReading.textContent = res.gate?.label ?? '';
-        continueWord.hidden = true;
-        gateBlock.classList.remove('checkpoint');
-        textarea.disabled = false;
-        textarea.focus();
-      }
-    } catch (e) {
-      showError('could not send');
-      textarea.disabled = false;
-    } finally {
-      setBusy(false);
+    if (res.kind === 'drm-gate') {
+     // At episode gate
+     wait.done();
+     const atEnd = res.atEnd ?? false;
+     continueWord.hidden = false;
+     continueWord.textContent = atEnd ? 'finish' : 'continue';
+     gateBlock.classList.add('checkpoint');
+     gateReading.textContent = res.gate?.label ?? '';
+     setBusy(false);
+     // The checkpoint withholds the writing surface — the gate is the
+     // thing on screen (the exchange grammar).
+     textarea.disabled = true;
+     sendBtn.disabled = true;
+     micBtn.disabled = true;
+    } else if (res.kind === 'drm-probe') {
+     // More probes
+     wait.done();
+     probeQuestion.textContent = res.text ?? '';
+     probeMeta.textContent = `block ${res.episode} of ${res.of} \u00b7 ${res.step}`;
+     gateReading.textContent = res.gate?.label ?? '';
+     continueWord.hidden = true;
+     gateBlock.classList.remove('checkpoint');
+     setBusy(false);
+     textarea.focus();
     }
+   } catch (e) {
+    wait.failed(e, 'could not send');
+    setBusy(false);
+   }
   }
 
   sendBtn.addEventListener('click', sendAnswer);
   textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendAnswer();
-    }
+   if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAnswer();
+   }
   });
 
   // ── Gate: continue / park / another-day ──
   async function pressGate(choice: 'continue' | 'park' | 'another-day') {
-    setBusy(true);
-    showError('');
-    try {
-      const res = await api<{
-        kind: string;
-        text?: string;
-        episode?: number;
-        of?: number;
-        step?: string;
-        gate?: { episode: number; of: number; label: string };
-        endedBy?: string;
-        phase?: string;
-      }>(`/api/session/${state.sessionId}/drm/gate`, { choice });
+   setBusy(true);
+   const wait = beginWait(
+    probeBlock,
+    choice === 'continue' ? 'continuing\u2026' : 'putting it away\u2026',
+   );
+   try {
+    const res = await api<{
+     kind: string;
+     text?: string;
+     episode?: number;
+     of?: number;
+     step?: string;
+     gate?: { episode: number; of: number; label: string };
+    }>(`/api/session/${state.sessionId}/drm/gate`, { choice });
 
-      if (res.kind === 'drm-closed') {
-        // DRM complete — end the session for harvest
-        try {
-          const endRes = await api<{ status: string }>(`/api/session/${state.sessionId}/end`);
-          if (endRes.status === 'harvesting') {
-            state.pendingReviewSession = state.sessionId;
-          }
-        } catch {
-          // End may fail but session is over
-        }
-        navTo('reviews');
-        return;
+    if (res.kind === 'drm-closed') {
+     // DRM complete — end the session for harvest; the wait holds through
+     // the harvest call.
+     try {
+      const endRes = await api<{ status: string }>(`/api/session/${state.sessionId}/end`);
+      wait.done();
+      if (endRes.status === 'harvesting') {
+       state.pendingReviewSession = state.sessionId;
       }
-
-      // Continue to next episode
-      if (res.kind === 'drm-probe') {
-        currentEpisode = res.episode ?? 1;
-        totalEpisodes = res.of ?? 1;
-        currentStep = res.step ?? '';
-        probeQuestion.textContent = res.text ?? '';
-        probeMeta.textContent = `episode ${res.episode} of ${res.of} · ${res.step}`;
-        gateReading.textContent = res.gate?.label ?? '';
-        continueWord.hidden = true;
-        gateBlock.classList.remove('checkpoint');
-        textarea.disabled = false;
-        textarea.focus();
-      }
-    } catch (e) {
-      showError('could not process');
-    } finally {
-      setBusy(false);
+     } catch {
+      // End may fail but session is over
+      wait.done();
+     }
+     navTo('reviews');
+     return;
     }
+
+    // Continue to next episode
+    if (res.kind === 'drm-probe') {
+     wait.done();
+     probeQuestion.textContent = res.text ?? '';
+     probeMeta.textContent = `block ${res.episode} of ${res.of} \u00b7 ${res.step}`;
+     gateReading.textContent = res.gate?.label ?? '';
+     continueWord.hidden = true;
+     gateBlock.classList.remove('checkpoint');
+     setBusy(false);
+     textarea.focus();
+    }
+   } catch (e) {
+    wait.failed(e, 'could not process');
+    setBusy(false);
+   }
   }
 
   continueWord.addEventListener('click', () => pressGate('continue'));
   parkWord.addEventListener('click', () => pressGate('park'));
   anotherDayWord.addEventListener('click', () => pressGate('another-day'));
+
+  // ── The exchange writing grammar: typewriter auto-grow, dictation ──
+  textarea.addEventListener('input', () => {
+   textarea.style.height = 'auto';
+   textarea.style.height = textarea.scrollHeight + 'px';
+  });
+
+  wireDictation({
+   textarea,
+   micBtn,
+   micStatus,
+   errorSlot: probeBlock,
+  });
+
+  // ── A picked-up parked DRM continues in the probe UI ──
+  // The resume route already composed the first probe; the screen shows it
+  // directly instead of the intro (ticket 159, slice 6 — the exact phase
+  // continues).
+  if (drmResumeProbe) {
+   probeQuestion.textContent = drmResumeProbe.text;
+   probeMeta.textContent = `block ${drmResumeProbe.episode} of ${drmResumeProbe.of} \u00b7 ${drmResumeProbe.step}`;
+   gateReading.textContent = drmResumeProbe.gate.label;
+   gateBlock.classList.add('visible');
+   showPhase('probe');
+   drmResumeProbe = null;
+   textarea.focus();
+  }
 
   // ── Re-trigger hash for the navigator ──
   if (location.hash !== '#/drm') location.hash = '#/drm';
@@ -2617,10 +2869,7 @@ function renderProposal(idx: number, container: HTMLElement) {
   editorEl.focus();
   editorEl.style.height = 'auto';
   editorEl.style.height = editorEl.scrollHeight + 'px';
-  const validTrim = (): boolean => {
-   const v = editorEl!.value;
-   return v.trim() !== '' && (p.text.includes(v) || v === p.text);
-  };
+  const validTrim = (): boolean => validTrimRule(p.text, editorEl!.value);
   editorEl.addEventListener('input', () => {
    editorEl!.style.height = 'auto';
    editorEl!.style.height = editorEl!.scrollHeight + 'px';
@@ -2738,7 +2987,26 @@ function renderReviews() {
       state.pendingReviewSession = null;
       renderReviews();
      } catch {
-      // Not there yet — keep polling.
+      // No record yet: the harvest is still running, OR its parse failed —
+      // a failed harvest writes no pending record, so the only signal is the
+      // activity feed. Ask the feed (ticket 154): a harvest-failed after
+      // this session's harvest-started ends the poll with the sentence.
+      try {
+       // Today only: the harvest started this sitting, so its events are in
+       // today's log, and a years-old log is not re-read every two seconds.
+       const since = new Date().toISOString().slice(0, 10);
+       const { events } = await api<{ events: ActivityEvent[] }>(`/api/activity?since=${encodeURIComponent(since)}`);
+       if (state.screen !== 'reviews') return;
+       if (harvestFailedFor(events, pending)) {
+        clearInterval(poll);
+        reviewPollTimer = null;
+        state.pendingReviewSession = null;
+        list.innerHTML = '';
+        list.append(el('p', { class: 'harvest-failed-note' }, HARVEST_FAILED_SENTENCE));
+       }
+      } catch {
+       // The feed is down too — keep polling; it may still land.
+      }
      }
     }, 2000);
     reviewPollTimer = poll;
@@ -2780,7 +3048,7 @@ function renderReviews() {
     const meta = el(
      'span',
      { class: 'harvest-queue-meta' },
-     `${entry.protocol} \u00b7 ${entry.proposalCount} proposal${entry.proposalCount === 1 ? '' : 's'}`,
+     `${originWord(entry.origin)} \u00b7 ${entry.protocol} \u00b7 ${entry.proposalCount} proposal${entry.proposalCount === 1 ? '' : 's'}`,
     );
     row.append(date, meta);
     row.addEventListener('click', async () => {
@@ -2835,6 +3103,53 @@ function renderDone() {
 // The waiting page: what is open, what is parked, and the activity stream.
 // Home keeps only the sitting controls.
 
+// ── Waiting panels (ticket 154): one shared three-state line ──
+//
+// Every one-line panel on the waiting surface renders through
+// `panelLine` (the pure decision, tested in tests/panel-line.test.ts) and
+// `renderPanelLine` (this wrapper). The three states:
+// - offer: the line text as a text node, styled by the panel's own class;
+//   panels with richer offers (reach, coach, anniversary) render their own
+//   content after `panelLine` says 'offer'
+// - nothing: the panel cleared — `:empty` keeps it off the page
+// - error: one muted `quiet-error` line, NEVER the offer class, so a broken
+//   endpoint is distinguishable from an empty offer when the panel is
+//   inspected.
+//
+// The contract the sweep-backlog press target builds on: the panel element
+// (`div.sweep-backlog-line`) persists in every state — the offer text as
+// its text node, the error as a `p.quiet-error` child — and the class never
+// changes.
+function renderPanelLine(container: HTMLElement, line: PanelLine | null): void {
+ container.replaceChildren();
+ if (line === null) return;
+ if (line.kind === 'error') {
+  // The muted error line must be legible where the panel dims its offers:
+  // opacity caps its whole group (cadence/reach fade to 0.55), so lift the
+  // container's opacity or the error inherits the offer's dimness. Elements
+  // are fresh per render; the reset in the offer branch keeps the wrapper
+  // safe for any reused container.
+  container.style.opacity = '1';
+  container.append(el('p', { class: 'quiet-error' }, line.text));
+ } else {
+  container.style.opacity = '';
+  container.append(document.createTextNode(line.text));
+ }
+}
+
+/**
+ * One backlog entry's sentence (ticket 156): names the sitting the way the
+ * library does — the weekday's sitting plus the human date — and the count.
+ */
+function sittingName(date: string, readings: number): string {
+ const d = new Date(`${date}T00:00:00`);
+ const day = Number.isNaN(d.getTime())
+  ? date
+  : d.toLocaleDateString(undefined, { weekday: 'long' });
+ const human = readableDate(date) || date;
+ return `${readings} ${readings === 1 ? 'reading' : 'readings'} from ${day}'s sitting (${human})`;
+}
+
 function renderWaiting() {
  clear();
  state.screen = 'waiting';
@@ -2847,12 +3162,15 @@ function renderWaiting() {
  // it (Q-37, Q-62): `offer: null` renders nothing at all, `not now` costs
  // one click and records a decline, and `reach it` lands the map on the
  // region the offer named. One line, one region, never a list (Q-24).
- const reachLine = el('p', { class: 'reach-offer' }, '');
+ const reachLine = el('div', { class: 'reach-offer' });
  div.append(reachLine);
  api<{ offer: ReachOfferLine | null; root: string | null }>('/api/reach')
   .then((r) => {
-   if (r.offer === null) return; // silence renders nothing
-   reachLine.textContent = offerSentence(r.offer) ?? '';
+   if (r.offer === null) {
+    renderPanelLine(reachLine, panelLine('none', 'the reach')); // silence renders nothing
+    return;
+   }
+   renderPanelLine(reachLine, panelLine('offer', 'the reach', offerSentence(r.offer) ?? ''));
    const reachIt = el('button', { class: 'reach-action', type: 'button' }, 'reach it');
    const notNow = el('button', { class: 'reach-action', type: 'button' }, 'not now');
    reachIt.addEventListener('click', () => {
@@ -2867,34 +3185,86 @@ function renderWaiting() {
     }
     reachLine.replaceChildren(); // gone for this render — :empty hides it
    });
-   reachLine.append(' ', reachIt, ' · ', notNow);
-  })
-  .catch(() => {
-   /* the offer is not load-bearing; a failed read shows nothing */
-  });
-
-// The sweep backlog (ticket 139): one dimmed line when readings pile up
-// unswept, nothing at zero or on error — the reach offer's idiom (Q-24):
-// at most one line, never a list.
-const sweepLine = el('p', { class: 'sweep-backlog-line' }, '');
-div.append(sweepLine);
-api<{ pendingReadings: number; freshReadings: number; lastRecorded: number; at: string | null }>('/api/sweep-backlog')
- .then((r) => {
-  if (r.pendingReadings <= 0) return; // silence renders nothing
-  sweepLine.textContent = `the wiki is ${r.pendingReadings} readings behind`;
+  reachLine.append(' ', reachIt, ' · ', notNow);
  })
  .catch(() => {
-  /* the backlog is not load-bearing; a failed read shows nothing */
+  renderPanelLine(reachLine, panelLine('error', 'the reach'));
+ });
+
+// The sweep backlog (ticket 139): one dimmed line when readings pile up
+// unswept, nothing at zero — the reach offer's idiom (Q-24): at most one
+// line, never a list. Three states via the shared helper (ticket 154): an
+// offer, nothing, or one muted error line. The `sweep-backlog-line`
+// element and class stay stable — the press-target wave builds on them.
+const sweepLine = el('div', { class: 'sweep-backlog-line' });
+div.append(sweepLine);
+api<SweepBacklogResponse>('/api/sweep-backlog')
+ .then((r) => {
+  if (r.pendingReadings <= 0) {
+   renderPanelLine(sweepLine, panelLine('none', 'the backlog'));
+   return;
+  }
+  renderPanelLine(sweepLine, panelLine('offer', 'the backlog', `the wiki is ${r.pendingReadings} readings behind`));
+  // The door (ticket 156): in the offer state the line is a press target —
+  // one muted word, and the line itself. It expands in place to the dated
+  // list of sittings and the catch-up nudge. The error state never expands.
+  sweepLine.classList.add('pressable');
+  const see = el('button', { class: 'nav-link sweep-backlog-door', type: 'button' }, 'see which');
+  sweepLine.append(' ', see);
+  const expand = () => {
+   if (sweepLine.querySelector('.sweep-backlog-panel')) return;
+   see.remove();
+   sweepLine.classList.remove('pressable');
+   const panel = el('div', { class: 'sweep-backlog-panel' });
+   for (const s of r.sittings) {
+    panel.append(el('p', { class: 'sweep-backlog-sitting' }, sittingName(s.date, s.readings)));
+   }
+   // The nudge arm (ticket 156, 151): one call clears the stop switch and
+   // schedules the drain. On success the nudge becomes a quiet line — the
+   // drain runs behind the scenes and the activity feed shows it. A failed
+   // call keeps the nudge and shows the wait's quiet error.
+   const nudge = el('div', { class: 'sweep-backlog-nudge' });
+   const resume = el('button', { class: 'nav-link', type: 'button' }, 'let it catch up now');
+   nudge.append(resume);
+   resume.addEventListener('click', () => {
+    void (async () => {
+     resume.disabled = true;
+     const wait = beginWait(nudge, 'letting it catch up\u2026');
+     try {
+      await api('/api/jobs/resume', {});
+      wait.done();
+      nudge.replaceChildren(el('span', { class: 'sweep-backlog-catchup' }, 'it is catching up'));
+     } catch (e) {
+      wait.failed(e);
+      resume.disabled = false;
+     }
+    })();
+   });
+   panel.append(nudge);
+   sweepLine.append(panel);
+  };
+  see.addEventListener('click', (ev) => {
+   ev.stopPropagation();
+   expand();
+  });
+  sweepLine.addEventListener('click', expand);
+ })
+ .catch(() => {
+  renderPanelLine(sweepLine, panelLine('error', 'the backlog'));
  });
 // The Coach surface (090 T11): at most one dimmed offer line, and one
 // quiet line per coached Direction with something new (Q-37, Q-76).
 // `offer: null` and an empty lines list render nothing at all; the offer's
 // accept word posts /direction — the ONLY door (Q-73) — then lands on the
 // page; its decline word records the decline, and silence does nothing.
-const coachLine = el('div', { class: 'coach-waiting' }, '');
+const coachLine = el('div', { class: 'coach-waiting' });
 div.append(coachLine);
 api<{ offer: { slug: string; name: string; sentence: string } | null; lines: { slug: string; sentence: string }[] }>('/api/coach/waiting')
  .then((r) => {
+  if (r.offer === null && r.lines.length === 0) {
+   renderPanelLine(coachLine, panelLine('none', 'the coach'));
+   return;
+  }
   if (r.offer !== null) {
    const offer = el('p', { class: 'coach-offer-line' }, r.offer.sentence);
    const accept = el('button', { class: 'coach-word', type: 'button' }, 'take up');
@@ -2919,7 +3289,7 @@ api<{ offer: { slug: string; name: string; sentence: string } | null; lines: { s
    coachLine.append(p);
   }
  })
- .catch(() => { /* the offer is not load-bearing; a failed read shows nothing */ });
+ .catch(() => { renderPanelLine(coachLine, panelLine('error', 'the coach')); });
 
 
 // ── The on-this-day card (ticket 115): one draw per page load ──
@@ -2928,7 +3298,10 @@ const anniversaryCard = el('div', { class: 'anniversary-card' });
 div.append(anniversaryCard);
 api<{ question: string; snippetQuestion?: string; context?: string; draw: { kind: string; wroteAt: string; snippetId: string } } | null>('/api/anniversary')
  .then((draw) => {
-  if (!draw) return;
+  if (!draw) {
+   renderPanelLine(anniversaryCard, panelLine('none', 'the anniversary'));
+   return;
+  }
   // Parse the question: "${date} (${ago}):\n\n"${prose}""
   const nl = draw.question.indexOf('\n\n');
   const dateLine = nl >= 0 ? draw.question.slice(0, nl) : draw.question;
@@ -2952,7 +3325,7 @@ api<{ question: string; snippetQuestion?: string; context?: string; draw: { kind
   actions.append(readWord, ' \u00b7 ', notNow);
   anniversaryCard.append(actions);
  })
- .catch(() => { /* the card is not load-bearing; a failed read shows nothing */ });
+ .catch(() => { renderPanelLine(anniversaryCard, panelLine('error', 'the anniversary')); });
 // Parked section — parked-sounding pointers waiting to be picked up (012 T12).
  // Dormancy is signal, never debt (Q-24): each row shows the last rung's
  // question and how many rungs are kept, with no age colouring and nothing
@@ -2971,16 +3344,16 @@ const waitsHeading = el('h2', { class: 'home-heading' }, 'waits for you');
 // control, no colour and no comparison; a long gap reads exactly like a
 // short one, because dormancy is signal and never debt (Q-24). The wording
 // is composed server-side so it is testable — see src/log/cadence.ts.
-const cadenceLine = el('p', { class: 'cadence-line' }, '');
+const cadenceLine = el('div', { class: 'cadence-line' });
 api<{ sentence: string }>('/api/cadence')
- .then((r) => { cadenceLine.textContent = r.sentence; })
- .catch(() => { /* the record is not load-bearing; a failed read shows nothing */ });
+ .then((r) => { renderPanelLine(cadenceLine, panelLine('offer', 'the cadence', r.sentence)); })
+ .catch(() => { renderPanelLine(cadenceLine, panelLine('error', 'the cadence')); });
 
 // The review queue, as a sentence below the cadence (the verb-grammar
 // rule): what waits is said, with one control word at the point of
 // attention. The `:empty` rule keeps it off the page until a harvest
-// actually waits.
-const reviewsLine = el('p', { class: 'waiting-reviews-line' });
+// actually waits; a failed read says so in the muted error line (154).
+const reviewsLine = el('div', { class: 'waiting-reviews-line' });
 
 // Expedition section — entries with horizon 'days' waiting to go out
 const expSection = el('div', { class: 'waiting-section expedition-section' });
@@ -3029,7 +3402,8 @@ function syncEmptyActivity() {
  surface.append(div);
 
 // What wants the person, as a sentence with one word in it — the same
-// call the old mode page made for its count. A failed read shows nothing.
+// call the old mode page made for its count. A failed read says so in the
+// muted error line (154).
 (async () => {
  try {
   const data = await api<{ pending: HarvestQueueEntry[] }>('/api/harvest-queue');
@@ -3044,7 +3418,7 @@ function syncEmptyActivity() {
    document.createTextNode('.'),
   );
  } catch {
-  // The review queue is offer-only; a failed read just means no line.
+  renderPanelLine(reviewsLine, panelLine('error', 'the inbox'));
  }
 })();
 
@@ -3175,7 +3549,9 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
   expList.innerHTML = '';
 
   const expeditions = data.open.filter((e) => e.horizon === 'days');
-  const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
+  // Parked machines (a parked drm among them, ticket 159 slice 6) are
+  // pointers, not questions — they rest in the parked section below.
+  const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding' && e.source !== 'parked-machine');
 
   if (expeditions.length > 0) {
    for (const entry of expeditions) {
@@ -3262,11 +3638,9 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
    wait.done();
    parkedList.innerHTML = '';
 
-   const expeditions = data.open.filter((e) => e.horizon === 'days');
    // The parked pointers arrive inside `open` (horizon 'session'); the source
    // filter keeps them out of the questions list so nothing appears twice.
    const parked = data.open.filter((e) => e.source === 'parked-sounding');
-   const pending = data.open.filter((e) => e.horizon !== 'days' && e.source !== 'parked-sounding');
 
    if (parked.length > 0) {
     for (const entry of parked) {
@@ -3303,6 +3677,66 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
     }
    }
 
+   // Parked MACHINES (ticket 159, slices 5-6): a parked instrument rests
+   // here until picked back up. A parked drm resumes through the drm wire
+   // into the DRM screen's probe UI; any other parked machine resumes into
+   // the exchange through the machine resume route.
+   const parkedMachines = data.open.filter((e) => e.source === 'parked-machine');
+   for (const entry of parkedMachines) {
+    const row = el('div', { class: 'parked-entry' });
+    const question = el('span', { class: 'parked-question' }, entry.question);
+    const meta = el('span', { class: 'parked-meta' }, sourceLabel(entry.source));
+    const pickUp = el('button', { class: 'nav-link', type: 'button' }, 'pick it up');
+    row.append(question, meta, pickUp);
+    pickUp.addEventListener('click', async () => {
+     if (!state.sessionId) {
+      // A sitting must be under way to resume into (the plan's upstream
+      // contract); the mode screen is where one begins.
+      navTo('mode');
+      return;
+     }
+     pickUp.disabled = true;
+     const wait = beginWait(row, 'picking it up\u2026');
+     try {
+      if (entry.machineProtocol === 'drm') {
+       const res = await api<{
+        kind: string;
+        text?: string;
+        episode?: number;
+        of?: number;
+        step?: string;
+        gate?: { episode: number; of: number; label: string };
+       }>(`/api/session/${state.sessionId}/drm/resume`, { queueEntryId: entry.id });
+       wait.done();
+       if (res.kind === 'drm-probe') {
+        drmResumeProbe = {
+         text: res.text ?? '',
+         episode: res.episode ?? 1,
+         of: res.of ?? 1,
+         step: res.step ?? '',
+         gate: res.gate ?? { episode: 1, of: 1, label: '' },
+        };
+        navTo('drm');
+       }
+      } else {
+       const res = await api<TurnData>(
+        `/api/session/${state.sessionId}/machine/resume`,
+        { queueEntryId: entry.id },
+       );
+       wait.done();
+       if (res.kind === 'probe') {
+        state.question = res.text!;
+        navTo('exchange');
+       }
+      }
+     } catch (e) {
+      pickUp.disabled = false;
+      wait.failed(e);
+     }
+    });
+    parkedList.append(row);
+   }
+
    // Parked QUESTIONS (ruled 2026-08-04) share the section with the parked
    // descents: same quiet register, but their way back is `put it back`,
    // not a resume into a sitting.
@@ -3311,7 +3745,7 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
     parkedList.append(parkedQuestionRow(entry));
    }
 
-   if (parked.length === 0 && parkedQuestions.length === 0) {
+   if (parked.length === 0 && parkedMachines.length === 0 && parkedQuestions.length === 0) {
     // Nothing parked: the section stays quiet — no empty heading, no count
     // of how long anything has sat (Q-24).
     parkedSection.hidden = true;
@@ -3693,14 +4127,20 @@ function renderWiki(all = false) {
  (async () => {
   const wait = beginWait(page, 'reading…', 400);
   try {
-   const [wiki, snippets] = await Promise.all([
+   const [wiki, snippets, backlog] = await Promise.all([
     api<WikiResponse>(all ? '/api/wiki?all=1' : '/api/wiki'),
     // The quotes. A failure here costs the page its evidence but not its
     // prose, so it degrades rather than throws.
     api<{ snippets: Snippet[] }>('/api/snippets').catch(() => ({ snippets: [] as Snippet[] })),
+    // The backlog (ticket 156): the Clerk-state sentence links to the
+    // waiting surface when readings wait. A failure renders no link — the
+    // wiki is read-only and a missing link is not an error state, and there
+    // is no backlog panel on this surface to log the panel helper's error
+    // contract to, so it degrades silently like /api/snippets.
+    api<SweepBacklogResponse>('/api/sweep-backlog').catch(() => null),
    ]);
    wait.done();
-   paintWiki(page, sidebar, wiki, snippets.snippets);
+   paintWiki(page, sidebar, wiki, snippets.snippets, backlog);
    watchReads(page);
   } catch (e) {
    wait.failed(e, 'the page did not come through — try again');
@@ -3708,7 +4148,7 @@ function renderWiki(all = false) {
  })();
 }
 
-function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[]) {
+function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, snippets: WikiSnippet[], backlog: SweepBacklogResponse | null) {
  page.innerHTML = '';
 
  const byId = new Map<string, WikiSnippet>();
@@ -3744,6 +4184,17 @@ function paintWiki(page: HTMLElement, sidebar: HTMLElement, wiki: WikiResponse, 
  // Eval finding #8: "has not been read" and "was read, nothing to remark"
  // are different states and must not render alike.
  page.append(el('p', { class: 'wiki-state' }, clerkStateSentence(wiki)));
+
+ // The Clerk-state sentence's door back to the waiting surface (ticket 156):
+ // when readings wait, one muted line names the count and points there — the
+ // same sentence the waiting surface shows, now actionable.
+ if (backlog !== null && backlog.pendingReadings > 0) {
+  const door = el('p', { class: 'wiki-backlog-link' });
+  const see = el('button', { class: 'nav-link', type: 'button' }, 'see which');
+  see.addEventListener('click', () => navTo('waiting'));
+  door.append(document.createTextNode(`the wiki is ${backlog.pendingReadings} readings behind \u2014 `), see, document.createTextNode('.'));
+  page.append(door);
+ }
 
  for (const group of wiki.facets) {
   if (group.claims.length === 0) continue;
@@ -3856,6 +4307,38 @@ for (const s of sections) {
  });
  sidebar.append(link);
 }
+// The territory door (ticket 152): coverage is the wiki's negative space,
+// and one muted sidebar word opens it. The map is fetched on the click,
+// rendered into an expandable section of the page; a second click closes
+// the section. Q-79 binds every word: coverage describes the archive,
+// never the person — the state words come from web/territory.ts, and the
+// empty vault renders the module's quiet invitation, never a silence.
+const territoryLink = el('button', { class: 'nav-link' }, 'territory');
+let territorySection: HTMLElement | null = null;
+territoryLink.addEventListener('click', () => {
+ if (territorySection !== null) {
+  territorySection.remove();
+  territorySection = null;
+  return;
+ }
+ const section = el('section', { class: 'wiki-facet territory-section' });
+ section.append(el('h2', { class: 'wiki-heading' }, 'territory'));
+ const slot = el('div', { class: 'territory-slot' });
+ section.append(slot);
+ page.append(section);
+ territorySection = section;
+ void api<TerritoryResponse>('/api/territory')
+  .then((data) => {
+   renderTerritory(slot, data);
+   section.scrollIntoView({ behavior: 'smooth' });
+  })
+  .catch(() => {
+   // The register's quiet error, from the shared helper — a failed fetch
+   // is never the map's silence (154).
+   renderPanelLine(slot, panelLine('error', 'the territory'));
+  });
+});
+sidebar.append(territoryLink);
 }
 
 /**
@@ -3891,48 +4374,34 @@ let dragEntryId: string | null = null;
 interface PiecePinEntry {
  id: string;
  kind: 'pin';
- snippet: string;
- version: number;
  prose: string | null;
- sittingDate: string | null;
 }
 interface PieceGapEntry {
  id: string;
  kind: 'gap';
  question: string | null;
- pending: string | null;
  offers: Snippet[];
 }
 interface PieceMarginalium {
- id: string;
  on: string | null;
  note: string;
  text: string;
- at: string;
- model: string | null;
 }
 interface PieceArrangement {
  id: string;
  principle: string;
- created: string;
- model: string | null;
  entries: (PiecePinEntry | PieceGapEntry)[];
  marginalia: PieceMarginalium[];
 }
 interface PieceEnriched {
  id: string;
- created: string;
  current: string;
  setDownAt: string | null;
- setDownBy: string | null;
  arrangements: PieceArrangement[];
 }
 interface PieceLite {
  id: string;
  created: string;
- current: string;
- setDownAt: string | null;
- setDownBy: string | null;
  arrangement: PieceArrangement | null;
 }
 
@@ -4439,7 +4908,6 @@ function renderPiece() {
    micBtn,
    micStatus,
    errorSlot: doc,
-   onDictatingChange: (dictating) => { state.dictating = dictating; },
   });
  }
 

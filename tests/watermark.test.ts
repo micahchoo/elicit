@@ -12,8 +12,8 @@ import {
   sameFingerprint,
   vaultDiff,
   writeWatermark,
-} from '../src/index/watermark.js';
-import type { VaultDiff } from '../src/index/watermark.js';
+} from '../src/clerk/watermark.js';
+import type { VaultDiff } from '../src/clerk/watermark.js';
 import type { Claim, ClaimGraph, ClashCandidate } from '../src/wiki/contract.js';
 
 // A tmp root per test. Nothing here touches the real vault, and no test starts

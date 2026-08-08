@@ -22,7 +22,7 @@
  * content, which is more than 'unprobed' claims.
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
@@ -64,19 +64,33 @@ export type CoverageStore = {
   coverageForNode(nodeId: string, sittingOf: SittingResolver): NodeCoverageStatus;
 };
 
-export function createCoverageStore(vaultRoot: string): CoverageStore {
- return new CoverageStoreImpl(vaultRoot);
+export function createCoverageStore(
+ vaultRoot: string,
+ subdir: string = join('ktg', 'coverage'),
+): CoverageStore {
+ return new CoverageStoreImpl(vaultRoot, subdir);
+}
+
+/**
+ * The atlas coverage store — same store, different vault subdirectory.
+ * Ticket 110 shipped a byte-copy (atlas-coverage.ts); Phase 8 collapses it
+ * onto the one implementation behind the one interface.
+ */
+export function createAtlasCoverageStore(vaultRoot: string): CoverageStore {
+ return createCoverageStore(vaultRoot, join('atlases', 'coverage'));
 }
 
 class CoverageStoreImpl implements CoverageStore {
  #root: string;
+ #subdir: string;
 
- constructor(root: string) {
+ constructor(root: string, subdir: string) {
   this.#root = root;
+  this.#subdir = subdir;
  }
 
  #dir(): string {
-  const d = join(this.#root, 'ktg', 'coverage');
+  const d = join(this.#root, this.#subdir);
   mkdirSync(d, { recursive: true });
   return d;
  }

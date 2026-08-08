@@ -247,10 +247,13 @@ describe('defer verb', () => {
 
   const turnRes = await post(app, `/api/session/${sessionId}/turn`, { text: deferAnswer });
   expect(turnRes.status).toBe(200);
-  const turn = (await turnRes.json()) as { kind: string; phase?: string };
+  const turn = (await turnRes.json()) as { kind: string; phase?: { id: string; label: string; step: number; of: number } };
   expect(turn.kind).toBe('probe');
-  // Still open — the close sequence has not been triggered
-  expect(turn.phase).toBe('open');
+  // Still open — the close sequence has not been triggered. The sitting is
+  // reflective (people-grid degraded), which now carries the machine
+  // (ticket 159, slice 4): the turn response's phase field is the machine
+  // shape, not the session phase string.
+  expect(turn.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
  });
 
  it('logs deferral distinctly from skip, with the declared need', async () => {

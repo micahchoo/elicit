@@ -8,26 +8,10 @@
  */
 
 import type { KtgNode, KtgSkeleton } from './types.js';
+import { isStableSlug, strVal, intVal, strArr, type ValidationResult } from './validate-shared.js';
 
-/** Reasons a skeleton may be rejected, one per violation. */
 export type RejectionReason = string;
-
-/** Successful validation: the value is a known-good KtgSkeleton. */
-export type ValidSkeleton = { ok: true; value: KtgSkeleton };
-
-/** Failed validation: every reason names one graph-rule violation. */
-export type InvalidSkeleton = { ok: false; reasons: RejectionReason[] };
-
-export type SkeletonResult = ValidSkeleton | InvalidSkeleton;
-
-// ── id helpers ──
-
-/** Stable slugs: lowercase alphanumeric, hyphens, dots only. */
-const ID_RE = /^[a-z0-9][a-z0-9.-]*$/;
-
-function isStableSlug(id: string): boolean {
-  return ID_RE.test(id);
-}
+export type SkeletonResult = ValidationResult<KtgSkeleton>;
 
 // ── checked array access ──
 
@@ -93,29 +77,7 @@ function expectedTier(
   return maxTier + 1;
 }
 
-// ── helpers for reading unknown fields ──
-
-function strVal(obj: Record<string, unknown>, key: string): string | null {
-  const v = obj[key];
-  return typeof v === 'string' && v.trim() !== '' ? v : null;
-}
-
-function intVal(obj: Record<string, unknown>, key: string): number | null {
-  const v = obj[key];
-  return typeof v === 'number' && Number.isInteger(v) ? v : null;
-}
-
-function strArr(obj: Record<string, unknown>, key: string): string[] | null {
-  const v = obj[key];
-  if (!Array.isArray(v)) return null;
-  // Filter to strings only
-  const out: string[] = [];
-  for (const item of v) {
-    if (typeof item === 'string') out.push(item);
-  }
-  return out;
-}
-
+// ── graph checks ──
 // ── top-level validation ──
 
 export function validateKtgSkeleton(raw: unknown): SkeletonResult {

@@ -19,6 +19,8 @@
 // functions, so every module in the slice can compile against it at once.
 
 import { decodeTime } from 'ulid';
+import { detailField } from '../log/detail.js';
+import type { EventKind } from '../log/kinds.js';
 import type { Facet, Reading, Snippet, Turn } from '../types.js';
 
 // ── Claims ──
@@ -415,7 +417,7 @@ export type WikiReport = {
 export type LogFn = (e: {
   at: string;
   actor: 'clerk';
-  kind: string;
+  kind: EventKind;
   detail: string;
   refs?: string[];
 }) => void;
@@ -460,10 +462,14 @@ export function shadowCollector(sink: LogFn): { log: LogFn; records: ShadowRecor
   const log: LogFn = (e) => {
     sink(e);
     if (e.kind !== 'shadow-decision') return;
-    const name = /(?:^|\s)threshold=(\S+)/.exec(e.detail)?.[1];
+    // The threshold is a plain key=value field — the shared detail grammar
+    // reads it (the old anchored regex was a hand-rolled second parser).
+    const name = detailField(e.detail, 'threshold');
     const wouldAt = e.detail.indexOf('would=');
     // An unreadable detail keeps its evidence verbatim rather than being
     // dropped: a lost shadow record is a mechanism that cannot graduate.
+    // The would= clause keeps this local fallback — a missing clause keeps
+    // the WHOLE detail as evidence, not an empty string.
     records.push({
       threshold: name ?? 'unparsed',
       would: wouldAt === -1 ? e.detail : e.detail.slice(wouldAt + 'would='.length),
@@ -490,17 +496,6 @@ export type SweepLine = {
   at: string;
   model: string;
 };
-
-/**
- * The embedding channel's vector cache — derived, disposable, read by nothing
- * else (Q-3). Deleting it costs one re-embed pass and no data. Declared as a
- * shape so the channel depends on an interface rather than a file, and every
- * test can pass an in-memory one.
- */
-export interface EmbeddingIndexStore {
-  get(claimId: string): { hash: string; vector: number[] } | null;
-  put(claimId: string, hash: string, vector: number[]): void;
-}
 
 // ── The two persistence interfaces, declared here and implemented elsewhere ──
 

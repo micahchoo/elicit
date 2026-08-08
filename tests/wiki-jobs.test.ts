@@ -34,7 +34,8 @@ import {
   type EmbeddingIndexStore,
   type EmbeddingRecord,
 } from '../src/wiki/embedding.js';
-import { THRESHOLDS, type Threshold } from '../src/wiki/thresholds.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
+import type { Threshold } from '../src/domain/thresholds.js';
 import { UNVERIFIED_CONFIRMATION, type ConfirmResult, type OppositionJudgment } from '../src/clerk/contradiction.js';
 import type { MintItem, MintResult } from '../src/clerk/mint.js';
 import type {

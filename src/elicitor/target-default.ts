@@ -10,6 +10,7 @@
  */
 
 import { existsSync, readdirSync } from 'node:fs';
+import { readTranscripts } from '../vault/transcripts.js';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { Target } from '../types.js';
@@ -37,24 +38,13 @@ export function suggestTarget(recent: Target[]): Target {
  * that is what it silently was.
  */
 export function recentSittingTargets(root: string, limit = INWARD_RUN_LIMIT): Target[] {
-  const dir = join(root, 'transcripts');
-  if (!existsSync(dir)) return [];
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith('.md'))
-    .sort()
-    .reverse()
-    .slice(0, limit);
-
-  const targets: Target[] = [];
-  for (const file of files) {
-    try {
-      const data = matter.read(join(dir, file)).data as { mode?: { target?: unknown } };
-      targets.push(data.mode?.target === 'domain' ? 'domain' : 'self');
-    } catch {
-      // Unreadable transcript — skip it rather than guess at its Target.
-    }
-  }
-  return targets;
+  // Filenames are ULIDs, so filename order is time order (newest first).
+  // readTranscripts returns started-sorted; re-sort on the session ULID to
+  // keep the original ordering exactly.
+  return readTranscripts(root)
+    .sort((a, b) => b.session.localeCompare(a.session))
+    .slice(0, limit)
+    .map((t) => (t.target === 'domain' ? 'domain' : 'self'));
 }
 
 /** The corpus-aware default for a vault: what the UI should pre-fill. */

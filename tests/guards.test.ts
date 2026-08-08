@@ -8,7 +8,7 @@ import {
   isConversationReferential,
   isNearDuplicate,
   checkQuestion,
-} from '../src/elicitor/guards.js';
+} from '../src/language/guards.js';
 
 // ---------------------------------------------------------------------------
 // The malformed question of 2026-08-02 (ticket 040), and its framed twin.

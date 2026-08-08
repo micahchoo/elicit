@@ -50,7 +50,7 @@ import {
  isInterrogative,
  isNearDuplicate,
  quotesFragmentSetOff,
-} from '../elicitor/guards.js';
+} from '../language/guards.js';
 import { widenToClause } from './clause.js';
 
 // ---------------------------------------------------------------------------

@@ -9,18 +9,10 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { Outbound, TranscribeMsg, ShutdownMsg } from './protocol.js';
 import { resolveModelDir } from './model.js';
 
-// --- protocol types matching worker.ts ---
-
-interface TranscriptionResp {
- type: 'transcription';
- id: string;
- text: string;
- tokens: string[];
- timestamps: number[];
- durations: number[];
-}
+// --- protocol: one shared contract (src/stt/protocol.ts) ---
 
 /** Result of a transcription: transcript plus per-token timing from the worker. */
 export interface SttTranscriptionResult {
@@ -28,12 +20,6 @@ export interface SttTranscriptionResult {
  tokens: string[];
  timestamps: number[];
  durations: number[];
-}
-
-interface ErrorResp {
- type: 'error';
- id: string;
- error: string;
 }
 
 interface Deferred<T> {
@@ -53,7 +39,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 
-type WorkerMsg = TranscriptionResp | ErrorResp;
+type WorkerMsg = Outbound;
 // --- client ---
 
 export interface SttClient {

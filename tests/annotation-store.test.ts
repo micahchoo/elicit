@@ -174,6 +174,28 @@ describe('createAnnotationStore', () => {
     modelAt: '2026-08-02T00:00:00.000Z',
   });
 
+  it('round-trips an intention-horizon-ambiguous record in its own namespace', () => {
+    const store = createAnnotationStore(root);
+    const sid = id();
+    store.put({
+      kind: 'intention-horizon-ambiguous',
+      snippetId: sid,
+      version: 2,
+      datingQuestion: 'When did you expect to finish?',
+      model: 'test-model',
+      modelAt: '2026-08-02T00:00:00.000Z',
+    });
+    const got = store.get(sid, 'intention-horizon-ambiguous');
+    expect(got).not.toBeNull();
+    if (got && got.kind === 'intention-horizon-ambiguous') {
+      expect(got.datingQuestion).toBe('When did you expect to finish?');
+      expect(got.version).toBe(2);
+    }
+    // The ambiguous record must NOT collide with the referent or horizon namespaces.
+    expect(store.get(sid)).toBeNull();
+    expect(store.get(sid, 'intention-horizon')).toBeNull();
+  });
+
   it('round-trips an intention-horizon record', () => {
     const store = createAnnotationStore(root);
     const sid = id();

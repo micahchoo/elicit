@@ -17,26 +17,16 @@ import { join } from 'node:path';
 import matter from 'gray-matter';
 
 import type { Target } from '../types.js';
+import { readTranscript } from '../vault/transcripts.js';
 import type { SittingContext } from './composed.js';
 
 /** Read one session's declared Target and topic from its transcript. */
 export function readSitting(root: string, session: string): SittingContext {
-  const file = join(root, 'transcripts', `${session}.md`);
-  if (!existsSync(file)) return {};
-
-  let mode: unknown;
-  try {
-    mode = (matter(readFileSync(file, 'utf-8')).data as { mode?: unknown }).mode;
-  } catch {
-    // A transcript that will not parse tells us nothing about its Target.
-    return {};
-  }
-  if (typeof mode !== 'object' || mode === null) return {};
-
-  const { target, topic } = mode as { target?: unknown; topic?: unknown };
+  const t = readTranscript(root, session);
+  if (t === null) return {};
   return {
-    ...(target === 'self' || target === 'domain' ? { target: target as Target } : {}),
-    ...(typeof topic === 'string' && topic.trim().length > 0 ? { topic } : {}),
+    ...(t.target ? { target: t.target } : {}),
+    ...(t.topic ? { topic: t.topic } : {}),
   };
 }
 

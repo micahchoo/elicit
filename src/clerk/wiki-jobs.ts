@@ -87,10 +87,11 @@ import {
  sameFingerprint,
  vaultDiff,
  writeWatermark,
-} from '../index/watermark.js';
-import type { IndexFingerprint, VaultDiff } from '../index/watermark.js';
+} from './watermark.js';
+import type { IndexFingerprint, VaultDiff } from './watermark.js';
 import { sittingsOfCites } from '../wiki/status.js';
-import { THRESHOLDS, shadowDecision, type Threshold } from '../wiki/thresholds.js';
+import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import type { Threshold } from '../domain/thresholds.js';
 import type { ThresholdRegister } from '../wiki/lint.js';
 import { SUPERSEDE_MODEL_UPGRADE, readingTime, shadowCollector } from '../wiki/contract.js';
 import type { ApplyDeps } from '../wiki/ops.js';

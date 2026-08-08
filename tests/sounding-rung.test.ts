@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Complete, Turn } from '../src/types.js';
-import type { GuardVerdict } from '../src/elicitor/guards.js';
+import type { GuardVerdict } from '../src/language/guards.js';
 import type { CompactedLadder } from '../src/sounding/compaction.js';
 import { composeFromCompacted, composeRung } from '../src/clerk/sounding-rung.js';
 

@@ -21,6 +21,8 @@
  * one object literal at the call site.
  */
 
+import { validTrim } from './trim-validity.js';
+
 export interface ImportReviewCut {
   text: string;
   /** Offset of `text` in the source body. */
@@ -304,9 +306,9 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     confirm.addEventListener('click', () => {
       const v = ta.value;
       const cutText = item.cuts[ci]!.text;
-      // The same guard renderProposal uses: refuse unless the result is a
-      // non-empty substring of the cut (emptiness would pass `includes`).
-      if (v === '' || (!cutText.includes(v) && v !== cutText)) {
+      // The Q-51 authorship guard, one definition (web/trim-validity.ts):
+      // a trim must be a non-empty substring of the cut.
+      if (!validTrim(cutText, v)) {
         ta.value = cutText;
         return;
       }

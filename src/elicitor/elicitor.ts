@@ -28,19 +28,32 @@ import {
  selectProtocolForTarget,
  loadProtocolDefinitions,
  DEFAULT_FLOOR_PROBE,
+ type ProtocolDef,
 } from '../protocols/registry.js';
+import {
+ advanceMachine,
+ composeMachineSystemPrompt,
+ machineQuestion,
+ parseMachineMarker,
+ recordExchange,
+ startMachine,
+ type MachineState,
+ type TriadSelection,
+} from '../protocols/machine.js';
+import { writeMachineState } from '../protocols/park.js';
+import { checkEmitForm } from '../language/emit-form.js';
 import { appendEvent } from '../log/activity.js';
 import { readAllRepairs } from '../repair/store.js';
 import { repairedSnippetIds } from '../repair/consult.js';
 import { loadQuestionBank } from './bank.js';
 import { quotablePhrase, resonateHybrid, type SemanticIndex } from '../index/semantic.js';
-import { isContentFree } from './answer-shape.js';
-import { isWeakForm } from '../queue/bank-filter.js';
+import { isContentFree } from '../language/thin-answer.js';
+import { isWeakForm } from '../language/weak-form.js';
 import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
 import { composeRung } from '../clerk/sounding-rung.js';
 import { addRung, gateStateFor } from '../sounding/ladder.js';
 import { descentEnd } from '../sounding/convergence.js';
-import { checkQuestion, type GuardVerdict } from './guards.js';
+import { checkQuestion, type GuardVerdict } from '../language/guards.js';
 import { facetIntentForRedLight } from './facet-intent.js';
 import type { RandomizerDraw } from '../randomizer/randomizer.js';
 
@@ -92,6 +105,13 @@ export function startSession(
   shuffleRequested?: boolean;
   vaultRoot?: string;
   /**
+   * People-source thunk for the phase machine (ticket 159, slice 3): the
+   * gazetteer's named people. people-grid degrades to reflective when it
+   * names fewer than three; the machine's triad phase annotates its
+   * composed prompt with the names. Absent means no people index.
+   */
+  peopleSource?: () => string[];
+  /**
    * The greeting line shown before the opener (ticket 135). When provided,
    * startSession writes it as the first turn and holds the opener in
    * pendingOpener. Absent means the opener fires first — the pre-135
@@ -108,6 +128,29 @@ export function startSession(
 
  const protocol = deps.protocolName ?? selectProtocolForTarget(target, 0, loadProtocolDefinitions()).name;
 
+ // ── Machine start (ticket 159, slice 3) ──
+ // A def that declares phases starts a phase machine for the sitting.
+ // people-grid needs three named people from the gazetteer to present its
+ // triads; fewer degrades the whole sitting to reflective — the ladder's
+ // register: drop the instrument, never the person's words.
+ let protocolMachine: MachineState | undefined;
+ let effectiveProtocol = protocol;
+ const chosenDef = getProtocol(protocol);
+ if (chosenDef?.phases !== undefined) {
+  const people = deps.peopleSource?.() ?? [];
+  if (chosenDef.name === 'people-grid' && people.length < 3) {
+   console.warn(`Elicitor: people-grid needs three named people (found ${people.length}) — degrading to reflective`);
+   effectiveProtocol = 'reflective';
+   // The degraded sitting RUNS reflective, which is itself a machine
+   // instance (ticket 159, slice 4): start its machine so the sitting
+   // carries the phase meta and the gate surface like any other.
+   const reflectiveDef = getProtocol('reflective');
+   if (reflectiveDef !== undefined) protocolMachine = startMachine(reflectiveDef);
+  } else {
+   protocolMachine = startMachine(chosenDef);
+  }
+ }
+
  // ── Greeting (ticket 135): one framing turn before the opener ──
  // When a greeting is wanted, it becomes the sole initial turn. The opener
  // is deferred to pendingOpener; the pulse route appends it after the
@@ -122,7 +165,7 @@ export function startSession(
   };
   deps.vault.startTranscript(id, {
    mode: normalizedMode,
-   protocol,
+   protocol: effectiveProtocol,
    started,
   });
   deps.vault.appendTurn(id, greetingTurn);
@@ -146,8 +189,7 @@ export function startSession(
    };
   } else if (queueDraw) {
    openQueueEntryId = queueDraw.id;
-   deps.queue.markAsked(queueDraw.id);
-   pendingOpener = {
+    pendingOpener = {
     text: queueDraw.question,
     questionForm: queueDraw.questionForm,
     ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
@@ -164,13 +206,14 @@ export function startSession(
   return {
    id,
    mode: normalizedMode,
-   protocol,
+   protocol: effectiveProtocol,
    deps: {
     complete: deps.complete,
     vault: deps.vault,
     queue: deps.queue,
     index: deps.index,
     ...(deps.semantic ? { semantic: deps.semantic } : {}),
+    ...(deps.peopleSource ? { peopleSource: deps.peopleSource } : {}),
    },
    turns: [greetingTurn],
    bank,
@@ -178,6 +221,7 @@ export function startSession(
    phase: 'open',
    pendingOpener,
    ...(openQueueEntryId ? { openQueueEntryId } : {}),
+   ...(protocolMachine !== undefined ? { protocolMachine } : {}),
   };
  }
 
@@ -206,7 +250,6 @@ export function startSession(
   };
  } else if (queueDraw) {
   openQueueEntryId = queueDraw.id;
-  deps.queue.markAsked(queueDraw.id);
   openerTurn = {
    role: 'agent',
    text: queueDraw.question,
@@ -225,32 +268,34 @@ export function startSession(
   };
  }
 
- deps.vault.startTranscript(id, {
-  mode: normalizedMode,
-  protocol,
-  started,
- });
- deps.vault.appendTurn(id, openerTurn);
+deps.vault.startTranscript(id, {
+ mode: normalizedMode,
+ protocol: effectiveProtocol,
+ started,
+});
+deps.vault.appendTurn(id, openerTurn);
 
- if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
+if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
 
- return {
-  id,
-  mode: normalizedMode,
-  protocol,
-  deps: {
-   complete: deps.complete,
-   vault: deps.vault,
-   queue: deps.queue,
-   index: deps.index,
-   ...(deps.semantic ? { semantic: deps.semantic } : {}),
-  },
-  turns: [openerTurn],
-  bank,
-  questionCount: 1,
-  phase: 'open',
-  ...(openQueueEntryId ? { openQueueEntryId } : {}),
- };
+return {
+ id,
+ mode: normalizedMode,
+ protocol: effectiveProtocol,
+ deps: {
+  complete: deps.complete,
+  vault: deps.vault,
+  queue: deps.queue,
+  index: deps.index,
+  ...(deps.semantic ? { semantic: deps.semantic } : {}),
+  ...(deps.peopleSource ? { peopleSource: deps.peopleSource } : {}),
+ },
+ turns: [openerTurn],
+ bank,
+ questionCount: 1,
+ phase: 'open',
+ ...(openQueueEntryId ? { openQueueEntryId } : {}),
+ ...(protocolMachine !== undefined ? { protocolMachine } : {}),
+};
 }
 
 /** A question the session will ask, and where it came from. */
@@ -370,11 +415,176 @@ function guardCorrection(verdict: GuardVerdict, asked: string[]): string {
  }
 }
 
+/**
+ * The corrective instruction appended after an emit-form rejection (ticket
+ * 144): the question leaked a template token, a placeholder slot, or a
+ * mid-phrase break. Guard verdicts get their own corrections above.
+ */
+const MACHINE_FORM_CORRECTION =
+ 'CRITICAL: Your output was rejected for its form. Output exactly ONE complete question sentence: no preamble, no placeholders, no template tokens, no mid-phrase breaks.';
+
+/** The outcome of one machine turn (ticket 159, slice 3). */
+export type MachineTurnResult =
+ | { kind: 'served'; probe: Probe }
+ | { kind: 'closed' }
+ | { kind: 'fallthrough' };
+
+/**
+ * Persist the machine state after a ratified phase advance (ticket 159,
+ * slice 5): the side-record is written on every phase advance AND on park,
+ * so a crash never loses a phase the person already walked. The vault root
+ * comes from the per-session table the server seeded at start; a direct
+ * elicitor call (no vaultRoot) simply skips the write.
+ */
+function persistMachineAdvance(s: SessionState): void {
+ const vaultRoot = sessionVaultRoots.get(s.id);
+ if (vaultRoot === undefined || s.protocolMachine === undefined) return;
+ writeMachineState(vaultRoot, s.id, s.protocolMachine);
+}
+
+/**
+ * The chip surface's pair on the turn wire (ticket 159, slice 7): two
+ * distinct non-empty names. Additive and optional — a prose-only answer is
+ * a perfectly valid turn and carries no pair. A malformed pair is dropped
+ * (the text stands alone) rather than failing the route, so the wire stays
+ * byte-compatible with every existing client.
+ */
+export function parseTriadPair(value: unknown): [string, string] | undefined {
+ if (!Array.isArray(value) || value.length !== 2) return undefined;
+ const [a, b] = value as [unknown, unknown];
+ if (typeof a !== 'string' || typeof b !== 'string') return undefined;
+ const na = a.trim();
+ const nb = b.trim();
+ if (na.length === 0 || nb.length === 0 || na === nb) return undefined;
+ return [na, nb];
+}
+
+/**
+ * The phase machine's turn (ticket 159, slice 3): compose the current
+ * phase's question with the machine's own seam, run it through the same
+ * guard pipeline as every probe (guardQuestion + emit form), and serve it.
+ *
+ * CONTROL FLOW (the chosen design):
+ * - A model output that is a marker — [NEXT_PHASE:<id>] or [SATURATED] —
+ *   makes machineQuestion return null; the recorder wrapper keeps the raw
+ *   output and `advanceMachine` ratifies it. A ratified advance moves the
+ *   machine and the NEXT phase's question is composed in the same turn. A
+ *   ratified [SATURATED] at the last phase closes: `closed` → the caller
+ *   enters the existing closing-door flow, mirroring P3's [SATURATED].
+ * - A refused marker (premature floor / illegal transition) or a question
+ *   rejected twice by the guards falls through: `fallthrough` → P1/P2/P3
+ *   serve this turn and the machine state is untouched (the caller already
+ *   cleared machineLastServed, so the next turn does not count an exchange
+ *   for the fallback question).
+ * - Bounded: one corrective guard retry (the P3 posture) and at most one
+ *   ratified advance per turn (every phase declares minExchanges >= 1, so a
+ *   fresh phase's floor cannot be met on the turn it was entered).
+ *
+ * Exported for the machine resume route (ticket 159, slice 5): a resumed
+ * machine's next question is composed with this exact seam — guard pipeline
+ * and marker ratification included — so a resumption cannot serve a
+ * question the turn flow itself would have rejected.
+ */
+export async function machineTurn(
+ s: SessionState,
+ def: ProtocolDef,
+): Promise<MachineTurnResult> {
+ const people = s.deps.peopleSource?.() ?? [];
+ const annotate = (system: string): string => {
+  const peopleBlock = people.length >= 3
+   ? `\n\nPEOPLE (from the gazetteer — present exactly these three names in prose, no interface): ${people.slice(0, 3).join(', ')}.`
+   : '';
+  // The chip surface's structured input (ticket 159, slice 7): the person's
+  // latest tapped pair rides every composition, so the model can ground
+  // follow-ups ("You said X and Y are alike…") even when the answer prose
+  // never repeated the names. The LLM client strips unknown turn fields, so
+  // the pair reaches the model here, at the same seam as the names.
+  // The machine's ui is Record<string, unknown>; the triads key carries the
+  // slice-7 shape (TriadSelection[]), asserted once at this boundary.
+  const uiTriads = s.protocolMachine?.ui as { triads?: TriadSelection[] } | undefined;
+  const triads = uiTriads?.triads ?? [];
+  const latest = triads.length > 0 ? triads[triads.length - 1]! : undefined;
+  const triadBlock = latest === undefined
+   ? ''
+   : `\n\nTRIAD (the person's latest selection): ${latest.selected[0]} and ${latest.selected[1]} were the two chosen as alike.`;
+  return peopleBlock === '' && triadBlock === '' ? system : `${system}${peopleBlock}${triadBlock}`;
+ };
+ let lastOutput: string | undefined;
+ const recording: Complete = async (system, turns, opts) => {
+  const out = await s.deps.complete(annotate(system), turns, opts);
+  lastOutput = out;
+  return out;
+ };
+ const systemFor = (): string => {
+  const base = composeMachineSystemPrompt(def, s.protocolMachine!);
+  return base === null ? '' : annotate(base);
+ };
+ const guarded = (q: string): GuardVerdict | 'emit-form' => {
+  if (!checkEmitForm(q).ok) return 'emit-form';
+  return guardQuestion(s, q, systemFor());
+ };
+
+ const composeOnce = async (
+  retriesLeft: number,
+  correction?: string,
+ ): Promise<MachineTurnResult> => {
+  let out: string;
+  if (correction === undefined) {
+   // The machine's own composition seam (initial attempt).
+   out = (await machineQuestion(s.protocolMachine!, def, s.turns, recording)) ?? '';
+   if (out === '') {
+    // Marker or empty model output: ratify when the recorder caught a marker.
+    if (lastOutput === undefined || parseMachineMarker(lastOutput) === null) {
+     return { kind: 'fallthrough' };
+    }
+    const adv = advanceMachine(s.protocolMachine!, def, lastOutput);
+    if (adv.closed) return { kind: 'closed' };
+    if (adv.state !== s.protocolMachine) {
+     s.protocolMachine = adv.state;
+     persistMachineAdvance(s); // the side-record follows every ratified advance
+     return composeOnce(retriesLeft); // ratified advance → next phase's question
+    }
+    return { kind: 'fallthrough' }; // refused marker → this turn falls through
+   }
+  } else {
+   // The corrective retry rides the same recorder (so a marker in the retry
+   // is ratified identically) with the correction appended.
+   out = (await recording(`${systemFor()}\n\n${correction}`, s.turns)).trim();
+   if (out.length === 0) return { kind: 'fallthrough' };
+   if (parseMachineMarker(out) !== null) {
+    const adv = advanceMachine(s.protocolMachine!, def, out);
+    if (adv.closed) return { kind: 'closed' };
+    if (adv.state !== s.protocolMachine) {
+     s.protocolMachine = adv.state;
+     persistMachineAdvance(s); // the side-record follows every ratified advance
+     return composeOnce(retriesLeft);
+    }
+    return { kind: 'fallthrough' };
+   }
+  }
+  const verdict = guarded(out);
+  if (verdict === 'ok') {
+   s.machineLastServed = true;
+   return { kind: 'served', probe: emitProbe(s, out, def.questionForm, 'machine') };
+  }
+  if (retriesLeft <= 0) return { kind: 'fallthrough' };
+  const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+  const nextCorrection = verdict === 'emit-form'
+   ? MACHINE_FORM_CORRECTION
+   : guardCorrection(verdict, asked);
+  console.warn(`Elicitor: machine question rejected by ${verdict} guard — retrying`);
+  return composeOnce(retriesLeft - 1, nextCorrection);
+ };
+
+ return composeOnce(1);
+}
+
 export async function userTurn(
  s: SessionState,
  text: string,
  spoken?: boolean,
  prosody?: Prosody,
+ pair?: [string, string],
 ): Promise<Probe | { kind: 'saturated'; closingText?: string } | { kind: 'checkpoint' }> {
  const now = new Date().toISOString();
  const userTurnRecord: Turn = { role: 'user', text, at: now, ...(spoken ? { spoken: true as const } : {}), ...(prosody ? { prosody } : {}) };
@@ -452,6 +662,61 @@ export async function userTurn(
   return emitProbe(s, next.text, 'deliberative', 'composed');
  }
 
+ // ── Machine bookkeeping (ticket 159) ──
+ // The answer to the last machine question landed: count it. Only when the
+ // question actually served was the machine's — a fallback turn must not
+ // advance the machine (the person answered a non-machine question). Runs
+ // for every machine-active sitting before any composition, so a reflective
+ // machine question answered on the last turn counts exactly once whether
+ // or not a fallback channel serves this turn.
+ if (s.protocolMachine !== undefined && s.machineLastServed === true) {
+  let next = recordExchange(s.protocolMachine);
+  // The chip surface's structured input (ticket 159, slice 7): when the
+  // answered question was the machine's triads phase and the turn carried
+  // the tapped pair, record the round into the machine's ui — the plan
+  // shape, ui.triads = [{ names, selected }], one record per answered
+  // triad. machineLastServed gates it, so a fallback turn's pair (which the
+  // chips cannot even produce — they render only under the machine's
+  // triads meta) never corrupts the ui.
+  if (pair !== undefined) {
+   const phase = getProtocol(next.protocol)?.phases?.[next.phaseIndex];
+   if (phase?.renderer === 'triads') {
+    const names = (s.deps.peopleSource?.() ?? []).slice(0, 3);
+    // The machine's ui is Record<string, unknown>; the triads key carries
+    // the slice-7 shape (TriadSelection[]), asserted once at this boundary.
+    const uiTriads = next.ui as { triads?: TriadSelection[] } | undefined;
+    next = { ...next, ui: { ...next.ui, triads: [...(uiTriads?.triads ?? []), { names, selected: pair }] } };
+   }
+  }
+  s.protocolMachine = next;
+  delete s.machineLastServed;
+ }
+
+ // ── Machine priority (ticket 159, slice 3) ──
+ // Ticket 158: the sitting's protocol is the register for ALL composed
+ // questions. Resolve the def once here; the machine reads its phases, and
+ // P1/P2/P3 carry it into their prompts below.
+ // The machine runs FIRST for the structured instruments (cdm,
+ // concept-sorting, people-grid, laddered-grid): its current-phase question
+ // is the priority, and P1/P2/P3 serve one-turn stand-ins when the machine
+ // question is rejected. Reflective is the exception (slice 4): its
+ // one-phase machine wraps the P1/P2/P3 flow, so its ways-in question is
+ // the P3-equivalent — P1 juxtaposition and P2 red-light stay the dominant
+ // channels, and the machine serves only when both are quiet.
+ // The machine's OWN protocol is authoritative when a machine is present: a
+ // resumed machine (ticket 159, slice 5) can run a different instrument than
+ // the sitting was rotated into, and composition must follow the machine,
+ // never the session's declaration.
+ const protocolDef = getProtocol(s.protocolMachine?.protocol ?? s.protocol);
+ const machineActive = protocolDef !== undefined && protocolDef.phases !== undefined && s.protocolMachine !== undefined;
+ if (machineActive && s.protocol !== 'reflective') {
+  const machine = await machineTurn(s, protocolDef!);
+  if (machine.kind === 'closed') return emitClosingDoor(s);
+  if (machine.kind === 'served') return machine.probe;
+  // fallthrough — the ordinary channels serve this turn; the machine state
+  // is untouched and the next turn resumes it at the same phase.
+ }
+
  // ── Pivot rule (ticket 020): content-free closed answers get a fresh draw ──
  if (isContentFree(text)) {
   const drawn = drawFallback(s);
@@ -497,6 +762,7 @@ export async function userTurn(
    quotable,
    s.deps.complete,
    sessionVaultRoots.get(s.id),
+   protocolDef,
   );
   if (!juxtaposed) continue;
   const verdict = guardQuestion(s, juxtaposed);
@@ -516,7 +782,7 @@ export async function userTurn(
  // Priority 2: red-light detection → composed follow-up
  const lights = await redLights(text, s.deps.complete);
  for (const light of lights) {
-  const followUp = await composeFollowUp(text, light, s.deps.complete);
+  const followUp = await composeFollowUp(text, light, s.deps.complete, protocolDef);
   if (!followUp) continue;
   const verdict = guardQuestion(s, followUp);
   if (verdict !== 'ok') {
@@ -532,8 +798,19 @@ export async function userTurn(
   });
  }
 
- // Priority 3: generic LLM probe (protocol from registry)
- const protocolDef = getProtocol(s.protocol);
+ // Priority 3: the machine's ways-in question for reflective (ticket 159,
+ // slice 4 — its one-phase machine wraps the P1/P2/P3 flow, so the machine
+ // question is the P3-equivalent). Rejected twice, the generic probe serves
+ // this turn and the machine resumes next turn at the same phase. Structured
+ // protocols reach this point only on a machine fallthrough and use the
+ // generic probe, exactly as before.
+ if (machineActive && s.protocol === 'reflective') {
+  const machine = await machineTurn(s, protocolDef!);
+  if (machine.kind === 'closed') return emitClosingDoor(s);
+  if (machine.kind === 'served') return machine.probe;
+ }
+
+ // Priority 3 (fallback): generic LLM probe (protocol from registry)
  const systemPrompt = protocolDef?.prompt ?? (() => { throw new Error(`Unknown protocol "${s.protocol}"`); })();
 
  const response = await s.deps.complete(systemPrompt, s.turns, {
@@ -616,8 +893,7 @@ function drawFallback(s: SessionState): Probe | null {
  // Try queue first
  const queueDraw = s.deps.queue.draw(s.mode, 'mid');
  if (queueDraw) {
-  s.deps.queue.markAsked(queueDraw.id);
-  s.openQueueEntryId = queueDraw.id;
+   s.openQueueEntryId = queueDraw.id;
   return emitProbe(s, queueDraw.question, queueDraw.questionForm, 'bank', {
    ...(queueDraw.targetFacet ? { targetFacet: queueDraw.targetFacet } : {}),
    ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
@@ -666,9 +942,12 @@ export function skipQuestion(
 
  s.turns[lastAgentIdx]!.skipped = true;
 
- // A skipped question was not answered. The entry stays `asked` — dropping the
- // pairing here is what stops the NEXT turn from marking it (ticket 041).
- delete s.openQueueEntryId;
+// A skipped question was not answered. The entry stays `asked` — dropping the
+// pairing here is what stops the NEXT turn from marking it (ticket 041).
+delete s.openQueueEntryId;
+// A skipped machine question is not an exchange: without this, the next
+// machine turn would count the skip against the phase floor (ticket 159).
+delete s.machineLastServed;
 
  const bank = s.bank ?? [];
  const bankTexts = new Set(bank.map((q) => q.text));

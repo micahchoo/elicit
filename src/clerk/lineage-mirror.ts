@@ -20,7 +20,8 @@ import { join } from 'node:path';
 import matter from 'gray-matter';
 
 import type { Complete, LineageRead, QueueDraft, QueueStore } from '../types.js';
-import { isInterrogative, hasFirstPersonOutsideQuote } from '../elicitor/guards.js';
+import { readTranscripts } from '../vault/transcripts.js';
+import { isInterrogative, hasFirstPersonOutsideQuote } from '../language/guards.js';
 import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js';
 
 // ---------------------------------------------------------------------------
@@ -38,29 +39,10 @@ interface SittingStamp {
 
 /** Read every real (non-import) sitting's started timestamp, oldest first. */
 function readSittingStamps(root: string): SittingStamp[] {
-  const dir = join(root, 'transcripts');
-  const stamps: SittingStamp[] = [];
-  try {
-    const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
-    for (const file of files) {
-      try {
-        const parsed = matter.read(join(dir, file));
-        const data = parsed.data as Record<string, unknown>;
-        const started = typeof data.started === 'string' ? data.started : '';
-        stamps.push({
-          started,
-          isImport: data.protocol === IMPORT_PROTOCOL,
-        });
-      } catch {
-        // Skip unparseable transcripts
-      }
-    }
-  } catch {
-    // No transcripts directory yet
-  }
-  // Sort oldest first so first/last are meaningful
-  stamps.sort((a, b) => a.started.localeCompare(b.started));
-  return stamps;
+  return readTranscripts(root).map((t) => ({
+    started: t.started,
+    isImport: t.protocol === IMPORT_PROTOCOL,
+  }));
 }
 
 /**

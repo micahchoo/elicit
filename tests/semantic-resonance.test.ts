@@ -16,7 +16,7 @@ import {
   type SemanticDeps,
 } from '../src/index/semantic.js';
 import { bodyHash, type Embed, type EmbeddingIndexStore, type EmbeddingRecord } from '../src/wiki/embedding.js';
-import type { ThresholdLogFn } from '../src/wiki/thresholds.js';
+import type { ThresholdLogFn } from '../src/domain/thresholds.js';
 import type { Snippet } from '../src/types.js';
 import { PAIRS, DISTRACTORS } from './fixtures/paraphrase-pairs.js';
 import { MODEL, RECORDED_VECTORS } from './fixtures/semantic-vectors.js';

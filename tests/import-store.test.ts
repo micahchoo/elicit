@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { createImportStore, type ScannedItem } from '../src/import/store.js';
+import { createImportStore } from '../src/import/store.js';
+import type { ScannedItem } from '../src/import/contract.js';
 import type { ImportCut, ImportRecord } from '../src/import/contract.js';
 
 // A tmp vault root per test. The store is filesystem-only by construction:

@@ -12,7 +12,7 @@
  * bug, not a conversational quality adjustment.
  */
 
-import { setOffSpans } from '../elicitor/guards.js';
+import { setOffSpans } from './guards.js';
 
 // ── Mid-phrase detection ─────────────────────────────────────────────────
 

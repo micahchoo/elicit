@@ -5,6 +5,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
+import { writeMarginaliaLine, readMarginaliaLine, listMarginaliaFiles } from '../vault/marginalia.js';
 
 // ── Types ──
 
@@ -206,46 +207,38 @@ const SUMMARIES_DIR = 'marginalia/transcript-summaries';
 
 /**
  * Persist a range summary to disk.
- * Written to `{root}/marginalia/transcript-summaries/<first>-<last>.md`.
+ * Written to `{root}/marginalia/transcript-summaries/<first>-<last>.md`,
+ * through the shared marginalia store (the range summary's sessions ride in
+ * a comment-adjacent YAML block the store does not model).
  */
 export function saveSummary(root: string, s: RangeSummary): void {
  const first = s.sessions[0]!;
  const last = s.sessions[s.sessions.length - 1]!;
- const dir = join(root, SUMMARIES_DIR);
- mkdirSync(dir, { recursive: true });
-
  const yamlSessions = s.sessions.map((sid) => `  - ${sid}`).join('\n');
- const content = `---
-sessions:
-${yamlSessions}
-model: ${s.model}
-at: ${s.at}
----
-${s.line}
-`;
- writeFileSync(join(dir, `${first}-${last}.md`), content, 'utf-8');
+ writeMarginaliaLine(root, 'transcript-summaries', `${first}-${last}.md`, {
+  ...s,
+  extra: `sessions:\n${yamlSessions}\n`,
+ });
 }
 
 /**
  * Load all persisted range summaries from disk.
  */
 export function loadSummaries(root: string): RangeSummary[] {
- const dir = join(root, SUMMARIES_DIR);
- if (!existsSync(dir)) return [];
-
  const results: RangeSummary[] = [];
- for (const entry of readdirSync(dir)) {
-  if (!entry.endsWith('.md')) continue;
-  const raw = readFileSync(join(dir, entry), 'utf-8');
-  const parsed = matter(raw);
-  const { sessions, model, at: rawAt } = parsed.data as {
-   sessions: string[];
-   model: string;
-   at: string | Date;
-  };
-  const at = rawAt instanceof Date ? rawAt.toISOString() : String(rawAt ?? '');
-  const line = (parsed.content ?? '').trim();
-  results.push({ sessions, model, at, line });
+ for (const file of listMarginaliaFiles(root, 'transcript-summaries')) {
+  const s = readMarginaliaLine(root, 'transcript-summaries', `${file}.md`);
+  if (s === null) continue;
+  // The sessions list lives in the summary's frontmatter, which the shared
+  // store's line reader does not model — re-read it here.
+  try {
+   const parsed = matter.read(join(root, SUMMARIES_DIR, `${file}.md`));
+   const sessions = parsed.data.sessions as string[] | undefined;
+   if (!Array.isArray(sessions) || sessions.length === 0) continue;
+   results.push({ sessions, ...s });
+  } catch {
+   continue;
+  }
  }
  return results;
 }

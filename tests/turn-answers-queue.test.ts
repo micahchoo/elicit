@@ -16,7 +16,7 @@ import type { QueueDraft, QueueEntry, QueueStore, Vault } from '../src/types.js'
 import { createQueueStore } from '../src/queue/queue.js';
 import { createVault } from '../src/vault/vault.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
-import { isContentFree } from '../src/elicitor/answer-shape.js';
+import { isContentFree } from '../src/language/thin-answer.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { makeScriptedComplete } from './fakes.js';
 

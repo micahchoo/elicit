@@ -22,15 +22,9 @@
  */
 
 import type { SurveyNode } from '../src/import/survey.js';
+import type { ScanResponse, WebDepsCore } from './deps.js';
 
-export type SurveyMapDeps = {
-  main: HTMLElement;
-  el: <K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    attrs?: Record<string, string>,
-    ...kids: (string | Node)[]
-  ) => HTMLElementTagNameMap[K];
-  api: <T>(path: string, body?: unknown) => Promise<T>;
+export type SurveyMapDeps = WebDepsCore & {
   navTo: (screen: string, opts?: { focus?: string }) => void;
   folder: string;
   /** A node path to open the map at, scrolled to and expanded. */
@@ -40,13 +34,7 @@ export type SurveyMapDeps = {
 /** The slice of a survey the map reads: the root and its nodes. */
 type SurveyShape = { root: string; nodes: SurveyNode[] };
 
-/** `POST /api/import/scan` — counts, and every file that did not come in. */
-type ScanResponse = {
-  pending: number;
-  refused: { file: string; reason: string }[];
-  skipped: number;
-  adopted: number;
-};
+
 
 /** What a region declares: how the files carry dates, and who wrote them. */
 export type DeclareInput = {

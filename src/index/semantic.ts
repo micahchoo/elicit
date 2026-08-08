@@ -141,7 +141,8 @@ import {
  type EmbeddingIndexStore,
  type EmbeddingRecord,
 } from '../wiki/embedding.js';
-import { shadowDecision, type Threshold, type ThresholdLogFn } from '../wiki/thresholds.js';
+import { shadowDecision } from '../wiki/thresholds.js'
+import type { Threshold, ThresholdLogFn } from '../domain/thresholds.js';
 import type { LexicalIndex, ResonanceHit, Snippet } from '../types.js';
 import { resonate } from './lexical.js';
 

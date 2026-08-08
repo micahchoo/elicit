@@ -6,6 +6,10 @@
  * on every path, including the fallback for kinds this file does not know.
  */
 
+import type { EventKind } from './kinds.js';
+import type { SurfacedSurface } from './surfaced.js';
+import { DETAIL_FIELD, detailClause, detailFields, detailQuoted, type DetailFields } from './detail.js';
+
 /** The shape the Activity Log renders — structural, so the web client can pass its own type. */
 export type FormattableEvent = {
  at: string;
@@ -17,18 +21,6 @@ export type FormattableEvent = {
 
 /** Crockford base32, 26 characters — a ULID as `ulid` mints them. */
 const ULID = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
-
-/** Machine fields in a detail line: `session=01K…`, `kept=1`. */
-const FIELD = /([A-Za-z][A-Za-z0-9]*)=(\S+)/g;
-
-type Fields = Record<string, string>;
-
-/** Parse the `key=value` pairs of a detail line. */
-function fields(detail: string): Fields {
- const out: Fields = {};
- for (const m of detail.matchAll(FIELD)) out[m[1]!] = m[2]!;
- return out;
-}
 
 /** The nth bare number in a detail line, or 0 when it is absent. */
 function nth(detail: string, index: number): number {
@@ -43,25 +35,10 @@ function count(n: number, noun: string): string {
 }
 
 /** The number of a named field, or 0 when it is absent or not a number. */
-function num(f: Fields, key: string): number {
+function num(f: DetailFields, key: string): number {
  const raw = f[key];
  const n = raw === undefined ? Number.NaN : Number(raw);
  return Number.isFinite(n) ? n : 0;
-}
-
-/** A quoted field: `name="Robin Hale"`. `FIELD` stops at the first space, so this does not. */
-function quoted(detail: string, key: string): string | undefined {
- return new RegExp(`${key}="([^"]*)"`).exec(detail)?.[1];
-}
-
-/**
- * Everything after `key=` to the end of the line. Several events end in a
- * prose clause the emitter wrote — `would=`, `clipped=` — and a clause with
- * spaces in it is not a field.
- */
-function clause(detail: string, key: string): string {
- const at = detail.indexOf(`${key}=`);
- return at === -1 ? '' : detail.slice(at + key.length + 1).trim();
 }
 
 /** `a` or `an`, so a facet name reads as English rather than as a slot. */
@@ -99,7 +76,7 @@ function askedFrom(source: string | undefined): string {
 }
 
 /** A sitting the elicitor just opened: `mode=25m/high protocol=ladder`. */
-function sittingStarted(f: Fields): string {
+function sittingStarted(f: DetailFields): string {
  const mode = /^(\d+)m\/(\w+)$/.exec(f.mode ?? '');
  const opening = mode
   ? `started a ${mode[1]}-minute sitting at ${mode[2]} energy`
@@ -112,7 +89,7 @@ function sittingStarted(f: Fields): string {
  * lifted mid-sentence and a cut wearing a label the vocabulary does not contain
  * are both the model's mistake made over the person's words, so the words stay.
  */
-function heldAsBuds(f: Fields): string {
+function heldAsBuds(f: DetailFields): string {
  const mid = num(f, 'fragmentBuds');
  const oov = num(f, 'outOfVocabularyLabels');
  if (mid === 0 && oov === 0) {
@@ -130,7 +107,7 @@ function heldAsBuds(f: Fields): string {
  * only counted, because the marker proves the label wrong and says nothing
  * about which of the seven other facets is right.
  */
-function labelChecks(f: Fields): string {
+function labelChecks(f: DetailFields): string {
  const superseded = num(f, 'supersessionCorrections');
  const unmarked = num(f, 'unmarkedIntentions');
  const corrected = superseded === 0
@@ -149,7 +126,7 @@ function labelChecks(f: Fields): string {
  * exactly what these two numbers answer. A sitting with no dated turn measured
  * nothing, and must not read like a sitting where every dated turn was caught.
  */
-function episodeRecord(f: Fields): string {
+function episodeRecord(f: DetailFields): string {
  const anchored = num(f, 'episodeAnchoredTurns');
  const blind = num(f, 'episodeBlindTurns');
  if (anchored === 0) return 'no turn named when something happened, so none owed an episode cut';
@@ -169,7 +146,7 @@ function episodeRecord(f: Fields): string {
  * how many cuts were read and how many the gate rejected, so a gate rejecting
  * nothing is visible in one line without a special harvest.
  */
-function admissibilityGate(f: Fields): string {
+function admissibilityGate(f: DetailFields): string {
  const seen = num(f, 'cutsSeen');
  const dropped = num(f, 'inadmissibleDrops');
  const skipped = num(f, 'contentFreeSkips');
@@ -201,7 +178,7 @@ function admissibilityGate(f: Fields): string {
  * the check fired: a check that renders as silence at zero cannot be told
  * apart from a check that is not running.
  */
-function harvestProposed(f: Fields): string {
+function harvestProposed(f: DetailFields): string {
  if (f.parsed === 'false') return 'could not read the sitting back, so proposed nothing';
  const counts = `proposed ${count(num(f, 'proposals'), 'snippet')} and ${count(num(f, 'buds'), 'bud')}`;
  // Every harvest logged before ticket 066 carries none of these fields, and
@@ -249,7 +226,7 @@ function facetWord(raw: string | undefined): string {
  * a different question, and how far it narrowed the pool to get there. The
  * numbers ARE the record — this is the evidence the filter graduates on.
  */
-function facetBalance(f: Fields, live: boolean): string {
+function facetBalance(f: DetailFields, live: boolean): string {
  const pool = num(f, 'pool');
  if (f.applied !== 'true') {
   return `left all ${count(pool, 'candidate')} in the draw — balancing by facet narrowed nothing`;
@@ -360,7 +337,7 @@ const SENTENCES = {
  'intention-horizons-failed': () => 'could not run the intention-horizon annotation job',
  // Ticket 106: outcome question events
  'outcome-minted': (_f, d) => `minted ${count(nth(d, 0), 'outcome question')}`,
- 'outcome-clipped': (f, d) => `enforced the outcome cap at ${f.cap ?? 'its setting'} and clipped: ${clause(d, 'clipped')}`,
+ 'outcome-clipped': (f, d) => `enforced the outcome cap at ${f.cap ?? 'its setting'} and clipped: ${detailClause(d, 'clipped')}`,
  'outcome-failed': () => 'could not mint an outcome question',
  'outcomes-failed': () => 'could not run the outcome question job',
  // QR-6 (ticket 114): the one-time template sweep. The sentence names the
@@ -373,7 +350,7 @@ const SENTENCES = {
  },
  'template-sweep-failed': () => 'could not finish the one-time template sweep',
  'gap-fill-minted': (f) => `minted ${count(num(f, 'minted'), 'gap-fill question')} into the queue`,
- 'gap-fill-clipped': (f, d) => `enforced the gap-fill cap at ${f.cap ?? 'its setting'} and clipped: ${clause(d, 'clipped')}`,
+ 'gap-fill-clipped': (f, d) => `enforced the gap-fill cap at ${f.cap ?? 'its setting'} and clipped: ${detailClause(d, 'clipped')}`,
  'gap-fill-pole-skip': () => 'skipped a half-Construct whose prose has no construct pole',
  'gap-fill-failed': () => 'could not run the gap-fill sweep',
  'territory-gap-fill': (f) => `minted ${count(num(f, 'minted'), 'territory question')} from the KTG skeleton`,
@@ -524,18 +501,18 @@ const SENTENCES = {
  // Ticket 139 — the embedding channel failed to write a vector for one or
  // more claims. `reason=` carries the error from the embedder so the
  // operator can diagnose it (model not loaded, bad endpoint, timeout).
- 'wiki-embedding-failed': (_f, d) => `could not write claim embedding: ${clause(d, 'reason') || 'unknown error'}`,
+ 'wiki-embedding-failed': (_f, d) => `could not write claim embedding: ${detailClause(d, 'reason') || 'unknown error'}`,
  'mint-parse-failed': () => "could not read the model's claim proposal back",
  'mint-empty': () => 'read a reading cleanly and proposed no change to the wiki',
  'mint-call-failed': () => 'could not ask the model about a reading',
  'shadow-decision': (f, d) =>
   `did not act on ${f.threshold ?? 'a threshold'}, set to ${f.value ?? 'nothing'} — ` +
-  `it would ${clause(d, 'would')}`,
+  `it would ${detailClause(d, 'would')}`,
  'threshold-clipped': (f, d) =>
   `enforced ${f.threshold ?? 'a threshold'} at ${f.value ?? 'its setting'} and clipped: ` +
-  `${clause(d, 'clipped')}`,
+  `${detailClause(d, 'clipped')}`,
  'lint-threshold-unhonored': (f, d) => {
-  const why = clause(d, 'value').replace(/^\S+\s*/, '');
+  const why = detailClause(d, 'value').replace(/^\S+\s*/, '');
   const head = `could not honour ${f.threshold ?? 'a threshold'}, set to ${f.value ?? 'nothing'}`;
   return why === '' ? head : `${head}: ${why}`;
  },
@@ -553,12 +530,12 @@ const SENTENCES = {
  'lineage-mirror-failed': () => 'could not mint a mirror question',
  'claim-op-rejected': (f) => `rejected an edit to the wiki: ${rejection(f.reason)}`,
  'referent-minted': (f, d) => {
-  const name = quoted(d, 'name') ?? f.slug ?? 'a name';
+  const name = detailQuoted(d, 'name') ?? f.slug ?? 'a name';
   const kind = f.kind ?? 'referent';
   return `added ${name} to the registry as ${article(kind)} ${kind}`;
  },
  'referent-aliased': (f, d) =>
-  `recorded "${quoted(d, 'alias') ?? 'another name'}" as another name for ${f.slug ?? 'an entry'}`,
+  `recorded "${detailQuoted(d, 'alias') ?? 'another name'}" as another name for ${f.slug ?? 'an entry'}`,
  'referent-kind-differs': (f) => {
   const stored = f.stored ?? 'referent';
   const proposed = f.proposed ?? 'something else';
@@ -569,8 +546,8 @@ const SENTENCES = {
   `refused to fold ${f.existing ?? 'one entry'} into ${f.aliasOf ?? 'another'}: ` +
   'both are already entries, and only you can say they name the same thing',
  'referent-alias-unresolved': (f, d) =>
-  `kept "${quoted(d, 'name') ?? 'a name'}" as its own entry: ` +
-  `nothing in the registry is called "${quoted(d, 'aliasOf') ?? ''}"`,
+  `kept "${detailQuoted(d, 'name') ?? 'a name'}" as its own entry: ` +
+  `nothing in the registry is called "${detailQuoted(d, 'aliasOf') ?? ''}"`,
 
  // ── The contradiction channels (Q-52, Q-56) ──
 
@@ -686,7 +663,7 @@ const SENTENCES = {
  const unresolved = f.unresolved === undefined ? nth(d, 2) : num(f, 'unresolved');
  const base = `adopted ${count(accepted, 'prior keep')} and ${count(excluded, 'prior refusal')}`;
  if (unresolved === 0) return `${base}, nothing left unresolved`;
- const names = d.replace(FIELD, ' ').trim().split(/\s+/).filter(Boolean).join(', ');
+ const names = d.replace(DETAIL_FIELD, ' ').trim().split(/\s+/).filter(Boolean).join(', ');
  return `${base}; ${count(unresolved, 'name')} unresolved — ${names}`;
 },
 
@@ -806,9 +783,13 @@ const SENTENCES = {
 // ticket 015 waits on reads them — so the sentence names the surface and
 // nothing else.
 'surfaced': (f) => {
- if (f.surface === 'draw') return 'surfaced an old snippet in a randomizer draw';
- if (f.surface === 'wiki') return 'surfaced a claim with its cited snippets on the wiki reading surface';
- if (f.surface === 'composed-question') return 'surfaced a snippet quoted in a composed question';
+ // The three surfaces the writer (src/log/surfaced.ts) can stamp. A fourth
+ // surface added there stops compiling HERE until it gets a sentence —
+ // the detail-contract fix this slice models for the other ~130 kinds.
+ const surface = f.surface as SurfacedSurface | undefined;
+ if (surface === 'draw') return 'surfaced an old snippet in a randomizer draw';
+ if (surface === 'wiki') return 'surfaced a claim with its cited snippets on the wiki reading surface';
+ if (surface === 'composed-question') return 'surfaced a snippet quoted in a composed question';
  return 'surfaced a claim or snippet';
 },
 
@@ -883,15 +864,17 @@ const SENTENCES = {
  'soundings-summary-failed': () => 'could not summarize a ladder',
 
 // ── The DRM instrument (Q-85): the entry, the probes, the gate ──
-'drm-started': (f) => `began a day reconstruction (DRM) of ${num(f, 'episodes')} episodes`,
-'drm-episode-added': (f) => `named episode ${num(f, 'count')}: ${f.name ?? '?'}`,
-'drm-enumeration-finished': (f) => `finished enumerating ${num(f, 'episodes')} episodes`,
+'drm-started': (f) => `began walking back through yesterday — ${num(f, 'episodes')} blocks`,
+'drm-episode-added': (f) => `named block ${num(f, 'count')}: ${f.name ?? '?'}`,
+'drm-enumeration-finished': (f) => `mapped the day as ${num(f, 'episodes')} blocks`,
 'drm-probe-asked': () => 'asked a DRM probe',
 'drm-probe-answered': (f) => `answered the ${f.step ?? '?'} probe`,
 'drm-gate': (f) => `the gate word ${f.choice ?? '?'} was pressed`,
-'drm-parked': (f) => `parked a DRM session at episode ${f.episode ?? '?'}`,
-'drm-resumed': () => 'picked a parked DRM back up',
-'drm-completed': (f) => `finished a DRM with ${count(num(f, 'fragments'), 'fragment')}`,
+'drm-parked': (f) => `parked the day walk at block ${num(f, 'episode')}`,
+'drm-resumed': () => 'picked the day walk back up',
+'drm-completed': (f) => `finished the day walk — ${count(num(f, 'fragments'), 'fragment')} kept`,
+'machine-parked': (f) => `parked the protocol machine at phase ${num(f, 'phase')} of ${num(f, 'of')}`,
+'machine-resumed': (f) => `picked the protocol machine back up at phase ${num(f, 'phase')} of ${num(f, 'of')}`,
 
 // ── The derivation patterns (Q-82, ticket 111): shadow, live, refused ──
 
@@ -914,19 +897,9 @@ const SENTENCES = {
  // stay in the JSONL (Q-6, Q-24) — the sentence names what happened, not who.
  'repair-expired': () => 'expired a question citing a repaired snippet',
  'thread-deferred': () => 'deferred a thread after two disengaged replies',
- } satisfies Record<string, (f: Fields, detail: string) => string>;
+ } satisfies Record<EventKind, (f: DetailFields, detail: string) => string>;
  
  /**
-
-/**
- * Every kind the Activity Log can carry, DERIVED from the SENTENCES table so
- * the union and the table cannot drift: a kind added to the table is a union
- * member, and a kind removed from it stops compiling at its emitters. The
- * sweep in tests/emitted-kinds.ts stays as the OTHER half of the check — a
- * kind somebody emits without declaring a sentence is still a test failure,
- * because a union cannot notice a kind nobody declared.
- */
-export type EventKind = keyof typeof SENTENCES;
 
 /**
  * Whether this file has a sentence for `kind`, or will fall back to reading the
@@ -947,7 +920,7 @@ export function hasSentence(kind: string): boolean {
  */
 function fallback(kind: string, detail: string): string {
  const words = kind.replace(/[-_]/g, ' ').trim() || 'did something';
- const rest = detail.replace(FIELD, ' ').replace(ULID, ' ').replace(/\s+/g, ' ').trim();
+ const rest = detail.replace(DETAIL_FIELD, ' ').replace(ULID, ' ').replace(/\s+/g, ' ').trim();
  return rest ? `${words} — ${rest}` : words;
 }
 
@@ -956,7 +929,7 @@ export function formatEvent(e: FormattableEvent): string {
  const kind = typeof e.kind === 'string' ? e.kind : '';
  const detail = typeof e.detail === 'string' ? e.detail : '';
  const sentence = hasSentence(kind) ? SENTENCES[kind as EventKind] : undefined;
- return scrubIds(sentence ? sentence(fields(detail), detail) : fallback(kind, detail));
+ return scrubIds(sentence ? sentence(detailFields(detail), detail) : fallback(kind, detail));
 }
 
 /** How long ago the event happened, in the compact form the rest of the page uses. */

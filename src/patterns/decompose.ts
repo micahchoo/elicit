@@ -12,6 +12,7 @@
  */
 
 import type { Pattern, DecompositionResult, Operator } from './types.js';
+import { OPERATOR_WORDS } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Quoted-span extraction
@@ -31,7 +32,7 @@ function opensSpan(text: string, i: number): boolean {
 
 function closesSpan(text: string, i: number): boolean {
   if (i + 1 >= text.length) return true;
-  return /[\s.,;:!?)\]\\u2014\\u2013-]/u.test(text[i + 1]!);
+  return /[\s.,;:!?)\]\u2014\u2013-]/u.test(text[i + 1]!);
 }
 
 interface QuotedSpan {
@@ -129,21 +130,8 @@ function contentWords(text: string): string[] {
 }
 
 function isOperatorWord(word: string, operators: Operator[]): boolean {
-  const MAP: Record<Operator, string[]> = {
-    'suppose': ['suppose', 'imagine', 'what', 'if'],
-    'time-shift': ['then', 'now', 'later', 'before', 'after', 'looking', 'back', 'today', 'years', 'ago'],
-    'miracle': ['miracle', 'overnight', 'awake', 'solved', 'different'],
-    'clean-language-frame': ['kind', 'anything', 'else', 'where', 'about', 'happens'],
-    'sentence-completion': ['because', 'finish', 'complete'],
-    'reversal': ['surprise', 'answer', 'ask', 'question'],
-    'externalize': ['character', 'want', 'story', 'name', 'call'],
-    'instance-of': ['include', 'apply', 'cover', 'case', 'example'],
-    'counterfactual-twist': ['different', 'instead', 'otherwise', 'changed', 'manager', 'offered', 'promotion'],
-    'dilemma-construct': ['closer', 'between', 'choose', 'act', 'crisis'],
-    'anniversary-frame': ['written', 'date', 'since', 'changed', 'looking', 'back'],
-  };
   for (const op of operators) {
-    const words = MAP[op] ?? [];
+    const words = OPERATOR_WORDS[op] ?? [];
     if (words.includes(word.toLowerCase())) return true;
   }
   return false;

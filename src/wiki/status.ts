@@ -35,8 +35,8 @@
 import {
   THRESHOLDS,
   shadowDecision,
-  type ThresholdLogFn,
-} from './thresholds.js';
+} from './thresholds.js'
+import type { ThresholdLogFn } from '../domain/thresholds.js';
 import type { Claim, ClaimGraph, ClaimStatus, LogFn } from './contract.js';
 import type { Facet, Snippet } from '../types.js';
 

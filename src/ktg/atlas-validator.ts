@@ -7,48 +7,10 @@
  */
 
 import type { AtlasInstrument, AtlasRegion } from './atlas-types.js';
+import { isStableSlug, strVal, strArr, objArr, type ValidationResult } from './validate-shared.js';
 
-/** Reasons an atlas may be rejected, one per violation. */
 export type RejectionReason = string;
-
-/** Successful validation: the value is a known-good AtlasInstrument. */
-export type ValidAtlas = { ok: true; value: AtlasInstrument };
-
-/** Failed validation: every reason names one contract violation. */
-export type InvalidAtlas = { ok: false; reasons: RejectionReason[] };
-
-export type AtlasResult = ValidAtlas | InvalidAtlas;
-
-// ── id helpers ──
-
-/** Stable slugs: lowercase alphanumeric, hyphens, dots only. */
-const ID_RE = /^[a-z0-9][a-z0-9.-]*$/;
-
-function isStableSlug(id: string): boolean {
-  return ID_RE.test(id);
-}
-
-// ── helpers for reading unknown fields ──
-
-function strVal(obj: Record<string, unknown>, key: string): string | null {
-  const v = obj[key];
-  if (typeof v === 'string') return v;
-  return null;
-}
-
-function strArr(obj: Record<string, unknown>, key: string): string[] | null {
-  const v = obj[key];
-  if (!Array.isArray(v)) return null;
-  if (!v.every((x) => typeof x === 'string')) return null;
-  return v as string[];
-}
-
-function objArr(obj: Record<string, unknown>, key: string): Record<string, unknown>[] | null {
-  const v = obj[key];
-  if (!Array.isArray(v)) return null;
-  if (!v.every((x) => typeof x === 'object' && x !== null && !Array.isArray(x))) return null;
-  return v as Record<string, unknown>[];
-}
+export type AtlasResult = ValidationResult<AtlasInstrument>;
 
 // ── validation ──
 

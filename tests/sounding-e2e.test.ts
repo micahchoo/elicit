@@ -111,9 +111,9 @@ const RUNG_ANSWERS = [
  'Until I name it, the work keeps circling the same unfinished paragraph.',
  'Late in the afternoon the pull asks again what I am avoiding in the page.',
  'I can hear the work and the pull arguing about being seen in the margins.',
- 'The margins hold what neither voice could settle before the morning came back.',
+ 'The margins hold the work where neither voice could settle before the morning came back.',
  'I brought the pull to the window and let the light name it for the first time.',
- 'Being seen by the work taught me something the room could not hold on its own.',
+ 'being seen by the work taught me something the room could not hold on its own.',
  'The work and the pull, finally quiet together on the same page this morning.',
 ] as const;
 
@@ -141,7 +141,7 @@ const RUNG_TAILS = [
  * (which quotes THREAD_PHRASES[8 % 3] = 'the work') and once for the accept,
  * so rung 0 quotes a DIFFERENT substring of the same answer ('being seen' is
  * the last half of THREAD[8]). */
-const RUNG_PHRASES = ['being seen', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen'] as const;
+const RUNG_PHRASES = ['being seen', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen', 'the work', 'the pull', 'being seen'] as const;
 
 function aRichAnswer(i: number): string {
  return RUNG_ANSWERS[i - 1]!;
@@ -190,18 +190,17 @@ function parkScript(): string[] {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3, 4]) {
+ // rungs 1-5 (answers 1-5, each composing the next rung's question).
+ for (const k of [1, 2, 3, 4, 5]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
- // rung 5 → checkpoint: no calls; the continue composes rung 6's question.
- out.push(...turnScript(RUNG_PHRASES[5]!, followUp(RUNG_PHRASES[5]!, RUNG_TAILS[5]!)));
  // park: no calls. Then the docket's ladder-summary job, one line.
  out.push('it ran from being seen to a shed nobody entered');
  // The second sitting's resume: a question composed FRESH, quoting the last
- // kept answer (the rung the descent was parked on).
+ // kept answer (rung 5's answer — RUNG_ANSWERS[4] holds 'being seen').
  out.push(...turnScript('being seen', followUp('being seen', 'What does being seen need from you this week?')));
- // Rung 6's answer composes rung 7's question.
- out.push(...turnScript(RUNG_PHRASES[6]!, followUp(RUNG_PHRASES[6]!, RUNG_TAILS[6]!)));
+ // The resumed answer is the checkpoint (rung 6, no composition); the park
+ // gate composes nothing either.
  return out;
 }
 
@@ -281,11 +280,14 @@ describe('soundings end to end (Task 13)', () => {
   for (let i = 1; i <= 12; i++) {
    const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) {
-    // 4. The cap closed the descent on the eighth answer, with the door
+    // 4. The cap closed the descent on the twelfth answer, with the door
     //    question already on the wire.
     expect(res.descentClosed).toBe('cap');
     expect(res.soundingId).toBeTruthy();
-    expect(res.phase).toBe('closing-door');
+    // The turn response's phase field is the machine shape (ticket 159,
+    // slice 4 — every sitting carries the machine); the session phase
+    // string still rides the gate routes.
+    expect(res.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
     expect(res.text).toBe(CLOSING_DOOR_QUESTION);
     soundingId = res.soundingId;
     break;
@@ -328,7 +330,7 @@ describe('soundings end to end (Task 13)', () => {
   const door = await post(app, `/api/session/${id}/turn`, { text: 'Nothing else for now.' });
   expect(door.kind).toBe('probe');
   expect(door.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  expect(door.phase).toBe('closing-bookmark');
+  expect(door.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
   const bookmark = await post(app, `/api/session/${id}/turn`, { text: BOOKMARK });
   expect(bookmark.kind).toBe('saturated');
  });
@@ -340,26 +342,17 @@ describe('soundings end to end (Task 13)', () => {
   const accepted = await post(app, `/api/session/${id1}/sounding`, { accept: true });
   expect(accepted.sounding).toEqual({ rung: 0, of: 12, checkpoint: false });
 
-  // 1. Four rungs, each carrying the gate reading and the next question together.
-  for (let i = 1; i <= 4; i++) {
+  // 1. Five rungs, each carrying the gate reading and the next question
+  //    together. The descent parks BEFORE the checkpoint (rung 6): the
+  //    resume's first answer then lands ON the checkpoint.
+  for (let i = 1; i <= 5; i++) {
    const res = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(i) });
    expect(res.kind).toBe('probe');
    expect(res.text).toBeTruthy();
    expect(res.sounding).toEqual({ rung: i, of: 12, checkpoint: false });
   }
 
-  // 2. The checkpoint rung: no question until a gate word arrives.
-  const checkpoint = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(5) });
-  expect(checkpoint.kind).toBe('checkpoint');
-  expect(checkpoint.text).toBeUndefined();
-  expect(checkpoint.sounding).toEqual({ rung: 5, of: 12, checkpoint: true });
-
-  // 3. Continue: a probe comes back.
-  const cont = await post(app, `/api/session/${id1}/sounding/gate`, { choice: 'continue' });
-  expect(cont.kind).toBe('probe');
-  expect(cont.text).toBeTruthy();
-
-  // 4. Park: the ladder file holds every rung, the Queue holds one pointer,
+  // 2. Park: the ladder file holds every rung, the Queue holds one pointer,
   //    and the draw never returns it (the 'sounding' filter is not relaxable).
   const parked = await post(app, `/api/session/${id1}/sounding/gate`, { choice: 'park' });
   expect(parked.kind).toBe('descent-closed');

@@ -28,7 +28,7 @@
  */
 
 import { readEvents, appendEvent } from '../log/activity.js';
-import type { EventKind } from '../log/format.js';
+import type { EventKind } from '../log/kinds.js';
 import {
   applyFacetBalance,
   facetBalanceIsLive,

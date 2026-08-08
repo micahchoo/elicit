@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isWeakForm } from '../src/queue/bank-filter.js';
+import { isWeakForm } from '../src/language/weak-form.js';
 
 describe('isWeakForm', () => {
 	describe('rejects yes/no forms', () => {

@@ -14,18 +14,21 @@ import { loadPatterns } from '../patterns/registry.js';
 import { selectCheapPattern } from '../patterns/select.js';
 import { decomposeDerived } from '../patterns/decompose.js';
 import type { LicensingContext, Pattern, Operator } from '../patterns/types.js';
-import { checkQuestion } from '../elicitor/guards.js';
+import { checkQuestion } from '../language/guards.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Strips markdown code fences, keeping the inner content. The regex form
+ * handles single-line fenced JSON (the old slice-based copy mangled
+ * ```json {...}``` with no newline — the fence check passed, then the slice
+ * corrupted the line). */
 function stripFences(raw: string): string {
   let s = raw.trim();
-  if (s.startsWith('```') && s.endsWith('```')) {
-    s = s.slice(s.indexOf('\n') + 1, s.lastIndexOf('\n')).trim();
-  }
-  return s;
+  s = s.replace(/^```(?:json)?\s*\n?/i, '');
+  s = s.replace(/\n?```\s*$/, '');
+  return s.trim();
 }
 
 interface QuotedSpanRef {
@@ -104,8 +107,15 @@ Your question must:
 // The composer
 // ---------------------------------------------------------------------------
 
+/**
+ * A composition source: the prose the question derives from. A Snippet
+ * satisfies this shape, and so does a bare rung answer — the deep path no
+ * longer needs to fabricate a Snippet (and a fake id) to compose off prose.
+ */
+export type PatternSource = { prose: string; captured?: string; id: string; version: number };
+
 export async function composeWithPattern(
-  snippets: Snippet[],
+  snippets: PatternSource[],
   complete: Complete,
   ctx: LicensingContext & {
     log?: (e: { at: string; actor: string; kind: string; detail: string }) => void;
@@ -120,7 +130,10 @@ export async function composeWithPattern(
   const selected = pattern ?? selectCheapPattern(patterns, ctx, ctx.log);
   if (!selected) return null;
 
-  const sources = snippets.map((s) => ({ prose: s.prose, captured: s.captured }));
+  const sources = snippets.map((s) => ({
+    prose: s.prose,
+    ...(s.captured !== undefined ? { captured: s.captured } : {}),
+  }));
   const prompt = patternPrompt(selected, sources);
 
   const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });

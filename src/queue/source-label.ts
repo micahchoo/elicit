@@ -56,6 +56,7 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'lint-undiscriminated-range': 'from your own words',
  'parked-sounding': 'from your own words',
  'parked-drm': 'from your own words',
+ 'parked-machine': 'from your own words',
  'claim-challenged': 'you pushed back on the wiki',
 'import-repair': 'from your own words',
  'quest-reflection': 'from your own words',

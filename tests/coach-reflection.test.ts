@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createQueueStore } from '../src/queue/queue.js';
 import { mintReflections } from '../src/coach/reflection.js';
-import { THRESHOLDS, type ThresholdLogFn } from '../src/wiki/thresholds.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
+import type { ThresholdLogFn } from '../src/domain/thresholds.js';
 import type { Quest } from '../src/coach/contract.js';
 import type { QueueStore } from '../src/types.js';
 

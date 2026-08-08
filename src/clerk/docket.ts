@@ -243,9 +243,13 @@ export async function runIntentionHorizonAnnotations(deps: {
 
   for (const snippet of candidates.slice(0, cap)) {
     try {
-      // Check for existing annotation — version-gated, re-ask on new version
-      const existing = deps.annotations.get(snippet.id, 'intention-horizon');
-      if (existing && existing.kind === 'intention-horizon' && existing.version === snippet.version) {
+      // Check for existing annotation — version-gated, re-ask on new
+      // version. The ambiguous verdict (a dating question was minted) counts
+      // as annotated: re-asking the same snippet every run is the bug the
+      // stored verdict fixes.
+      const existing = deps.annotations.get(snippet.id, 'intention-horizon')
+        ?? deps.annotations.get(snippet.id, 'intention-horizon-ambiguous');
+      if (existing && existing.version === snippet.version) {
         silent++;
         continue;
       }
@@ -263,7 +267,10 @@ export async function runIntentionHorizonAnnotations(deps: {
         });
         annotated++;
       } else {
-        // Ambiguous horizon — mint a dating question
+        // Ambiguous horizon — mint a dating question. The verdict is ALSO
+        // stored (kind 'intention-horizon-ambiguous') so the version-gated
+        // check above sees this snippet next run — without the record, the
+        // same snippet is re-annotated and re-asked every docket run.
         deps.queue.add({
           source: 'composed',
           license: 'CC0',
@@ -272,6 +279,14 @@ export async function runIntentionHorizonAnnotations(deps: {
           cites: [`${result.snippetId}@${result.version}`],
           sharpness: 'weak',
           horizon: 'session',
+        });
+        deps.annotations.put({
+          kind: 'intention-horizon-ambiguous',
+          snippetId: result.snippetId,
+          version: result.version,
+          datingQuestion: result.datingQuestion,
+          model: result.model,
+          modelAt: result.modelAt,
         });
         ambiguous++;
         deps.log({

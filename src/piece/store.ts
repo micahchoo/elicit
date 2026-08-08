@@ -13,8 +13,18 @@ import type {
   Principle,
 } from './contract.js';
 
-export function createPieceStore(root: string): PieceStore {
-  return new PieceStoreImpl(root);
+/**
+ * Create the piece store. `snippets` is the vault's snippet map (the index
+ * rebuild), injected at construction so pin validation and the vault read the
+ * same markdown truth (Q-3) — production always injects, so the store never
+ * scans the snippets layout itself. The optional form keeps callers that do
+ * not validate pins (tests, list-only paths) from building a map.
+ */
+export function createPieceStore(
+  root: string,
+  opts?: { snippets: Record<string, Snippet> | (() => Record<string, Snippet>) },
+): PieceStore {
+  return new PieceStoreImpl(root, opts?.snippets);
 }
 
 /**
@@ -25,9 +35,57 @@ export function createPieceStore(root: string): PieceStore {
  */
 class PieceStoreImpl implements PieceStore {
   #root: string;
+  /** The injected snippet source: a live resolver or a fixed map; undefined scans lazily. */
+  #snippetSource: Record<string, Snippet> | (() => Record<string, Snippet>) | undefined;
 
-  constructor(root: string) {
+  constructor(
+    root: string,
+    snippets?: Record<string, Snippet> | (() => Record<string, Snippet>),
+  ) {
     this.#root = root;
+    this.#snippetSource = snippets;
+  }
+
+  /** The pin-validation ground truth: resolved live, else a lazy scan. */
+  get #snippets(): Record<string, Snippet> {
+    if (typeof this.#snippetSource === 'function') return this.#snippetSource();
+    if (this.#snippetSource !== undefined) return this.#snippetSource;
+    return this.#scanSnippets();
+  }
+
+  /** Fallback scan when no map was injected (legacy callers/tests). */
+  #scanSnippets(): Record<string, Snippet> {
+    const dir = join(this.#root, 'snippets');
+    if (!existsSync(dir)) return {};
+    const snippets: Record<string, Snippet> = {};
+    for (const dirName of readdirSync(dir)) {
+      const snippetDir = join(dir, dirName);
+      if (!statSync(snippetDir).isDirectory()) continue;
+      const files = readdirSync(snippetDir)
+        .filter((f) => /^v\d+\.md$/.test(f))
+        .sort((a, b) => {
+          const va = Number(a.match(/^v(\d+)\.md$/)![1]);
+          const vb = Number(b.match(/^v(\d+)\.md$/)![1]);
+          return vb - va; // newest first
+        });
+      const newest = files[0];
+      if (!newest) continue;
+      const parsed = matter.read(join(snippetDir, newest));
+      const data = parsed.data as {
+        id: string;
+        version: number;
+        captured: string;
+        provenance: Snippet['provenance'];
+      };
+      snippets[data.id] = {
+        id: data.id,
+        version: data.version,
+        captured: data.captured,
+        provenance: data.provenance,
+        prose: parsed.content.trimEnd(),
+      };
+    }
+    return snippets;
   }
 
   #piecesDir(): string {
@@ -81,7 +139,7 @@ class PieceStoreImpl implements PieceStore {
 
   putArrangement(pieceId: string, a: Arrangement): Piece {
     this.#requirePiece(pieceId);
-    const first = noProse(a) ?? noTitle(a) ?? pinsResolve(a, this.#snippets());
+    const first = noProse(a) ?? noTitle(a) ?? pinsResolve(a, this.#snippets);
     if (first) throw new Error(first);
     this.#writeArrangement(pieceId, a);
     return this.#pieceFromDisk(pieceId);
@@ -89,7 +147,7 @@ class PieceStoreImpl implements PieceStore {
 
   addArrangement(pieceId: string, a: Arrangement): Piece {
     this.#requirePiece(pieceId);
-    const first = noProse(a) ?? noTitle(a) ?? pinsResolve(a, this.#snippets());
+    const first = noProse(a) ?? noTitle(a) ?? pinsResolve(a, this.#snippets);
     if (first) throw new Error(first);
     this.#writeArrangement(pieceId, a);
     return this.#pieceFromDisk(pieceId);
@@ -220,45 +278,5 @@ class PieceStoreImpl implements PieceStore {
       .filter((f) => f.endsWith('.md'))
       .map((f) => this.#readArrangement(id, f))
       .sort((a, b) => (a.id < b.id ? -1 : 1));
-  }
-
-  /**
-   * The snippets map for pinsResolve, rebuilt from this store's own root —
-   * latest v<N>.md per snippet id (Q-3). PRIVATE: the store's only read of
-   * another module's files, and the only place pin validation gets its
-   * ground truth.
-   */
-  #snippets(): Record<string, Snippet> {
-    const dir = join(this.#root, 'snippets');
-    if (!existsSync(dir)) return {};
-    const snippets: Record<string, Snippet> = {};
-    for (const dirName of readdirSync(dir)) {
-      const snippetDir = join(dir, dirName);
-      if (!statSync(snippetDir).isDirectory()) continue;
-      const files = readdirSync(snippetDir)
-        .filter((f) => /^v\d+\.md$/.test(f))
-        .sort((a, b) => {
-          const va = Number(a.match(/^v(\d+)\.md$/)![1]);
-          const vb = Number(b.match(/^v(\d+)\.md$/)![1]);
-          return vb - va; // newest first
-        });
-      const newest = files[0];
-      if (!newest) continue;
-      const parsed = matter.read(join(snippetDir, newest));
-      const data = parsed.data as {
-        id: string;
-        version: number;
-        captured: string;
-        provenance: Snippet['provenance'];
-      };
-      snippets[data.id] = {
-        id: data.id,
-        version: data.version,
-        captured: data.captured,
-        provenance: data.provenance,
-        prose: parsed.content.trimEnd(),
-      };
-    }
-    return snippets;
   }
 }

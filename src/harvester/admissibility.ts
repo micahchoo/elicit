@@ -27,7 +27,7 @@
  * predicates would have gone, so nobody re-derives them from first principles.
  */
 
-import { isContentFree } from '../elicitor/answer-shape.js';
+import { isContentFree } from '../language/thin-answer.js';
 
 // ---------------------------------------------------------------------------
 // Normalization

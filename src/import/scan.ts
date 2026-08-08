@@ -25,30 +25,17 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { basename, join } from 'node:path';
 import matter from 'gray-matter';
 
 import { dateFor, DEFAULT_DATING } from './dating.js';
-import type { DatingRule, RefusalReason } from './contract.js';
+import type { DatingRule, RefusalReason, ScannedItem } from './contract.js';
 
 /** The body's identity (Q-59): SHA-256 of the prose, frontmatter excluded. */
 export function bodyHash(body: string): string {
   return createHash('sha256').update(body.trimEnd()).digest('hex').slice(0, 12);
 }
-
-/** One scanned source file, frontmatter stripped. Structural type only: the
- * parallel store task defines its own copy, and structural typing keeps the
- * two interchangeable. */
-export type ScannedItem = {
-  hash: string;
-  sourcePath: string;
-  date: string;
-  lastmod?: string;
-  title?: string;
-  /** The body, frontmatter stripped. What the reviewer will read whole. */
-  body: string;
-};
 
 export type ScanResult = {
   items: ScannedItem[];
@@ -123,10 +110,20 @@ function scanFile(sourcePath: string, rule: DatingRule): ScanOutcome {
 export function walkMarkdown(root: string): string[] {
   const out: string[] = [];
   const visit = (dir: string): void => {
+    // One unreadable subdirectory must not abort a scan with a nameless
+    // error (ticket 154): the folder it choked on is the name that makes
+    // the failure actionable, and the import route relays it as-is.
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (cause) {
+      throw new Error(
+        `cannot read folder ${dir}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      );
+    }
     // Sorted so the walk is deterministic on any filesystem.
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-    );
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {

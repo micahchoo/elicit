@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNearDuplicate } from '../src/elicitor/guards.js';
+import { isNearDuplicate } from '../src/language/guards.js';
 
 /**
  * Ticket 111: the near-duplicate guard compared every word of the question,

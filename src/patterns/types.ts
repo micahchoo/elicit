@@ -41,6 +41,26 @@ export type Operator =
   | 'counterfactual-twist'
   | 'dilemma-construct'
   | 'anniversary-frame';
+/**
+ * The words that NAME each operator in the person's material (Q-81). Sits
+ * beside the union so a new operator must add its words in the same edit —
+ * the guard (decompose.ts) reads this map, and the two can never disagree
+ * about what an operator is called.
+ */
+export const OPERATOR_WORDS: Record<Operator, string[]> = {
+ 'suppose': ['suppose', 'imagine', 'what', 'if'],
+ 'time-shift': ['then', 'now', 'later', 'before', 'after', 'looking', 'back', 'today', 'years', 'ago'],
+ 'miracle': ['miracle', 'overnight', 'awake', 'solved', 'different'],
+ 'clean-language-frame': ['kind', 'anything', 'else', 'where', 'about', 'happens'],
+ 'sentence-completion': ['because', 'finish', 'complete'],
+ 'reversal': ['surprise', 'answer', 'ask', 'question'],
+ 'externalize': ['character', 'want', 'story', 'name', 'call'],
+ 'instance-of': ['include', 'apply', 'cover', 'case', 'example'],
+ 'counterfactual-twist': ['different', 'instead', 'otherwise', 'changed', 'manager', 'offered', 'promotion'],
+ 'dilemma-construct': ['closer', 'between', 'choose', 'act', 'crisis'],
+ 'anniversary-frame': ['written', 'date', 'since', 'changed', 'looking', 'back'],
+};
+
 
 /** What source material a pattern needs to be licensable. */
 export type DerivesFrom = {

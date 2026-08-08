@@ -663,15 +663,16 @@ export function appendSweepDeferral(root: string, remaining: number): void {
 }
 
 /**
- * The LAST valid deferral line, or null when the file is missing, empty, or
- * every line is corrupt. A corrupt line is skipped on the Activity Log's
- * precedent, exactly as #sweepLines does for the sweep log — a half-written
- * final line must not hide the real backlog above it.
+ * EVERY valid deferral line, oldest first. The ledger is append-only (Q-3,
+ * Q-29: nothing here deletes), so the history IS the per-sitting detail —
+ * each line is one sitting that left sweep work. A corrupt line is skipped
+ * on the Activity Log's precedent, exactly as #sweepLines does for the sweep
+ * log — a half-written final line must not hide the real backlog above it.
  */
-export function readSweepDeferral(root: string): { at: string; remaining: number } | null {
+export function readSweepDeferrals(root: string): { at: string; remaining: number }[] {
   const path = join(root, 'wiki', SWEEP_DEFERRAL);
-  if (!existsSync(path)) return null;
-  let last: { at: string; remaining: number } | null = null;
+  if (!existsSync(path)) return [];
+  const lines: { at: string; remaining: number }[] = [];
   for (const line of readFileSync(path, 'utf-8').split('\n')) {
     const trimmed = line.trim();
     if (trimmed === '') continue;
@@ -682,12 +683,21 @@ export function readSweepDeferral(root: string): { at: string; remaining: number
       const at = str(rec.at);
       const remaining = rec.remaining;
       if (!at || typeof remaining !== 'number') continue;
-      last = { at, remaining };
+      lines.push({ at, remaining });
     } catch {
       // Malformed line — skip, exactly as the sweep log does.
     }
   }
-  return last;
+  return lines;
+}
+
+/**
+ * The LAST valid deferral line, or null when the file is missing, empty, or
+ * every line is corrupt — the boot-drain check's single-line probe.
+ */
+export function readSweepDeferral(root: string): { at: string; remaining: number } | null {
+  const lines = readSweepDeferrals(root);
+  return lines.length > 0 ? lines[lines.length - 1]! : null;
 }
 
 export function writeStillTrueCursor(root: string, offset: number): void {

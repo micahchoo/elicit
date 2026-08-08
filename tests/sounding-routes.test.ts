@@ -73,9 +73,9 @@ const RUNG_ANSWERS = [
  'Until I name it, the work keeps circling the same unfinished paragraph.',
  'Late in the afternoon the pull asks again what I am avoiding in the page.',
  'I can hear the work and the pull arguing about being seen in the margins.',
- 'The margins hold what neither voice could settle before the morning came back.',
+ 'The margins hold the work where neither voice could settle before the morning came back.',
  'I brought the pull to the window and let the light name it for the first time.',
- 'Being seen by the work taught me something the room could not hold on its own.',
+ 'being seen by the work taught me something the room could not hold on its own.',
  'The work and the pull, finally quiet together on the same page this morning.',
 ] as const;
 
@@ -202,7 +202,7 @@ describe('sounding routes', () => {
   for (let i = 1; i <= 12; i++) {
    const res = await post(app, `/api/session/${sessionId}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) return res;
-   if (i === 5) {
+   if (i === 6) {
     const gate = await post(app, `/api/session/${sessionId}/sounding/gate`, { choice: 'continue' });
     expect(gate.kind).toBe('probe');
    }
@@ -254,7 +254,7 @@ describe('sounding routes', () => {
   expect(ladder).not.toBeNull();
   // The on-disk ladder is the truth: the answer that licensed the descent
   // holds the foothold rung 0 was built from, verbatim.
-  expect(ladder!.licensingAnswer).toBe(THREAD[8]);
+  expect(ladder!.licensingAnswer).toBe(THREAD[5]);
   expect(ladder!.licensingAnswer).toContain(ladder!.rungs[0]!.foothold);
   expect(ladder!.rungs[0]!.question).toContain(ladder!.rungs[0]!.foothold);
  });
@@ -277,13 +277,13 @@ describe('sounding routes', () => {
   const id = await newSession(app);
   await turnUntilLicensed(app, id);
   await post(app, `/api/session/${id}/sounding`, { accept: true });
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 5; i++) {
    await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
   }
-  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(5) });
+  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(6) });
   expect(res.kind).toBe('checkpoint');
   expect(res.text).toBeUndefined();
-  expect(res.sounding).toEqual({ rung: 5, of: expect.any(Number), checkpoint: true });
+  expect(res.sounding).toEqual({ rung: 6, of: expect.any(Number), checkpoint: true });
   const gate = await post(app, `/api/session/${id}/sounding/gate`, { choice: 'continue' });
   expect(gate.kind).toBe('probe');
  });
@@ -315,7 +315,10 @@ describe('sounding routes', () => {
   expect(queue.list({ source: 'parked-sounding' })).toHaveLength(1);
   // The door question was already asked, so the next turn moves to the bookmark.
   const next = await post(app, `/api/session/${id}/turn`, { text: 'nothing else' });
-  expect(next.phase).toBe('closing-bookmark');
+  // The turn response's phase field is now the machine shape (ticket 159,
+  // slice 4 — every sitting carries the machine); the session phase string
+  // still rides the gate routes and the session response.
+  expect(next.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
  });
 
  it('an unknown gate word is a 400, not a guess', async () => {

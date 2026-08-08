@@ -12,6 +12,8 @@
  * exported for the surface suite; paint stays by-use.
  */
 
+import type { WebDepsCore } from './deps.js';
+
 export interface CoachOptionData {
  id: string;
  text: string;
@@ -40,16 +42,7 @@ export interface CoachPageData {
  opening: string;
 }
 
-export interface CoachDeps {
- main: HTMLElement;
- el: <K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs?: Record<string, string>,
-  ...kids: (string | Node)[]
- ) => HTMLElementTagNameMap[K];
- api: <T>(path: string, body?: unknown) => Promise<T>;
- navTo: (screen: string) => void;
-}
+export interface CoachDeps extends WebDepsCore {}
 
 /** The paint-ready log rows: sentence, the person's quote, and the wire
  * fields the affordances need (kind, questId) — never rendered themselves. */

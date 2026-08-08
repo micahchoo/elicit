@@ -158,9 +158,9 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   status: 'live',
   reason: 'graduated 2026-08-03 (was Q-35 shadow, ticket 114, QR-1): the gate acted from birth — blocks pole-less half-Construct mints and logs every skip as gap-fill-pole-skip',
  },
- // ── src/clerk/disfluency.ts ──
+ // ── src/language/disfluency.ts ──
  {
-  module: 'src/clerk/disfluency',
+  module: 'src/language/disfluency',
   name: 'elideDisfluencies',
   status: 'live',
   reason: 'graduated 2026-08-03 (was Q-35 shadow, QR-5): acts at the queue\'s one write gate — elides STT disfluencies from quoted fragments and logs disfluency-elided when the text changes',
@@ -238,8 +238,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
   reason: 'Q-56 bound, ships live (a quota in shadow is not a quota); clip records resize it',
  },
 
- // ── src/elicitor/answer-shape.ts ──
- { module: 'src/elicitor/answer-shape', name: 'isContentFree', status: 'live' },
+ // ── src/language/thin-answer.ts ──
+ { module: 'src/language/thin-answer', name: 'isContentFree', status: 'live' },
 
  // ── src/elicitor/bank.ts ──
  { module: 'src/elicitor/bank', name: 'loadQuestionBank', status: 'live' },
@@ -248,6 +248,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/elicitor/elicitor', name: 'startSession', status: 'live' },
  { module: 'src/elicitor/elicitor', name: 'userTurn', status: 'live' },
  { module: 'src/elicitor/elicitor', name: 'skipQuestion', status: 'live' },
+ { module: 'src/elicitor/elicitor', name: 'machineTurn', status: 'live', reason: 'wired by 159 T5: the machine resume route composes the resumed question with the turn seam' },
 
  // ── src/elicitor/facet-intent.ts ──
  {
@@ -258,15 +259,15 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  },
  { module: 'src/elicitor/facet-intent', name: 'facetIntentForRedLight', status: 'live' },
 
- // ── src/elicitor/guards.ts ──
- { module: 'src/elicitor/guards', name: 'isInterrogative', status: 'live' },
- { module: 'src/elicitor/guards', name: 'setOffSpans', status: 'live' },
- { module: 'src/elicitor/guards', name: 'quotesFragmentSetOff', status: 'live' },
- { module: 'src/elicitor/guards', name: 'hasFirstPersonOutsideQuote', status: 'live' },
- { module: 'src/elicitor/guards', name: 'isParrot', status: 'live' },
- { module: 'src/elicitor/guards', name: 'isConversationReferential', status: 'live' },
- { module: 'src/elicitor/guards', name: 'isNearDuplicate', status: 'live' },
- { module: 'src/elicitor/guards', name: 'checkQuestion', status: 'live' },
+ // ── src/language/guards.ts ──
+ { module: 'src/language/guards', name: 'isInterrogative', status: 'live' },
+ { module: 'src/language/guards', name: 'setOffSpans', status: 'live' },
+ { module: 'src/language/guards', name: 'quotesFragmentSetOff', status: 'live' },
+ { module: 'src/language/guards', name: 'hasFirstPersonOutsideQuote', status: 'live' },
+ { module: 'src/language/guards', name: 'isParrot', status: 'live' },
+ { module: 'src/language/guards', name: 'isConversationReferential', status: 'live' },
+ { module: 'src/language/guards', name: 'isNearDuplicate', status: 'live' },
+ { module: 'src/language/guards', name: 'checkQuestion', status: 'live' },
 
  // ── src/elicitor/protocol.ts ──
  {
@@ -315,17 +316,17 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/index/lexical', name: 'buildIndex', status: 'live' },
  { module: 'src/index/lexical', name: 'resonate', status: 'live' },
 
- // ── src/index/watermark.ts (ticket 076 — the docket's two gates) ──
+ // ── src/clerk/watermark.ts (ticket 076 — the docket's two gates, re-homed from index/) ──
  // Both gates are read at the top of every wiki run in src/clerk/wiki-jobs.ts:
  // vaultDiff/changedIn decide the queue-driven jobs, and the fingerprint
  // trio decides the graph-derived passes.
- { module: 'src/index/watermark', name: 'vaultDiff', status: 'live' },
- { module: 'src/index/watermark', name: 'changedIn', status: 'live' },
- { module: 'src/index/watermark', name: 'fingerprintOf', status: 'live' },
- { module: 'src/index/watermark', name: 'sameFingerprint', status: 'live' },
- { module: 'src/index/watermark', name: 'readWatermark', status: 'live' },
- { module: 'src/index/watermark', name: 'writeWatermark', status: 'live' },
- { module: 'src/index/watermark', name: 'claimDelta', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'vaultDiff', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'changedIn', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'fingerprintOf', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'sameFingerprint', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'readWatermark', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'writeWatermark', status: 'live' },
+ { module: 'src/clerk/watermark', name: 'claimDelta', status: 'live' },
 
  // ── src/index/semantic.ts (068 landed — the wiring wave flipped these) ──
  {
@@ -542,7 +543,13 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/log/cadence', name: 'readCadence', status: 'live' },
  { module: 'src/log/cadence', name: 'cadenceSentence', status: 'live' },
 
- // ── src/log/format.ts ──
+ // ── src/log/detail.ts: the shared detail grammar ──
+{ module: 'src/log/detail', name: 'detailFields', status: 'live' },
+{ module: 'src/log/detail', name: 'detailField', status: 'live' },
+{ module: 'src/log/detail', name: 'detailQuoted', status: 'live' },
+{ module: 'src/log/detail', name: 'detailClause', status: 'live' },
+
+// ── src/log/format.ts ──
  {
   module: 'src/log/format',
   name: 'hasSentence',
@@ -603,16 +610,10 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/protocols/registry', name: 'selectProtocolForTarget', status: 'live' },
  { module: 'src/protocols/registry', name: 'getProtocol', status: 'live' },
 
- // ── src/protocols/yield.ts ──
- {
-  module: 'src/protocols/yield',
-  name: 'computeYield',
-  status: 'unwired',
-  reason: 'no production caller — tests/protocols.test.ts only; yield reporting was never surfaced',
- },
-
- // ── src/queue/bank-filter.ts ──
- { module: 'src/queue/bank-filter', name: 'isWeakForm', status: 'live' },
+ // ── src/language/weak-form.ts ──
+ { module: 'src/language/weak-form', name: 'isWeakForm', status: 'live' },
+ // ── src/language/emit-form.ts ──
+ { module: 'src/language/emit-form', name: 'checkEmitForm', status: 'live', reason: 'moved with the question-language layer (Phase 1): the emit-form gate acts at the queue\'s one write gate and every composed path' },
 
  // ── src/queue/facet-balance.ts (one Q-35 mechanism, nine declarations) ──
  {
@@ -681,6 +682,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
  // ── src/queue/queue.ts ──
  { module: 'src/queue/queue', name: 'createQueueStore', status: 'live' },
+{ module: 'src/queue/engagement', name: 'FRESH_ENGAGEMENT', status: 'live', reason: 'data: the Q-115 sitting-engagement ledger\'s fresh state — the queue store composes the ledger (Phase 5: sitting policy named as itself)' },
+{ module: 'src/queue/queue', name: 'distinctFieldKeys', status: 'live', reason: 'wired (Phase 5): the shared dedupe primitive for the minting sweeps\' one-question-per-X sets' },
  { module: 'src/queue/queue', name: 'isUserDeclaredWeight', status: 'live' },
 
  // ── src/queue/source-label.ts ──
@@ -728,14 +731,25 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  { module: 'src/server', name: 'createApp', status: 'live' },
  { module: 'src/server', name: 'serveApp', status: 'live' },
 
- // ── src/stt/client.ts ──
+ // ── src/stt/protocol.ts (the JSON-over-stdio contract, one declaration) ──
+{ module: 'src/stt/protocol', name: 'encodeOutbound', status: 'live', reason: 'wired: the worker sends every response through it (Phase 8 — one contract for the child-process pipe)' },
+{ module: 'src/stt/protocol', name: 'decodeInbound', status: 'live', reason: 'wired: the worker decodes every request through it, with shape validation the old JSON.parse lacked (Phase 8)' },
+// ── src/stt/client.ts ──
  { module: 'src/stt/client', name: 'createSttClient', status: 'live' },
 
  // ── src/stt/model.ts ──
  { module: 'src/stt/model', name: 'resolveCacheDir', status: 'live' },
  { module: 'src/stt/model', name: 'resolveModelDir', status: 'live' },
 
- // ── src/vault/vault.ts ──
+ // ── src/vault/transcripts.ts (the transcript collection read/write owner) ──
+{ module: 'src/vault/transcripts', name: 'readTranscripts', status: 'live', reason: 'wired (Phase 4): the single transcript-frontmatter read — lineage-mirror, strata, sitting, cadence, target-default and server.ts all parse through it' },
+{ module: 'src/vault/transcripts', name: 'readTranscript', status: 'live', reason: 'wired: server.ts sessionStartedAt and the sitting reader use the single-file variant' },
+{ module: 'src/vault/transcripts', name: 'appendClosing', status: 'live', reason: 'wired (Phase 4): the two closing sites in server.ts write the Q-20 section through it instead of raw appendFileSync' },
+// ── src/vault/marginalia.ts (the shared marginalia layout) ──
+{ module: 'src/vault/marginalia', name: 'writeMarginaliaLine', status: 'live', reason: 'wired: cover.ts and sounding-summary.ts write summary lines through it (Phase 4 — one marginalia layout owner)' },
+{ module: 'src/vault/marginalia', name: 'readMarginaliaLine', status: 'live', reason: 'wired: loadSummaries and loadLadderSummary read through it' },
+{ module: 'src/vault/marginalia', name: 'listMarginaliaFiles', status: 'live', reason: 'wired: loadSummaries enumerates through it' },
+// ── src/vault/vault.ts ──
  { module: 'src/vault/vault', name: 'createVault', status: 'live' },
 
  // ── src/wiki/clash.ts ──
@@ -747,6 +761,8 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
  },
  { module: 'src/wiki/clash', name: 'referentChannel', status: 'live' },
  { module: 'src/wiki/clash', name: 'poolCandidates', status: 'live' },
+{ module: 'src/wiki/clash', name: 'isLive', status: 'live', reason: 'the ONE live-claim predicate in the wiki slice — lint and the vector channel import it (Phase 8 consolidation)' },
+{ module: 'src/wiki/clash', name: 'mostRecentlyUpdated', status: 'live', reason: 'the ONE recency rule in the wiki slice — fanoutWindow and the vector windowOf share it (Phase 8 consolidation)' },
  {
   module: 'src/wiki/clash',
   name: 'sameSitting',
@@ -829,8 +845,11 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // ── src/index/lexical.ts (soundings slice Task 2 — the license's word API) ──
 { module: 'src/index/lexical', name: 'contentWordsOf', status: 'live' },
 { module: 'src/index/lexical', name: 'jaccard', status: 'live' },
- { module: 'src/index/lexical', name: 'contentWordSequence', status: 'live', reason: '119: the echo guard in composeOpener reads it to check summary n-gram overlap' },
+ { module: 'src/index/lexical', name: 'echoesAny', status: 'live', reason: 'Phase 8: the convergence echo check calls it instead of buildIndex+resonate — a boolean trigram predicate, no ranked index, no Snippet-shaped inputs' },
+{ module: 'src/index/lexical', name: 'contentWordSequence', status: 'live', reason: '119: the echo guard in composeOpener reads it to check summary n-gram overlap' },
 
+// ── src/sounding/thresholds.ts (the gate's values as data) ──
+{ module: 'src/sounding/thresholds', name: 'SOUNDING_THRESHOLDS', status: 'live', reason: 'data: the sounding gate values, each with a live flag and graduatesWhen (Q-35). Replaced the bare 0.10 and 6 literals (Phase 3)' },
 // ── src/sounding/license.ts ──
 { module: 'src/sounding/license', name: 'licenseSounding', status: 'live', reason: 'wired by 012 T8: the turn route evaluates it on every turn' },
 
@@ -838,6 +857,12 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/sounding/park', name: 'writeLadder', status: 'live', reason: 'wired by 012 T8: finishDescent persists every finished ladder' },
 { module: 'src/sounding/park', name: 'readLadder', status: 'live', reason: 'wired by 012 T12: resumeSounding and the queue enrichment read it' },
 { module: 'src/sounding/park', name: 'parkPointer', status: 'live', reason: 'wired by 012 T8: the gate route mints the pointer on park' },
+
+// ── src/protocols/park.ts (159 slice 5 — the machine side-record) ──
+{ module: 'src/protocols/park', name: 'writeMachineState', status: 'live', reason: 'wired by 159 T5: the park gate route and every ratified advance write it' },
+{ module: 'src/protocols/park', name: 'readMachineState', status: 'live', reason: 'wired by 159 T5: the machine resume route and the queue enrichment read it' },
+{ module: 'src/protocols/park', name: 'removeMachineState', status: 'live', reason: 'wired by 159 T5: the end flows remove the record a finished sitting owns' },
+{ module: 'src/protocols/park', name: 'parkMachinePointer', status: 'live', reason: 'wired by 159 T5: the park gate route mints the pointer on park' },
 
 // ── src/sounding/ladder.ts (012 Task 6 — the descent ladder) ──
 { module: 'src/sounding/ladder', name: 'enterSounding', status: 'live', reason: 'wired by 012 T8: the accept route enters the descent' },
@@ -870,27 +895,32 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 // sweep treats exported primitives and prompt strings as data (ticket 077).
 { module: 'src/drm/types', name: 'DRM_PROBE_QUESTIONS', status: 'live' },
 
-// ── src/drm/state.ts (Q-85 — DRM state machine) ──
+// ── src/drm/state.ts (Q-85 — DRM state machine; ticket 159 slice 6 the
+// transitions are pure functions over the machine's DrmUi) ──
 { module: 'src/drm/state', name: 'initDRM', status: 'live' },
-{ module: 'src/drm/state', name: 'beginDRM', status: 'live' },
 { module: 'src/drm/state', name: 'addEpisode', status: 'live' },
 { module: 'src/drm/state', name: 'doneEnumerating', status: 'live' },
 { module: 'src/drm/state', name: 'answerProbe', status: 'live' },
 { module: 'src/drm/state', name: 'buildProbeFragment', status: 'unwired', reason: 'used only in tests; server builds fragments through answerProbe' },
 { module: 'src/drm/state', name: 'applyGate', status: 'live' },
-{ module: 'src/drm/state', name: 'resumeDRM', status: 'live' },
+{ module: 'src/drm/state', name: 'resumeDRM', status: 'live', reason: 'slice 6: the drm resume route compat branch reads the legacy pre-machine park records' },
 { module: 'src/drm/state', name: 'gateReading', status: 'live' },
 { module: 'src/drm/state', name: 'probeQuestion', status: 'live' },
+{ module: 'src/drm/state', name: 'transcriptQuestion', status: 'live' },
 { module: 'src/drm/state', name: 'affectQuestionWithNudge', status: 'unwired', reason: 'nudge handled in web UI; server route uses probeQuestion' },
 
-// ── src/drm/park.ts (Q-85 — DRM persistence) ──
-{ module: 'src/drm/park', name: 'writeDRM', status: 'live' },
-{ module: 'src/drm/park', name: 'readDRM', status: 'live' },
-{ module: 'src/drm/park', name: 'parkDRMPointer', status: 'live' },
+// ── src/drm/park.ts (Q-85 — the LEGACY DRM park format) ──
+// Slice 6: drm parks persist the machine side-record instead; writeDRM
+// survives as the legacy format's writer for the roundtrip test, readDRM is
+// the compat read in the drm resume route.
+{ module: 'src/drm/park', name: 'writeDRM', status: 'unwired', reason: 'legacy pre-slice-6 format; nothing writes it in production since drm parks the machine side-record' },
+{ module: 'src/drm/park', name: 'readDRM', status: 'live', reason: 'the drm resume route reads legacy pre-slice-6 park records through it' },
 
 // ── src/clerk/sounding-rung.ts (012 Task 12 — the resumed rung's composition) ──
 { module: 'src/clerk/sounding-rung', name: 'composeFromCompacted', status: 'live', reason: 'wired by 012 T12: the resume route calls it' },
 
+// ── src/coach/store.ts (the coach read-model) ──
+{ module: 'src/coach/store', name: 'loadCoachFacts', status: 'live', reason: 'wired (Phase 4): server.ts buildCoachFacts delegates to it — the coach slice owns its read-model' },
 // ── src/coach/contract.ts (090 T2 — the coach contract) ──
 { module: 'src/coach/contract', name: 'directionSlugFor', status: 'live', reason: 'live: createCoachStore (src/coach/store.ts) slugs every declared Direction' },
 { module: 'src/coach/contract', name: 'adviceGuard', status: 'live', reason: 'live: runCoachAdvice (src/coach/advise.ts) gates every mint through it (T7)' },
@@ -923,21 +953,36 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 
 // ── src/ktg/ (094 — KTG territory ontology instrument) ──
 { module: 'src/ktg/validator', name: 'validateKtgSkeleton', status: 'live', reason: 'pure, no I/O — the guard at load time (094 P1)' },
+// ── src/ktg/validate-shared.ts (shared instrument validation scaffolding, Phase 8) ──
+{ module: 'src/ktg/validate-shared', name: 'isStableSlug', status: 'live', reason: 'shared: both validators reject non-slug ids through it' },
+{ module: 'src/ktg/validate-shared', name: 'strVal', status: 'live', reason: 'shared: the stricter (trim, reject-empty) field reader both validators use' },
+{ module: 'src/ktg/validate-shared', name: 'intVal', status: 'live', reason: 'shared: integer field reader (KTG validator)' },
+{ module: 'src/ktg/validate-shared', name: 'strArr', status: 'live', reason: 'shared: string-array field reader both validators use' },
+{ module: 'src/ktg/validate-shared', name: 'objArr', status: 'live', reason: 'shared: object-array field reader (atlas validator)' },
+
 { module: 'src/ktg/loader', name: 'loadKtgSkeleton', status: 'live', reason: 'wired by 094: server loads a skeleton at docket time (P3)' },
 { module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadKtgSkeleton (094 P1, corrected by 095 verification)' },
-{ module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2)' },
+{ module: 'src/ktg/coverage', name: 'createCoverageStore', status: 'live', reason: 'wired by 094: server creates the store for the territory sweep (P2). WRITE side parked (Phase 8): writeReading has no production caller — coverage stays "unprobed" until an agent-write flow is decided; the sweep fires only when readings exist.' },
 { module: 'src/ktg/gap-fill', name: 'runTerritoryGapFillSweep', status: 'live', reason: 'wired by 094: runDocket\'s thunk runs it as the territory gap-fill job (P3)' },
+{ module: 'src/ktg/loader', name: 'loadAtlas', status: 'live', reason: 'wired by 110: server loads atlas instruments at docket time — the shared loader hosts both instruments (Phase 8)' },
+{ module: 'src/ktg/loader', name: 'loadAtlasOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadAtlas (110, hosted by the shared loader)' },
 // ── src/ktg/atlas-* (110 — atlas territory instruments) ──
 { module: 'src/ktg/atlas-validator', name: 'validateAtlasInstrument', status: 'live', reason: 'pure, no I/O — the guard at load time (110)' },
-{ module: 'src/ktg/atlas-loader', name: 'loadAtlas', status: 'live', reason: 'wired by 110: server loads atlas instruments at docket time' },
-{ module: 'src/ktg/atlas-loader', name: 'loadAtlasOrThrow', status: 'unwired', reason: 'no production caller — tests only; convenience over loadAtlas (110)' },
-{ module: 'src/ktg/atlas-coverage', name: 'createAtlasCoverageStore', status: 'live', reason: 'wired by 110: server creates atlas coverage stores for the sweep' },
+{ module: 'src/ktg/coverage', name: 'createAtlasCoverageStore', status: 'live', reason: 'wired by 110: server creates atlas coverage stores for the sweep — the atlas store is the one parameterized implementation (Phase 8)' },
 { module: 'src/ktg/atlas-gap-fill', name: 'runAtlasGapFillSweep', status: 'live', reason: 'graduated 2026-08-03: server passes shadowMode:false — mints capped questions, one per region ever, deduped by atlasRegion' },
+// ── src/territory.ts (152 — territory surface prototype) ──
+{ module: 'src/territory', name: 'buildTerritoryResponse', status: 'live', reason: 'wired by 152: pure read surface joining ktg/atlas nodes with coverage readings (GET /api/territory)' },
+// ── src/clerk/coach-seed.ts (Q-111 door-1 seeding, extracted from server.ts) ──
+{ module: 'src/clerk/coach-seed', name: 'runCoachSeedSweep', status: 'live', reason: 'wired (Phase 6): the docket coachSeedSweep thunk — ZERO-LLM clustering of claim bodies into un-coached Directions' },
+// ── src/clerk/gazetteer-extraction.ts (entity extraction, extracted from server.ts) ──
+{ module: 'src/clerk/gazetteer-extraction', name: 'runGazetteerExtraction', status: 'live', reason: 'wired (Phase 6): the docket gazetteerExtraction thunk — model extraction capped at 5 snippets per run (Q-56)' },
 // ── src/clerk/gazetteer-* (100 — gazetteer entity index) ──
 { module: 'src/clerk/gazetteer-store', name: 'createGazetteerStore', status: 'live', reason: 'wired by 100: server creates the store for extraction + frontier (store)' },
 { module: 'src/clerk/gazetteer', name: 'extractEntities', status: 'live', reason: 'wired by 100: extraction thunk calls it; model-calling, cap live at birth (Q-56)' },
 { module: 'src/clerk/gazetteer', name: 'entityId', status: 'live', reason: 'wired by 100: extraction docket job uses it for entity id derivation' },
 { module: 'src/clerk/gazetteer-frontier', name: 'runGazetteerFrontier', status: 'live', reason: 'graduated 2026-08-03: server passes shadowMode:false — mints capped frontier questions, one per entity ever, deduped on subjects' },
+// ── src/patterns/types.ts (111 — the operator word map, beside the union) ──
+{ module: 'src/patterns/types', name: 'OPERATOR_WORDS', status: 'live', reason: 'the words that name each operator (Q-81) — decompose reads it, so a new operator adds its words beside the union (Phase 8)' },
 // ── src/patterns/ (111 — derivation patterns) ──
 { module: 'src/patterns/registry', name: 'loadPatterns', status: 'live', reason: 'pure, no I/O side effects beyond disk reads — loaded at composition time (111 T2)' },
 { module: 'src/patterns/registry', name: 'clearPatternCache', status: 'unwired', reason: 'no production caller — test seam only (111 T2, corrected by dispatcher verification)' },
@@ -947,7 +992,7 @@ export const MECHANISM_REGISTRY: MechanismEntry[] = [
 { module: 'src/patterns/select', name: 'selectCheapPattern', status: 'live', reason: 'same pattern — shadow gate in caller, function ships live (111 T2)' },
 { module: 'src/patterns/select', name: 'selectDeepPattern', status: 'unwired', reason: 'no production caller yet — the Sounding consent gate passes a pattern in when deep integration wires up (111 remainder)' },
 { module: 'src/clerk/composed', name: 'findQuotedFragment', status: 'live', reason: 'exported by 111 for the decomposition guard; long-standing internal caller set unchanged' },
-{ module: 'src/elicitor/guards', name: 'quotedSpans', status: 'live', reason: 'exported by 111 for the decomposition guard and quote masking' },
+{ module: 'src/language/guards', name: 'quotedSpans', status: 'live', reason: 'exported by 111 for the decomposition guard and quote masking' },
 { module: 'src/patterns/decompose', name: 'decomposeDerived', status: 'live', reason: 'pure predicate with no I/O — the Q-81 boundary guard; callers outside tests do not yet exist (111 T4)' },
 // ── src/clerk/compose-pattern.ts (111 — pattern-aware composition) ──
 { module: 'src/clerk/compose-pattern', name: 'composeWithPattern', status: 'live', reason: 'LLM-calling composition path with decomposition guard — shadow gate in caller, function ships live (111 T5)' },

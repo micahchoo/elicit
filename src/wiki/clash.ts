@@ -65,7 +65,8 @@ import type {
  LogFn,
  Registry,
 } from './contract.js';
-import { shadowDecision, type Threshold } from './thresholds.js';
+import { shadowDecision } from './thresholds.js'
+import type { Threshold } from '../domain/thresholds.js';
 
 // ── The interface every channel implements ──
 
@@ -138,8 +139,13 @@ export type ClashPool = {
  * A claim the graph still asserts. Archived and superseded claims stay on disk
  * as evidence of a past self and are never pooled: a contradiction between a
  * claim and one the wiki has already retired is not a tension, it is history.
+ *
+ * The ONE definition of "live claim" in the wiki slice: lint and the
+ * vector channel import this copy instead of restating it, so a rule change
+ * (Q-5) lands in one place. Skipping is not removing — nothing here changes
+ * what is on disk.
  */
-function isLive(c: Claim): boolean {
+export function isLive(c: Claim): boolean {
  return c.archived !== true && c.supersededBy === undefined;
 }
 
@@ -393,12 +399,30 @@ export function referentChannel(
  */
 function fanoutWindow(claims: Claim[], cap: number): Claim[] {
  if (claims.length <= cap) {
-  return [...claims].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...claims].sort(byId);
  }
+ return mostRecentlyUpdated(claims, cap);
+}
+
+/** Id order — the one traversal order every channel uses. */
+function byId(a: Claim, b: Claim): number {
+ return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * The `cap` most recently updated claims, returned in id order — the ONE
+ * recency rule in the wiki slice. The vector channel's windowOf calls this
+ * instead of restating the sort, so a recency change lands in one place.
+ *
+ * Two sorts, both load-bearing: recency picks WHICH claims are in the window,
+ * and id order fixes the sequence afterwards, so the same graph always
+ * produces the same list.
+ */
+export function mostRecentlyUpdated(claims: Claim[], cap: number): Claim[] {
  return [...claims]
-  .sort((a, b) => (a.updated === b.updated ? (a.id < b.id ? -1 : 1) : a.updated < b.updated ? 1 : -1))
+  .sort((a, b) => (a.updated === b.updated ? byId(a, b) : a.updated < b.updated ? 1 : -1))
   .slice(0, cap)
-  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  .sort(byId);
 }
 
 // ── The pool ──

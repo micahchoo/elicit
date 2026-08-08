@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { createClaimStore } from '../src/wiki/store.js';
 import { createVault } from '../src/vault/vault.js';
 import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
+import { isLive } from '../src/wiki/clash.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { ClaimGraph, LogFn } from '../src/wiki/contract.js';
 
@@ -44,12 +45,8 @@ const GOD_NODE_LIVE: ThresholdRegister = {
   'lint.godNodeFanout': { ...THRESHOLDS['lint.godNodeFanout'], live: true },
 };
 
-// The same liveness predicate lint.ts applies (not exported; replicated here
-// so the distribution and the lint agree about what "live" means).
-function isLive(c: ClaimGraph['claims'][number]): boolean {
-  return c.archived !== true && c.supersededBy === undefined;
-}
-
+// The ONE liveness predicate in the wiki slice — clash.ts exports it and
+// lint imports it; the distribution and the lint agree by construction.
 // ── The live-claim-per-referent distribution ──
 
 const perReferent = new Map<string, string[]>();

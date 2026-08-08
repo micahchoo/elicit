@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { elideDisfluencies } from '../src/clerk/disfluency.js';
+import { elideDisfluencies } from '../src/language/disfluency.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import type { QueueDraft } from '../src/types.js';
 

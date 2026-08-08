@@ -6,7 +6,6 @@
  */
 
 import type { Turn } from '../types.js';
-import { ORPHAN_QUOTES } from './prior-ingest.js';
 
 /** Strip Hugo shortcodes, images, bare links and HTML. */
 export function clean(md: string, keepQuotes: boolean): string {
@@ -36,10 +35,10 @@ export function clean(md: string, keepQuotes: boolean): string {
  * paragraphs with the citation trailing, and sometimes with no quote marks
  * at all because the citation sits on the NEXT paragraph. A reader cannot
  * tell those from the author's own sentences, so neither can a harvester.
- * The cases only a reader can find live in `ORPHAN_QUOTES` (the local
- * prior-ingest tables).
+ * The cases only a reader can find live in the caller-supplied
+ * orphan-quote list (prior-ingest tables).
  */
-export function dropCitedParagraphs(text: string): { kept: string; dropped: number } {
+export function dropCitedParagraphs(text: string, orphanQuotes: string[]): { kept: string; dropped: number } {
   const paras = text.split(/\n\s*\n/);
   let dropped = 0;
   const kept = paras.filter((p) => {
@@ -66,7 +65,7 @@ export function dropCitedParagraphs(text: string): { kept: string; dropped: numb
     // manifest's job (`dropSections`, `ORPHAN_QUOTES`); Q-51 says that
     // judgement is not automatable, and this is where that bites.
     const cited = /\[\([A-Z][^)]*\d{4}\)\]\(#/.test(p) || /\(\s*[A-Z][a-z]+\s+(and|&)?\s*[A-Za-z]*\s*\d{4}\s*\)/.test(p);
-    const orphan = ORPHAN_QUOTES.some((q) => p.includes(q));
+    const orphan = orphanQuotes.some((q) => p.includes(q));
     if (cited || orphan) { dropped++; return false; }
     return true;
   }).join('\n\n');

@@ -345,9 +345,8 @@ export function createRegistry(
  * out of identity. The shadow record is what will say whether this reach is
  * enough.
  *
- * A pure string function, and the only similarity measure in this file. It
- * matches `lint`'s private copy exactly, token for token, and the cross-check
- * test is what keeps that true.
+ * A pure string function, and the only similarity measure in the wiki slice.
+ * `lint` imports this exported copy — the two files cannot drift (Phase 8).
  */
 export function nameSimilarity(a: string, b: string): number {
   const ta = nameTokens(a);

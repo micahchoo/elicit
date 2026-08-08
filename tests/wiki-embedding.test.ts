@@ -13,7 +13,8 @@ import {
   type EmbeddingRecord,
 } from '../src/wiki/embedding.js';
 import type { Claim, ClaimGraph, LogFn } from '../src/wiki/contract.js';
-import { THRESHOLDS, type Threshold } from '../src/wiki/thresholds.js';
+import { THRESHOLDS } from '../src/wiki/thresholds.js';
+import type { Threshold } from '../src/domain/thresholds.js';
 import { PAIRS, DISTRACTORS } from './fixtures/paraphrase-pairs.js';
 
 /**

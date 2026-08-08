@@ -48,6 +48,28 @@ export interface DRMFragment {
   answer: string;
 }
 
+/**
+ * The DRM flow's state as it lives inside the phase machine (ticket 159,
+ * slice 6): MachineState.ui holds exactly these fields. The machine itself
+ * carries what a machine carries — protocol ('drm'), phaseIndex
+ * (enumerate → probe → gate), startedAt — and `id`/`session`/`phase`/
+ * `started` of the old DRMState are machine-adjacent (the side-record is
+ * keyed by session id; the phase IS the machine's phaseIndex; startedAt is
+ * the machine's). The five drm routes drive the machine by running the
+ * pure transitions in src/drm/state.ts on this ui and writing the result
+ * back to machine.ui.
+ */
+export interface DrmUi {
+  /** The ISO date — "yesterday" the reconstruction anchors to. */
+  yesterday: string;
+  episodes: DRMEpisode[];
+  /** The episode the probes are on. */
+  currentEpisodeIdx: number;
+  /** The next sub-probe to ask for the current episode. */
+  probeStep: DRMProbeStep;
+  fragments: DRMFragment[];
+}
+
 export type DRMPhase = 'intro' | 'enumerate' | 'probe' | 'parked' | 'complete';
 
 /** A live DRM instrument session. */
@@ -66,5 +88,6 @@ export interface DRMState {
 /** A finished DRM: a live state stamped with when and how it ended. */
 export type DRMParkedState = DRMState & {
   ended: string;
-  endedBy: 'park' | 'another-day';
+  /** 'complete' names the walk that ran to the end of every episode. */
+  endedBy: 'park' | 'another-day' | 'complete';
 };

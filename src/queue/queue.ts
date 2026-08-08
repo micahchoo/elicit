@@ -4,8 +4,9 @@ import { ulid } from 'ulid';
 import matter from 'gray-matter';
 import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.js';
 import { appendEvent } from '../log/activity.js';
-import type { EventKind } from '../log/format.js';
-import { elideDisfluencies } from '../clerk/disfluency.js';
+import type { EventKind } from '../log/kinds.js';
+import { elideDisfluencies } from '../language/disfluency.js';
+import { EngagementLedger } from './engagement.js';
 import { contentWordsOf } from '../index/lexical.js';
 import {
  applyFacetBalance,
@@ -17,6 +18,33 @@ import {
  underRepresented,
  type FacetDistribution,
 } from './facet-balance.js';
+
+
+/**
+ * The distinct values of one QueueEntry field across a set of entries —
+ * the shared core of the minters' "one question per X" dedupe.
+ *
+ * Eight minting sweeps each re-implement "read the queue, collect the keys
+ * already asked about, skip a candidate whose key is present" with a private
+ * field key (gap-fill: bud+failure, gazetteer-frontier: subjects, ktg:
+ * territoryNode, lineage-mirror: claim id, wiki-jobs: claim, docket:
+ * source+dedupe, coach/reflection: quest, import/repair: snippet). Those
+ * that key on a single field can all be this one call; the two that key on
+ * a composite (gap-fill's bud+failure, coach's quest+session) build the
+ * join on top of the same single read.
+ */
+export function distinctFieldKeys<K extends keyof QueueEntry>(
+  entries: QueueEntry[],
+  field: K,
+): Set<NonNullable<QueueEntry[K]> extends string | number ? string : never> {
+  const out = new Set<string>();
+  for (const e of entries) {
+    const v = e[field];
+    if (typeof v === 'string' && v.length > 0) out.add(v);
+    else if (typeof v === 'number') out.add(String(v));
+  }
+  return out as Set<NonNullable<QueueEntry[K]> extends string | number ? string : never>;
+}
 
 export function createQueueStore(root: string): QueueStore {
  return new QueueStoreImpl(root);
@@ -97,11 +125,17 @@ function drawFilters(mode: Mode, phase: 'opening' | 'mid' | 'late'): DrawFilter[
    relaxable: false,
    keep: (e) => e.status === 'pending' || e.status === 'deferred',
   },
-  // A parked ladder is a pointer, not a question. Rung 2 of the
-  // degradation ladder (Q-55) exists to admit the person's own
-  // declared questions past a preference, never a pointer as if it
-  // were a question — relaxable: false is the whole point.
-  { name: 'sounding', relaxable: false, keep: (e) => e.source !== 'parked-sounding' },
+  // A parked ladder, parked machine or legacy parked DRM is a pointer, not
+  // a question. Rung 2 of the degradation ladder (Q-55) exists to admit the
+  // person's own declared questions past a preference, never a pointer as if
+  // it were a question — relaxable: false is the whole point. 'parked-drm'
+  // is the legacy source: slice 6 migrated drm parks to 'parked-machine',
+  // but old pointers in the store must stay undrawable too.
+  {
+   name: 'sounding',
+   relaxable: false,
+   keep: (e) => e.source !== 'parked-sounding' && e.source !== 'parked-machine' && e.source !== 'parked-drm',
+  },
   {
    name: 'modeNeeds',
    relaxable: true,
@@ -198,56 +232,21 @@ function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
  * the measured failure ran one opener per sitting for 20 sittings, and any
  * in-memory counter dies with the process long before that.
  */
-type EngagementState = {
- sittingCounter: number;
- consecutiveDisengaged: number;
- lastStrikeSitting: number;
- pauses: number;
- pausedUntilSitting: number;
-};
-
-const FRESH_ENGAGEMENT: EngagementState = {
- sittingCounter: 0,
- consecutiveDisengaged: 0,
- lastStrikeSitting: -1,
- pauses: 0,
- pausedUntilSitting: 0,
-};
 
 class QueueStoreImpl implements QueueStore {
  #root: string;
   #deferredSnippets: Set<string> = new Set();
   #threadStrikes: Map<string, number> = new Map();
+  /** The sitting-level engagement ledger (Q-115) — its own module. */
+  #engagement: EngagementLedger;
 
  constructor(root: string) {
   this.#root = root;
- }
-
- #engagementPath(): string {
-  return join(this.#root, 'queue-engagement.json');
- }
-
- #readEngagement(): EngagementState {
-  try {
-   const parsed = JSON.parse(readFileSync(this.#engagementPath(), 'utf8')) as Partial<EngagementState>;
-   return { ...FRESH_ENGAGEMENT, ...parsed };
-  } catch {
-   return { ...FRESH_ENGAGEMENT };
-  }
- }
-
- #writeEngagement(s: EngagementState): void {
-  try {
-   writeFileSync(this.#engagementPath(), JSON.stringify(s, null, 1) + '\n');
-  } catch {
-   // Never let bookkeeping break a sitting.
-  }
+  this.#engagement = new EngagementLedger(root);
  }
 
  noteSittingStarted(): void {
-  const s = this.#readEngagement();
-  s.sittingCounter += 1;
-  this.#writeEngagement(s);
+  this.#engagement.noteSittingStarted();
  }
 
  #dir(): string {
@@ -324,6 +323,18 @@ class QueueStoreImpl implements QueueStore {
    // resume route keys on it across restarts (Q-3: the ladder file is the
    // truth, the pointer only points).
    ...(data.soundingId ? { soundingId: data.soundingId as string } : {}),
+   // The legacy DRM file a parked-drm pointer names (ticket 159, slice 6).
+   // Read back for the same reason as soundingId: the drm resume route's
+   // compat read keys on it across restarts (Q-3 — the record file is the
+   // truth, the pointer only points). Pre-slice-6 pointers never persisted
+   // it; the field is additive so old files still parse.
+   ...(data.drmId ? { drmId: data.drmId as string } : {}),
+   // The side-record a parked-machine pointer names (ticket 159, slice 5).
+   // Read back for the same reason as soundingId: the record file is the
+   // truth, the pointer only points — and machineProtocol survives a
+   // corrupt record so the restart still runs the parked instrument.
+   ...(data.machineId ? { machineId: data.machineId as string } : {}),
+   ...(data.machineProtocol ? { machineProtocol: data.machineProtocol as string } : {}),
    // The KTG territory node this entry was minted for. Read back because
    // the dedupe key is the node id across restarts (094).
    ...(data.territoryNode ? { territoryNode: data.territoryNode as string } : {}),
@@ -369,6 +380,12 @@ class QueueStoreImpl implements QueueStore {
   if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
   if (entry.direction) fm.direction = entry.direction;
  if (entry.soundingId) fm.soundingId = entry.soundingId;
+ if (entry.machineId) fm.machineId = entry.machineId;
+ if (entry.machineProtocol) fm.machineProtocol = entry.machineProtocol;
+ // The legacy DRM file a parked-drm pointer names (ticket 159, slice 6:
+ // the drm resume route's compat read keys on it across restarts, Q-3 —
+ // the record file is the truth, the pointer only points).
+ if (entry.drmId) fm.drmId = entry.drmId;
   if (entry.territoryNode) fm.territoryNode = entry.territoryNode;
   if (entry.atlasRegion) fm.atlasRegion = entry.atlasRegion;
   if (entry.subjects) fm.subjects = entry.subjects;
@@ -397,7 +414,7 @@ add(draft: QueueDraft): QueueEntry {
  // QR-5: elide STT disfluencies from fragments quoted INTO questions at
  // the one write gate every draft passes through. The kept Snippet stays
  // verbatim (Q-12); only the quotation is elided, by the mechanical marked
- // rule (src/clerk/disfluency.ts). Absent stays absent, and a fragment
+ // rule (src/language/disfluency.ts). Absent stays absent, and a fragment
  // that elides to itself is not re-written. The shadow record (Q-35) is
  // what can graduate the selection change.
  if (entry.quotedFragment) {
@@ -444,7 +461,7 @@ add(draft: QueueDraft): QueueEntry {
  draw(mode: Mode, phase: 'opening' | 'mid' | 'late'): QueueEntry | null {
   // Q-115: while the sitting-level pause holds, the queue offers nothing —
   // the caller's fallback (bank / imported material) carries the sitting.
-  const eng = this.#readEngagement();
+  const eng = this.#engagement.read();
   if (eng.sittingCounter < eng.pausedUntilSitting) return null;
 
   const all = this.#readAll();
@@ -479,13 +496,10 @@ add(draft: QueueDraft): QueueEntry {
    candidates = relaxed.pool;
   }
 
-  // Step 3: sort — the person's own questions first, then recency (newest first)
-  candidates.sort((a, b) => {
-   const aUd = isUserDeclaredWeight(a) ? 0 : 1;
-   const bUd = isUserDeclaredWeight(b) ? 0 : 1;
-   if (aUd !== bUd) return aUd - bUd;
-   return b.created.localeCompare(a.created);
-  });
+  // Step 3: sort — the person's own questions first, then recency (newest
+  // first), through the one comparator the open pool's display and the QR-6
+  // bound share (the weak-early invariant lives at one address).
+  candidates.sort(compareOpenEntries);
 
   // Step 4: facet balance — a second hard filter on the pool, applied BEFORE
   // the top-k pick so chance runs inside the constraints (Q-13), and running
@@ -757,10 +771,10 @@ add(draft: QueueDraft): QueueEntry {
    // two consecutive strike-sittings pause queue draws for a cooldown of
    // sittings that doubles per pause (2, 4, 8-cap). The draw after the
    // cooldown is the probe; this same method scores it.
-   const eng = this.#readEngagement();
+   const eng = this.#engagement.read();
    if (hasOverlap) {
      if (eng.consecutiveDisengaged > 0 || eng.pauses > 0 || eng.pausedUntilSitting > 0) {
-       this.#writeEngagement({
+       this.#engagement.write({
          ...eng,
          consecutiveDisengaged: 0,
          lastStrikeSitting: -1,
@@ -781,7 +795,7 @@ add(draft: QueueDraft): QueueEntry {
          refs: [],
        });
      }
-     this.#writeEngagement(eng);
+     this.#engagement.write(eng);
    }
 
    // Ticket 148's original per-thread deferral, kept as built: it needs a

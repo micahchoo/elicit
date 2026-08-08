@@ -37,7 +37,7 @@ import type {
   Pin,
   Principle,
 } from '../piece/contract.js';
-import { quotesFragmentSetOff, setOffSpans } from '../elicitor/guards.js';
+import { quotesFragmentSetOff, setOffSpans } from '../language/guards.js';
 
 /** The Activity-Log-shaped sink this module emits through (the docket's deps.log shape). */
 export type ArrangementLog = (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
@@ -96,7 +96,7 @@ Return ONLY valid JSON. No markdown fences. No commentary.`;
 // `checkQuotesSource` is module-private in src/clerk/composed.ts, and that
 // file is outside this plan's ownership, so the same verbatim-quote rule is
 // reimplemented here; ticket 082 records the convergence debt. The span
-// helpers it composes are shared from src/elicitor/guards.ts; the composition
+// helpers it composes are shared from src/language/guards.ts; the composition
 // — the longest verbatim fragment of the source, set off in quotation marks —
 // is this module's own copy of composed.ts's.
 

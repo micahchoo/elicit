@@ -42,6 +42,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { Index, Stratum } from '../types.js';
+import { readTranscripts } from '../vault/transcripts.js';
 import { daysBetween, type RandomizerThresholds } from './thresholds.js';
 
 /** A snippet with the date it was actually written, and its band. */
@@ -79,26 +80,10 @@ export type DatedSnippet = {
  */
 export function readSittingDates(root: string): Map<string, string> {
   const dates = new Map<string, string>();
-  let files: string[] = [];
-  try {
-    files = readdirSync(join(root, 'transcripts'));
-  } catch {
-    return dates;
-  }
-  for (const file of files) {
-    if (!file.endsWith('.md')) continue;
-    try {
-      const data = matter.read(join(root, 'transcripts', file)).data as Record<string, unknown>;
-      const session = typeof data.session === 'string' ? data.session : file.slice(0, -3);
-      const started = data.started;
-      // gray-matter parses an unquoted ISO date into a Date; a quoted one
-      // stays a string. Both occur in the real vault.
-      if (started instanceof Date) dates.set(session, started.toISOString());
-      else if (typeof started === 'string') dates.set(session, started);
-    } catch {
-      // An unreadable transcript costs its snippets their true date, not the
-      // whole draw — they fall back to `captured` below.
-    }
+  // The single transcript read owner normalizes the Date-vs-string started
+  // split; a missing started simply never reaches the map.
+  for (const t of readTranscripts(root)) {
+    if (t.started !== '') dates.set(t.session, t.started);
   }
   return dates;
 }

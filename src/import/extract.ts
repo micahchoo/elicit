@@ -45,6 +45,7 @@
 import matter from 'gray-matter';
 
 import { clean, dropCitedParagraphs, toTurns } from './body.js';
+import { ORPHAN_QUOTES } from './prior-ingest.js';
 import type { ImportCut, ImportRecord, RegionRecord } from './contract.js';
 import type { ImportStore } from './store.js';
 import { propose, SYSTEM_PROMPT } from '../harvester/harvester.js';
@@ -123,7 +124,7 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
 
       // 2. The prepared prose — blockquotes always dropped, citation
       // paragraphs always dropped, splits on paragraph boundaries only.
-      const prepared = dropCitedParagraphs(clean(body, false)).kept;
+      const prepared = dropCitedParagraphs(clean(body, false), ORPHAN_QUOTES).kept;
       const turns = toTurns(prepared, `${record.date}T00:00:00.000Z`);
 
       // 3. The session id is provisional — the committed sitting takes its

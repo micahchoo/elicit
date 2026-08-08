@@ -19,19 +19,11 @@
  * are BOUNDS, not selections, and Q-56 narrowed Q-35 to selection mechanisms.
  */
 
-export type RandomizerThreshold = {
-  name: string;
-  /** Days, in every entry here. */
-  value: number;
-  /** False means: compute, log what you would have decided, change nothing. */
-  live: boolean;
-  /**
-   * The evidence that would license this threshold to act — prose, never a
-   * date. For an entry that already acts, this records the licence it acts
-   * under, so demoting it is as reviewable as promoting it.
-   */
-  graduatesWhen: string;
-};
+import type { Threshold } from '../domain/thresholds.js';
+
+/** The randomizer's thresholds — the shared shape, narrowed to days. */
+export type RandomizerThreshold = Omit<Threshold, 'value'> & { value: number };
+
 
 export const RANDOMIZER_THRESHOLDS = {
   'randomizer.drySpellDays': {

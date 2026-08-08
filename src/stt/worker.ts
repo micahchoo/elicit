@@ -15,6 +15,7 @@
  */
 
 import { createRequire } from 'node:module';
+import { decodeInbound, encodeOutbound, type Inbound, type Outbound } from './protocol.js';
 import { createInterface } from 'node:readline';
 import { resolveModelDir } from './model.js';
 
@@ -52,40 +53,10 @@ interface SherpaModule {
  };
 }
 
-// --- protocol ---
-
-interface TranscribeMsg {
- type: 'transcribe';
- id: string;
- samples: string; // base64-encoded Float32 bytes
- sampleRate: number;
-}
-
-interface ShutdownMsg {
- type: 'shutdown';
-}
-
-type Inbound = TranscribeMsg | ShutdownMsg;
-
-interface TranscriptionResp {
- type: 'transcription';
- id: string;
- text: string;
- tokens: string[];
- timestamps: number[];
- durations: number[];
-}
-
-interface ErrorResp {
- type: 'error';
- id: string;
- error: string;
-}
-
-type Outbound = TranscriptionResp | ErrorResp;
+// --- protocol: one shared contract (src/stt/protocol.ts) ---
 
 function send(msg: Outbound): void {
- process.stdout.write(`${JSON.stringify(msg)}\n`);
+ process.stdout.write(encodeOutbound(msg));
 }
 
 // --- recognizer (lazy, cached) ---
@@ -181,9 +152,9 @@ rl.on('line', async (line: string) => {
 
  let msg: Inbound;
  try {
-  msg = JSON.parse(trimmed) as Inbound;
+  msg = decodeInbound(trimmed);
  } catch {
-  send({ type: 'error', id: '', error: `Invalid JSON: ${trimmed}` });
+  send({ type: 'error', id: '', error: `Invalid message: ${trimmed}` });
   return;
  }
 

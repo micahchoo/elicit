@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { addDemotion, clearDemotion, isDemoted, readDemotions } from '../src/loop/demotions.js';
 import { THRESHOLDS, isLive, shadowDecision } from '../src/wiki/thresholds.js';
-import type { ThresholdLogFn } from '../src/wiki/thresholds.js';
+import type { ThresholdLogFn } from '../src/domain/thresholds.js';
 import { selectPattern } from '../src/patterns/select.js';
 import type { Pattern, LicensingContext } from '../src/patterns/types.js';
 

@@ -14,7 +14,7 @@
 | queue | Docket + composed | Default — auto-populated |
 | bank questions | Mixed by randomizer | Default — auto-mixed |
 | juxtaposition | Elicitor auto | Default — when archive has relevant material |
-| **protocols** | Auto — rotated on session count | Default — server picks by rotation (ticket 140) |
+| **protocols** | POST /api/session `{protocol?}` (optional) | Default — server rotation on session count; explicit pick when `{protocol}` given (ticket 153) |
 | **DRM** | POST /api/session/:id/drm/start | Explicit — during sitting |
 | **coach** | GET /api/coach/waiting (needs 3+ claims/direction) | Needs vault maturity (5+ sittings) |
 | **pieces** | POST /api/piece `{snippets:[...]}` | Explicit — needs snippets |
@@ -35,8 +35,9 @@
 - Thread vocabulary for sounding attempts at t10+
 
 ### Mid (4-6): Trigger protocols + DRM
-- Sitting 4: `target: 'domain'` — server rotates to CDM/laddered-grid by session count
-- Sitting 5-6: `POST /api/session/:id/drm/start` — test DRM instrument
+- Sitting 4: `target: 'domain'` — server rotates among the hard call (cdm), sort the kinds (concept-sorting), and how can you tell (laddered-grid) by session count
+- Sitting 4 (alt): `POST /api/session` with `{protocol: 'cdm'}` — force the hard call (cdm) explicitly (ticket 153)
+- Sitting 5-6: `POST /api/session/:id/drm/start` — test walk back through yesterday (drm) (or open the sitting with `{protocol: 'drm'}` to enter it directly)
 
 ### Late (7-10): Trigger coach + pieces
 - Sit 5+: Check `GET /api/coach/waiting` — coach offer needs 3+ claims

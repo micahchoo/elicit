@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EventKind } from './format.js';
+import type { EventKind } from './kinds.js';
 
 export type ActivityEvent = {
  at: string;

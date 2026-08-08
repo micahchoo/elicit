@@ -3,11 +3,24 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import type { Target, QuestionForm } from '../types.js';
+import type { PhaseDef } from './machine.js';
 
 // ── Types ──
 
 export interface ProtocolDef {
  name: string;
+ /**
+  * The user-facing title (ticket 157): `name` stays the registry key —
+  * session validation, rotation, defs, and tests all key on it — while
+  * this is what the surfaces render. Falls back to the name when a def
+  * carries none, so a title-less def still renders.
+  */
+ title: string;
+ /**
+  * One-line description of what the sitting does, shown dimmed under the
+  * title in the mode picker (ticket 157). Optional.
+  */
+ blurb?: string;
  targets: Target[];
  prerequisites: string[];
  questionForm: QuestionForm;
@@ -29,6 +42,13 @@ export interface ProtocolDef {
   * protocol's elements should be laid out (e.g. 'triadic').
   */
  presentation?: string;
+ /**
+  * The protocol's phase machine schema (ticket 159): when present, the
+  * sitting's elicitation is driven by the phase machine instead of the
+  * one-question loop. Absent on non-machine defs — `phases` stays undefined
+  * (never an empty array: a declared-but-empty list is a load error).
+  */
+ phases?: PhaseDef[];
 }
 
 /**
@@ -65,6 +85,59 @@ function parseQuestionForm(raw: unknown): QuestionForm {
  return 'deliberative';
 }
 
+/**
+ * Parse the frontmatter `phases:` list (ticket 159). Returns undefined when
+ * the def carries no `phases` key — that def is a non-machine and stays
+ * valid. Throws on a declared-but-malformed list: a def that declares
+ * phases it cannot be parsed into is a programming error and must fail loud
+ * at load, never silently decay.
+ */
+function parsePhases(raw: unknown): PhaseDef[] | undefined {
+ if (raw === undefined || raw === null) return undefined;
+ const entries = Array.isArray(raw) ? raw : [raw];
+ const phases: PhaseDef[] = [];
+ const seen = new Set<string>();
+ for (const entry of entries) {
+  if (typeof entry !== 'object' || entry === null) {
+   throw new Error('phases: each phase must be an object');
+  }
+  const e = entry as Record<string, unknown>;
+  const id = typeof e.id === 'string' ? e.id.trim() : '';
+  if (id.length === 0) throw new Error('phases: phase id is required');
+  if (seen.has(id)) throw new Error(`phases: duplicate phase id "${id}"`);
+  seen.add(id);
+  const label = typeof e.label === 'string' ? e.label.trim() : '';
+  if (label.length === 0) throw new Error(`phases: phase "${id}" label is required`);
+  const minExchanges = e.minExchanges;
+  if (
+   typeof minExchanges !== 'number' ||
+   !Number.isInteger(minExchanges) ||
+   minExchanges < 0
+  ) {
+   throw new Error(`phases: phase "${id}" minExchanges must be a non-negative integer`);
+  }
+  const prompt = typeof e.prompt === 'string' ? e.prompt.trim() : '';
+  if (prompt.length === 0) {
+   throw new Error(`phases: phase "${id}" prompt must be a non-empty string`);
+  }
+  // The UI-phase contract placeholder (slice 6): typed and parsed, wired
+  // later. A declared-but-non-string renderer is a load error.
+  const renderer = typeof e.renderer === 'string' ? e.renderer : undefined;
+  if (e.renderer !== undefined && renderer === undefined) {
+   throw new Error(`phases: phase "${id}" renderer must be a string`);
+  }
+  phases.push({
+   id,
+   label,
+   minExchanges,
+   prompt,
+   ...(renderer !== undefined ? { renderer } : {}),
+  });
+ }
+ if (phases.length === 0) throw new Error('phases: at least one phase is required');
+ return phases;
+}
+
 function loadFromDisk(): Map<string, ProtocolDef> {
  const defs = new Map<string, ProtocolDef>();
  let files: string[];
@@ -82,14 +155,33 @@ function loadFromDisk(): Map<string, ProtocolDef> {
   const data = parsed.data as Record<string, unknown>;
 
   const name = typeof data.name === 'string' ? data.name : file.replace(/\.md$/, '');
+  // A declared-but-malformed phases list is a programming error: fail the
+  // load, naming the def, instead of silently serving a broken machine.
+  let phases: PhaseDef[] | undefined;
+  try {
+   phases = parsePhases(data.phases);
+  } catch (err) {
+   throw new Error(`def "${name}" (${file}): ${(err as Error).message}`);
+  }
   const floorProbe =
    typeof data.floorProbe === 'string' && data.floorProbe.trim().length > 0
     ? data.floorProbe.trim()
     : DEFAULT_FLOOR_PROBE;
   const presentation =
    typeof data.presentation === 'string' ? data.presentation : undefined;
+  // The title is the surface word; a def without one renders under its
+  // registry key (ticket 157).
+  const title =
+   typeof data.title === 'string' && data.title.trim().length > 0
+    ? data.title.trim()
+    : name;
+  const blurb =
+   typeof data.blurb === 'string' && data.blurb.trim().length > 0
+    ? data.blurb.trim()
+    : undefined;
   const def: ProtocolDef = {
    name,
+   title,
    targets: parseTargets(data.targets),
    prerequisites: parsePrerequisites(data.prerequisites),
    questionForm: parseQuestionForm(data.questionForm),
@@ -97,7 +189,9 @@ function loadFromDisk(): Map<string, ProtocolDef> {
    floorProbe,
    // rotation defaults to true; false for user-declared-only instruments (Q-85)
    rotation: data.rotation !== false,
+   ...(blurb !== undefined ? { blurb } : {}),
    ...(presentation !== undefined ? { presentation } : {}),
+   ...(phases !== undefined ? { phases } : {}),
   };
 
   if (def.name.length > 0) {

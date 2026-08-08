@@ -46,14 +46,18 @@ export type AnnotationRecord =
   // Ticket 106: the horizon an intention reading carries — when the person
   // expected the intention to materialize. Extracted from prose by the
   // model, stored outside the vault alongside referent annotations.
-  | { kind: 'intention-horizon'; snippetId: string; version: number; horizon: 'now' | 'session' | 'days'; model: string; modelAt: string };
+  | { kind: 'intention-horizon'; snippetId: string; version: number; horizon: 'now' | 'session' | 'days'; model: string; modelAt: string }
+  // The ambiguous-verdict record: the model could not read a horizon, a
+  // dating question was minted, and the snippet must NOT be re-annotated
+  // every run. The question text is kept so the record proves the mint.
+  | { kind: 'intention-horizon-ambiguous'; snippetId: string; version: number; datingQuestion: string; model: string; modelAt: string };
 
 /**
  * The annotation kinds the store can key on. When omitted, the referent
  * annotation namespace is used — backward-compatible with every caller
  * that predates ticket 106.
  */
-export type AnnotateKind = 'intention-horizon';
+export type AnnotateKind = 'intention-horizon' | 'intention-horizon-ambiguous';
 
 export interface AnnotationStore {
   /**
@@ -64,7 +68,8 @@ export interface AnnotationStore {
   get(snippetId: string, kind?: AnnotateKind): AnnotationRecord | null;
   /**
    * Persist a validated record. The file path is determined by the record's
-   * own `kind`: `'intention-horizon'` writes `${snippetId}.intention-horizon.json`;
+   * own `kind`: `'intention-horizon'` writes `${snippetId}.intention-horizon.json`,
+   * `'intention-horizon-ambiguous'` writes `${snippetId}.intention-horizon-ambiguous.json`;
    * all others write `${snippetId}.json`.
    */
   put(record: AnnotationRecord): void;
@@ -135,6 +140,14 @@ function parseRecord(v: unknown): Parsed {
     return { ok: true, record: { kind: 'silence', snippetId, version: rec.version, model, modelAt } };
   }
   // Ticket 106: intention-horizon records carry a horizon field.
+  if (rec.kind === 'intention-horizon-ambiguous') {
+    const datingQuestion = text(rec.datingQuestion);
+    if (datingQuestion === null) return { ok: false, why: 'intention-horizon-ambiguous without a datingQuestion' };
+    return {
+      ok: true,
+      record: { kind: 'intention-horizon-ambiguous', snippetId, version: rec.version, datingQuestion, model, modelAt },
+    };
+  }
   if (rec.kind === 'intention-horizon') {
     const horizon = text(rec.horizon);
     if (horizon === null) return { ok: false, why: 'intention-horizon without a horizon' };
@@ -146,7 +159,7 @@ function parseRecord(v: unknown): Parsed {
       record: { kind: 'intention-horizon', snippetId, version: rec.version, horizon: horizon as 'now' | 'session' | 'days', model, modelAt },
     };
   }
-  return { ok: false, why: `kind is ${JSON.stringify(rec.kind)} — expected annotation, silence, or intention-horizon` };
+  return { ok: false, why: `kind is ${JSON.stringify(rec.kind)} — expected annotation, silence, intention-horizon, or intention-horizon-ambiguous` };
 }
 
 function warnSkip(path: string, why: string): void {
@@ -198,7 +211,7 @@ class AnnotationStoreImpl implements AnnotationStore {
     }
     // Write the validated, canonical record — the store owns the shape,
     // and an extra key from a sloppy caller is not an annotation.
-    const suffix = result.record.kind === 'intention-horizon' ? '.intention-horizon' : '';
+    const suffix = result.record.kind.startsWith('intention-horizon') ? `.${result.record.kind}` : '';
     writeFileSync(
       join(this.#dir(), `${result.record.snippetId}${suffix}.json`),
       `${JSON.stringify(result.record, null, 2)}\n`,

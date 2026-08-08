@@ -773,40 +773,52 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
 },
 // The DRM instrument (Q-85): routes in src/server.ts. The park and the
 // resume name the episode, never the session.
+// The protocol phase machine (ticket 159, slice 5): the park and the resume
+// name the phase, never the session or the record.
 {
-  kind: 'drm-started',
-  detail: 'episodes=0',
-  reads: 'began a day reconstruction (DRM) of 0 episodes',
+ kind: 'machine-parked',
+ detail: 'phase=2 of=3',
+ reads: 'parked the protocol machine at phase 2 of 3',
 },
 {
-  kind: 'drm-episode-added',
-  detail: 'count=3 name=Morning',
-  reads: 'named episode 3: Morning',
+ kind: 'machine-resumed',
+ detail: 'phase=2 of=3',
+ reads: 'picked the protocol machine back up at phase 2 of 3',
 },
 {
-  kind: 'drm-enumeration-finished',
-  detail: 'episodes=5',
-  reads: 'finished enumerating 5 episodes',
+ kind: 'drm-started',
+ detail: 'episodes=0',
+ reads: 'began walking back through yesterday — 0 blocks',
 },
 {
-  kind: 'drm-probe-answered',
-  detail: 'step=affect',
-  reads: 'answered the affect probe',
+ kind: 'drm-episode-added',
+ detail: 'count=3 name=Morning',
+ reads: 'named block 3: Morning',
 },
 {
-  kind: 'drm-parked',
-  detail: 'episode=2',
-  reads: 'parked a DRM session at episode 2',
+ kind: 'drm-enumeration-finished',
+ detail: 'episodes=5',
+ reads: 'mapped the day as 5 blocks',
 },
 {
-  kind: 'drm-completed',
-  detail: 'fragments=4',
-  reads: 'finished a DRM with 4 fragments',
+ kind: 'drm-probe-answered',
+ detail: 'step=affect',
+ reads: 'answered the affect probe',
 },
 {
-  kind: 'drm-resumed',
-  detail: 'episodes=5 at=2',
-  reads: 'picked a parked DRM back up',
+ kind: 'drm-parked',
+ detail: 'episode=2',
+ reads: 'parked the day walk at block 2',
+},
+{
+ kind: 'drm-completed',
+ detail: 'fragments=4',
+ reads: 'finished the day walk — 4 fragments kept',
+},
+{
+ kind: 'drm-resumed',
+ detail: 'episodes=5 at=2',
+ reads: 'picked the day walk back up',
 },
 // The derivation patterns (Q-82, ticket 111): selection is filter-then-
 // random and shadow-first (Q-35, Q-13). The shadow line says what would

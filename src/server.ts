@@ -8,8 +8,8 @@ import { join, extname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ulid } from 'ulid';
 import { createVault } from './vault/vault.js';
-import { startSession, userTurn, skipQuestion } from './elicitor/elicitor.js';
-import { checkQuestion } from './elicitor/guards.js';
+import { startSession, userTurn, skipQuestion, machineTurn, parseTriadPair } from './elicitor/elicitor.js';
+import { checkQuestion } from './language/guards.js';
 import { writeRepair, readAllRepairs } from './repair/store.js';
 import { repairedSnippetIds } from './repair/consult.js';
 
@@ -57,12 +57,15 @@ import { proposeArrangements } from './clerk/arrangements.js';
 import { runTerritoryGapFillSweep } from './ktg/gap-fill.js';
 import { loadKtgSkeleton } from './ktg/loader.js';
 import { createCoverageStore } from './ktg/coverage.js';
-import { loadAtlas } from './ktg/atlas-loader.js';
-import { createAtlasCoverageStore } from './ktg/atlas-coverage.js';
+import { loadAtlas } from './ktg/loader.js';
+import { createAtlasCoverageStore } from './ktg/coverage.js';
 import { runAtlasGapFillSweep } from './ktg/atlas-gap-fill.js';
+import { buildTerritoryResponse } from './territory.js';
 import { createGazetteerStore, type GazetteerStore } from './clerk/gazetteer-store.js';
 import { extractEntities, entityId } from './clerk/gazetteer.js';
 import { runGazetteerFrontier } from './clerk/gazetteer-frontier.js';
+import { runGazetteerExtraction } from './clerk/gazetteer-extraction.js';
+import { runCoachSeedSweep } from './clerk/coach-seed.js';
 import { createImportStore } from './import/store.js';
 import { chronological } from './piece/arrange.js';
 import { createPieceStore } from './piece/store.js';
@@ -85,12 +88,15 @@ import { expectedLengthSentence, rungAllowance } from './sounding/budget.js';
 import { applyGate, enterSounding, gateStateFor } from './sounding/ladder.js';
 import { parkPointer, readLadder, writeLadder } from './sounding/park.js';
 import { resumeSounding } from './sounding/resume.js';
-import { initDRM, beginDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, transcriptQuestion, resumeDRM } from './drm/state.js';
-import { writeDRM, readDRM, parkDRMPointer } from './drm/park.js';
+import { initDRM, addEpisode, doneEnumerating, answerProbe, applyGate as applyDRMGate, gateReading, probeQuestion, transcriptQuestion, resumeDRM } from './drm/state.js';
+import { readDRM } from './drm/park.js';
+import type { DRMParkedState, DRMState, DrmUi } from './drm/types.js';
+import type { MachineState } from './protocols/machine.js';
 import {
  createClaimStore,
  appendSweepDeferral,
  readSweepDeferral,
+ readSweepDeferrals,
  writeStillTrueCursor,
  readStillTrueCursor,
  writeOutcomeCursor,
@@ -115,19 +121,22 @@ import type { Claim, ClaimGraph, LintFinding, LogFn } from './wiki/contract.js';
 import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, onAppend, readEvents, type ActivityEvent } from './log/activity.js';
 import { streamSSE } from 'hono/streaming';
-import type { EventKind } from './log/format.js';
+import type { EventKind } from './log/kinds.js';
+import { readTranscripts, readTranscript as readVaultTranscript, appendClosing } from './vault/transcripts.js';
 import { surfaced } from './log/surfaced.js';
 import { createSttClient, type SttClient } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, isLoopback, type AuthStore } from './auth/auth.js';
 import { archiveFreshStart } from './reset/fresh-start.js';
-import { loadProtocolDefinitions, selectProtocolForTarget } from './protocols/registry.js';
+import { loadProtocolDefinitions, selectProtocolForTarget, getProtocol } from './protocols/registry.js';
+import { startMachine } from './protocols/machine.js';
+import { writeMachineState, readMachineState, removeMachineState, parkMachinePointer } from './protocols/park.js';
 import { anniversaryDraw, createRandomizer, type RandomizerDraw } from './randomizer/randomizer.js';
 import { datedSnippets, readSittingDates } from './randomizer/strata.js';
 import { RANDOMIZER_THRESHOLDS } from './randomizer/thresholds.js';
 import { createV2App } from './v2/router.js';
 import { sweepTripwire } from './loop/tripwire.js';
-import { createCoachStore, readSittingTags } from './coach/store.js';
+import { createCoachStore, readSittingTags, loadCoachFacts } from './coach/store.js';
  import { evaluateOffer, licenseState, clusterClaimsByTheme, type CoachFacts } from './coach/license.js';
 import { waitingLines, coachOfferSentence, buildCoachPage } from './coach/page.js';
 import { runCoachAdvice } from './coach/advise.js';
@@ -412,38 +421,34 @@ function isPureRead(c: Context): boolean {
 
 /** Scan transcript files for session metadata (used by docket). */
 function listSessions(root: string): { session: string; started: string; turnCount: number; chars: number }[] {
- const dir = join(root, 'transcripts');
- if (!existsSync(dir)) return [];
+ // The vault read owner does the frontmatter parse; turnCount/chars are
+ // per-file counters this surface needs that readTranscripts does not model,
+ // so only those two are re-read.
  const results: { session: string; started: string; turnCount: number; chars: number }[] = [];
- for (const f of readdirSync(dir)) {
-  if (!f.endsWith('.md')) continue;
-  const raw = readFileSync(join(dir, f), 'utf-8');
-  const parsed = matter(raw);
-  const session = parsed.data.session ?? f.replace('.md', '');
-  const data = parsed.data;
-  results.push({
-   session,
-   started: data.started ?? '',
-   turnCount: typeof data.turnCount === 'number' ? data.turnCount : 0,
-   chars: typeof data.chars === 'number' ? data.chars : 0,
-  });
+ for (const t of readTranscripts(root)) {
+  let turnCount = 0;
+  let chars = 0;
+  try {
+   const d = matter(readFileSync(join(root, 'transcripts', `${t.session}.md`), 'utf-8')).data as Record<string, unknown>;
+   turnCount = typeof d.turnCount === 'number' ? d.turnCount : 0;
+   chars = typeof d.chars === 'number' ? d.chars : 0;
+  } catch {
+   // A transcript readTranscripts parsed will parse again; the counters stay 0.
+  }
+  results.push({ session: t.session, started: t.started, turnCount, chars });
  }
  return results;
 }
 
 /** Body text of one session's transcript, without frontmatter. */
 function readTranscript(root: string, session: string): string {
- const file = join(root, 'transcripts', `${session}.md`);
- if (!existsSync(file)) return '';
- return matter(readFileSync(file, 'utf-8')).content;
+ if (readVaultTranscript(root, session) === null) return '';
+ return matter(readFileSync(join(root, 'transcripts', `${session}.md`), 'utf-8')).content;
 }
 
 /** The `started` stamp of a session transcript frontmatter, the review date shown on a pending harvest. */
 function sessionStartedAt(root: string, sessionId: string): string {
- const file = join(root, 'transcripts', `${sessionId}.md`);
- if (!existsSync(file)) return new Date().toISOString();
- const started = matter(readFileSync(file, 'utf-8')).data.started;
- return typeof started === 'string' ? started : new Date().toISOString();
+ return readVaultTranscript(root, sessionId)?.started || new Date().toISOString();
 }
 
 /**
@@ -616,7 +621,7 @@ const regionStore = createRegionStore(deps.vaultRoot);
 
 // The PieceStore the piece routes write through (T6) — one binding shared
 // with T10's docket thunks. Every write passes the five guards.
-const pieces = createPieceStore(deps.vaultRoot);
+const pieces = createPieceStore(deps.vaultRoot, { snippets: () => deps.vault.rebuildIndex().snippets });
 
  // ── The Clerk's wiki work, constructed once (Q-22) ──
  //
@@ -743,6 +748,14 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
  let docketRunning = false;
  /** A trigger that arrived mid-run, replayed once the run finishes. */
  let pendingTrigger: string | null = null;
+ /**
+  * The stop switch (POST /api/jobs/stop, ticket 151): while true, runDocket
+  * reads it between jobs and between per-snippet model calls, so the run in
+  * flight finishes its current call and skips everything that remains. It
+  * gates NEW runs too (drain, import re-trigger, boot) — see the guard
+  * added to startDocket. Cleared by POST /api/jobs/resume or a restart.
+  */
+ let jobsStopped = false;
 
  async function runDocketNow(trigger: string): Promise<void> {
   // The import job's counts, seen in the finally for the re-trigger. Hoisted
@@ -774,6 +787,11 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
     // Cover summaries are written by the clerk model, so they say so (Q-34).
     ...(clerkModelName ? { modelName: clerkModelName } : {}),
     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    // The stop switch (POST /api/jobs/stop, ticket 151): read between jobs
+    // and between per-snippet model calls. A run cannot abort a model call
+    // mid-air; the call in flight finishes, then everything remaining is
+    // skipped and the run settles (docket-cut-short).
+    shouldStop: () => jobsStopped,
     runWikiJobs: runWikiJobsNow,
     stalePinSweep: () => runStalePinSweep({
      pieces,
@@ -837,16 +855,40 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     }),
     territoryGapFillSweep: () => {
-     const skel = loadKtgSkeleton('fake-craft', deps.vaultRoot);
-     if (!skel.ok) return Promise.resolve({ minted: 0, frontierQuestions: 0, failureQuestions: 0 });
-     const coverage = createCoverageStore(deps.vaultRoot);
-     return Promise.resolve(runTerritoryGapFillSweep({
-      skeleton: skel.value,
-      coverage,
-      queue: deps.queue,
-      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-      now: new Date().toISOString(),
-     }));
+     // Enumerate data/ktg/*.json like the atlas twin, so a new skeleton
+     // added to the data dir feeds the sweep — the pre-Phase-8 thunk
+     // hard-coded one slug ('fake-craft') and silently skipped everything else.
+     const ktgDir = join(deps.vaultRoot, 'data', 'ktg');
+     let totalMinted = 0;
+     let totalFrontier = 0;
+     let totalFailure = 0;
+
+     let files: string[];
+     try {
+      files = readdirSync(ktgDir).filter((f) => f.endsWith('.json'));
+     } catch {
+      return Promise.resolve({ minted: 0, frontierQuestions: 0, failureQuestions: 0 });
+     }
+
+     for (const file of files) {
+      const domain = file.replace('.json', '');
+      const skel = loadKtgSkeleton(domain, deps.vaultRoot);
+      if (!skel.ok) continue;
+
+      const coverage = createCoverageStore(deps.vaultRoot);
+      const result = runTerritoryGapFillSweep({
+       skeleton: skel.value,
+       coverage,
+       queue: deps.queue,
+       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+       now: new Date().toISOString(),
+      });
+      totalMinted += result.minted;
+      totalFrontier += result.frontierQuestions;
+      totalFailure += result.failureQuestions;
+     }
+
+     return Promise.resolve({ minted: totalMinted, frontierQuestions: totalFrontier, failureQuestions: totalFailure });
     },
     atlasGapFillSweep: () => {
      const atlasDir = join(deps.vaultRoot, 'data', 'atlases');
@@ -898,116 +940,23 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      // simple content-word overlap; every evaluation logs cluster sizes
      // (Q-111). Themes with 3+ claims (Q-111 threshold, no distinct-
      // sitting requirement) mint an un-coached DirectionRecord.
-     coachSeedSweep: () => {
-       const slice = claimStore.loadSlice();
-       const claims = slice.claims.filter((c) => !c.archived && !c.supersededBy);
-       const themes = clusterClaimsByTheme(
-         claims.map(c => ({ id: c.id, body: c.body })),
-         profileFrameWords(profile),
-       );
-       let clustered = 0;
-       let minted = 0;
-       for (const [, theme] of themes) {
-         clustered++;
-         appendEvent(deps.vaultRoot, {
-           at: new Date().toISOString(),
-           actor: 'clerk',
-           kind: 'coach-seed-cluster',
-           detail: `theme=${theme.name} claims=${theme.claims}`,
-           refs: [],
-         });
-         if (theme.claims >= 3) {
-           const dir = coachStore.createUncoached(theme.name, { seeded: true, claimCount: theme.claims });
-           minted++;
-           appendEvent(deps.vaultRoot, {
-             at: new Date().toISOString(),
-             actor: 'clerk',
-             kind: 'coach-seed-minted',
-             detail: `slug=${dir.slug} name=${theme.name} claims=${theme.claims}`,
-             refs: [],
-           });
-         }
-       }
-       // Log aggregate cluster sizes for honest re-tuning (Q-111)
-       const sizes = [...themes.values()].map(t => String(t.claims)).join(',');
-       if (sizes) {
-         appendEvent(deps.vaultRoot, {
-           at: new Date().toISOString(),
-           actor: 'clerk',
-           kind: 'coach-seed-evaluated',
-           detail: `themes=${themes.size} clusterSizes=[${sizes}]`,
-           refs: [],
-         });
-       }
-       return Promise.resolve({ clustered: themes.size, minted });
-     },
-     // Ticket 132: the zero-LLM tripwire sweep (Q-90/Q-95) — guarded-metric
-    // baselines vs post-graduation counts, batch demotion by recency. A
-    // missing ledger makes it a no-op inside sweepTripwire.
-    tripwireSweep: () => {
-     sweepTripwire({
-      dataDir: join(process.cwd(), 'data'),
-      ledgerPath: join(process.cwd(), 'data', 'graduation-ledger.jsonl'),
-      vaultRoot: deps.vaultRoot,
-      now: new Date(),
-     });
-     return Promise.resolve();
-    },
+     coachSeedSweep: () => runCoachSeedSweep({
+      claimStore,
+      coachStore,
+      frameWords: profileFrameWords(profile),
+      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
     gazetteerExtraction: () => {
-     if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
-     const allEntities = gazetteerStore.list();
-     const extractedCiteSet = new Set<string>();
-     for (const entity of allEntities) {
-      for (const m of entity.mentions) extractedCiteSet.add(m);
-     }
-     const modelName = clerkModelName ?? 'default';
-     const snippets = Object.values(deps.vault.rebuildIndex().snippets);
-     // Cap live at birth (Q-56): at most 5 snippets per run, newest first
-     const EXTRACTION_CAP = 5;
-     let extracted = 0;
-     let entities = 0;
-     let failed = 0;
-     return (async () => {
-      for (const s of snippets.sort((a, b) => b.captured.localeCompare(a.captured))) {
-       if (extracted >= EXTRACTION_CAP) break;
-       const cite = `${s.id}@${s.version}`;
-       if (extractedCiteSet.has(cite)) continue;
-       try {
-        const result = await extractEntities(s, clerkComplete, modelName);
-        extracted++;
-        for (const ext of result.entities) {
-         const id = entityId(ext.kind, ext.name);
-         const existing = gazetteerStore.get(id);
-         if (existing) {
-          // Merge: add mention cite if not already present, union aliases
-          if (!existing.mentions.includes(cite)) {
-           existing.mentions.push(cite);
-          }
-          for (const alias of ext.aliases) {
-           if (!existing.aliases.includes(alias)) {
-            existing.aliases.push(alias);
-           }
-          }
-          existing.updatedAt = new Date().toISOString();
-          gazetteerStore.put(existing);
-         } else {
-          gazetteerStore.put({
-           id,
-           name: ext.name,
-           kind: ext.kind,
-           aliases: ext.aliases,
-           mentions: [cite],
-           updatedAt: new Date().toISOString(),
-          });
-          entities++;
-         }
-        }
-       } catch {
-        failed++;
-       }
-      }
-      return { extracted, entities, failed };
-     })();
+      if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
+      // The sweep lives in src/clerk/gazetteer-extraction.ts; the wiring
+      // only binds its deps.
+      return runGazetteerExtraction({
+        vault: deps.vault,
+        store: gazetteerStore,
+        complete: clerkComplete,
+        modelName: clerkModelName ?? 'default',
+        log: (e) => appendEvent(deps.vaultRoot, e),
+      });
     },
     gazetteerFrontier: () => {
      if (!gazetteerStore) return Promise.resolve({ minted: 0, frontierEntities: 0 });
@@ -1084,6 +1033,13 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
 
  /** Start a docket run behind whatever called this. Never throws, never waits. */
  function startDocket(trigger: string): void {
+  // The stop switch gates NEW runs (ticket 151): a stopped server must not
+  // start the drain chain, an import re-trigger, or a boot run. The run in
+  // flight finishes — runDocket reads the switch between its own jobs.
+  if (jobsStopped) {
+   console.error(`docket (${trigger}) not started — jobs are stopped (POST /api/jobs/resume to start again)`);
+   return;
+  }
   if (docketRunning) {
    // A second trigger starts nothing — runDocket's own lock would make it a
    // no-op anyway, and that no-op returns an empty index. Remember it
@@ -1392,9 +1348,31 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   return c.json({ target, recent, declaredRequired: true });
  });
 
- // POST /api/session {mode, shuffle?} → {sessionId, question, target, source?}
+ // GET /api/protocols → { protocols: [{ id, name, title, blurb?, rotation }] }
+// The mode-screen protocol row's contract (tickets 153/157): protocols are
+// an open set loaded from markdown defs, so the client renders whatever the
+// server returns — never a hardcoded list. `id` is the registry key POST
+// /api/session accepts as {protocol}; `title`/`blurb` are the surface words
+// (title falls back to the name for a def without one); `rotation: false`
+// marks instruments the server never picks on its own (drm, people-grid —
+// Q-85) — shown as explicit-only picks beside the default "let it choose"
+// row.
+app.get('/api/protocols', (c) => {
+ const protocols = [...loadProtocolDefinitions().values()]
+  .map((d) => ({
+   id: d.name,
+   name: d.name,
+   title: d.title,
+   ...(d.blurb !== undefined ? { blurb: d.blurb } : {}),
+   rotation: d.rotation !== false,
+  }))
+  .sort((a, b) => a.id.localeCompare(b.id));
+ return c.json({ protocols });
+});
+
+// POST /api/session {mode, shuffle?, protocol?} → {sessionId, question, target, source?}
  app.post('/api/session', async (c) => {
-  const body = await c.req.json<{ mode: Mode; shuffle?: boolean }>();
+  const body = await c.req.json<{ mode: Mode; shuffle?: boolean; protocol?: string }>();
 
   const mode = body.mode;
   if (!mode || typeof mode.minutes !== 'number' || !mode.energy) {
@@ -1411,10 +1389,20 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   const target: Target = mode.target ?? suggestion.target;
   const normalized: Mode = { ...mode, target };
 
-  // Protocol selection: load defs, count prior sessions, rotate deterministically
+  // Protocol selection (ticket 153): an explicit {protocol} validated against
+  // the registry wins; absent means the deterministic rotation on session
+  // count, exactly as before. The chosen def lands in the same place either
+  // way — startSession's protocolName below — so a picked protocol is
+  // indistinguishable from a rotated one downstream. A pick is never
+  // target-filtered: the person asked for that instrument (e.g. a domain
+  // protocol during a self sitting is their call).
   const protocolDefs = loadProtocolDefinitions();
   const sessionCount = listSessions(deps.vaultRoot).length;
-  const selectedProtocol = selectProtocolForTarget(target, sessionCount, protocolDefs);
+  const pickedProtocol = body.protocol !== undefined ? getProtocol(body.protocol) : undefined;
+  if (body.protocol !== undefined && pickedProtocol === undefined) {
+   return c.json({ error: `unknown protocol: ${body.protocol}` }, 400);
+  }
+  const selectedProtocol = pickedProtocol ?? selectProtocolForTarget(target, sessionCount, protocolDefs);
 
   // The Randomizer (Q-18). Wrapped so the response can say what was dealt:
   // `startSession` returns a SessionState, and no SessionState carries the
@@ -1452,7 +1440,8 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
     const tail = readFileSync(recent, 'utf8').slice(-500);
     const sections = tail.match(/^## (\w+)/gm);
     if (sections && sections.length > 0 && sections[sections.length - 1] === '## agent') {
-     appendFileSync(recent, `\n## closing\n\n${CLOSING_ACKNOWLEDGMENT}\n\n`, 'utf8');
+     const sessionId = basename(recent).replace(/\.md$/, '');
+     appendClosing(deps.vaultRoot, sessionId, CLOSING_ACKNOWLEDGMENT);
     }
    } catch { /* best-effort */ }
   })();
@@ -1469,6 +1458,12 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
    randomizer,
    vaultRoot: deps.vaultRoot,
    greetingText,
+   // The phase machine's people source (ticket 159, slice 3): the
+   // gazetteer's named people, for people-grid's triads. Absent store →
+   // empty list → people-grid degrades to reflective at session start.
+   peopleSource: () => (deps.gazetteerStore?.list() ?? [])
+    .filter((e) => e.kind === 'person')
+    .map((e) => e.name),
    ...(body.shuffle ? { shuffleRequested: true } : {}),
   });
   sessions.set(state.id, state);
@@ -1495,7 +1490,11 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   // The greeting IS the pulse — the client renders it as the momentary-state
   // input before the opener (ticket 135).
   pulsePrompt: greetingText,
-   protocol: selectedProtocol.name,
+   // state.protocol, not selectedProtocol.name: a machine-time degradation
+   // (people-grid with fewer than three gazetteer people → reflective,
+   // ticket 159) is decided inside startSession and must be what the client
+   // hears back.
+   protocol: state.protocol,
    ...(draw && draw.question === opener.text
     ? {
      source: draw.provenance,
@@ -1617,18 +1616,62 @@ function closeTheDoor(state: SessionState, at: string): void {
  state.questionCount++;
 }
 
+/**
+ * The machine's phase meta for the wire (ticket 159). Every sitting now
+ * carries a machine (reflective formalized in slice 4), so the turn
+ * response's `phase` field is always this object — { id, label, step, of } —
+ * and the polymorphic session-phase-string wire is retired. The session
+ * phase string still rides the session response, the gate routes, and the
+ * end responses, where the sounding suites pin it. Returns undefined only
+ * for a hypothetical machine-less session (unreachable on the /turn route
+ * today); callers fall back to the session phase string when it does.
+ */
+function machinePhaseMeta(st: SessionState):
+ | { id: string; label: string; step: number; of: number; renderer?: string; triad?: { names: string[] } }
+ | undefined {
+ const machine = st.protocolMachine;
+ if (machine === undefined) return undefined;
+ // The machine names its OWN protocol: a resumed machine (ticket 159,
+ // slice 5) can run an instrument the session was not rotated into, and
+ // the phase meta must follow the machine, never the session declaration.
+ const phases = getProtocol(machine.protocol)?.phases;
+ if (phases === undefined || phases.length === 0) return undefined;
+ const phase = phases[machine.phaseIndex];
+ if (phase === undefined) return undefined;
+ // The UI-phase contract (ticket 159, slice 6): a phase that declares a
+ // renderer carries it on the meta so the client can dispatch on it. The
+ // 'triads' renderer additionally carries the three names as chips
+ // (slice 7) — the same slice-3 people source the composed prompt uses, so
+ // the chips can never name a different set than the model's question.
+ return {
+  id: phase.id,
+  label: phase.label,
+  step: machine.phaseIndex + 1,
+  of: phases.length,
+  ...(phase.renderer !== undefined ? { renderer: phase.renderer } : {}),
+  ...(phase.renderer === 'triads' ? { triad: { names: (st.deps.peopleSource?.() ?? []).slice(0, 3) } } : {}),
+ };
+}
+
  // POST /api/session/:id/turn {text} → probe | saturated
  app.post('/api/session/:id/turn', async (c) => {
   const sessionId = c.req.param('id');
   const state = sessions.get(sessionId);
   if (!state) return c.json({ error: 'session not found' }, 404);
 
-  const body = await c.req.json<{ text: string; spoken?: boolean; channel?: CaptureChannel }>();
+  const body = await c.req.json<{ text: string; spoken?: boolean; channel?: CaptureChannel; pair?: unknown }>();
   if (!body.text || typeof body.text !== 'string') {
    return c.json({ error: 'text is required' }, 400);
   }
   if (body.channel !== undefined && !isCaptureChannel(body.channel)) {
    return c.json({ error: `invalid channel "${String(body.channel)}"` }, 400);
+  }
+  // The chip surface's pair (ticket 159, slice 7): additive and optional —
+  // a prose-only turn is unchanged. A malformed pair is dropped, never a
+  // 400, so the route contract holds for every existing client.
+  const pair = parseTriadPair(body.pair);
+  if (body.pair !== undefined && pair === undefined) {
+   console.warn('Elicitor: malformed triad pair on /turn ignored');
   }
 
   // Detect resonance for juxtaposition info (before userTurn consumes the hit)
@@ -1669,7 +1712,7 @@ function closeTheDoor(state: SessionState, at: string): void {
  // Two disengaged replies running defer the whole thread (never expire —
  // dormancy is signal, Q-56).
  const answeredEntryId = state.openQueueEntryId;
- const result = await userTurn(state, body.text, body.spoken, turnProsody);
+ const result = await userTurn(state, body.text, body.spoken, turnProsody, pair);
  if (answeredEntryId) {
   deps.queue.recordReplyDisengagement(answeredEntryId, body.text);
  }
@@ -1701,6 +1744,16 @@ function closeTheDoor(state: SessionState, at: string): void {
   }
 
   if (result.kind === 'saturated') {
+   // The machine record cleanup (ticket 159, slice 5): the resumed sitting
+   // finishing consumes the record it resumed; a fresh sitting removes its
+   // own advance-written record — unless it parked, the act that keeps a
+   // record past the sitting end.
+   if (state.machineParked !== true) {
+    removeMachineState(deps.vaultRoot, sessionId);
+   }
+   if (state.resumedMachineId) {
+    removeMachineState(deps.vaultRoot, state.resumedMachineId);
+   }
    return c.json({ kind: 'saturated', ...(result.closingText ? { closingText: result.closingText } : {}) });
   }
 
@@ -1716,11 +1769,12 @@ function closeTheDoor(state: SessionState, at: string): void {
   // The gate was never touched on this path; the response is the only
   // carrier of the ladder's identity.
   if (state.finishedSounding) {
+   const phaseMeta = machinePhaseMeta(state);
    return c.json({
     kind: 'probe',
     text: result.text,
     questionForm: result.questionForm,
-    phase: state.phase,
+    ...(phaseMeta !== undefined ? { phase: phaseMeta } : { phase: state.phase }),
     ...(juxtaposition ? { juxtaposition } : {}),
     ...finishDescent(state),
    });
@@ -1775,11 +1829,18 @@ function closeTheDoor(state: SessionState, at: string): void {
   }
 
   const servedQuotedFragment = openQueueQuotedFragment(deps.queue, state.openQueueEntryId);
+  // Read AFTER userTurn: the meta describes the phase of the question being
+  // served, which a ratified advance inside the turn may just have changed.
+  // Every sitting now carries a machine (ticket 159, slice 4), so the turn
+  // response's `phase` field is the machine shape — the session-phase-string
+  // fallback is unreachable on the /turn route today and stays only to keep
+  // the field honest for a hypothetical machine-less session.
+  const phaseMeta = machinePhaseMeta(state);
   return c.json({
    kind: 'probe',
    text: result.text,
    questionForm: result.questionForm,
-   phase: state.phase,
+   ...(phaseMeta !== undefined ? { phase: phaseMeta } : { phase: state.phase }),
    ...(juxtaposition ? { juxtaposition } : {}),
    ...(state.sounding ? { sounding: gateStateFor(state.sounding) } : {}),
    ...(soundingOfferWire ? { soundingOffer: soundingOfferWire } : {}),
@@ -2108,6 +2169,93 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
  });
  });
 
+// POST /api/session/:id/machine/resume {queueEntryId} → probe | door | 503 | 404
+// Picking a parked machine back up (ticket 159, slice 5): the pointer names
+// the side-record, the side-record is the truth, and the resumed question is
+// composed FRESH at resume time (Q-45) with the machine turn seam — nothing
+// pre-composed is ever read off disk. A corrupt or missing record is skipped
+// with a log line and the machine restarts at phase 0 (the ladder register:
+// a broken record never crashes a resume, never hides a valid record beside
+// it). A resume that cannot compose is a failed call, not a closed machine —
+// the pointer stays live for another try (the sounding asymmetry note).
+app.post('/api/session/:id/machine/resume', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+
+ const body = await c.req.json<{ queueEntryId?: unknown }>().catch(() => null);
+ const queueEntryId = body?.queueEntryId;
+ if (typeof queueEntryId !== 'string' || queueEntryId.trim() === '') {
+  return c.json({ error: 'queueEntryId is required' }, 400);
+ }
+
+ const entry = deps.queue
+  .list({ source: 'parked-machine' })
+  .find((e) => e.id === queueEntryId);
+ if (!entry) return c.json({ error: 'no parked machine with that id' }, 404);
+
+ const recordId = entry.machineId ?? '';
+ const parked = readMachineState(deps.vaultRoot, recordId);
+ const def = getProtocol(parked?.protocol ?? entry.machineProtocol ?? state.protocol);
+ if (def === undefined || def.phases === undefined) {
+  // The record names an instrument the registry no longer carries — a dead
+  // pointer is a 404, never a crash (the sounding precedent).
+  return c.json({ error: 'this parked machine is no longer available' }, 404);
+ }
+
+ if (parked === null) {
+  // Corrupt or missing record: skip it with a log and restart the machine
+  // at phase 0 under the parked instrument — never a crash.
+  console.warn(`Machine: parked machine record ${recordId} unreadable — restarting ${def.name} at phase 0`);
+  state.protocolMachine = startMachine(def);
+ } else {
+  // The resumed sitting continues the exact phase: phaseIndex and the
+  // per-phase exchange counts come straight off the record.
+  state.protocolMachine = parked;
+ }
+ state.resumedMachineId = recordId;
+
+ // Compose the resumed machine's next question fresh. A machine that cannot
+ // compose is a failed call, not a closed machine — the pointer stays live
+ // and the restored state is reverted for another try.
+ const machine = await machineTurn(state, def);
+ if (machine.kind === 'served') {
+  deps.queue.markAnswered(entry.id);
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'machine-resumed',
+   `session=${sessionId} phase=${state.protocolMachine.phaseIndex + 1} of=${def.phases.length}`,
+  );
+  const phaseMeta = machinePhaseMeta(state);
+  return c.json({
+   kind: 'probe',
+   text: machine.probe.text,
+   questionForm: machine.probe.questionForm,
+   ...(phaseMeta !== undefined ? { phase: phaseMeta } : { phase: state.phase }),
+  });
+ }
+ if (machine.kind === 'closed') {
+  // The parked machine had already saturated when it parked: the resumed
+  // sitting enters the closing door directly, exactly as a turn-side
+  // [SATURATED] would.
+  deps.queue.markAnswered(entry.id);
+  serverEmit(
+   deps.vaultRoot,
+   'elicitor',
+   'machine-resumed',
+   `session=${sessionId} phase=${state.protocolMachine.phaseIndex + 1} of=${def.phases.length}`,
+  );
+  const at = new Date().toISOString();
+  closeTheDoor(state, at);
+  return c.json({ kind: 'door', text: CLOSING_DOOR_QUESTION, phase: state.phase });
+ }
+ // fallthrough — revert the restore and leave the pointer live.
+ delete state.protocolMachine;
+ delete state.resumedMachineId;
+ return c.json({ error: 'could not compose the next question — try again' }, 503);
+});
+
 // POST /api/session/:id/repair — the repair verb (Q-104..Q-108)
 // Accepts { snippetRef: string; quotedFragment: string }
 // Writes repair record, expires citing queue entries, emits repair event,
@@ -2218,24 +2366,101 @@ app.post('/api/session/:id/repair', async (c) => {
 // Q-85: user-declared entry only, fixed probes, gate always visible,
 // fragments through ordinary harvest review. Follows the Sounding endpoint
 // pattern for auth, session lookup, response shape, and park/resume.
+//
+// Ticket 159, slice 6: the drm flow's state lives in the phase machine —
+// MachineState.ui holds the DrmUi (episodes, probe position, fragments,
+// the yesterday anchor) and the machine's phaseIndex IS the drm phase
+// (enumerate → probe → gate). The routes drive the machine with the pure
+// transitions from src/drm/state.ts and write the result back; no drm
+// state lives in a bespoke SessionState field anymore. The wire shapes are
+// unchanged field-for-field; the responses additionally carry `machinePhase`
+// — the machine phase meta (with the phase's renderer when it declares one,
+// ticket 159 slice 6) — so the DRM screen can dispatch on the renderer.
+
+/** The live drm machine + its ui, or null when no drm is running. */
+function drmMachineOf(state: SessionState): { machine: MachineState; ui: DrmUi } | null {
+ const machine = state.protocolMachine;
+ if (machine === undefined || machine.protocol !== 'drm') return null;
+ if (machine.ui === undefined) return null;
+ return { machine, ui: drmUiOf(machine) };
+}
+
+/**
+ * The machine's ui bucket (typed `Record<string, unknown>` by the machine
+ * contract) interpreted as the drm ui. The bucket boundary is the only
+ * cast: inside the drm layer everything is DrmUi-typed.
+ */
+function drmUiOf(machine: MachineState): DrmUi {
+ return machine.ui as unknown as DrmUi;
+}
+
+/** Write a new drm ui back into the machine's ui bucket. */
+function withDrmUi(machine: MachineState, ui: DrmUi): MachineState {
+ return { ...machine, ui: ui as unknown as Record<string, unknown> };
+}
+
+/** The finished-DRM stamp the close routes keep on the session (no readers
+ *  today; preserved as the record of how the walk ended). */
+function finishedDrmStamp(sessionId: string, machine: MachineState, endedBy: DRMParkedState['endedBy']): DRMParkedState {
+ const ui = drmUiOf(machine);
+ return {
+  id: sessionId,
+  session: sessionId,
+  yesterday: ui.yesterday,
+  phase: 'complete',
+  episodes: ui.episodes,
+  currentEpisodeIdx: ui.currentEpisodeIdx,
+  probeStep: ui.probeStep,
+  fragments: ui.fragments,
+  started: machine.startedAt,
+  ended: new Date().toISOString(),
+  endedBy,
+ };
+}
+
+/** A legacy (pre-slice-6) DRMState as a drm machine at the probe phase. */
+function machineFromDrmState(drm: DRMState): MachineState {
+ const ui: DrmUi = {
+  yesterday: drm.yesterday,
+  episodes: drm.episodes,
+  currentEpisodeIdx: drm.currentEpisodeIdx,
+  probeStep: drm.probeStep,
+  fragments: drm.fragments,
+ };
+ return {
+  protocol: 'drm',
+  // The three drm phases (enumerate → probe → gate); a legacy record that
+  // had already probed every episode completes at the gate.
+  phaseIndex: drm.phase === 'complete' ? 2 : 1,
+  exchanges: [0, 0, 0],
+  startedAt: drm.started,
+  ui: ui as unknown as Record<string, unknown>,
+ };
+}
 
 // POST /api/session/:id/drm/start — begin a DRM session
+// The machine starts at the enumerate phase (index 0) with a fresh ui; the
+// 'begin' word on the screen is the client-side intro, the machine is
+// already at the day-map.
 app.post('/api/session/:id/drm/start', (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (state.drm) return c.json({ error: 'DRM already running' }, 400);
+ if (drmMachineOf(state) !== null) return c.json({ error: 'DRM already running' }, 400);
 
- const drm = initDRM(sessionId);
- const { state: started, yesterday } = beginDRM(drm);
- state.drm = started;
+ const def = getProtocol('drm');
+ if (def === undefined) return c.json({ error: 'DRM is not a known protocol' }, 500);
+ const machine = withDrmUi(startMachine(def), initDRM());
+ state.protocolMachine = machine;
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-started', `episodes=0`);
 
+ const phaseMeta = machinePhaseMeta(state);
  return c.json({
   kind: 'drm-enumerate',
-  yesterday,
+  yesterday: drmUiOf(machine).yesterday,
   phase: state.phase,
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
@@ -2244,7 +2469,9 @@ app.post('/api/session/:id/drm/episode', async (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+ const running = drmMachineOf(state);
+ if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ if (running.machine.phaseIndex !== 0) return c.json({ error: 'Not enumerating' }, 400);
 
  const body = await c.req.json<{ name: string; startHour: number }>();
  if (typeof body.name !== 'string' || body.name.trim() === '') {
@@ -2254,51 +2481,61 @@ app.post('/api/session/:id/drm/episode', async (c) => {
   return c.json({ error: 'startHour must be 0–23' }, 400);
  }
 
- try {
-  state.drm = addEpisode(state.drm, body.name.trim(), body.startHour);
- } catch (e) {
-  return c.json({ error: String(e) }, 400);
- }
+ const nextUi = addEpisode(running.ui, body.name.trim(), body.startHour);
+ state.protocolMachine = withDrmUi(running.machine, nextUi);
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-episode-added',
-  `count=${state.drm.episodes.length} name=${body.name.trim()}`);
+  `count=${nextUi.episodes.length} name=${body.name.trim()}`);
 
+ const phaseMeta = machinePhaseMeta(state);
  return c.json({
   kind: 'drm-episode-added',
-  count: state.drm.episodes.length,
+  count: nextUi.episodes.length,
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
 // POST /api/session/:id/drm/enumerate-done — finish enumeration
+// The enumerate phase is a UI phase: its advance (enumerate → probe) is the
+// route's act, and the side-record follows the advance (the slice-5
+// durability register — a crash never loses a phase already walked).
 app.post('/api/session/:id/drm/enumerate-done', (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+ const running = drmMachineOf(state);
+ if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ if (running.machine.phaseIndex !== 0) return c.json({ error: 'Not enumerating' }, 400);
 
+ let nextUi: DrmUi;
  try {
-  state.drm = doneEnumerating(state.drm);
+  nextUi = doneEnumerating(running.ui);
  } catch (e) {
   return c.json({ error: String(e) }, 400);
  }
+ const nextMachine: MachineState = { ...withDrmUi(running.machine, nextUi), phaseIndex: 1 };
+ state.protocolMachine = nextMachine;
+ writeMachineState(deps.vaultRoot, sessionId, nextMachine);
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-enumeration-finished',
-  `episodes=${state.drm.episodes.length}`);
+  `episodes=${nextUi.episodes.length}`);
 
-const question = probeQuestion(state.drm);
-const cleanText = transcriptQuestion(state.drm);
+const question = probeQuestion(nextUi);
+const cleanText = transcriptQuestion(nextUi);
 const now = new Date().toISOString();
 const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
 deps.vault.appendTurn(sessionId, agentTurn);
 state.turns.push(agentTurn);
 
+ const phaseMeta = machinePhaseMeta(state);
  return c.json({
   kind: 'drm-probe',
   text: question,
-  episode: state.drm.currentEpisodeIdx + 1,
-  of: state.drm.episodes.length,
-  step: state.drm.probeStep,
-  gate: gateReading(state.drm),
+  episode: nextUi.currentEpisodeIdx + 1,
+  of: nextUi.episodes.length,
+  step: nextUi.probeStep,
+  gate: gateReading(nextUi),
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
@@ -2307,7 +2544,9 @@ app.post('/api/session/:id/drm/probe', async (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+ const running = drmMachineOf(state);
+ if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ if (running.machine.phaseIndex !== 1) return c.json({ error: 'Not in probe phase' }, 400);
 
  const body = await c.req.json<{ text: string }>();
  if (typeof body.text !== 'string' || body.text.trim() === '') {
@@ -2320,31 +2559,34 @@ const userTurn: Turn = { role: 'user', text: body.text, at: now };
 deps.vault.appendTurn(sessionId, userTurn);
 state.turns.push(userTurn);
 
-const probeResult = answerProbe(state.drm, body.text);
-// Push the fragment into the new state BEFORE assigning (ticket 147)
-const nextDrm = probeResult.state;
+const probeResult = answerProbe(running.ui, body.text);
+// Push the fragment into the new ui BEFORE assigning (ticket 147)
+const nextUi = probeResult.ui;
 if (probeResult.fragment) {
-  nextDrm.fragments.push(probeResult.fragment);
+  nextUi.fragments.push(probeResult.fragment);
 }
-state.drm = nextDrm;
+state.protocolMachine = withDrmUi(running.machine, nextUi);
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-probe-answered',
-  `step=${state.drm.probeStep}`);
+  `step=${nextUi.probeStep}`);
+
+ const phaseMeta = machinePhaseMeta(state);
 
  if (probeResult.atGate) {
   // All probes done for this episode — show gate
   return c.json({
    kind: 'drm-gate',
-   episode: state.drm.currentEpisodeIdx + 1,
-   of: state.drm.episodes.length,
+   episode: nextUi.currentEpisodeIdx + 1,
+   of: nextUi.episodes.length,
    atEnd: probeResult.atEnd,
-   gate: gateReading(state.drm),
+   gate: gateReading(nextUi),
+   ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
   });
  }
 
 // More probes — ask the next one
-const question = probeQuestion(state.drm);
-const cleanText = transcriptQuestion(state.drm);
+const question = probeQuestion(nextUi);
+const cleanText = transcriptQuestion(nextUi);
 const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
 deps.vault.appendTurn(sessionId, agentTurn);
 state.turns.push(agentTurn);
@@ -2352,55 +2594,70 @@ state.turns.push(agentTurn);
  return c.json({
   kind: 'drm-probe',
   text: question,
-  episode: state.drm.currentEpisodeIdx + 1,
-  of: state.drm.episodes.length,
-  step: state.drm.probeStep,
-  gate: gateReading(state.drm),
+  episode: nextUi.currentEpisodeIdx + 1,
+  of: nextUi.episodes.length,
+  step: nextUi.probeStep,
+  gate: gateReading(nextUi),
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
 // POST /api/session/:id/drm/gate {choice} — continue/park/another-day
+// Park persists the MACHINE (slice 6): the side-record carries the DrmUi
+// with the next un-probed episode as the resume point, and the pointer is
+// a 'parked-machine' entry (machineId + machineProtocol). The finished-DRM
+// stamp stays on the session for the record of how the walk ended.
 app.post('/api/session/:id/drm/gate', async (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (!state.drm) return c.json({ error: 'no DRM running' }, 400);
+ const running = drmMachineOf(state);
+ if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ if (running.machine.phaseIndex !== 1) return c.json({ error: 'Not at a gate' }, 400);
 
  const body = await c.req.json<{ choice: 'continue' | 'park' | 'another-day' }>();
  if (!['continue', 'park', 'another-day'].includes(body.choice)) {
   return c.json({ error: 'choice must be continue, park, or another-day' }, 400);
  }
 
- const now = new Date().toISOString();
- const result = applyDRMGate(state.drm, body.choice);
- state.drm = result.state;
+ const result = applyDRMGate(running.ui, body.choice);
 
  if (body.choice === 'park' && result.parked) {
-  writeDRM(deps.vaultRoot, result.parked);
-  const queueTarget = state.mode?.target;
-  parkDRMPointer(deps.queue, result.parked, queueTarget);
-  state.finishedDRM = result.parked;
-  delete state.drm;
+  const parkedMachine: MachineState = withDrmUi(running.machine, result.parked);
+  state.protocolMachine = parkedMachine;
+  state.machineParked = true;
+  // The resumed sitting that parks again supersedes the record it resumed:
+  // one live record per parked machine, never two.
+  if (state.resumedMachineId) {
+   removeMachineState(deps.vaultRoot, state.resumedMachineId);
+   delete state.resumedMachineId;
+  }
+  writeMachineState(deps.vaultRoot, sessionId, parkedMachine);
+  const def = getProtocol(parkedMachine.protocol);
+  const phases = def?.phases;
+  if (phases !== undefined && phases.length > 0) {
+   parkMachinePointer(deps.queue, parkedMachine, sessionId, phases);
+  }
+  state.finishedDRM = finishedDrmStamp(sessionId, parkedMachine, 'park');
 
   serverEmit(deps.vaultRoot, 'elicitor', 'drm-parked',
    `episode=${result.parked.currentEpisodeIdx}`);
 
+  const phaseMeta = machinePhaseMeta(state);
   return c.json({
    kind: 'drm-closed',
    endedBy: 'park',
    phase: state.phase,
+   ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
   });
  }
 
  if (body.choice === 'another-day') {
-  const parked = {
-   ...state.drm,
-   ended: now,
-   endedBy: 'another-day' as const,
-  };
-  writeDRM(deps.vaultRoot, parked);
-  state.finishedDRM = parked;
-  delete state.drm;
+  // Abandon, keep fragments — they live in the transcript, which the
+  // harvest reads. The machine is gone with the drm; the side-record (if
+  // any) is removed by the end flow (machineParked is false).
+  state.finishedDRM = finishedDrmStamp(sessionId, running.machine, 'another-day');
+  delete state.protocolMachine;
 
   return c.json({
    kind: 'drm-closed',
@@ -2411,8 +2668,8 @@ app.post('/api/session/:id/drm/gate', async (c) => {
 
  // Continue: advance to next episode
  if (result.complete) {
-  state.finishedDRM = { ...state.drm, ended: now, endedBy: 'park' };
-  delete state.drm;
+  state.finishedDRM = finishedDrmStamp(sessionId, running.machine, 'complete');
+  delete state.protocolMachine;
 
   serverEmit(deps.vaultRoot, 'elicitor', 'drm-completed',
    `fragments=${state.finishedDRM.fragments.length}`);
@@ -2424,29 +2681,39 @@ app.post('/api/session/:id/drm/gate', async (c) => {
   });
  }
 
+ state.protocolMachine = withDrmUi(running.machine, result.ui);
+
 // Next episode — ask first probe
-const question = probeQuestion(state.drm);
-const cleanText = transcriptQuestion(state.drm);
+const question = probeQuestion(result.ui);
+const cleanText = transcriptQuestion(result.ui);
+const now = new Date().toISOString();
 const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
 deps.vault.appendTurn(sessionId, agentTurn);
 state.turns.push(agentTurn);
 
+ const phaseMeta = machinePhaseMeta(state);
  return c.json({
   kind: 'drm-probe',
   text: question,
-  episode: state.drm.currentEpisodeIdx + 1,
-  of: state.drm.episodes.length,
-  step: state.drm.probeStep,
-  gate: gateReading(state.drm),
+  episode: result.ui.currentEpisodeIdx + 1,
+  of: result.ui.episodes.length,
+  step: result.ui.probeStep,
+  gate: gateReading(result.ui),
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
 // POST /api/session/:id/drm/resume {queueEntryId} — resume a parked DRM
+// Slice 6: drm parks mint 'parked-machine' pointers (the machine side-record
+// is the truth, the pointer only points). LEGACY 'parked-drm' pointers keep
+// working through a compat read — a pre-slice-6 park reads its old
+// {root}/drm/<id>.md record and is rebuilt as a machine at the probe phase,
+// so a person who parked before the migration still picks the walk back up.
 app.post('/api/session/:id/drm/resume', async (c) => {
  const sessionId = c.req.param('id');
  const state = sessions.get(sessionId);
  if (!state) return c.json({ error: 'session not found' }, 404);
- if (state.drm) return c.json({ error: 'DRM already running' }, 400);
+ if (drmMachineOf(state) !== null) return c.json({ error: 'DRM already running' }, 400);
 
  const body = await c.req.json<{ queueEntryId: string }>();
  const queueEntryId = body.queueEntryId;
@@ -2455,27 +2722,55 @@ app.post('/api/session/:id/drm/resume', async (c) => {
  }
 
  const entry = deps.queue
-  .list({ source: 'parked-drm' })
-  .find((e) => e.id === queueEntryId);
+  .list({ source: 'parked-machine' })
+  .find((e) => e.id === queueEntryId)
+  ?? deps.queue
+   .list({ source: 'parked-drm' })
+   .find((e) => e.id === queueEntryId);
  if (!entry) return c.json({ error: 'no parked DRM with that id' }, 404);
 
- const parked = readDRM(deps.vaultRoot, entry.drmId ?? '');
- if (!parked) {
-  return c.json({ error: 'this DRM is no longer on disk' }, 404);
+ let machine: MachineState;
+ if (entry.source === 'parked-machine') {
+  const record = readMachineState(deps.vaultRoot, entry.machineId ?? '');
+  if (record === null || record.protocol !== 'drm') {
+   return c.json({ error: 'this DRM is no longer on disk' }, 404);
+  }
+  machine = record;
+ } else {
+  const parked = readDRM(deps.vaultRoot, entry.drmId ?? '');
+  if (parked === null) {
+   return c.json({ error: 'this DRM is no longer on disk' }, 404);
+  }
+  machine = machineFromDrmState(resumeDRM(parked, sessionId));
  }
 
- const resumed = resumeDRM(parked, sessionId);
- state.drm = resumed;
+ const ui = drmUiOf(machine);
+ // A record parked mid-enumeration (the everyday gate can park a drm
+ // sitting while the day-map is still open): the day was mapped as far as
+ // it went — advance to the probes exactly as enumerate-done would. An
+ // empty day has nothing to probe and closes below like any walked-out
+ // record.
+ if (machine.phaseIndex === 0) {
+  machine = { ...machine, phaseIndex: ui.episodes.length === 0 ? 2 : 1 };
+ }
+
+ state.protocolMachine = machine;
+ // The resumed sitting owns the record now: an end without a re-park
+ // consumes it (the slice-5 register).
+ if (entry.source === 'parked-machine') {
+  state.resumedMachineId = entry.machineId ?? sessionId;
+ }
 
  // Mark the pointer answered
  deps.queue.markAnswered(entry.id);
 
  serverEmit(deps.vaultRoot, 'elicitor', 'drm-resumed',
-  `episodes=${resumed.episodes.length} at=${resumed.currentEpisodeIdx}`);
+  `episodes=${ui.episodes.length} at=${ui.currentEpisodeIdx}`);
 
- if (resumed.phase === 'complete') {
-  state.finishedDRM = { ...resumed, ended: new Date().toISOString(), endedBy: 'park' };
-  delete state.drm;
+ if (machine.phaseIndex === 2 || ui.currentEpisodeIdx >= ui.episodes.length) {
+  // Parked after the last episode — nothing left to probe: close it.
+  state.finishedDRM = finishedDrmStamp(sessionId, machine, 'complete');
+  delete state.protocolMachine;
   return c.json({
    kind: 'drm-closed',
    endedBy: 'complete',
@@ -2483,20 +2778,22 @@ app.post('/api/session/:id/drm/resume', async (c) => {
   });
  }
 
-const question = probeQuestion(resumed);
-const cleanText = transcriptQuestion(resumed);
+const question = probeQuestion(ui);
+const cleanText = transcriptQuestion(ui);
 const now = new Date().toISOString();
 const agentTurn: Turn = { role: 'agent', text: cleanText, at: now };
 deps.vault.appendTurn(sessionId, agentTurn);
 state.turns.push(agentTurn);
 
+ const phaseMeta = machinePhaseMeta(state);
  return c.json({
   kind: 'drm-probe',
   text: question,
-  episode: resumed.currentEpisodeIdx + 1,
-  of: resumed.episodes.length,
-  step: resumed.probeStep,
-  gate: gateReading(resumed),
+  episode: ui.currentEpisodeIdx + 1,
+  of: ui.episodes.length,
+  step: ui.probeStep,
+  gate: gateReading(ui),
+  ...(phaseMeta !== undefined ? { machinePhase: phaseMeta } : {}),
  });
 });
 
@@ -2544,20 +2841,31 @@ state.turns.push(agentTurn);
   });
  }
 
- // POST /api/session/:id/end → harvesting (ticket 084)
- // The harvest runs behind this response; the finished proposals land in the
- // pending queue for the review surface.
- app.post('/api/session/:id/end', (c) => {
-  const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
-
+ /**
+  * The end flow shared by POST /end and the gate route's 'another-day'
+  * (ticket 159, slice 4): close an abandoned sitting, recover the open queue
+  * entry, and harvest behind the response — the review queue is the
+  * destination. The caller has already 404'd on a missing session.
+  */
+ function endSessionHarvest(state: SessionState, sessionId: string): { status: string; sessionId: string } {
   // Close abandoned sittings (ticket 135): if the last turn is an agent
   // question, write a ## closing section so no transcript ends unanswered.
   const turns = state.turns;
   if (turns.length > 0 && turns[turns.length - 1]!.role === 'agent') {
-   const transcriptPath = join(deps.vaultRoot, 'transcripts', `${sessionId}.md`);
-   appendFileSync(transcriptPath, `\n## closing\n\n${CLOSING_ACKNOWLEDGMENT}\n\n`, 'utf8');
+   appendClosing(deps.vaultRoot, sessionId, CLOSING_ACKNOWLEDGMENT);
+  }
+
+  // The machine side-record (ticket 159, slice 5): a sitting that ends has
+  // no parked machine awaiting resume — UNLESS it parked, the act that made
+  // the record and the whole of 'depth kept'. A resumed sitting's record is
+  // always consumed by the end; a fresh sitting's own record (written by the
+  // phase advances) is removed too unless the park act preserved it. Runs
+  // before the empty-sitting guard so an empty sitting cleans up the same.
+  if (state.machineParked !== true) {
+   removeMachineState(deps.vaultRoot, sessionId);
+  }
+  if (state.resumedMachineId) {
+   removeMachineState(deps.vaultRoot, state.resumedMachineId);
   }
 
   // asked→pending recovery: return queue entry if sitting ends unanswered (ticket 145)
@@ -2571,7 +2879,7 @@ state.turns.push(agentTurn);
   const userTurns = turns.filter(t => t.role === 'user');
   if (userTurns.length === 0) {
    sessions.delete(sessionId);
-   return c.json({ status: 'empty', sessionId });
+   return { status: 'empty', sessionId };
   }
   startBackgroundHarvest({
    sessionId,
@@ -2581,7 +2889,91 @@ state.turns.push(agentTurn);
    origin: 'harvest',
    ...(turnChannels !== undefined ? { turnChannels } : {}),
   });
-  return c.json({ status: 'harvesting', sessionId });
+  return { status: 'harvesting', sessionId };
+ }
+
+ // POST /api/session/:id/end → harvesting (ticket 084)
+ // The harvest runs behind this response; the finished proposals land in the
+ // pending queue for the review surface.
+ app.post('/api/session/:id/end', (c) => {
+  const sessionId = c.req.param('id');
+  const state = sessions.get(sessionId);
+  if (!state) return c.json({ error: 'session not found' }, 404);
+  return c.json(endSessionHarvest(state, sessionId));
+ });
+
+ // POST /api/session/:id/gate {choice: 'continue'|'park'|'another-day'} (ticket 159, slice 4)
+ // The everyday sitting's gate: the standard control surface on every
+ // sitting. 'continue' is a no-op — the person just answers, the next turn
+ // is the continuation. 'park' enters the closing-door flow, following the
+ // Sounding precedent: the machine side-record is slice 5, TODAY the sitting
+ // proceeds to the close and harvests at /end. 'another-day' is the
+ // harvest-now wire (the old action-row button) — end and harvest behind the
+ // response. While a descent runs, the sounding gate is the surface; this
+ // route refuses, so the two can never disagree about who closes what.
+ app.post('/api/session/:id/gate', async (c) => {
+  const sessionId = c.req.param('id');
+  const state = sessions.get(sessionId);
+  if (!state) return c.json({ error: 'session not found' }, 404);
+
+  let choice: unknown;
+  try {
+   choice = (await c.req.json<{ choice?: unknown }>()).choice;
+  } catch {
+   return c.json({ error: 'choice is required' }, 400);
+  }
+  if (choice !== 'continue' && choice !== 'park' && choice !== 'another-day') {
+   return c.json({ error: `invalid choice "${String(choice)}" — expected "continue", "park" or "another-day"` }, 400);
+  }
+  if (state.sounding) {
+   return c.json({ error: 'a descent is running — use /api/session/:id/sounding/gate' }, 400);
+  }
+
+  if (choice === 'continue') {
+   // A no-op: the person just answers. The response carries the session
+   // phase so the surface has a heartbeat.
+   return c.json({ kind: 'continue', phase: state.phase });
+  }
+
+  if (choice === 'another-day') {
+   return c.json(endSessionHarvest(state, sessionId));
+  }
+
+  // park — depth kept: the machine parks first (the side-record, ticket
+  // 159, slice 5), then the sitting proceeds to the closing door (the
+  // Sounding precedent); harvest happens at /end. Already closing, a second
+  // park stays in the close without re-asking the door or re-parking. A
+  // missing machine state parks nothing (defensive — every sitting is a
+  // machine sitting today, but the record write is the machine's act).
+  if (state.phase === 'closing-door' || state.phase === 'closing-bookmark') {
+   return c.json({ kind: 'door', text: CLOSING_DOOR_QUESTION, phase: state.phase });
+  }
+  const now = new Date().toISOString();
+  if (state.protocolMachine) {
+   // The side-record: written on park AND on every ratified advance, so
+   // the park write is the durable checkpoint of the exact park-time state.
+   writeMachineState(deps.vaultRoot, sessionId, state.protocolMachine);
+   state.machineParked = true;
+   // The resumed sitting that parks again supersedes the record it resumed:
+   // one live record per parked machine, never two.
+   if (state.resumedMachineId) {
+    removeMachineState(deps.vaultRoot, state.resumedMachineId);
+    delete state.resumedMachineId;
+   }
+   const def = getProtocol(state.protocolMachine.protocol);
+   const phases = def?.phases;
+   if (phases !== undefined && phases.length > 0) {
+    parkMachinePointer(deps.queue, state.protocolMachine, sessionId, phases);
+    serverEmit(
+     deps.vaultRoot,
+     'elicitor',
+     'machine-parked',
+     `session=${sessionId} phase=${state.protocolMachine.phaseIndex + 1} of=${phases.length}`,
+    );
+   }
+  }
+  closeTheDoor(state, now);
+  return c.json({ kind: 'door', text: CLOSING_DOOR_QUESTION, phase: state.phase });
  });
 
  // POST /api/session/:id/harvest {decisions} → {snippets, buds}
@@ -2730,9 +3122,10 @@ state.turns.push(agentTurn);
   return c.json({ status: 'harvesting', sessionId });
  });
 
- // GET /api/sweep-backlog → { pendingReadings, freshReadings } (ticket 139)
- // The waiting surface reads this to show "the wiki is N readings behind."
- // Cheap: reads the sweep deferral ledger and the claim store's swept set.
+ // GET /api/sweep-backlog → { pendingReadings, freshReadings, sittings } (ticket 139, 156)
+ // The waiting surface reads this to show "the wiki is N readings behind"
+ // and which sittings wait. Cheap: reads the sweep deferral ledger and the
+ // claim store's swept set.
  app.get('/api/sweep-backlog', (c) => {
   const previous = readSweepDeferral(deps.vaultRoot);
   const { pending, fresh } = sweepWorkRemaining();
@@ -2741,8 +3134,26 @@ state.turns.push(agentTurn);
    freshReadings: fresh,
    lastRecorded: previous?.remaining ?? 0,
    at: previous?.at ?? null,
+   sittings: sittingsFromLedger(readSweepDeferrals(deps.vaultRoot)),
   });
  });
+
+ /**
+  * The deferral ledger, grouped by calendar day (ticket 156). Each line is
+  * one sitting that left sweep work; the day key is the ISO timestamp's date
+  * portion — the same `YYYY-MM-DD` shard the Activity Log shards on — and the
+  * readings sum the lines of that day. Most recent day first.
+  */
+ function sittingsFromLedger(lines: { at: string; remaining: number }[]): { date: string; readings: number }[] {
+  const byDay = new Map<string, number>();
+  for (const line of lines) {
+   const day = line.at.slice(0, 10);
+   byDay.set(day, (byDay.get(day) ?? 0) + line.remaining);
+  }
+  return [...byDay.entries()]
+   .map(([date, readings]) => ({ date, readings }))
+   .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+ }
 
  // GET /api/events → SSE liveness feed (ticket 150). Every Activity Log
  // append (Q-23 — the one audit spine every actor writes through) is
@@ -3123,16 +3534,126 @@ state.turns.push(agentTurn);
   const capped = open.slice(0, MAX_OPEN_QUESTIONS);
   // Parked-sounding pointers carry the rung count so the waiting surface can
   // say how many rungs are kept (T12 recorded deviation — the plan's UI
-  // contract has no other wire source inside the ownership map). Every other
-  // entry passes through untouched.
+  // contract has no other wire source inside the ownership map); parked
+  // machine pointers carry the phase the machine sits in (ticket 159, slice
+  // 5). Every other entry passes through untouched.
   const enrich = (e: QueueEntry) =>
    e.source === 'parked-sounding'
     ? { ...e, rungsKept: readLadder(deps.vaultRoot, e.soundingId ?? '')?.rungs.length ?? 0 }
+    : e.source === 'parked-machine'
+     ? (() => {
+      const parked = readMachineState(deps.vaultRoot, e.machineId ?? '');
+      const phases = parked === null ? undefined : getProtocol(parked.protocol)?.phases;
+      const phase = parked === null || phases === undefined ? undefined : phases[parked.phaseIndex];
+      return {
+       ...e,
+       machinePhase: phase === undefined
+        ? null
+        : { id: phase.id, label: phase.label, step: parked!.phaseIndex + 1, of: phases!.length },
+      };
+     })()
     : e;
-  return c.json({ pending: pending.map(enrich), open: capped.map(enrich) });
+ return c.json({ pending: pending.map(enrich), open: capped.map(enrich) });
 });
 
- // GET /api/cadence → the record, as a sentence (ticket 056)
+// ── The open-questions pane's own verbs (ticket 151) ──
+// The waiting surface's three acts. QueueStore owns the transitions
+// (markAnswered / park / unpark); each act speaks through the Activity Log
+// (Q-23) and never carries the question's words — only the act does.
+
+// POST /api/queue/:id/answer {text, channel} → {ok: true}
+// Answering in writing: the answer becomes a one-turn sitting (the queue
+// question rides as the eliciting probe, so the harvest can read the
+// lineage), harvests behind this response, and the review cards land in
+// the pending queue — "the harvest reads it now".
+app.post('/api/queue/:id/answer', async (c) => {
+ const id = c.req.param('id');
+ const entry = deps.queue.list().find((e) => e.id === id);
+ if (!entry) return c.json({ error: 'no open question with that id' }, 404);
+ const body = await c.req.json<{ text?: unknown; channel?: unknown }>().catch(() => null);
+ if (!body || typeof body.text !== 'string' || body.text.trim().length === 0) {
+  return c.json({ error: 'text is required' }, 400);
+ }
+ if (body.channel !== undefined && !isCaptureChannel(body.channel)) {
+  return c.json({ error: `invalid channel "${String(body.channel)}"` }, 400);
+ }
+ const text = body.text.trim();
+ const channel = isCaptureChannel(body.channel) ? body.channel : undefined;
+ const sessionId = ulid();
+ const at = new Date().toISOString();
+ const agentTurn: Turn = { role: 'agent', text: entry.question, at };
+ const userTurn: Turn = { role: 'user', text, at };
+
+ deps.vault.startTranscript(sessionId, {
+  mode: { minutes: 0, energy: 'medium', target: 'self' },
+  protocol: 'queue-answer',
+  started: at,
+ });
+ deps.vault.appendTurn(sessionId, agentTurn);
+ deps.vault.appendTurn(sessionId, userTurn);
+ deps.queue.markAnswered(id);
+ startBackgroundHarvest({
+  sessionId,
+  turns: [agentTurn, userTurn],
+  protocol: 'queue-answer',
+  started: at,
+  origin: 'harvest',
+  ...(channel !== undefined ? { turnChannels: [channel] } : {}),
+ });
+ // Length, never content (Q-23: the JSONL is the audit trail).
+ serverEmit(deps.vaultRoot, 'elicitor', 'question-answered-direct', `session=${sessionId} chars=${text.length}`);
+ return c.json({ ok: true });
+});
+
+// POST /api/queue/:id/park → {ok: true}
+// The person's own act (QueueStore contract: 'pending' → 'parked'). The
+// store's park is a no-op on a missing or non-pending entry, so the route
+// answers 404 for the missing case; a non-pending entry is a stale view of
+// the surface and parks nothing.
+app.post('/api/queue/:id/park', (c) => {
+ const id = c.req.param('id');
+ const entry = deps.queue.list().find((e) => e.id === id);
+ if (!entry) return c.json({ error: 'no open question with that id' }, 404);
+ deps.queue.park(id);
+ serverEmit(deps.vaultRoot, 'elicitor', 'question-parked', `entry=${id}`);
+ return c.json({ ok: true });
+});
+
+// POST /api/queue/:id/unpark → {ok: true}
+// Put a parked question back ('parked' → 'pending', created refreshed — the
+// expiry clock restarts server-side, QueueStore contract).
+app.post('/api/queue/:id/unpark', (c) => {
+ const id = c.req.param('id');
+ const entry = deps.queue.list().find((e) => e.id === id);
+ if (!entry) return c.json({ error: 'no parked question with that id' }, 404);
+ deps.queue.unpark(id);
+ serverEmit(deps.vaultRoot, 'elicitor', 'question-unparked', `entry=${id}`);
+ return c.json({ ok: true });
+});
+
+// ── The jobs switch (ticket 151) ──
+// The docket drain switch docket.ts describes (src/clerk/docket.ts:701):
+// stopped gates NEW runs and cuts a run in flight short at its next job
+// boundary. The state is visible on the waiting surface — never silence
+// (ticket 154's rule, applied to this control from the start).
+app.post('/api/jobs/stop', (c) => {
+ jobsStopped = true;
+ serverEmit(deps.vaultRoot, 'elicitor', 'jobs-stopped', `inFlight=${docketRunning}`);
+ return c.json({ ok: true, inFlight: docketRunning });
+});
+
+app.post('/api/jobs/resume', (c) => {
+ jobsStopped = false;
+ serverEmit(deps.vaultRoot, 'elicitor', 'jobs-resumed', '');
+ // Ticket 156: resume means "start catching up" — clear the switch, then
+ // schedule the drain so a stopped-and-lagging server picks the backlog
+ // back up on its own. A drain over an empty backlog is a quick no-op run;
+ // the chain is bounded by the backlog emptying (ticket 075).
+ scheduleDrain();
+ return c.json({ ok: true });
+});
+
+// GET /api/cadence → the record, as a sentence (ticket 056)
  //
  // Zero outbound contact stays (Q-22); this is a line the person may read on
  // a surface they chose to open, never a signal that reaches out. The wording
@@ -3227,7 +3748,22 @@ state.turns.push(agentTurn);
   return c.json({ snippets });
  });
 
- // ── The wiki, as a page (Q-21, Q-23, Q-25) ──
+// GET /api/territory — the territory map (ticket 152): skeleton and atlas
+// nodes joined with their NodeReadings (vault/ktg/coverage and
+// vault/atlases/coverage). A pure read: node states derive from the
+// reading files' cites (Q-50), nothing is written, nothing is logged. The
+// sitting resolver reads the fresh index, so a cite whose snippet is gone
+// resolves to no sitting and can never inflate 'touched' into 'evidenced'
+// (coverage.ts attribution policy). Response shape documented in
+// src/territory.ts.
+app.get('/api/territory', (c) => {
+ const index = deps.vault.rebuildIndex();
+ const sittingOf = (snippetId: string): string | null =>
+  index.snippets[snippetId]?.provenance.session ?? null;
+ return c.json(buildTerritoryResponse(deps.vaultRoot, sittingOf));
+});
+
+// ── The wiki, as a page (Q-21, Q-23, Q-25) ──
  //
  // The GET route below is a READ route. The POST verbs beneath it are the
  // user's (the read-log records a reading; attest and the claim edit are
@@ -3917,28 +4453,19 @@ app.post('/api/piece/:id/choose', async (c) => {
 // every decision is recomputed from disk (Q-3).
 const coachStore = createCoachStore(deps.vaultRoot);
 
-/** One CoachFacts snapshot from disk — the store reads, the sitting tags,
- * the claim graph, the queue, and the session map for cite resolution. */
+/** One CoachFacts snapshot — the coach slice owns its read-model now. */
 function buildCoachFacts(): CoachFacts {
  const snippets = Object.values(deps.vault.rebuildIndex().snippets);
  const snippetSessions = new Map<string, string>();
  for (const s of snippets) snippetSessions.set(s.id, s.provenance.session);
- const advice = new Map<string, AdviceNote>();
- for (const d of coachStore.listDirections()) {
-  const note = coachStore.readAdvice(d.slug);
-  if (note) advice.set(d.slug, note);
- }
- return {
-  directions: coachStore.listDirections(),
-  quests: coachStore.listQuests(),
-  artifacts: coachStore.listArtifacts(),
-  sittingTags: readSittingTags(deps.vaultRoot),
-  queueEntries: deps.queue.list(),
-  claims: claimStore.loadSlice().claims,
-  snippetSessions,
-  advice,
+ return loadCoachFacts({
+  vaultRoot: deps.vaultRoot,
+  coach: coachStore,
   snippets,
- };
+  claims: claimStore.loadSlice().claims,
+  queueEntries: deps.queue.list(),
+  sessions: snippetSessions,
+ });
 }
 
 // POST /api/coach/direction { name } — the ONLY door (Q-73): accepting the

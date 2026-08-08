@@ -11,15 +11,17 @@ import type {
  Target,
 } from '../types.js';
 import type { Claim } from '../wiki/contract.js';
+import type { ProtocolDef } from '../protocols/registry.js';
 import {
  isInterrogative,
  hasFirstPersonOutsideQuote,
  quotesFragmentSetOff,
  setOffSpans,
-} from '../elicitor/guards.js';
+} from '../language/guards.js';
 import { contentWordSequence } from '../index/lexical.js';
-import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
-import { checkEmitForm } from '../queue/emit-gate.js';
+import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import type { ThresholdLogFn } from '../domain/thresholds.js';
+import { checkEmitForm } from '../language/emit-form.js';
 import { readAllRepairs } from '../repair/store.js';
 import { isUnderRepair } from '../repair/consult.js';
 
@@ -315,6 +317,27 @@ The shape is fixed. The question is yours — write your own, do not copy this e
 Never weave their words into the grammar of your own sentence.
 Keep the quoted words exactly as they wrote them, first person and all. Outside the quotation marks, address the speaker as "you".`;
 
+/**
+ * The sitting's method for P1/P2 composition (ticket 158): the protocol def's
+ * interview body rides into the system prompt as the register the question
+ * must be asked in. The defs are authored as multi-phase interviewer scripts,
+ * so the block is explicit that this step asks exactly ONE question — never
+ * the def's phase sequence, and never its [SATURATED] exit (which belongs to
+ * the P3 probe, where it closes the door).
+ *
+ * Empty string when no protocol is given, so the legacy prompts stay
+ * byte-for-byte (sounding-rung's descent path and every scripted test).
+ */
+function methodBlock(protocol: ProtocolDef | undefined): string {
+ if (!protocol) return '';
+ return `
+
+## The sitting's method — the ${protocol.name} protocol
+${protocol.prompt}
+
+You are executing ONE step of this method, not the whole script. Ask exactly ONE question in the protocol's register, grounded in the user's words — do not run the protocol's phase sequence or its scripted questions wholesale, and do not output [SATURATED].`;
+}
+
 const RED_LIGHT_SYSTEM = `You are a clerk for Elicit. Review this user turn for "red lights" — phrases that signal the user is being abstract, vague, or disconnected from concrete experience. Return a JSON object with a "lights" array. Each light has:
 - "kind": one of "odd-term", "unexplored-referent", "abstraction-no-episode", "pole-no-contrast", "cause-no-event"
 - "phrase": the exact substring from the user turn that triggered the concern (verbatim, character-for-character)
@@ -391,8 +414,9 @@ export async function composeFollowUp(
  turnText: string,
  light: RedLight,
  complete: Complete,
+ protocol?: ProtocolDef,
 ): Promise<string | null> {
- const prompt = `You are a clerk for Elicit. A user just said something that triggered a concern. Compose ONE follow-up question that quotes the flagged phrase exactly.
+ const prompt = `You are a clerk for Elicit. A user just said something that triggered a concern. Compose ONE follow-up question that quotes the flagged phrase exactly.${methodBlock(protocol)}
 
 User turn: "${turnText}"
 Concern: ${light.kind} — the phrase "${light.phrase}" triggered this.
@@ -453,6 +477,7 @@ export async function composeJuxtaposition(
  hit: ResonanceHit,
  complete: Complete,
  vaultRoot?: string,
+ protocol?: ProtocolDef,
 ): Promise<string | null> {
  // Q-106: a repair on the hit's snippet quarantines the whole snippet — never
  // juxtapose against text the person disavowed. The root is optional so every
@@ -462,7 +487,7 @@ export async function composeJuxtaposition(
   const repairs = readAllRepairs(vaultRoot);
   if (isUnderRepair(repairs, hit.snippetId)) return null;
  }
- const prompt = `You are a clerk for Elicit. The user just said something that echoes a past snippet. Compose ONE question that juxtaposes what they just said with a shared phrase from their past.
+ const prompt = `You are a clerk for Elicit. The user just said something that echoes a past snippet. Compose ONE question that juxtaposes what they just said with a shared phrase from their past.${methodBlock(protocol)}
 
 What they just said: "${turnText}"
 Past snippet: "${hit.snippetText}"
@@ -778,11 +803,14 @@ export function isExpeditionCandidate(
  if (!hasTargetFacet) return false;
 
  // Cited by ≥2 queue entries (any status, not only asked — measured
- // 2026-08-05 across six archive vaults: 199 queue entries, 1 asked,
- // 12 snippets with ≥2 total citations; requiring `asked` status on
- // both made the gate mathematically unopenable). The facet gate above
- // (fact | construct reading) is the quality filter; citation count
- // across all queue states measures breadth of interest.
+ // 2026-08-05 across six archive vaults: 199 queue entries, 1 asked;
+ // 12 snippets hold ≥2 total citations, and the JOINT gate — ≥2
+ // citations AND a fact/construct reading — yields 6 candidates across
+ // 589 cited snippets, 1.0 per 100. Requiring `asked` status on both
+ // made the gate mathematically unopenable: 0 candidates in the whole
+ // corpus. The facet gate above (fact | construct reading) is the
+ // quality filter; citation count across all queue states measures
+ // breadth of interest.
  const citedCount = queueEntries.filter(
   (e) => (e.cites ?? []).includes(citeStr),
  ).length;

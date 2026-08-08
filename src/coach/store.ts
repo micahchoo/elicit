@@ -14,6 +14,9 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ulid } from 'ulid';
+import type { Index, QueueEntry, Snippet } from '../types.js';
+import type { Claim } from '../wiki/contract.js';
+import type { CoachFacts } from './license.js';
 import matter from 'gray-matter';
 import {
  directionSlugFor,
@@ -458,4 +461,45 @@ class CoachStoreImpl implements CoachStore {
   note.readAt = at;
   this.writeAdvice(note);
  }
+}
+
+/**
+ * Build one CoachFacts snapshot — the slice's read-model, owned here.
+ *
+ * The assembly used to live in server.ts (built per page GET, per waiting
+ * GET, and again per background advice mint, each doing a full vault
+ * rebuildIndex). Here the caller can hand over the index/claim slice it
+ * already built; absent that, the function builds them. The module that
+ * consumes the facts is the module that says where they come from.
+ */
+export function loadCoachFacts(opts: {
+  vaultRoot: string;
+  coach: CoachStore;
+  index?: Index;
+  snippets?: Snippet[];
+  claims?: Claim[];
+  queueEntries?: QueueEntry[];
+  sessions?: Map<string, string>;
+}): CoachFacts {
+  const snippets = opts.snippets ?? (opts.index ? Object.values(opts.index.snippets) : []);
+  const snippetSessions = opts.sessions ?? new Map<string, string>();
+  if (opts.sessions === undefined) {
+    for (const s of snippets) snippetSessions.set(s.id, s.provenance.session);
+  }
+  const advice = new Map<string, AdviceNote>();
+  for (const d of opts.coach.listDirections()) {
+    const note = opts.coach.readAdvice(d.slug);
+    if (note) advice.set(d.slug, note);
+  }
+  return {
+    directions: opts.coach.listDirections(),
+    quests: opts.coach.listQuests(),
+    artifacts: opts.coach.listArtifacts(),
+    sittingTags: readSittingTags(opts.vaultRoot),
+    queueEntries: opts.queueEntries ?? [],
+    claims: opts.claims ?? [],
+    snippetSessions,
+    advice,
+    snippets,
+  };
 }

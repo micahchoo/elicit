@@ -1,0 +1,16 @@
+{
+  // The web client typecheck: web/ plus what it imports, with noUnusedLocals
+  // the repo-wide config deliberately leaves off. The write-only locals that
+  // produced ticket 155 were exactly the class this catches.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "noUnusedLocals": true,
+    // web/ pulls src modules through its imports, and those are node
+    // modules: the base config's `types: []` leaves `node:fs` unresolvable
+    // once the whole-repo program (whose other roots reference @types/node
+    // transitively) is not part of this check.
+    "types": ["node"]
+  },
+  "include": ["web"]
+}

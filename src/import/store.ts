@@ -14,22 +14,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
-import type { ImportRecord, ImportStatus, RefusalReason } from './contract.js';
-
-/**
- * One scanned source file, frontmatter stripped. Structural type only: the
- * parallel scan task defines its own copy, and structural typing keeps the two
- * interchangeable. Do not import from `./scan.js` — it does not exist yet.
- */
-export type ScannedItem = {
-  hash: string;
-  sourcePath: string;
-  date: string;
-  lastmod?: string;
-  title?: string;
-  /** The body, frontmatter stripped. What the reviewer will read whole. */
-  body: string;
-};
+import type { ImportRecord, ImportStatus, RefusalReason, ScannedItem } from './contract.js';
 
 export type AdmitResult = {
   added: string[];

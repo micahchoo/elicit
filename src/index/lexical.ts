@@ -179,6 +179,39 @@ function extractSharedPhrase(
  return null;
 }
 
+/**
+ * The non-stopword trigrams of a text — the same keying buildIndex uses, so
+ * an echo check and a resonance hit can never disagree about what counts.
+ */
+function trigramKeys(text: string): Set<string> {
+ const toks = tokenize(text);
+ const keys = new Set<string>();
+ for (let i = 0; i <= toks.length - 3; i++) {
+  const words = [toks[i]!.word, toks[i + 1]!.word, toks[i + 2]!.word];
+  if (isAllStopwords(words)) continue;
+  keys.add(words.join(' '));
+ }
+ return keys;
+}
+
+/**
+ * Whether `text` shares ANY non-stopword trigram with any of `texts` —
+ * the cheap echo predicate for convergence checks. Unlike buildIndex+resonate
+ * it builds no ranked index and needs no Snippet-shaped inputs: the caller
+ * holds prose strings and wants a boolean, not a top-k retrieval.
+ */
+export function echoesAny(text: string, texts: string[]): boolean {
+ if (texts.length === 0) return false;
+ const needle = trigramKeys(text);
+ if (needle.size === 0) return false;
+ for (const t of texts) {
+  for (const key of trigramKeys(t)) {
+   if (needle.has(key)) return true;
+  }
+ }
+ return false;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 export function buildIndex(snippets: Snippet[]): LexicalIndex {

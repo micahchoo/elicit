@@ -19,6 +19,7 @@
  */
 
 import { renderImportReview } from './import-review.js';
+import type { ScanResponse } from './deps.js';
 import { renderSurveyMap, takeDeclaredRegion } from './survey-map.js';
 import type { ImportReviewDeps, ImportReviewItem } from './import-review.js';
 
@@ -27,14 +28,6 @@ export type ImportEntryDeps = ImportReviewDeps;
 
 /** `GET /api/import/next` — the next piece, or the sentence that says why not. */
 type NextResponse = { item: ImportReviewItem | null; waiting?: string };
-
-/** `POST /api/import/scan` — counts, and every file that did not come in, and why. */
-type ScanResponse = {
-  pending: number;
-  refused: { file: string; reason: string }[];
-  skipped: number;
-  adopted: number;
-};
 
 /** One sentence per refusal reason — the file stays named (Q-57). */
 const REFUSED: Record<string, string> = {
@@ -177,8 +170,9 @@ async function scan(
     btn.disabled = false;
   } catch (cause) {
     // A bad folder path throws; the waiting affordance says so, and the
-    // prompt stays put so the path can be corrected.
-    wait.failed(cause);
+    // prompt stays put so the path can be corrected. The sentence names the
+    // folder the scan choked on (ticket 154) — never the generic line.
+    wait.failed(cause, `could not read ${chokedFolder(cause, folder)}`);
     btn.disabled = false;
   }
 }
@@ -215,6 +209,19 @@ function countsSentence(res: ScanResponse): string {
   if (res.adopted > 0) extras.push(`${res.adopted} already imported before`);
   if (extras.length > 0) sentence += ` — ${extras.join(', ')}`;
   return sentence;
+}
+
+/**
+ * The folder the scan choked on, from the server's relayed error — the
+ * fallback is the folder the person asked for, so the error sentence always
+ * names a folder (ticket 154). The server names the directory it could not
+ * read ("cannot read folder /path: EACCES: …"); the request folder covers
+ * every other failure. Pure, so it is tested without a DOM.
+ */
+export function chokedFolder(cause: unknown, asked: string): string {
+ const msg = cause instanceof Error ? cause.message : String(cause);
+ const m = /cannot read folder ([^:]+)/.exec(msg);
+ return m?.[1] ?? asked;
 }
 
 /** One line on what to do, only when the waiting sentence has a next step. */

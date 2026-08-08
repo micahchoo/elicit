@@ -34,6 +34,7 @@ import { makeComplete, roleConfig } from '../src/llm.js';
 import { createClaimStore } from '../src/wiki/store.js';
 import { createVault } from '../src/vault/vault.js';
 import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
+import { isLive } from '../src/wiki/clash.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { Claim, ClaimGraph, LogFn } from '../src/wiki/contract.js';
 import type { Reading, Snippet } from '../src/types.js';
@@ -94,7 +95,7 @@ function citedSnippets(reading: Reading): Record<string, Snippet> {
  */
 function relatedClaims(reading: Reading): Claim[] {
  const live = slice.claims
-  .filter((c) => c.archived !== true && c.supersededBy === undefined)
+  .filter(isLive)
   .filter((c) => !c.fromReadings.includes(reading.id))
   .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
  const indexOfBodies = buildIndex(

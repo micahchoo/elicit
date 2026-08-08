@@ -167,7 +167,7 @@ describe('import extraction (the real harvest path, ahead of review)', () => {
     // turn has NO spans would assert against the fixture rather than against
     // the behaviour.
     const preparedTurnText = toTurns(
-      dropCitedParagraphs(clean(bodyOf('quoted.md'), false)).kept,
+      dropCitedParagraphs(clean(bodyOf('quoted.md'), false), []).kept,
       '2020-03-01T00:00:00.000Z',
     )
       .map((t) => t.text)

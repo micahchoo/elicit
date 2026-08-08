@@ -32,10 +32,16 @@
  * and the module cannot tell the difference (Q-35).
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import type { Facet } from '../types.js';
 import type { Claim, ClaimGraph, LintFinding, LogFn } from './contract.js';
 import { shadowDecision } from './thresholds.js';
-import type { Threshold, THRESHOLDS } from './thresholds.js';
+import { isLive } from './clash.js';
+import { nameSimilarity } from './registry.js';
+import type { THRESHOLDS } from './thresholds.js';
+import type { Threshold } from '../domain/thresholds.js';
 
 /**
  * The register, by its KEYS rather than by its shipped values.
@@ -66,19 +72,6 @@ export function lint(
     ...occasionlessRangeFindings(graph, thresholds, log),
     ...weakEvidenceFindings(graph, thresholds, log),
   ];
-}
-
-/**
- * A claim the graph still asserts. Archived and superseded claims stay on disk
- * as evidence of a past self (Q-5, Q-29) and are deliberately NOT linted: a
- * still-true question about a sentence the wiki has already replaced asks the
- * user about something nobody holds, and a fanout count that includes the
- * retired claims measures the wiki's history rather than its shape.
- *
- * Skipping is not removing. Nothing here changes what is on disk.
- */
-function isLive(c: Claim): boolean {
-  return c.archived !== true && c.supersededBy === undefined;
 }
 
 /**
@@ -444,7 +437,7 @@ function weakEvidenceFindings(
     if (cite === undefined) continue;
     const at = cite.lastIndexOf('@');
     if (at <= 0) continue;
-    if (!(cite.slice(0, at) in DANGLER_SNIPPET_IDS)) continue;
+    if (!DANGLER_SNIPPET_IDS.has(cite.slice(0, at))) continue;
 
     const would = `note weak-evidence on claim=${c.id} cite=${cite}`;
     if (!shadowDecision(t, would, log)) continue;
@@ -457,30 +450,6 @@ function weakEvidenceFindings(
     });
   }
   return findings;
-}
-
-/**
- * Normalized token overlap between two canonical names — Jaccard over the
- * words, case and punctuation and word order discarded.
- *
- * What it catches at 0.85: "Sarah Kim" against "kim, SARAH", "The Bakery"
- * against "the bakery ". What it does NOT catch: "Sarah" against "Sara", or
- * "Mum" against "Mother" — one shared token out of two scores 0.5, far under
- * the bar. That is the intended reach. Deciding that two differently spelled
- * names are one person is inference about identity, and Q-32 keeps inference
- * out of identity: the model may add structure and link reversibly, never
- * collapse. The shadow record is what will say whether this reach is enough.
- *
- * A pure string function, and the only similarity measure in this file.
- */
-function nameSimilarity(a: string, b: string): number {
-  const ta = nameTokens(a);
-  const tb = nameTokens(b);
-  if (ta.size === 0 || tb.size === 0) return 0;
-
-  let shared = 0;
-  for (const token of ta) if (tb.has(token)) shared++;
-  return shared / (ta.size + tb.size - shared);
 }
 
 /** Unicode-aware, so a name with an accent in it is one token and not three. */
@@ -711,102 +680,21 @@ function namesOccasion(range: string): boolean {
  * opaque. The set is data, keyed by snippet id; the conformance test
  * keeps it equal to the doc's "yes" rows.
  */
-const DANGLER_SNIPPET_IDS: Record<string, true> = {
-  '01KZ0WPJ2KYCBVJZRV0CCETZGG': true,
-  '01KZ0WPJ2N66XJ8A510B5C1975': true,
-  '01KZ0WPJ2N7R8N9A3QEWW7ENRB': true,
-  '01KZ0WPJ2NA5F7G77CYH6GD8TG': true,
-  '01KZ0WPJ2NKF2MJA30Q9ZZFS4W': true,
-  '01KZ0WPJ2NN1BS6AGFPN3B9KHY': true,
-  '01KZ0WPJ2P4NG70F0GGRYGT58D': true,
-  '01KZ0WPJ2P7G6QCHWVV617SCBZ': true,
-  '01KZ0WPJ2PACD23D4VYNFZJ50Z': true,
-  '01KZ0WPJ2PCZCVEV5HAYTFZP39': true,
-  '01KZ0WPJ2PDVW882KF8Y8D4BFF': true,
-  '01KZ0WPJ2PHRH7H1FHV22TYNRB': true,
-  '01KZ0WPJ2PQAXNW18ZS9Y2B0A6': true,
-  '01KZ0WPJ2Q2ZRVH42X1YAMC3JH': true,
-  '01KZ0WPJ2QBWCMXAA0BV8C55XS': true,
-  '01KZ0WPJ2QGJ3M5FFBTSTR7E67': true,
-  '01KZ0WPJ2QJBM59EYTFF22BDAX': true,
-  '01KZ0WPJ2QKDKRDQCKYMQ648QG': true,
-  '01KZ0WPJ2QP6C13FBJXSQR1VBN': true,
-  '01KZ0WPJ2QPD5WR70VEJ9VRY0J': true,
-  '01KZ0WPJ2QPHJX69VJAWQPJXJB': true,
-  '01KZ0WPJ2QSA0TTJS1TAB9GSPA': true,
-  '01KZ0WPJ2R2XA1M31VE52VX6T9': true,
-  '01KZ0WPJ2R40FGWNMERCF2337C': true,
-  '01KZ0WPJ2R4B0GXHR018WH67YM': true,
-  '01KZ0WPJ2R7GJ9M2R4TBT141N6': true,
-  '01KZ0WPJ2R85NPX95DWMST5X55': true,
-  '01KZ0WPJ2R9MQZ4SX26VG1QMW6': true,
-  '01KZ0WPJ2REXHTSGSVM6QF5D3B': true,
-  '01KZ0WPJ2RFC75N2764ZGA3G2N': true,
-  '01KZ0WPJ2RFF08J7PTM8WAAGCH': true,
-  '01KZ0WPJ2RGA9YS8BA9TWTSD73': true,
-  '01KZ0WPJ2RJ7W9HNAFD8FBRWEY': true,
-  '01KZ0WPJ2RRA83QEF7BZ47C89Q': true,
-  '01KZ0WPJ2RTSJKDJSXDJWRYZDG': true,
-  '01KZ0WPJ2RWHM597TH224VMP21': true,
-  '01KZ0WPJ2RWK6VKRYS4SEP42T7': true,
-  '01KZ0WPJ2RY4ZTAAC45N62YRYE': true,
-  '01KZ0WPJ2S0246WM96Z95CR288': true,
-  '01KZ0WPJ2S17Q1R60EMNAD06AS': true,
-  '01KZ0WPJ2S4BBW7HVKB5J8JKWZ': true,
-  '01KZ0WPJ2S6Z3QRARW35EXNQX3': true,
-  '01KZ0WPJ2S9H134XFWGGGWDAGE': true,
-  '01KZ0WPJ2S9YEGHFRJ3SBAN2GY': true,
-  '01KZ0WPJ2SBX7GK5YP9F1SPVYJ': true,
-  '01KZ0WPJ2SC8KSF34TH28DX84J': true,
-  '01KZ0WPJ2SCD5A29Z7KN7KB1Y1': true,
-  '01KZ0WPJ2SGSP8YRH2GHV9HD44': true,
-  '01KZ0WPJ2SHA55FCCDV5T6HYA5': true,
-  '01KZ0WPJ2SHQ7DCYYCAMEZ2KWS': true,
-  '01KZ0WPJ2SJ0602ZQW0CB2WR1J': true,
-  '01KZ0WPJ2SKDYFAS9825G9QH1N': true,
-  '01KZ0WPJ2SM38E117VFG190BH8': true,
-  '01KZ0WPJ2SWZYRXJQVG1Y6SC1T': true,
-  '01KZ0WPJ2SX0GRTQANR692Y7Y1': true,
-  '01KZ0WPJ2SXJZXVES7Y3V00DNG': true,
-  '01KZ0WPJ2SZEJV0QRZZ6XH90TT': true,
-  '01KZ0WPJ2TMV0X31P5Y19XCNR6': true,
-  '01KZ0WPJ2TTDVEKZA5R4BWEXTZ': true,
-  '01KZ0WPJ2TTK286235GQZPS6WJ': true,
-  '01KZ0WPJ2TW1CTTA799KBVEQVQ': true,
-  '01KZ0WPJ4VR58XDR38KYZFHAZF': true,
-  '01KZ0WPJ4WSD2FPC64YWG7NBMW': true,
-  '01KZ0WPJ4XATS07M5136HXAMYD': true,
-  '01KZ0WPJ4XVJ86K24317EDF4NW': true,
-  '01KZ0WPJ4YP3BQJXC760M7FAC4': true,
-  '01KZ0WPJ518Y17E3WHNS0ED48W': true,
-  '01KZ0WPJ51YZQ5RXXTPKHPRC5V': true,
-  '01KZ0WPJ52SJFF4JSK7CB8MVZ0': true,
-  '01KZ0WPJ52WRKNX5126QEY2GJY': true,
-  '01KZ0WPJ52X6Q8B8T1F1W2RXFA': true,
-  '01KZ0WPJ52ZWFTBMTVCDCDHZ24': true,
-  '01KZ0WPJ539XVS9S6BHVX9T85P': true,
-  '01KZ0WPJ53C145GX47GCSBJH6H': true,
-  '01KZ0WPJ53F8RXWCXKBX5JTYVT': true,
-  '01KZ0WPJ53RPWM1REKGGNV2AEB': true,
-  '01KZ0WPJ53V8WTH0DAACWXKQR0': true,
-  '01KZ0WPJ53W6AX603Y8NWK8GZF': true,
-  '01KZ0WPJ53Y6AM0WFP7T1VZT1D': true,
-  '01KZ0WPJ54Z0Q612H4WAXBJZ1J': true,
-  '01KZ0WPJ58CF8MJ5VDY43FRSKK': true,
-  '01KZ0WPJ5D5HFB8CPN01WGSWZN': true,
-  '01KZ0WPJ5DDVEAQB92NYP65VM1': true,
-  '01KZ0WPJ5DGFT0Q0E985XGK1RN': true,
-  '01KZ0WPJ5DH0M1K2GS9HQMMQK5': true,
-  '01KZ0WPJ5DQTEDF7F4J8ADBHAY': true,
-  '01KZ0WPJ5DV9T1T39FDYSYN2EZ': true,
-  '01KZ0WPJ5DVQFHP0HF30H2JV70': true,
-  '01KZ0WPJ5Q2P5YH3N66WEY5J9K': true,
-  '01KZ0WPJ5Q4FRXYX42YM1AV65S': true,
-  '01KZ0WPJ5QFJ4T2WMH2GS6FMJW': true,
-  '01KZ0WPJ5QRT4HZNF9Y99FE95H': true,
-  '01KZ0WPJ5R70487WM6XZAPC9T8': true,
-  '01KZ0WPJ5RME9X5B523GWT2M6Q': true,
-  '01KZ0WPJ5S77XM071PMHTHDSFQ': true,
-  '01KZ0WPJ5WKCM01Y1W10KFNBHW': true,
-};
+/** The labelled dangler set, loaded once from data/dangler-snippet-ids.json. */
+function loadDanglerIds(): ReadonlySet<string> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, '..', '..', 'data', 'dangler-snippet-ids.json'),
+    join(process.cwd(), 'data', 'dangler-snippet-ids.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      return new Set(JSON.parse(readFileSync(p, 'utf-8')) as string[]);
+    } catch {
+      // try the next candidate
+    }
+  }
+  return new Set();
+}
+const DANGLER_SNIPPET_IDS: ReadonlySet<string> = loadDanglerIds();
 

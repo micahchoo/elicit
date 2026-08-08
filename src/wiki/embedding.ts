@@ -66,9 +66,10 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { sameSitting, type ClashChannel } from './clash.js';
+import { isLive, mostRecentlyUpdated, sameSitting, type ClashChannel } from './clash.js';
 import type { Claim, ClaimGraph, LogFn } from './contract.js';
-import { THRESHOLDS, shadowDecision, type Threshold } from './thresholds.js';
+import { THRESHOLDS, shadowDecision } from './thresholds.js'
+import type { Threshold } from '../domain/thresholds.js';
 
 // ── The injected halves ──
 
@@ -211,19 +212,6 @@ const EMBED_BATCH = 16;
 
 // ── Shared helpers ──
 
-/**
- * A claim the graph still asserts. Archived and superseded claims stay on disk
- * as evidence of a past self and are never pooled — the same rule
- * `src/wiki/clash.ts` applies, restated because its copy is module-private.
- */
-function isLive(c: Claim): boolean {
-  return c.archived !== true && c.supersededBy === undefined;
-}
-
-function byId(a: Claim, b: Claim): number {
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
-
 /** The claim body's fingerprint. Truncated: this detects edits, not forgery. */
 export function bodyHash(body: string): string {
   return createHash('sha256').update(body).digest('hex').slice(0, 16);
@@ -262,12 +250,7 @@ export function cosine(a: number[], b: number[]): number {
  */
 function windowOf(graph: ClaimGraph, cap: number): { window: Claim[]; total: number } {
   const live = graph.claims.filter(isLive);
-  if (live.length <= cap) return { window: [...live].sort(byId), total: live.length };
-  const kept = [...live]
-    .sort((a, b) => (a.updated === b.updated ? byId(a, b) : a.updated < b.updated ? 1 : -1))
-    .slice(0, cap)
-    .sort(byId);
-  return { window: kept, total: live.length };
+  return { window: mostRecentlyUpdated(live, cap), total: live.length };
 }
 
 // ── The cache file ──

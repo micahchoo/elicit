@@ -36,6 +36,19 @@ export type RefusalReason =
  /** The declared filename pattern does not match this name (Q-67). */
  | 'no-date-in-name';
 
+/** One scanned source file, frontmatter stripped. The ONE canonical
+ * shape — scan.ts produces it, store.ts admits it (the old store copy and
+ * the "scan.js does not exist yet" interdiction were deleted in Phase 8). */
+export type ScannedItem = {
+  hash: string;
+  sourcePath: string;
+  date: string;
+  lastmod?: string;
+  title?: string;
+  /** The body, frontmatter stripped. What the reviewer will read whole. */
+  body: string;
+};
+
 export type ImportCut = {
  text: string;
  /** Offset of `text` in the SOURCE BODY. Earliest occurrence wins (ticket 024's rule). */

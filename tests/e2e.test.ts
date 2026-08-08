@@ -736,11 +736,13 @@ describe('full session with docket and juxtaposition', () => {
   const turn1 = (await t1.json()) as {
    kind: string;
    text?: string;
-   phase?: string;
+   phase?: { id: string; label: string; step: number; of: number };
    juxtaposition?: { snippetText: string; snippetDate: string };
   };
   expect(turn1.kind).toBe('probe');
-  expect(turn1.phase).toBe('open');
+  // The turn response's phase field is the machine shape (ticket 159,
+  // slice 4 — every sitting now carries the machine).
+  expect(turn1.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
   // Juxtaposition should be present — the seed snippet shares "career direction"
   expect(turn1.juxtaposition).toBeDefined();
   expect(turn1.juxtaposition!.snippetText).toBe(seedProse);
@@ -757,17 +759,17 @@ describe('full session with docket and juxtaposition', () => {
    const data = (await res.json()) as {
     kind: string;
     text?: string;
-    phase?: string;
+    phase?: { id: string; label: string; step: number; of: number };
    };
    // Turn 7 is the last before close; turn 8 triggers close
    if (i === 6) {
     // After turn 7's answer, questionCount hits 8 → close door fires
     // The response should be the closing door question (fixed text, no complete call)
     expect(data.kind).toBe('probe');
-    expect(data.phase).toBe('closing-door');
+    expect(data.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
    } else {
     expect(data.kind).toBe('probe');
-    expect(data.phase).toBe('open');
+    expect(data.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
    }
   }
 
@@ -778,9 +780,9 @@ describe('full session with docket and juxtaposition', () => {
    body: JSON.stringify({ text: 'This opens a path toward more intentional work.' }),
   });
   expect(cdRes.status).toBe(200);
-  const cdData = (await cdRes.json()) as { kind: string; phase?: string };
+  const cdData = (await cdRes.json()) as { kind: string; phase?: { id: string; label: string; step: number; of: number } };
   expect(cdData.kind).toBe('probe');
-  expect(cdData.phase).toBe('closing-bookmark');
+  expect(cdData.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
 
   // ── Step 5: Answer bookmark question → saturated ──
   const bmRes = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {

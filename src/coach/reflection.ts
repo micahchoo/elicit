@@ -12,7 +12,8 @@
 
 import type { QueueEntry, QueueStore } from '../types.js';
 import type { Quest } from './contract.js';
-import { THRESHOLDS, shadowDecision, type ThresholdLogFn } from '../wiki/thresholds.js';
+import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import type { ThresholdLogFn } from '../domain/thresholds.js';
 
 /** The two reflection questions, in order (016: what broke, what surprised). */
 const TEMPLATES: ((quote: string) => string)[] = [

@@ -19,6 +19,7 @@
 
 import type { SessionState, Turn } from '../types.js';
 import { contentWordsOf, jaccard } from '../index/lexical.js';
+import { SOUNDING_THRESHOLDS } from './thresholds.js';
 
 export type LicenseReasons = {
   late: boolean;
@@ -42,7 +43,9 @@ export type LicenseReasons = {
  * This value bakes in the assumption that real sittings last 5+ turns;
  * 1-exchange sittings will never reach the late window.
  */
-export const SUSTAINED_THRESHOLD = 0.10;
+
+/** The sustained-thread bar, from the register (Q-35). */
+const SUSTAINED_THRESHOLD = SOUNDING_THRESHOLDS['sounding.sustainedOverlap'].value as number;
 
 /** The last three user turns, newest last — the thread the license reads. */
 function lastThreeUserTurns(s: SessionState): Turn[] {
@@ -135,7 +138,7 @@ export function licenseSounding(
   // greeting never counts), so every count here runs one lower than
   // pre-135 at the same depth.
   const late =
-    s.questionCount >= 6 &&
+    s.questionCount >= (SOUNDING_THRESHOLDS['sounding.lateQuestionCount'].value as number) &&
     s.phase !== 'closing-door' &&
     s.phase !== 'closing-bookmark';
   const energy = s.mode.energy !== 'low';

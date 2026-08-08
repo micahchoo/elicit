@@ -24,19 +24,8 @@
 
 import { isDemoted } from '../loop/demotions.js';
 import { isGraduated } from '../loop/graduations.js';
+import type { Threshold, ThresholdLogFn } from '../domain/thresholds.js';
 
-export type Threshold = {
- name: string;
- value: number | boolean;
- /** False means: compute, log what you would have done, change nothing. */
- live: boolean;
- /**
-  * The evidence that would license this threshold to act — prose, never a
-  * date. For an entry that already acts, this records the licence it acts
-  * under, so demoting it is as reviewable as promoting it.
-  */
- graduatesWhen: string;
-};
 
 /**
  * The Activity Log sink, narrowed to the one actor this slice writes.
@@ -47,13 +36,6 @@ export type Threshold = {
  * able to fail to load, so `src/loop/demotions.ts` is filesystem-only, does no
  * work at load, and returns "nothing is demoted" on every failure path.
  */
-export type ThresholdLogFn = (e: {
- at: string;
- actor: 'clerk';
- kind: string;
- detail: string;
- refs?: string[];
-}) => void;
 
 /**
  * The single declaration site. `satisfies` rather than a `Record` annotation

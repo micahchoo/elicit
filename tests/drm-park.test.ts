@@ -1,18 +1,112 @@
 /**
- * DRM park/resume persistence tests — Q-85.
+ * DRM persistence — Q-85, ticket 159 slice 6.
  *
- * Verifies roundtrip: park → write → read → resume.
- * Follows the Sounding park.ts test pattern.
+ * Slice 6 parks the MACHINE: the drm flow's state rides inside
+ * MachineState.ui (DrmUi) and the side-record is vault/machines/<sessionId>
+ * .json (src/protocols/park.ts). The first block pins that roundtrip.
+ * The legacy {root}/drm/<id>.md frontmatter format survives as the compat
+ * read for pre-slice-6 parks (the drm resume route's legacy branch); the
+ * second block pins writeDRM/readDRM roundtripping it.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { initDRM, beginDRM, addEpisode, doneEnumerating, answerProbe, applyGate, resumeDRM } from '../src/drm/state.js';
+import { initDRM, addEpisode, doneEnumerating, answerProbe, applyGate } from '../src/drm/state.js';
 import { writeDRM, readDRM } from '../src/drm/park.js';
+import { writeMachineState, readMachineState } from '../src/protocols/park.js';
+import type { DrmUi, DRMParkedState } from '../src/drm/types.js';
+import type { MachineState } from '../src/protocols/machine.js';
 
-describe('DRM persistence', () => {
+/** A ui with one completed episode and one pending (the park-time shape). */
+function probedUi(): DrmUi {
+  let ui = initDRM();
+  ui = addEpisode(ui, 'morning coffee', 7);
+  ui = addEpisode(ui, 'commute', 8);
+  ui = doneEnumerating(ui);
+  for (const answer of ['kitchen', 'drinking coffee', 'alone', 'calm and present']) {
+    const r = answerProbe(ui, answer);
+    ui = r.ui;
+    if (r.fragment) ui.fragments.push(r.fragment);
+  }
+  return ui;
+}
+
+/** A legacy parked record, the shape the compat read hands to resumeDRM. */
+function parkedRecord(overrides: Partial<DRMParkedState> = {}): DRMParkedState {
+  const ui = probedUi();
+  return {
+    id: 'drm-legacy-1',
+    session: 's1',
+    yesterday: ui.yesterday,
+    phase: 'parked',
+    episodes: ui.episodes,
+    currentEpisodeIdx: 1,
+    probeStep: 'place',
+    fragments: ui.fragments,
+    started: '2026-08-05T18:00:00.000Z',
+    ended: '2026-08-05T18:30:00.000Z',
+    endedBy: 'park',
+    ...overrides,
+  };
+}
+
+describe('DRM machine-record persistence (slice 6)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'elicit-drm-mach-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('roundtrips the drm ui inside the machine record', () => {
+    // A drm machine parked at the probe phase: the ui carries the resume
+    // point (episode 2, place) exactly as the gate route writes it.
+    const gate = applyGate(probedUi(), 'park');
+    const machine: MachineState = {
+      protocol: 'drm',
+      phaseIndex: 1,
+      exchanges: [0, 0, 0],
+      startedAt: '2026-08-05T18:00:00.000Z',
+      ui: gate.parked! as unknown as Record<string, unknown>,
+    };
+
+    writeMachineState(root, 's1', machine);
+
+    const loaded = readMachineState(root, 's1');
+    expect(loaded).not.toBeNull();
+    expect(loaded!.protocol).toBe('drm');
+    expect(loaded!.phaseIndex).toBe(1);
+    expect(loaded!.ui).not.toBeUndefined();
+
+    const ui = loaded!.ui as unknown as DrmUi;
+    expect(ui.episodes).toHaveLength(2);
+    expect(ui.episodes[0]!.name).toBe('morning coffee');
+    expect(ui.episodes[1]!.probes).toEqual({ place: null, activity: null, 'who-with': null, affect: null });
+    // The parked resume point survives byte-for-byte
+    expect(ui.currentEpisodeIdx).toBe(1);
+    expect(ui.probeStep).toBe('place');
+    // The probed episode's answers and the kept fragment ride along
+    expect(ui.episodes[0]!.probes.place).toBe('kitchen');
+    expect(ui.fragments).toHaveLength(1);
+    expect(ui.fragments[0]!.answer).toBe('calm and present');
+
+    // The resumed sitting continues the exact probe position
+    const question = answerProbe(ui, 'on the train').ui;
+    expect(question.probeStep).toBe('activity');
+    expect(question.currentEpisodeIdx).toBe(1);
+  });
+
+  it('returns null for a missing machine record', () => {
+    expect(readMachineState(root, 'no-such-session')).toBeNull();
+  });
+});
+
+describe('DRM legacy park format (the compat read)', () => {
   let root: string;
 
   beforeEach(() => {
@@ -23,101 +117,46 @@ describe('DRM persistence', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('roundtrips a parked DRM through disk', () => {
-    // Set up a DRM session with one completed episode and one pending
-    let state = initDRM('s1');
-    state = beginDRM(state).state;
-    state = addEpisode(state, 'morning coffee', 7);
-    state = addEpisode(state, 'commute', 8);
-    state = doneEnumerating(state);
-    state = answerProbe(state, 'kitchen').state;
-    state = answerProbe(state, 'drinking coffee').state;
-    state = answerProbe(state, 'alone').state;
-    state = answerProbe(state, 'calm and present').state;
-
-    // Park
-    const gate = applyGate(state, 'park');
-    expect(gate.parked).not.toBeNull();
+  it('roundtrips a legacy parked DRM through disk', () => {
+    const parked = parkedRecord();
 
     // Write to disk
-    writeDRM(root, gate.parked!);
+    writeDRM(root, parked);
 
     // Read back
-    const loaded = readDRM(root, gate.parked!.id);
+    const loaded = readDRM(root, parked.id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.id).toBe(gate.parked!.id);
-    expect(loaded!.yesterday).toBe(gate.parked!.yesterday);
+    expect(loaded!.id).toBe(parked.id);
+    expect(loaded!.yesterday).toBe(parked.yesterday);
     expect(loaded!.episodes).toHaveLength(2);
     expect(loaded!.currentEpisodeIdx).toBe(1);
     expect(loaded!.probeStep).toBe('place');
     expect(loaded!.endedBy).toBe('park');
-
-    // Resume
-    const resumed = resumeDRM(loaded!, 's2');
-    expect(resumed.phase).toBe('probe');
-    expect(resumed.episodes).toHaveLength(2);
-    expect(resumed.currentEpisodeIdx).toBe(1);
-    expect(resumed.probeStep).toBe('place');
   });
 
   it('returns null for missing DRM file', () => {
-    const result = readDRM(root, 'nonexistent');
-    expect(result).toBeNull();
+    expect(readDRM(root, 'no-such-id')).toBeNull();
   });
 
   it('preserves fragments through roundtrip', () => {
-    let state = initDRM('s1');
-    state = beginDRM(state).state;
-    state = addEpisode(state, 'only episode', 7);
-    state = doneEnumerating(state);
-    state = answerProbe(state, 'a').state;
-    state = answerProbe(state, 'b').state;
-    state = answerProbe(state, 'c').state;
-    const result = answerProbe(state, 'felt good');
-    state = result.state;
-
-    // Fragment was produced for the affect answer
-    expect(result.fragment).not.toBeNull();
-    expect(result.fragment!.answer).toBe('felt good');
-    expect(result.fragment!.step).toBe('affect');
-
-    // Park with continue to complete
-    const gate = applyGate(state, 'continue');
-    expect(gate.complete).toBe(true);
-
-    // Build a parked state manually (simulating the server's finish path)
-    const parked = {
-      ...gate.state,
-      ended: new Date().toISOString(),
-      endedBy: 'park' as const,
-      fragments: [...state.fragments, result.fragment!],
-    };
-
+    const parked = parkedRecord();
     writeDRM(root, parked);
-    const loaded = readDRM(root, parked.id);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.fragments).toHaveLength(1);
-    expect(loaded!.fragments[0]!.answer).toBe('felt good');
-    expect(loaded!.fragments[0]!.aboutWhen).toBe(state.yesterday);
+    const loaded = readDRM(root, parked.id)!;
+    expect(loaded.fragments).toHaveLength(1);
+    expect(loaded.fragments[0]!.episode).toContain('morning coffee');
+    expect(loaded.fragments[0]!.step).toBe('affect');
+    expect(loaded.fragments[0]!.answer).toBe('calm and present');
   });
 
   it('preserves episode probe answers through roundtrip', () => {
-    let state = initDRM('s1');
-    state = beginDRM(state).state;
-    state = addEpisode(state, 'morning', 7);
-    state = doneEnumerating(state);
-    state = answerProbe(state, 'bedroom').state;
-    state = answerProbe(state, 'reading').state;
-    state = answerProbe(state, 'alone').state;
-    state = answerProbe(state, 'peaceful').state;
-    const gate = applyGate(state, 'park');
-
-    writeDRM(root, gate.parked!);
-    const loaded = readDRM(root, gate.parked!.id);
-
-    expect(loaded!.episodes[0]!.probes.place).toBe('bedroom');
-    expect(loaded!.episodes[0]!.probes.activity).toBe('reading');
-    expect(loaded!.episodes[0]!.probes['who-with']).toBe('alone');
-    expect(loaded!.episodes[0]!.probes.affect).toBe('peaceful');
+    const parked = parkedRecord();
+    writeDRM(root, parked);
+    const loaded = readDRM(root, parked.id)!;
+    expect(loaded.episodes[0]!.probes.place).toBe('kitchen');
+    expect(loaded.episodes[0]!.probes.activity).toBe('drinking coffee');
+    expect(loaded.episodes[0]!.probes['who-with']).toBe('alone');
+    expect(loaded.episodes[0]!.probes.affect).toBe('calm and present');
+    // The pending episode is untouched
+    expect(loaded.episodes[1]!.probes.place).toBeNull();
   });
 });

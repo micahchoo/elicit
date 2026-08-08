@@ -1,5 +1,5 @@
-import type { Complete, RedLight, Snippet } from '../types.js';
-import type { GuardVerdict } from '../elicitor/guards.js';
+import type { Complete, RedLight,  } from '../types.js';
+import type { GuardVerdict } from '../language/guards.js';
 import type { CompactedLadder } from '../sounding/compaction.js';
 import type { Pattern, LicensingContext } from '../patterns/types.js';
 import { composeFollowUp, redLights } from './composed.js';
@@ -34,15 +34,17 @@ export async function composeRung(
 ): Promise<{ text: string; foothold: string } | null> {
   // Deep pattern path: use composeWithPattern with the given deep pattern
   if (pattern && pattern.tier === 'deep') {
-    const asSnippet: Snippet = {
-      id: 'rung-answer', version: 1, prose: answer,
-      captured: new Date().toISOString(),
-      provenance: { question: 'rung', questionForm: 'deliberative', transcript: 'descent' },
-    } as unknown as Snippet;
-
+    // A rung answer is bare prose, not a Snippet — composeWithPattern takes
+    // the structural PatternSource shape now, so nothing is fabricated.
     const ctx: LicensingContext = { availableSnippets: [], isLateSession: true };
 
-    const draft = await composeWithPattern([asSnippet], complete, ctx, undefined, pattern);
+    const draft = await composeWithPattern(
+      [{ id: 'rung-answer', version: 1, prose: answer, captured: new Date().toISOString() }],
+      complete,
+      ctx,
+      undefined,
+      pattern,
+    );
     if (!draft) return null;
 
     const question = draft.question;

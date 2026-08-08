@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkEmitForm, type EmitFormResult } from '../src/queue/emit-gate.js';
+import { checkEmitForm, type EmitFormResult } from '../src/language/emit-form.js';
 
 /** Assert that form check fails with a specific failure tag. */
 function failsWith(result: EmitFormResult, tag: string): void {

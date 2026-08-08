@@ -619,9 +619,15 @@ describe('guards', () => {
    const vault = makeFakeVault();
    // One bank question, consumed by the opener — so the fallback bank is empty.
    const bank = [{ text: 'What do you value?', questionForm: 'deliberative' as const }];
-   // 3 complete calls: redLights, bad probe (triggers guard), retry (still bad)
+   // 5 complete calls (ticket 159, slice 4: reflective's ways-in machine is
+   // now the P3-equivalent, so the bad probe pair is composed twice — once by
+   // the machine, which falls through, once by the generic probe): redLights,
+   // machine probe (guard), machine retry (guard), generic probe (guard),
+   // generic retry (still bad).
    const complete = makeScriptedComplete([
     '{}',
+    'What are you trying to achieve in this conversation?',
+    'Is this conversation helping you?',
     'What are you trying to achieve in this conversation?',
     'Is this conversation helping you?',
    ]);
@@ -685,10 +691,15 @@ describe('guards', () => {
    { text: 'What do you value?', questionForm: 'deliberative' as const },
   ];
   // 3 complete calls: redLights, near-dup, retry (still near-dup)
+  // 5 calls (ticket 159, slice 4: the ways-in machine is the P3-equivalent,
+  // so the near-dup pair is composed twice — by the machine, which falls
+  // through, then by the generic probe).
   const complete = makeScriptedComplete([
    '{}',
    'What do you value the most?',     // near-dup of opener
    'What do you value above all?',     // still near-dup (4/7 = 0.571)
+   'What do you value the most?',
+   'What do you value above all?',
   ]);
   // Queue that returns a fallback draw
   const fallbackText = 'What matters to you?';
@@ -766,7 +777,7 @@ describe('guard scope — every branch, not just the generic probe', () => {
  const ANSWER_B =
   'Yes, I default to hedging in whichever direction is socially cheaper, still.';
 
- test('a near-duplicate juxtaposition is caught and falls through to the next priority', async () => {
+ test('a near-duplicate juxtaposition is caught and falls through to the machine (the P3-equivalent)', async () => {
   const idx = makeEchoIndex();
   // Build both juxtapositions from the phrase resonance will actually return,
   // so the test asserts the guard, not the phrase extractor.
@@ -780,7 +791,7 @@ describe('guard scope — every branch, not just the generic probe', () => {
    first,                                          // turn 1: juxtaposition, accepted
    second,                                         // turn 2: juxtaposition, near-duplicate
    '{}',                                           // turn 2: redLights — no lights
-   'When did you first notice yourself doing that?', // turn 2: generic probe
+   'When did you first notice yourself doing that?', // turn 2: the ways-in machine question (P3-equivalent)
   ]);
   const q = makeFakeQueue();
   const session = startSession(
@@ -800,14 +811,16 @@ describe('guard scope — every branch, not just the generic probe', () => {
   if (two.kind === 'probe') {
    expect(two.text).not.toBe(second);
    expect(two.text).toBe('When did you first notice yourself doing that?');
-   expect(two.provenance).toBe('probe');
+   // The rejected juxtaposition fell through to reflective's machine — its
+   // ways-in question is the P3-equivalent (ticket 159, slice 4).
+   expect(two.provenance).toBe('machine');
   }
 
   // The rejected juxtaposition never reached the transcript or the budget.
   expect(vault._turns(session.id).some((t) => t.text === second)).toBe(false);
  });
 
- test('a conversation-referential composed follow-up falls through to the generic probe', async () => {
+ test('a conversation-referential composed follow-up falls through to the machine (the P3-equivalent)', async () => {
   const vault = makeFakeVault();
   const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
   const complete = makeScriptedComplete([
@@ -830,7 +843,9 @@ describe('guard scope — every branch, not just the generic probe', () => {
   expect(result.kind).toBe('probe');
   if (result.kind === 'probe') {
    expect(result.text).toBe('When did you last notice yourself doing that?');
-   expect(result.provenance).toBe('probe');
+   // The rejected follow-up fell through to reflective's machine — its
+   // ways-in question is the P3-equivalent (ticket 159, slice 4).
+   expect(result.provenance).toBe('machine');
    expect(result.text).not.toMatch(/\bthis conversation\b/i);
   }
  });
