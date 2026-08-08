@@ -32,7 +32,6 @@
 // would not say.
 
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -42,6 +41,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
+import { appendLine, readLines } from '../jsonl.js';
 import type { Facet } from '../types.js';
 import type {
   Claim,
@@ -146,6 +146,66 @@ function warnSkip(path: string, why: string): void {
   console.warn(`ClaimStore: skipping malformed file ${path} — ${why}`);
 }
 
+/**
+ * The claim's frontmatter fields, in write order — the ONE enumeration both
+ * directions share (the queue store's OPTIONAL_ENTRY_FIELDS pattern): a field
+ * added here is written by `writeClaim` and read back by `#toClaim`; a field
+ * left out vanishes from both. `body` is the file's content, not frontmatter,
+ * and never appears.
+ */
+const CLAIM_FIELDS = [
+  'id',
+  'range',
+  'status',
+  'cites',
+  'facet',
+  'referents',
+  'fromReadings',
+  'attested',
+  'readLog',
+  'model',
+  'modelAt',
+  'created',
+  'updated',
+  'supersededBy',
+  'supersedeReason',
+  'archived',
+  'archiveReason',
+  'fusion',
+] as const satisfies readonly (keyof Claim)[];
+
+/**
+ * The optional frontmatter tail, read back through the same CLAIM_FIELDS the
+ * writer iterates. Each optional key's rule is the reader's own lenient one —
+ * a hand-edited `archived: false` must not manufacture an `archived` key, and
+ * an empty fusion list reads back absent.
+ */
+function optionalClaimTail(d: Record<string, unknown>): Partial<Claim> {
+  const out: Partial<Claim> = {};
+  for (const key of CLAIM_FIELDS) {
+    switch (key) {
+      case 'supersededBy':
+        if (str(d.supersededBy)) out.supersededBy = d.supersededBy as string;
+        break;
+      case 'supersedeReason':
+        if (str(d.supersedeReason)) out.supersedeReason = d.supersedeReason as string;
+        break;
+      case 'archived':
+        if (d.archived === true) out.archived = true;
+        break;
+      case 'archiveReason':
+        if (str(d.archiveReason)) out.archiveReason = d.archiveReason as string;
+        break;
+      case 'fusion':
+        if (strArray(d.fusion)) out.fusion = d.fusion as string[];
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
 class ClaimStoreImpl implements ClaimStore {
   #root: string;
 
@@ -199,26 +259,19 @@ class ClaimStoreImpl implements ClaimStore {
       throw new Error(`Claim ${c.id} is superseded without a supersedeReason (Q-29)`);
     }
 
-    const fm = {
-      id: c.id,
-      range: c.range,
-      status: c.status,
-      cites: c.cites,
-      facet: c.facet,
-      referents: c.referents,
-      fromReadings: c.fromReadings,
-      attested: c.attested,
-      readLog: c.readLog,
-      model: c.model,
-      modelAt: c.modelAt,
-      created: c.created,
-      updated: c.updated,
-      ...(c.supersededBy !== undefined ? { supersededBy: c.supersededBy } : {}),
-      ...(c.supersedeReason !== undefined ? { supersedeReason: c.supersedeReason } : {}),
-      ...(c.archived !== undefined ? { archived: c.archived } : {}),
-      ...(c.archiveReason !== undefined ? { archiveReason: c.archiveReason } : {}),
-      ...(c.fusion !== undefined && c.fusion.length > 0 ? { fusion: c.fusion } : {}),
-    };
+    // The frontmatter is ONE pass over CLAIM_FIELDS: presence decides what is
+    // written, fusion carries its own rule (an empty list writes no key), and
+    // the iteration order is CLAIM_FIELDS order — so the YAML stays byte-for-byte
+    // what the spelled-out literal produced.
+    const fm: Record<string, unknown> = {};
+    for (const key of CLAIM_FIELDS) {
+      const v = c[key];
+      if (key === 'fusion') {
+        if (v !== undefined && (v as string[]).length > 0) fm[key] = v;
+      } else if (v !== undefined) {
+        fm[key] = v;
+      }
+    }
     writeFileSync(join(this.#dir(CLAIMS), `${name}.md`), matter.stringify(c.body, fm), 'utf-8');
   }
 
@@ -264,11 +317,10 @@ class ClaimStoreImpl implements ClaimStore {
       modelAt,
       created,
       updated,
-      ...(str(d.supersededBy) ? { supersededBy: d.supersededBy as string } : {}),
-      ...(str(d.supersedeReason) ? { supersedeReason: d.supersedeReason as string } : {}),
-      ...(d.archived === true ? { archived: true } : {}),
-      ...(str(d.archiveReason) ? { archiveReason: d.archiveReason as string } : {}),
-      ...(strArray(d.fusion) ? { fusion: d.fusion as string[] } : {}),
+      // The optional tail — read back through the same CLAIM_FIELDS the writer
+      // iterates, with the reader's own lenient rules (a hand-edited
+      // `archived: false` must not manufacture an `archived` key).
+      ...optionalClaimTail(d),
     };
   }
 
@@ -508,9 +560,7 @@ class ClaimStoreImpl implements ClaimStore {
   // ── The sweep ledger ──
 
   appendSweep(e: SweepLine): void {
-    const dir = join(this.#root, 'wiki');
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, SWEEP_LOG), `${JSON.stringify(e)}\n`, 'utf-8');
+    appendLine(this.#root, join('wiki', SWEEP_LOG), JSON.stringify(e));
   }
 
   /**
@@ -520,10 +570,8 @@ class ClaimStoreImpl implements ClaimStore {
    * final line must not hide the hundred good ones above it.
    */
   #sweepLines(): SweepLine[] {
-    const path = join(this.#root, 'wiki', SWEEP_LOG);
-    if (!existsSync(path)) return [];
     const lines: SweepLine[] = [];
-    for (const line of readFileSync(path, 'utf-8').split('\n')) {
+    for (const line of readLines(this.#root, join('wiki', SWEEP_LOG))) {
       const trimmed = line.trim();
       if (trimmed === '') continue;
       try {
@@ -657,9 +705,7 @@ class ClaimStoreImpl implements ClaimStore {
 // here deletes (Q-3, Q-29).
 
 export function appendSweepDeferral(root: string, remaining: number): void {
-  const dir = join(root, 'wiki');
-  mkdirSync(dir, { recursive: true });
-  appendFileSync(join(dir, SWEEP_DEFERRAL), `${JSON.stringify({ at: new Date().toISOString(), remaining })}\n`, 'utf-8');
+  appendLine(root, join('wiki', SWEEP_DEFERRAL), JSON.stringify({ at: new Date().toISOString(), remaining }));
 }
 
 /**
@@ -670,10 +716,8 @@ export function appendSweepDeferral(root: string, remaining: number): void {
  * log — a half-written final line must not hide the real backlog above it.
  */
 export function readSweepDeferrals(root: string): { at: string; remaining: number }[] {
-  const path = join(root, 'wiki', SWEEP_DEFERRAL);
-  if (!existsSync(path)) return [];
   const lines: { at: string; remaining: number }[] = [];
-  for (const line of readFileSync(path, 'utf-8').split('\n')) {
+  for (const line of readLines(root, join('wiki', SWEEP_DEFERRAL))) {
     const trimmed = line.trim();
     if (trimmed === '') continue;
     try {

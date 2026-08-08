@@ -110,8 +110,8 @@
  *
  * ── What is reused from T18, and the one thing that could not be ──
  *
- * `Embed`, `EmbeddingRecord`, `EmbeddingIndexStore`, `cosine`, `bodyHash`,
- * `localEmbedder` and `embedderConfig` are imported from `src/wiki/embedding.ts`
+ * `Embed`, `EmbeddingRecord`, `EmbeddingIndexStore`, `cosine`, `asRecord`,
+ * `cachedVector` and `embedBatches` are imported from `src/wiki/embedding.ts`
  * unchanged. One seam, one cache format, one endpoint, one model, one hash — so
  * a text embedded by either channel hashes and scores identically.
  *
@@ -135,8 +135,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import {
- bodyHash,
+ asRecord,
+ cachedVector,
  cosine,
+ embedBatches,
  type Embed,
  type EmbeddingIndexStore,
  type EmbeddingRecord,
@@ -224,9 +226,6 @@ export function quotablePhrase(snippetText: string): string {
 /** Default `k`, matching `resonate()`'s so the two channels agree by default. */
 export const TOP_N = 5;
 
-/** Texts per request — T18's batch size, for the same reasons. */
-const EMBED_BATCH = 16;
-
 // ── The cache file ──
 
 /**
@@ -269,25 +268,6 @@ export function fileSnippetVectorStore(vaultRoot: string): EmbeddingIndexStore {
    writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
   },
  };
-}
-
-/**
- * A parsed line, or null. Every field is checked: a well-formed JSON object of
- * the wrong shape is what a half-finished format change leaves behind, and a
- * `vector` of strings would make every cosine silently 0.
- *
- * This duplicates T18's private `asRecord` because that function is not
- * exported and `src/wiki/` is not this task's to edit. The FORMAT is shared;
- * only the reader is copied, and the two must be changed together.
- */
-function asRecord(value: unknown): EmbeddingRecord | null {
- if (typeof value !== 'object' || value === null) return null;
- const v = value as Record<string, unknown>;
- if (typeof v.claimId !== 'string' || v.claimId === '') return null;
- if (typeof v.hash !== 'string' || typeof v.model !== 'string') return null;
- if (!Array.isArray(v.vector) || v.vector.length === 0) return null;
- if (!v.vector.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
- return { claimId: v.claimId, hash: v.hash, model: v.model, vector: v.vector as number[] };
 }
 
 // ── The channel ──
@@ -376,14 +356,6 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
   log({ at: new Date().toISOString(), actor: 'clerk', kind: 'embedding-unavailable', detail });
  }
 
- /** A vector that is still valid for this snippet's prose under this model. */
- function vectorFor(snippet: Snippet): number[] | undefined {
-  const record = loaded().get(snippet.id);
-  if (!record) return undefined;
-  if (record.model !== model) return undefined;
-  if (record.hash !== bodyHash(snippet.prose)) return undefined;
-  return record.vector;
- }
 
  /**
   * The query's vector, or undefined — never a throw, never a fabrication.
@@ -437,7 +409,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
  return {
   async prime(): Promise<void> {
    const cached = loaded();
-   const missing = [...corpus].sort(byId).filter((s) => vectorFor(s) === undefined);
+   const missing = [...corpus].sort(byId).filter((s) => cachedVector(loaded(), model, s.id, s.prose) === undefined);
 
    let todo = missing;
    if (todo.length > cap) {
@@ -450,62 +422,25 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
     todo = todo.slice(0, cap);
    }
 
-   const deadline = clock() + primeBudgetMs;
-   let embedded = 0;
-   let stopped: string | undefined;
-
-   for (let i = 0; i < todo.length; i += EMBED_BATCH) {
-    if (clock() >= deadline) {
+   await embedBatches({
+    items: todo.map((s) => ({ id: s.id, body: s.prose })),
+    embed,
+    model,
+    budgetMs: primeBudgetMs,
+    clock,
+    log,
+    cached,
+    subject: 'snippet',
+    noun: 'snippet',
+    onBudgetExceeded: (embedded, pending) =>
      shadowDecision(
       THRESHOLDS['resonance.primeBudgetMs'],
-      `stop embedding: ${embedded} done, ${todo.length - embedded} still waiting`,
+      `stop embedding: ${embedded} done, ${pending} still waiting`,
       log,
       true,
-     );
-     break;
-    }
-    const batch = todo.slice(i, i + EMBED_BATCH);
-    let vectors: number[][];
-    try {
-     vectors = await embed(batch.map((s) => s.prose));
-    } catch (err) {
-     stopped = err instanceof Error ? err.message : String(err);
-     break;
-    }
-    if (vectors.length !== batch.length) {
-     // Zipping a short list back onto the inputs would file one snippet's
-     // vector under another snippet's id, and nothing downstream could
-     // tell that every score after it was about the wrong text.
-     stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
-     break;
-    }
-    const fresh: EmbeddingRecord[] = [];
-    for (const [j, snippet] of batch.entries()) {
-     const vector = vectors[j];
-     if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
-      stopped = `snippet ${snippet.id} came back without a usable vector`;
-      break;
-     }
-     fresh.push({
-      claimId: snippet.id,
-      hash: bodyHash(snippet.prose),
-      model,
-      vector,
-     });
-    }
-    if (stopped) break;
-    for (const record of fresh) cached.set(record.claimId, record);
-    embedded += fresh.length;
-    // Persist per batch. This is what makes the two bounds above cost time
-    // and never work, and what makes a cold start survivable.
-    persist(seen, cached, store);
-   }
-
-   if (stopped !== undefined) {
-    unavailable(
-     `model=${model} subject=snippet embedded=${embedded} pending=${todo.length - embedded} error=${stopped}`,
-    );
-   }
+     ),
+    persistBatch: () => persist(seen, cached, store),
+   });
   },
 
   async resonate(text: string, k: number = TOP_N): Promise<SemanticHit[]> {
@@ -514,7 +449,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
 
    const scorable: { snippet: Snippet; vector: number[] }[] = [];
    for (const snippet of corpus) {
-    const vector = vectorFor(snippet);
+    const vector = cachedVector(loaded(), model, snippet.id, snippet.prose);
     if (vector) scorable.push({ snippet, vector });
    }
    if (scorable.length === 0) return [];
@@ -566,7 +501,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
 
   vectored(): number {
    let n = 0;
-   for (const snippet of corpus) if (vectorFor(snippet) !== undefined) n++;
+   for (const snippet of corpus) if (cachedVector(loaded(), model, snippet.id, snippet.prose) !== undefined) n++;
    return n;
   },
  };

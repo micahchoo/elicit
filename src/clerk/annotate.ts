@@ -33,6 +33,7 @@
 
 import type { Complete, Snippet, Turn } from '../types.js';
 import { assertUserTurn } from '../wiki/contract.js';
+import { stripFences } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // The budget
@@ -102,14 +103,6 @@ function snippetPart(s: Snippet): string {
 // ---------------------------------------------------------------------------
 // Parsing and shaping
 // ---------------------------------------------------------------------------
-
-/** Strips markdown code fences, keeping the inner content. */
-function stripFences(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, '');
-  s = s.replace(/\n?```\s*$/, '');
-  return s.trim();
-}
 
 /** A required string field: present, a string, and not just whitespace. */
 function text(v: unknown): string | null {

@@ -1,6 +1,7 @@
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { chmodSync } from 'node:fs';
+import type { Context } from 'hono';
 
 // ── Types ──
 
@@ -89,4 +90,82 @@ export function isLoopback(remoteAddr: string | undefined): boolean {
   remoteAddr === '::1' ||
   remoteAddr === '::ffff:127.0.0.1'
  );
+}
+
+// ── Session tokens (the other half of auth, Wave E S14) ──
+
+export interface SessionAuthConfig {
+ /** Cookie name the session rides in; default 'elicit_session'. */
+ cookieName?: string;
+ /** Session lifetime in ms; default 24 hours. */
+ ttlMs?: number;
+}
+
+export interface SessionAuth {
+ /** Issue a fresh session: a new token plus the full Set-Cookie header value. */
+ issue(): { token: string; cookie: string };
+ /** Whether the request's cookie names a live, unexpired session token. */
+ check(c: { req: { header: (n: string) => string | undefined } }): boolean;
+ /**
+  * The /api gate: with an auth file present, require a live session (401);
+  * without one, require a loopback caller (403). The same 401/403 shapes the
+  * inline server middleware produced.
+  */
+ middleware(gate: {
+  authFileExists(): boolean;
+  remoteAddr(env: unknown): string | undefined;
+ }): (c: Context, next: () => Promise<void>) => Promise<Response | void>;
+}
+
+/**
+ * The session-token half of password-gated access (S14): the in-memory
+ * token→expiry map, the cookie it rides in, and the middleware that checks
+ * it — extracted from src/server.ts with cookie format, token generation and
+ * error shapes byte-identical. The vault/.auth.json scrypt half lives beside
+ * it in this module; together they are the whole gate.
+ */
+export function createSessionAuth(config?: SessionAuthConfig): SessionAuth {
+ const cookieName = config?.cookieName ?? 'elicit_session';
+ const ttlMs = config?.ttlMs ?? 24 * 60 * 60 * 1000;
+ const loginSessions = new Map<string, number>();
+ const cookieRe = new RegExp(`${cookieName}=([^;]+)`);
+
+ const issue = (): { token: string; cookie: string } => {
+  const token = randomBytes(32).toString('hex');
+  loginSessions.set(token, Date.now() + ttlMs);
+  const cookie = `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${ttlMs / 1000}`;
+  return { token, cookie };
+ };
+
+ const check = (c: { req: { header: (n: string) => string | undefined } }): boolean => {
+  const cookie = c.req.header('cookie') ?? '';
+  const match = cookieRe.exec(cookie);
+  if (!match) return false;
+  const token = match[1]!;
+  const expiry = loginSessions.get(token);
+  if (!expiry || expiry < Date.now()) {
+   loginSessions.delete(token);
+   return false;
+  }
+  return true;
+ };
+
+ const middleware = (gate: {
+  authFileExists(): boolean;
+  remoteAddr(env: unknown): string | undefined;
+ }): ((c: Context, next: () => Promise<void>) => Promise<Response | void>) => async (c, next) => {
+  if (!gate.authFileExists()) {
+   // No auth file — check loopback
+   const remoteAddr = gate.remoteAddr(c.env);
+   if (isLoopback(remoteAddr)) return next();
+   return c.json({ error: 'setup required' }, 403);
+  }
+  // Auth file exists — require session
+  if (!check(c)) {
+   return new Response('Unauthorized', { status: 401 });
+  }
+  return next();
+ };
+
+ return { issue, check, middleware };
 }

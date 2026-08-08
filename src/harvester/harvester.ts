@@ -1,6 +1,8 @@
-import type { Complete, Turn, CutProposal, Bud, HarvestDecision, CaptureChannel, Vault, Snippet, Provenance, Facet, Stance } from '../types.js';
+import type { Complete, Turn, CutProposal, Bud, HarvestDecision, CaptureChannel, Vault, Snippet, Provenance, Stance } from '../types.js';
+import { FACETS } from '../queue/facet-balance.js';
 import type { ResponseFormat } from '../llm.js';
 import { admissible, normalize, startsMidSentence } from './admissibility.js';
+import { stripFences } from '../clerk/compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // The vocabularies, at runtime
@@ -14,16 +16,31 @@ import { admissible, normalize, startsMidSentence } from './admissibility.js';
 // disk, where the Clerk mints a Claim off it (Q-28) and ticket 042's facet
 // balance counts it. Nothing between here and the file system looks.
 
-const FACETS: ReadonlySet<string> = new Set<Facet>([
- 'episode', 'general-event', 'lifetime-period', 'fact',
- 'construct', 'intention', 'value', 'causal-theory',
- 'momentary-state',
-]);
+/**
+ * The harvest vocabulary: the nine facets the prompt teaches (the facet list
+ * in SYSTEM_PROMPT). `habit` and the three `know-*` facets are deliberately
+ * absent — they are knowledge-practice labels, not things a turn evidences as
+ * a cut. Derived from the canonical FACETS so the two lists cannot drift; a
+ * vocabulary change is taught in the prompt and mirrored in this filter, never
+ * hand-maintained as a second list.
+ */
+const HARVEST_FACETS: ReadonlySet<string> = new Set<string>(
+ FACETS.filter((f) => f !== 'habit' && f !== 'know-what' && f !== 'know-how' && f !== 'know-why'),
+);
 
 const STANCES: ReadonlySet<string> = new Set<Stance>([
  'avowal', 'self-observation', 'report-of-fact', 'pole-preference',
  'commitment', 'uncertainty-marked', 'superseded', 'role-taking',
 ]);
+
+/**
+ * The four harvest decision verbs at runtime — the array mirror of
+ * `HarvestDecision.action` (src/types.ts), so the review route's rejection
+ * and the type can never drift. `restate` belongs here: unlike import
+ * decisions (Q-58), a harvest restatement is today's prose about today's
+ * sitting, not a borrowed date.
+ */
+export const HARVEST_ACTIONS = ['approve', 'trim', 'restate', 'discard'] as const;
 
 // ---------------------------------------------------------------------------
 // Generation-time shape constraint (ticket 078)
@@ -57,7 +74,7 @@ export const CUTS_RESPONSE_FORMAT: ResponseFormat = {
       properties: {
        text: { type: 'string' },
        sourceTurn: { type: 'integer', enum: [0] },
-       facet: { type: 'string', enum: [...FACETS] },
+       facet: { type: 'string', enum: [...HARVEST_FACETS] },
        stance: { type: 'string', enum: [...STANCES] },
        reading: { type: 'string' },
        standalone: { type: 'boolean' },
@@ -198,16 +215,6 @@ const FIRST_PERSON_PAST =
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Strips markdown code fences from LLM output, keeping the inner content. */
-function stripFences(raw: string): string {
- let s = raw.trim();
- // strip opening ```json or ```
- s = s.replace(/^```(?:json)?\s*\n?/i, '');
- // strip closing ```
- s = s.replace(/\n?```\s*$/, '');
- return s.trim();
-}
 
 /** Find the agent turn that elicited a given user turn index (0-based in user-turn space). */
 function findElicitingProbe(
@@ -704,7 +711,7 @@ export async function propose(
    // assert a facet the vocabulary does not contain. Dropping the cut would
    // lose the person's sentence over the model's formatting mistake, and
    // guessing a replacement facet would put an invented one on disk.
-   const badLabel = !FACETS.has(cut.facet) || !STANCES.has(cut.stance);
+   const badLabel = !HARVEST_FACETS.has(cut.facet) || !STANCES.has(cut.stance);
    if (badLabel) {
     outOfVocabularyLabels++;
     console.warn(

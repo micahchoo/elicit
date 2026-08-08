@@ -24,22 +24,24 @@
  * owner did; it just has no boolean to flip. `scripts/demote.ts` says so
  * out loud rather than letting the difference pass in silence.
  *
- * ## Why this module imports nothing but the filesystem
+ * ## Why this module imports nothing but the store and the path resolver
  *
  * `src/wiki/thresholds.ts` is the registry every wiki module reads, and it
- * must not be able to fail to load. This is the one module it imports, so
- * this one carries the same duty: no top-level I/O, no throw on any path,
- * an unreadable or absent file reading as "nothing is demoted". A tripwire
- * that can crash the instrument it watches is not a safety mechanism.
+ * must not be able to fail to load. This is one of the two modules it
+ * imports, so this one carries the same duty: no top-level I/O, no throw on
+ * any path, an unreadable or absent file reading as "nothing is demoted".
+ * A tripwire that can crash the instrument it watches is not a safety
+ * mechanism.
+ *
+ * The store itself lives in src/loop/key-store.ts — one crash-tolerant
+ * key-store parameterized by root, file name and entry field, shared with
+ * graduations. This module is the demotion-shaped adapter over it, and the
+ * only one that asks for the removal method (`clearDemotion`); the public
+ * surface below is unchanged.
  */
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-const DEMOTIONS_FILE = 'demotions.json';
-
-/** The on-disk shape. An object, not a bare array, so a reader can see what it is. */
-type DemotionsFile = { demoted: string[] };
+import { createKeyStore } from './key-store.js';
 
 /**
  * Where the store lives when nobody says. `ELICIT_DATA_DIR` follows the
@@ -50,9 +52,13 @@ function defaultDataDir(): string {
   return process.env.ELICIT_DATA_DIR ?? join(process.cwd(), 'data');
 }
 
-function demotionsPath(dataDir: string): string {
-  return join(dataDir, DEMOTIONS_FILE);
-}
+/** The demotion store: `data/demotions.json`, entry field `demoted`, with removal. */
+const store = createKeyStore({
+  root: defaultDataDir,
+  fileName: 'demotions.json',
+  entryField: 'demoted',
+  removal: true as const,
+});
 
 /**
  * The demoted mechanism keys. An absent, unreadable or malformed file reads
@@ -61,15 +67,7 @@ function demotionsPath(dataDir: string): string {
  * in the instrument.
  */
 export function readDemotions(dataDir: string): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(demotionsPath(dataDir), 'utf-8'));
-    if (parsed === null || typeof parsed !== 'object') return new Set();
-    const list = (parsed as DemotionsFile).demoted;
-    if (!Array.isArray(list)) return new Set();
-    return new Set(list.filter((k): k is string => typeof k === 'string'));
-  } catch {
-    return new Set();
-  }
+  return store.readAll(dataDir);
 }
 
 /**
@@ -79,11 +77,7 @@ export function readDemotions(dataDir: string): Set<string> {
  * ledger, never through an editor deleting a line here.
  */
 export function addDemotion(dataDir: string, key: string): void {
-  const demoted = readDemotions(dataDir);
-  demoted.add(key);
-  mkdirSync(dataDir, { recursive: true });
-  const file: DemotionsFile = { demoted: [...demoted].sort() };
-  writeFileSync(demotionsPath(dataDir), `${JSON.stringify(file, null, 1)}\n`, 'utf-8');
+  store.addOne(dataDir, key);
 }
 
 /**
@@ -93,39 +87,15 @@ export function addDemotion(dataDir: string, key: string): void {
  * JSON by hand, which leaves the ledger silent about the change.
  */
 export function clearDemotion(dataDir: string, key: string): void {
-  const demoted = readDemotions(dataDir);
-  if (!demoted.delete(key)) return;
-  mkdirSync(dataDir, { recursive: true });
-  const file: DemotionsFile = { demoted: [...demoted].sort() };
-  writeFileSync(demotionsPath(dataDir), `${JSON.stringify(file, null, 1)}\n`, 'utf-8');
+  // The store is constructed with `removal: true`, so `clearOne` is present.
+  store.clearOne!(dataDir, key);
 }
 
 /**
- * The cached set, and the file signature it was read at. Re-read happens
- * when size or mtime moves; a demotion always adds a key, so it always
- * moves the size. The cache exists because `isDemoted` sits inside
- * `shadowDecision`, which the wiki jobs call thousands of times a run.
- */
-let cache: { dir: string; token: string; demoted: Set<string> } | null = null;
-
-/**
  * Whether this mechanism key is demoted, read from disk at the moment of
- * the question. Used by `shadowDecision`; `dataDir` defaults to the
- * instance's data directory.
+ * the question through the store's stat-token cache. Used by
+ * `shadowDecision`; `dataDir` defaults to the instance's data directory.
  */
 export function isDemoted(key: string, dataDir: string = defaultDataDir()): boolean {
-  let token: string;
-  try {
-    const stat = statSync(demotionsPath(dataDir));
-    token = `${stat.mtimeMs}:${stat.size}`;
-  } catch {
-    // No store: nothing is demoted. Not cached — the file appearing is the
-    // event this function exists to notice.
-    cache = null;
-    return false;
-  }
-  if (cache === null || cache.dir !== dataDir || cache.token !== token) {
-    cache = { dir: dataDir, token, demoted: readDemotions(dataDir) };
-  }
-  return cache.demoted.has(key);
+  return store.isIn(key, dataDir);
 }

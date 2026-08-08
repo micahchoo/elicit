@@ -53,16 +53,47 @@ export type StatusResult = { live: ClaimStatus; shadow: ClaimStatus; why: string
 /** ≥2 independent cites make a claim `evidenced` (Q-21, Q-50). */
 const SITTINGS_FOR_EVIDENCED = 2;
 
-/** The snippet id half of a `snippetId@version` cite. */
-function citeSnippetId(cite: string): string {
+/** The two halves of a `snippetId@version` cite, or null when it is malformed. */
+export function citeParts(cite: string): { snippetId: string; version: number } | null {
   const at = cite.lastIndexOf('@');
-  return at === -1 ? cite : cite.slice(0, at);
+  if (at <= 0) return null;
+  const version = Number(cite.slice(at + 1));
+  if (Number.isNaN(version)) return null;
+  return { snippetId: cite.slice(0, at), version };
 }
 
-/** The version half, or NaN when the cite is malformed — which never resolves. */
-function citeVersion(cite: string): number {
-  const at = cite.lastIndexOf('@');
-  return at === -1 ? Number.NaN : Number(cite.slice(at + 1));
+/**
+ * The snippet id half of a cite, whole-string when it has no `@` at all.
+ *
+ * Version-INSENSITIVE on purpose: facets and coreness match on the snippet id
+ * (Q-5), and a malformed cite can never name a real snippet id anyway — the
+ * whole-string fallback only keeps the no-`@` reading stable.
+ */
+function citeSnippetId(cite: string): string {
+  return citeParts(cite)?.snippetId ?? cite;
+}
+
+/**
+ * Resolve one `snippetId@version` cite against the graph's latest versions.
+ *
+ * `ClaimGraph.snippets` holds only the LATEST version of each snippet, so
+ * resolution is a `version <= latest` comparison and not a key lookup: `@1`
+ * when the latest is `@2` is a STALE citation (T8's lint finding) and still
+ * real evidence, while `@3` against a latest of `@2` names a version that has
+ * never existed and is evidence of nothing. Returns null for a malformed cite,
+ * a cite naming no snippet, or a cite ahead of the latest version. This is THE
+ * resolution rule — lint's `fateOf`, ops' cite boundary and this module's
+ * evidence arithmetic all read it from here.
+ */
+export function resolveCite(
+  cite: string,
+  snippets: Record<string, Snippet>,
+): { snippetId: string; version: number } | null {
+  const parts = citeParts(cite);
+  if (!parts) return null;
+  const snippet = snippets[parts.snippetId];
+  if (!snippet || parts.version > snippet.version) return null;
+  return parts;
 }
 
 /** `2 sittings` / `1 sitting`. Kept in one place so every `why` reads alike. */
@@ -123,14 +154,16 @@ function firstReadAt(claim: Claim): number | undefined {
  *
  * Q-50 makes cite independence cross-sitting, so this string is what decides
  * whether a claim can reach `evidenced` and — through `sittingsOfCites` — what
- * decides under Q-53 whether a re-measure counts. Two copies of this rule that
- * drift apart would let a claim be independent by one measure and not the
- * other, silently, in two different files. T12 wrote a second copy before this
- * was exported; that is the drift this prevents.
+ * decides under Q-53 whether a re-measure counts. Every sitting a cite list
+ * draws on is keyed here and nowhere else: status' evidence arithmetic,
+ * `sittingsOfCites` and clash's `sameSitting` all build the key through this
+ * one function, so two measures of one cite list can never drift apart.
  *
  * Absent session keys on the SNIPPET id, never on the cite: two versions of one
  * sessionless snippet are one sitting, while two different sessionless snippets
- * are two. Absent is never equal to absent.
+ * are two. Absent is never equal to absent. A caller that wants an absent
+ * session to contribute nothing asks `sittingsOfCites` for the `'drop'`
+ * policy; the key itself is the same either way.
  */
 export function sittingKey(snippetId: string, snippet: Snippet): string {
   const session = snippet.provenance.session;
@@ -141,18 +174,26 @@ export function sittingKey(snippetId: string, snippet: Snippet): string {
  * The distinct sittings a cite list draws on. Unresolvable cites contribute
  * nothing — a cite naming a version that never existed is evidence of nothing,
  * and counting it as a sitting would manufacture independence.
+ *
+ * `onAbsentSession` names what a snippet with NO session is: `'key-by-snippet'`
+ * gives it a sitting key of its own (absent is never equal to absent — Q-50),
+ * and `'drop'` makes it contribute nothing at all. The two policies are the
+ * two consumers' existing readings: status' evidence arithmetic keys sessionless
+ * snippets, while clash's `sameSitting` drops them — ignorance is not evidence
+ * of sameness.
  */
 export function sittingsOfCites(
   cites: string[],
   snippets: Record<string, Snippet>,
+  onAbsentSession: 'key-by-snippet' | 'drop' = 'key-by-snippet',
 ): Set<string> {
   const out = new Set<string>();
   for (const cite of cites) {
-    const id = citeSnippetId(cite);
-    const version = citeVersion(cite);
-    const snippet = snippets[id];
-    if (!snippet || Number.isNaN(version) || version > snippet.version) continue;
-    out.add(sittingKey(id, snippet));
+    const resolved = resolveCite(cite, snippets);
+    if (!resolved) continue;
+    const snippet = snippets[resolved.snippetId]!;
+    if (onAbsentSession === 'drop' && !snippet.provenance.session) continue;
+    out.add(sittingKey(resolved.snippetId, snippet));
   }
   return out;
 }
@@ -175,18 +216,17 @@ function resolve(
   let unresolved = 0;
 
   for (const cite of claim.cites) {
-    const id = citeSnippetId(cite);
-    const version = citeVersion(cite);
-    const snippet = graph.snippets[id];
-    if (!snippet || Number.isNaN(version) || version > snippet.version) {
+    const resolved = resolveCite(cite, graph.snippets);
+    if (!resolved) {
       unresolved++;
       continue;
     }
+    const snippet = graph.snippets[resolved.snippetId]!;
     const captured = Date.parse(snippet.captured);
     evidence.push({
       cite,
-      snippetId: id,
-      sitting: sittingKey(id, snippet),
+      snippetId: resolved.snippetId,
+      sitting: sittingKey(resolved.snippetId, snippet),
       discounted: cut !== undefined && !Number.isNaN(captured) && captured > cut,
     });
   }

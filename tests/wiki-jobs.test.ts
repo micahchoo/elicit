@@ -23,7 +23,8 @@ import {
 } from '../src/clerk/wiki-jobs.js';
 import { createClaimStore } from '../src/wiki/store.js';
 import { createRegistry } from '../src/wiki/registry.js';
-import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
+import { lint } from '../src/wiki/lint.js';
+import type { ThresholdRegister } from '../src/wiki/thresholds.js';
 import { poolCandidates, type ClashChannel } from '../src/wiki/clash.js';
 import { applyOps } from '../src/wiki/ops.js';
 import {

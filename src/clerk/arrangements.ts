@@ -37,7 +37,8 @@ import type {
   Pin,
   Principle,
 } from '../piece/contract.js';
-import { quotesFragmentSetOff, setOffSpans } from '../language/guards.js';
+import { checkQuotesSource, findQuotedFragment } from './composed.js';
+import { stripFences } from './compose-gate.js';
 
 /** The Activity-Log-shaped sink this module emits through (the docket's deps.log shape). */
 export type ArrangementLog = (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
@@ -91,74 +92,8 @@ Return ONLY valid JSON. No markdown fences. No commentary.`;
 }
 
 // ---------------------------------------------------------------------------
-// The quote gate — Q-12 applied to a new path
-// ---------------------------------------------------------------------------
-// `checkQuotesSource` is module-private in src/clerk/composed.ts, and that
-// file is outside this plan's ownership, so the same verbatim-quote rule is
-// reimplemented here; ticket 082 records the convergence debt. The span
-// helpers it composes are shared from src/language/guards.ts; the composition
-// — the longest verbatim fragment of the source, set off in quotation marks —
-// is this module's own copy of composed.ts's.
-
-/** Find the longest substring of `source` that appears verbatim in `question`. */
-function findQuotedFragment(
-  source: string,
-  question: string,
-  minWords = 3,
-): string | null {
-  let best = '';
-  for (let i = 0; i < source.length; i++) {
-    for (let j = i + best.length + 1; j <= source.length; j++) {
-      const candidate = source.slice(i, j);
-      if (question.includes(candidate)) {
-        best = candidate;
-      } else {
-        break; // longer substrings from this start won't match either
-      }
-    }
-  }
-  if (best.length === 0) return null;
-  const wordCount = best.trim().split(/\s+/).length;
-  if (wordCount < minWords) return null;
-  return best;
-}
-
-/** The longest run of `source` that the question quotes AND sets off. */
-function findSetOffFragment(
-  question: string,
-  source: string,
-  minWords = 3,
-): string | null {
-  let best: string | null = null;
-  for (const span of setOffSpans(question)) {
-    const inner = question.slice(span.start, span.end);
-    const candidate = findQuotedFragment(source, inner, minWords);
-    if (candidate && (!best || candidate.length > best.length)) best = candidate;
-  }
-  return best;
-}
-
-/** Does the question set off an exact phrase of the source, verbatim (Q-12)? */
-function questionQuotesSource(question: string, source: string): boolean {
-  const longest = findQuotedFragment(source, question);
-  const fragment =
-    longest !== null && quotesFragmentSetOff(question, longest)
-      ? longest
-      : findSetOffFragment(question, source);
-  return fragment !== null;
-}
-
-// ---------------------------------------------------------------------------
 // Response parsing
 // ---------------------------------------------------------------------------
-
-/** Strips markdown code fences from LLM output, keeping the inner content. */
-function stripFences(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, '');
-  s = s.replace(/\n?```\s*$/, '');
-  return s.trim();
-}
 
 function asRecord(x: unknown): Record<string, unknown> | null {
   return typeof x === 'object' && x !== null && !Array.isArray(x)
@@ -434,7 +369,7 @@ export async function proposeArrangements(
         );
         const quotesAdjacent = neighbors.some((id) => {
           const s = snippets[id];
-          return s !== undefined && questionQuotesSource(question, s.prose);
+          return s !== undefined && checkQuotesSource(question, s.prose).ok;
         });
         if (!quotesAdjacent) {
           reject(principle, 'unquoted-gap');

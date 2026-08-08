@@ -22,6 +22,7 @@
  */
 
 import { validTrim } from './trim-validity.js';
+import type { WebDepsWithWait } from './deps.js';
 
 export interface ImportReviewCut {
   text: string;
@@ -50,19 +51,7 @@ export interface ImportReviewItem {
   remaining?: number;
 }
 
-export interface ImportReviewDeps {
-  main: HTMLElement;
-  el: <K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    attrs?: Record<string, string>,
-    ...kids: (string | Node)[]
-  ) => HTMLElementTagNameMap[K];
-  api: <T>(path: string, body?: unknown) => Promise<T>;
-  beginWait: (
-    slot: HTMLElement,
-    msg: string,
-  ) => { done(): void; failed(cause: unknown, message?: string): void };
-  navTo: (screen: string) => void;
+export interface ImportReviewDeps extends WebDepsWithWait {
   /**
    * The region slug the review stays inside (plan Task 13): the next-item
    * request carries `?region=<slug>` so the bounded queue keeps the reader
@@ -83,6 +72,13 @@ export interface ImportReviewDeps {
    * survey root. Absent on a plain visit: the person types the folder.
    */
   folder?: string;
+  /**
+   * A live text selection — seeds the keep-a-passage editor with the
+   * passage selected in the piece (the one global DOM touch, injected).
+   * main.ts passes document.getSelection; the Node-test seam omits it and
+   * the editor opens empty.
+   */
+  selection?: () => string;
 }
 
 /** The next-item path, inside the region when one is open (plan Task 13). */
@@ -489,7 +485,7 @@ function renderItem(deps: ImportReviewDeps, item: ImportReviewItem): void {
     }
     const ta = el('textarea', { class: 'import-add-editor' });
     // Seed from a live selection in the piece, when the browser offers one.
-    const sel = typeof document !== 'undefined' ? (document.getSelection()?.toString() ?? '') : '';
+    const sel = deps.selection?.() ?? '';
     if (sel) ta.value = sel;
     const hint = el(
       'p',

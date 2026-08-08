@@ -7,12 +7,10 @@
  * says what is true: the transcript is intact, and the stumble was the
  * reader's, not the words'. Reassurance is the fact, not an apology.
  */
+import type { ActivityEvent } from './deps.js';
+
 export const HARVEST_FAILED_SENTENCE =
   'the reader stumbled on this sitting; your words are safe in the transcript.';
-
-/** The activity-event slice the matcher reads (the client's own copy of the
- * shape; the server's type stays server-side). */
-export type ActivityEventLike = { at: string; kind: string; detail: string };
 
 /** The session id a detail line names, or null when it names none. */
 function sessionOf(detail: string): string | null {
@@ -30,7 +28,7 @@ function sessionOf(detail: string): string | null {
  * from crossing: a failure belongs to the start that preceded it, and only
  * to that one.
  */
-export function harvestFailedFor(events: readonly ActivityEventLike[], sessionId: string): boolean {
+export function harvestFailedFor(events: readonly ActivityEvent[], sessionId: string): boolean {
   for (let i = 0; i < events.length; i++) {
     const failed = events[i];
     if (!failed || failed.kind !== 'harvest-failed') continue;

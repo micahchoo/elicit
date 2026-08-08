@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { HARVEST_FAILED_SENTENCE, harvestFailedFor, type ActivityEventLike } from '../web/harvest-failure.js';
+import { HARVEST_FAILED_SENTENCE, harvestFailedFor } from '../web/harvest-failure.js';
+import type { ActivityEvent } from '../web/deps.js';
 
 /**
  * The harvest-failure sentence on the reviews surface (ticket 154), tested
@@ -9,8 +10,8 @@ import { HARVEST_FAILED_SENTENCE, harvestFailedFor, type ActivityEventLike } fro
  * pure function over the feed's events.
  */
 
-function ev(kind: string, detail: string, at = '2026-08-06T00:00:00.000Z'): ActivityEventLike {
-  return { at, kind, detail };
+function ev(kind: string, detail: string, at = '2026-08-06T00:00:00.000Z'): ActivityEvent {
+  return { at, actor: 'clerk', kind, detail };
 }
 
 /** The parse-failed detail shape: every chunk failing to parse (034 rule). */

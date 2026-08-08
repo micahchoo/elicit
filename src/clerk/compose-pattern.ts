@@ -15,21 +15,11 @@ import { selectCheapPattern } from '../patterns/select.js';
 import { decomposeDerived } from '../patterns/decompose.js';
 import type { LicensingContext, Pattern, Operator } from '../patterns/types.js';
 import { guardComposed } from '../language/emit-form.js';
+import { FRAMING_RULE, stripFences } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Strips markdown code fences, keeping the inner content. The regex form
- * handles single-line fenced JSON (the old slice-based copy mangled
- * ```json {...}``` with no newline — the fence check passed, then the slice
- * corrupted the line). */
-function stripFences(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, '');
-  s = s.replace(/\n?```\s*$/, '');
-  return s.trim();
-}
 
 interface QuotedSpanRef {
   text: string;
@@ -70,11 +60,6 @@ function buildPatternDraft(
 // ---------------------------------------------------------------------------
 // Prompt building
 // ---------------------------------------------------------------------------
-
-const FRAMING_RULE = `HOW TO USE THEIR WORDS — frame the quote, never splice it:
-Put the speaker's exact words inside quotation marks. Then ask your question after them, in your own words.
-Shape: You wrote: "<their exact words>." <your question>?
-Keep the quoted words exactly as they wrote them, first person and all. Outside the quotation marks, address the speaker as "you".`;
 
 function patternPrompt(pattern: Pattern, sources: { prose: string; captured?: string }[]): string {
   const sourceBlocks = sources

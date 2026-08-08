@@ -16,7 +16,8 @@ import { join } from 'node:path';
 
 import { createClaimStore } from '../src/wiki/store.js';
 import { createVault } from '../src/vault/vault.js';
-import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
+import { lint } from '../src/wiki/lint.js';
+import type { ThresholdRegister } from '../src/wiki/thresholds.js';
 import { isLive } from '../src/wiki/clash.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { ClaimGraph, LogFn } from '../src/wiki/contract.js';

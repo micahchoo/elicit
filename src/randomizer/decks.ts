@@ -23,6 +23,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { DeckEntry, Facet } from '../types.js';
+import { FACETS } from '../queue/facet-balance.js';
 
 /** Where the shipped decks live, relative to the repo root. */
 export const DEFAULT_DECK_DIR = 'data/decks';
@@ -30,19 +31,21 @@ export const DEFAULT_DECK_DIR = 'data/decks';
 /** Where a person's own decks live inside the vault. */
 export const VAULT_DECK_DIR = 'decks';
 
-const FACETS = new Set<string>([
-  'episode',
-  'general-event',
-  'lifetime-period',
-  'fact',
-  'construct',
-  'intention',
-  'value',
-  'causal-theory',
-]);
+/**
+ * The facets a deck card may target: the durable life-material facets only.
+ * `momentary-state` (a transient feeling — no standing question targets it) and
+ * the knowledge-practice facets (`habit`, `know-what`, `know-how`, `know-why`)
+ * are excluded from the canonical FACETS rather than listed here by hand, so a
+ * Facet added upstream reaches decks automatically.
+ */
+const DECK_FACETS: ReadonlySet<string> = new Set<string>(
+  FACETS.filter(
+    (f) => f !== 'momentary-state' && f !== 'habit' && f !== 'know-what' && f !== 'know-how' && f !== 'know-why',
+  ),
+);
 
 function asFacet(v: unknown): Facet | undefined {
-  return typeof v === 'string' && FACETS.has(v) ? (v as Facet) : undefined;
+  return typeof v === 'string' && DECK_FACETS.has(v) ? (v as Facet) : undefined;
 }
 
 function listFiles(dir: string, ext: string): string[] {

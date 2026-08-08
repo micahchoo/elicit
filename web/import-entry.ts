@@ -131,6 +131,9 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
       // The reach offer's focus (014 T14): open the map at the region it
       // named, expanded and scrolled to. Absent on a plain visit.
       ...(deps.focus !== undefined ? { focus: deps.focus } : {}),
+      // The map inherits the core's text/document verbs through the seam.
+      text: deps.text,
+      document: deps.document,
     });
   };
   renderMap();

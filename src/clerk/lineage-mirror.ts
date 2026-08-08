@@ -23,6 +23,7 @@ import type { Complete, LineageRead, QueueDraft, QueueStore } from '../types.js'
 import { readTranscripts } from '../vault/transcripts.js';
 import { isInterrogative, hasFirstPersonOutsideQuote } from '../language/guards.js';
 import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js';
+import { composeWithRetry, stripFences, type Rejection } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // Reader
@@ -143,6 +144,10 @@ export function licenseMirror(
  * juxtaposition-style — side by side, zero assertion. The question must
  * end with `?` and must not speak in first person outside quoted material.
  *
+ * Routes through the shared composeWithRetry skeleton (C10), so mirror
+ * questions pass the same emit-form gate (checkEmitForm + checkQuestion)
+ * every other composer passes.
+ *
  * Returns null when the model cannot produce a valid question after one
  * retry.
  */
@@ -170,42 +175,55 @@ RULES:
 
 Return only the question text. No markdown, no commentary.`;
 
-  const strip = (raw: string): string =>
-    raw.trim().replace(/^```[^\n]*\n?|\n?```$/g, '').trim();
+  // The loose form: any fence info string is stripped (```ts, ```python, …),
+  // where the strict json-only form would leave a foreign fence behind.
+  const strip = (raw: string): string => stripFences(raw, { loose: true });
 
-  const raw = await complete(prompt, [], { temperature: 0.4 });
-  const question = strip(raw);
+  // composeWithRetry applies the strict json-only strip itself; pre-stripping
+  // here keeps the loose any-fence semantics the mirror always shipped.
+  const send = (p: string) => complete(p, [], { temperature: 0.4 }).then(strip);
 
-  if (validateMirrorQuestion(question)) return question;
-
-  // One retry
-  const retryPrompt = `${prompt}\n\nYour last attempt was not acceptable. It either did not end with "?", used first-person pronouns outside quotes, or made an assertion about what the facts mean. Present only the facts, side by side, as a short question.`;
-  const retryRaw = await complete(retryPrompt, [], { temperature: 0.4 });
-  const retryQuestion = strip(retryRaw);
-
-  if (validateMirrorQuestion(retryQuestion)) return retryQuestion;
-
-  return null;
+  return composeWithRetry(
+    'lineage-mirror',
+    send,
+    prompt,
+    (question) => {
+      const rejection = validateMirrorQuestion(question);
+      return rejection
+        ? { ok: false, rejection }
+        : { ok: true, question, value: question };
+    },
+    () => `${prompt}\n\nYour last attempt was not acceptable. It either did not end with "?", used first-person pronouns outside quotes, or made an assertion about what the facts mean. Present only the facts, side by side, as a short question.`,
+    () => {
+      // The mirror ships no reject sink — the sweep logs at the minted/failed
+      // level only. Rejections stay silent, as they always were.
+    },
+  );
 }
 
 /**
  * Validate a mirror question against the composed-question invariants.
+ *
+ * Returns the rejection token when a mirror check fails, null when the
+ * question passes. The skeleton's emit-form gate (guardComposed) runs after
+ * this builder gate; the token only labels the retry.
  */
-function validateMirrorQuestion(question: string): boolean {
-  if (!isInterrogative(question)) return false;
-  if (hasFirstPersonOutsideQuote(question)) return false;
+function validateMirrorQuestion(question: string): Rejection | null {
+  if (!isInterrogative(question)) return 'not-interrogative';
+  if (hasFirstPersonOutsideQuote(question)) return 'first-person';
 
-  // Q-81: zero assertion — reject presupposition triggers
+  // Q-81: zero assertion — reject presupposition triggers. The question
+  // asserts meaning the facts do not support — a degenerate composition.
   const triggers = [
     /\bwhy (have|did|do) you\b/i,
     /\bwhen (will|did|do) you\b/i,
     /\bhow (long|often|much) have you\b/i,
   ];
   for (const t of triggers) {
-    if (t.test(question)) return false;
+    if (t.test(question)) return 'degenerate';
   }
 
-  return true;
+  return null;
 }
 
 // ---------------------------------------------------------------------------

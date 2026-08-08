@@ -736,6 +736,31 @@ shouldStop?: () => boolean;
   /** Read at every job boundary and inside every model-call loop. */
   const stopped = (): boolean => deps.shouldStop?.() === true;
 
+  /**
+   * The guarded-thunk primitive every job of this run collapses onto:
+   * `if (!stopped()) { try { await thunk() } catch (err) { sink ?? log } }`.
+   * `failKind` is the Activity Log kind of the job's failure line — the
+   * literal each call site passes, so the emitted-kinds sweep reads the
+   * failure vocabulary at the call sites (the same contract as the
+   * wrapper following in tests/emitted-kinds.ts). A site that diverges —
+   * the tripwire's operator-channel console.error, the piece sweeps'
+   * shared piece-jobs-failed line with its step prefix — passes its own
+   * sink via opts; the sink's own emit carries the literal then.
+   */
+  const runJob = async (
+   failKind: string,
+   thunk: () => Promise<unknown>,
+   opts?: { sink?: (kind: string, err: unknown) => void },
+  ): Promise<void> => {
+   if (stopped()) return;
+   try {
+    await thunk();
+   } catch (err) {
+    if (opts?.sink) opts.sink(failKind, err);
+    else deps.log({ at: ts(), actor: 'clerk', kind: failKind, detail: String(err) });
+   }
+  };
+
   // ── Log: run started ──
   deps.log({ at: ts(), actor: 'clerk', kind: 'run-started', detail: 'docket run started' });
 
@@ -753,17 +778,41 @@ shouldStop?: () => boolean;
   // block keeps a re-mint from the same license instances impossible.
   // Guarded like every other job: a throw is one job's failure, and the
   // index is already on disk by the time this runs.
-  try {
-   await runOneTimeTemplateSweep({
-    queue: deps.queue,
-    vaultRoot: deps.vaultRoot,
-    log: deps.log,
-   });
-  } catch (err) {
-   deps.log({ at: ts(), actor: 'clerk', kind: 'template-sweep-failed', detail: String(err) });
-  }
+  await runJob('template-sweep-failed', () => runOneTimeTemplateSweep({
+   queue: deps.queue,
+   vaultRoot: deps.vaultRoot,
+   log: deps.log,
+  }));
 
   const minted: QueueEntry[] = [];
+
+  /**
+   * The one per-snippet mint primitive the four mint loops share:
+   * stopped → compose → queue.add → minted.push → count/log-with-refs,
+   * and a throw is one mint's failure, never the run's. Each site keeps
+   * its own question-factory, its own on-minted counting/refs, and its
+   * own failure line. Returns 'stopped' so a loop can break when the
+   * stop switch flips mid-run.
+   */
+  const mintOne = async (
+   s: Snippet,
+   compose: (s: Snippet) => Promise<QueueDraft | null>,
+   onMinted: (draft: QueueDraft) => void,
+   fail: { kind: string; detail: (s: Snippet, err: unknown) => string },
+  ): Promise<'stopped' | 'minted' | 'skipped'> => {
+   if (stopped()) return 'stopped';
+   try {
+    const draft = await compose(s);
+    if (!draft) return 'skipped';
+    const entry = deps.queue.add(draft);
+    minted.push(entry);
+    onMinted(draft);
+    return 'minted';
+   } catch (err) {
+    deps.log({ at: ts(), actor: 'clerk', kind: fail.kind, detail: fail.detail(s, err) });
+    return 'skipped';
+   }
+  };
 
   // Every question this run mints quotes one snippet, so it belongs to the
   // sitting that snippet came from — a domain sitting's words make a domain
@@ -840,18 +889,16 @@ shouldStop?: () => boolean;
 
    const openerRefs: string[] = [];
    for (const s of candidates) {
-    if (stopped()) break;
-    try {
-     const draft = await deps.composeOpener(s, deps.complete, sittingFor(s.provenance.session), historyBlock, summaryLines);
-     if (draft) {
-      const entry = deps.queue.add(draft);
-      minted.push(entry);
+    const outcome = await mintOne(
+     s,
+     (sn) => deps.composeOpener(sn, deps.complete, sittingFor(sn.provenance.session), historyBlock, summaryLines),
+     (draft) => {
       openerCount++;
       if (draft.cites) openerRefs.push(...draft.cites);
-     }
-    } catch (err) {
-     deps.log({ at: ts(), actor: 'clerk', kind: 'opener-failed', detail: `composeOpener for snippet ${s.id} failed: ${String(err)}` });
-    }
+     },
+     { kind: 'opener-failed', detail: (sn, err) => `composeOpener for snippet ${sn.id} failed: ${String(err)}` },
+    );
+    if (outcome === 'stopped') break;
    }
 
    const evt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
@@ -937,17 +984,15 @@ shouldStop?: () => boolean;
 
 
   for (const s of stillTrueCandidates) {
-   if (stopped()) break;
-   try {
-    const draft = await deps.composeStillTrue(s, deps.complete, sittingFor(s.provenance.session));
-    if (draft) {
-     const entry = deps.queue.add(draft);
-     minted.push(entry);
+   const outcome = await mintOne(
+    s,
+    (sn) => deps.composeStillTrue(sn, deps.complete, sittingFor(sn.provenance.session)),
+    () => {
      stillTrueCount++;
-    }
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-failed', detail: `composeStillTrue for snippet ${s.id} failed: ${String(err)}` });
-   }
+    },
+    { kind: 'still-true-failed', detail: (sn, err) => `composeStillTrue for snippet ${sn.id} failed: ${String(err)}` },
+   );
+   if (outcome === 'stopped') break;
   }
   // Advance past every candidate OFFERED — whether composeStillTrue returned
   // a draft, returned null, or threw. The advance-on-null is the whole fix
@@ -959,8 +1004,9 @@ shouldStop?: () => boolean;
   deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-minted', detail: `minted ${stillTrueCount} still-true` });
 
   // ── 4. Expire stale queue entries ──
-  const expired = stopped() ? 0 : deps.queue.expire(30);
+  let expired = 0;
   if (!stopped()) {
+   expired = deps.queue.expire(30);
    deps.log({ at: ts(), actor: 'clerk', kind: 'expired', detail: `expired ${expired} entries` });
   }
 
@@ -1003,81 +1049,77 @@ shouldStop?: () => boolean;
   // Guarded like the wiki jobs: a throw is one job's failure, and the
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
-  if (!stopped() && deps.runLadderSummaries) {
-   try {
-    await deps.runLadderSummaries({
-     root: deps.vaultRoot,
-     complete: deps.complete,
-     model: deps.modelName,
-     log: deps.log,
-    });
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'soundings-summary-failed', detail: String(err) });
-   }
+  const runLadderSummaries = deps.runLadderSummaries;
+  if (runLadderSummaries) {
+   await runJob('soundings-summary-failed', () => runLadderSummaries({
+    root: deps.vaultRoot,
+    complete: deps.complete,
+    model: deps.modelName,
+    log: deps.log,
+   }));
   }
 
   // ── 6. Expedition minting: at most ONE per run ──
   let expeditionMinted = false;
-  if (!stopped() && deps.composeExpedition) {
-   try {
+  const composeExpedition = deps.composeExpedition;
+  if (composeExpedition) {
+   await runJob('expedition-failed', async () => {
     const allEntries = deps.queue.list();
     for (const s of allSnippets) {
      if (isExpeditionCandidate(s, allReadings, allEntries, allSnippets)) {
-      const draft = await deps.composeExpedition(s, deps.complete, sittingFor(s.provenance.session));
-      if (draft) {
-       const entry = deps.queue.add(draft);
-       minted.push(entry);
-       const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
-        at: ts(),
-        actor: 'clerk',
-        kind: 'expedition-minted',
-        detail: `minted expedition from snippet ${s.id}`,
-       };
-       if (draft.cites) logEvt.refs = draft.cites;
-       deps.log(logEvt);
-       expeditionMinted = true;
-      }
+      await mintOne(
+       s,
+       (sn) => composeExpedition(sn, deps.complete, sittingFor(sn.provenance.session)),
+       (draft) => {
+        const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
+         at: ts(),
+         actor: 'clerk',
+         kind: 'expedition-minted',
+         detail: `minted expedition from snippet ${s.id}`,
+        };
+        if (draft.cites) logEvt.refs = draft.cites;
+        deps.log(logEvt);
+        expeditionMinted = true;
+       },
+       { kind: 'expedition-failed', detail: (_sn, err) => String(err) },
+      );
       break; // At most ONE expedition per run
      }
     }
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'expedition-failed', detail: String(err) });
-   }
+   });
   }
 
   // Other-minds fallback (ticket 113): the errand names a person to ask, but
   // it still spends the run's single expedition budget — tried only when the
   // regular expedition found nothing to mint.
-  if (!expeditionMinted && !stopped() && deps.composeOtherMindsExpedition && deps.gazetteerStore) {
-   try {
+  const composeOtherMindsExpedition = deps.composeOtherMindsExpedition;
+  const gazetteerStore = deps.gazetteerStore;
+  if (!expeditionMinted && composeOtherMindsExpedition && gazetteerStore) {
+   await runJob('expedition-failed', async () => {
     const allEntries = deps.queue.list();
     for (const s of allSnippets) {
-     const candidate = isOtherMindsCandidate(s, allReadings, allEntries, allSnippets, deps.gazetteerStore);
+     const candidate = isOtherMindsCandidate(s, allReadings, allEntries, allSnippets, gazetteerStore);
      if (candidate.eligible && candidate.person) {
-      const draft = await deps.composeOtherMindsExpedition(
+     const person = candidate.person;
+      await mintOne(
        s,
-       deps.complete,
-       candidate.person,
-       sittingFor(s.provenance.session),
+       (sn) => composeOtherMindsExpedition(sn, deps.complete, person, sittingFor(sn.provenance.session)),
+       (draft) => {
+        const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
+         at: ts(),
+         actor: 'clerk',
+         kind: 'expedition-minted',
+         detail: `minted other-minds expedition from snippet ${s.id}`,
+        };
+        if (draft.cites) logEvt.refs = draft.cites;
+        deps.log(logEvt);
+       },
+       { kind: 'expedition-failed', detail: (_sn, err) => String(err) },
       );
-      if (draft) {
-       const entry = deps.queue.add(draft);
-       minted.push(entry);
-       const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
-        at: ts(),
-        actor: 'clerk',
-        kind: 'expedition-minted',
-        detail: `minted other-minds expedition from snippet ${s.id}`,
-       };
-       if (draft.cites) logEvt.refs = draft.cites;
-       deps.log(logEvt);
-      }
       break; // At most ONE expedition per run
      }
     }
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'expedition-failed', detail: String(err) });
-   }
+   });
   }
 
   // ── 7. Referent annotations (ticket 074): newest snippets first ──
@@ -1085,35 +1127,28 @@ shouldStop?: () => boolean;
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
   let annotations: DocketReport['annotations'];
-  if (!stopped() && deps.referentAnnotations) {
-   try {
-    annotations = await deps.referentAnnotations();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'referent-annotations-failed', detail: String(err) });
-   }
+  const referentAnnotations = deps.referentAnnotations;
+  if (referentAnnotations) {
+   await runJob('referent-annotations-failed', async () => {
+    annotations = await referentAnnotations();
+   });
   }
 
   // ── 7a. Intention-horizon annotations (ticket 106): extract timelines ──
   // Guarded like the wiki jobs: a failure is one job's failure, and the
   // index, the minted questions, the expiry and the consolidation are
   // already on disk by the time this runs.
-  if (!stopped() && deps.intentionHorizonAnnotations) {
-    try {
-      await deps.intentionHorizonAnnotations();
-    } catch (err) {
-      deps.log({ at: ts(), actor: 'clerk', kind: 'intention-horizons-failed', detail: String(err) });
-    }
+  const intentionHorizonAnnotations = deps.intentionHorizonAnnotations;
+  if (intentionHorizonAnnotations) {
+   await runJob('intention-horizons-failed', () => intentionHorizonAnnotations());
   }
 
   // ── 7b. Outcome questions (ticket 106): mint from past-horizon intentions ──
   // Guarded like the wiki jobs: a failure is one job's failure. Runs after
   // the intention-horizon annotation job so the annotations are fresh.
-  if (!stopped() && deps.outcomeQuestionSweep) {
-    try {
-      await deps.outcomeQuestionSweep();
-    } catch (err) {
-      deps.log({ at: ts(), actor: 'clerk', kind: 'outcomes-failed', detail: String(err) });
-    }
+  const outcomeQuestionSweep = deps.outcomeQuestionSweep;
+  if (outcomeQuestionSweep) {
+   await runJob('outcomes-failed', () => outcomeQuestionSweep());
   }
 
   // ── 8. Piece work (010 T10): stale-pin sweep, then auto-set-down ──
@@ -1121,19 +1156,17 @@ shouldStop?: () => boolean;
   // Each guarded on its own: a failure in one is one job's failure, and the
   // other still runs. Neither job calls a model — zero-LLM by contract
   // (Q-39, Q-41).
-  if (!stopped() && deps.stalePinSweep) {
-   try {
-    await deps.stalePinSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `stale pin sweep: ${String(err)}` });
-   }
+  const stalePinSweep = deps.stalePinSweep;
+  if (stalePinSweep) {
+   await runJob('piece-jobs-failed', stalePinSweep, {
+    sink: (_kind, err) => deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `stale pin sweep: ${String(err)}` }),
+   });
   }
-  if (!stopped() && deps.dormancySweep) {
-   try {
-    await deps.dormancySweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `dormancy sweep: ${String(err)}` });
-   }
+  const dormancySweep = deps.dormancySweep;
+  if (dormancySweep) {
+   await runJob('piece-jobs-failed', dormancySweep, {
+    sink: (_kind, err) => deps.log({ at: ts(), actor: 'clerk', kind: 'piece-jobs-failed', detail: `dormancy sweep: ${String(err)}` }),
+   });
   }
   // end piece jobs
 
@@ -1144,23 +1177,21 @@ shouldStop?: () => boolean;
   // Q-72): the thunk never receives the Complete — the sweep is pure
   // vault-and-queue work and cannot touch the model.
   let gapFill: DocketReport['gapFill'];
-  if (!stopped() && deps.gapFillSweep) {
-   try {
-    gapFill = await deps.gapFillSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'gap-fill-failed', detail: String(err) });
-   }
+  const gapFillSweep = deps.gapFillSweep;
+  if (gapFillSweep) {
+   await runJob('gap-fill-failed', async () => {
+    gapFill = await gapFillSweep();
+   });
   }
 
   // Territory gap-fill (ticket 094) — follows the ordinary gap-fill,
   // reads KTG skeleton coverage, mints frontier and failure questions.
   let territoryGapFill: DocketReport['territoryGapFill'];
-  if (!stopped() && deps.territoryGapFillSweep) {
-   try {
-    territoryGapFill = await deps.territoryGapFillSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'territory-gap-fill-failed', detail: String(err) });
-   }
+  const territoryGapFillSweep = deps.territoryGapFillSweep;
+  if (territoryGapFillSweep) {
+   await runJob('territory-gap-fill-failed', async () => {
+    territoryGapFill = await territoryGapFillSweep();
+   });
   }
 
   // Atlas gap-fill (ticket 110) — follows the territory gap-fill,
@@ -1168,37 +1199,34 @@ shouldStop?: () => boolean;
   // Shadow-first (Q-35): candidates are logged, never minted.
   // ZERO-LLM by design — the sweep is pure vault-and-coverage work.
   let atlasGapFill: DocketReport['atlasGapFill'];
-  if (!stopped() && deps.atlasGapFillSweep) {
-   try {
-    atlasGapFill = await deps.atlasGapFillSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'atlas-gap-fill-failed', detail: String(err) });
-   }
-   }
+  const atlasGapFillSweep = deps.atlasGapFillSweep;
+  if (atlasGapFillSweep) {
+   await runJob('atlas-gap-fill-failed', async () => {
+    atlasGapFill = await atlasGapFillSweep();
+   });
+  }
 
   // Gazetteer extraction (ticket 100) — model-calling, extracts named
   // entities from snippets into the gazetteer store. Must run before the
   // frontier sweep so new entities are available for frontier detection.
   // Caps live at birth (Q-56); the thunk is guarded like the wiki jobs.
   let gazetteerExtraction: DocketReport['gazetteerExtraction'];
-  if (!stopped() && deps.gazetteerExtraction) {
-   try {
-    gazetteerExtraction = await deps.gazetteerExtraction();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'gazetteer-extraction-failed', detail: String(err) });
-   }
+  const gazetteerExtractionJob = deps.gazetteerExtraction;
+  if (gazetteerExtractionJob) {
+   await runJob('gazetteer-extraction-failed', async () => {
+    gazetteerExtraction = await gazetteerExtractionJob();
+   });
   }
 
   // Gazetteer frontier (ticket 100) — ZERO-LLM, reads the entity index
   // against the queue's subjects, mints or shadow-logs frontier questions.
   // Must run after extraction so new entities are counted.
   let gazetteerFrontier: DocketReport['gazetteerFrontier'];
-  if (!stopped() && deps.gazetteerFrontier) {
-   try {
-    gazetteerFrontier = await deps.gazetteerFrontier();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'gazetteer-frontier-failed', detail: String(err) });
-   }
+  const gazetteerFrontierJob = deps.gazetteerFrontier;
+  if (gazetteerFrontierJob) {
+   await runJob('gazetteer-frontier-failed', async () => {
+    gazetteerFrontier = await gazetteerFrontierJob();
+   });
   }
 
   // Lineage mirror (Q-83, ticket 112) — reads claims against lineage,
@@ -1206,12 +1234,11 @@ shouldStop?: () => boolean;
   // Shadow-first (Q-35): candidates always logged; questions minted only
   // when the selection threshold graduates to live.
   let lineageMirror: DocketReport['lineageMirror'];
-  if (!stopped() && deps.lineageMirrorSweep) {
-   try {
-    lineageMirror = await deps.lineageMirrorSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'lineage-mirror-failed', detail: String(err) });
-   }
+  const lineageMirrorSweep = deps.lineageMirrorSweep;
+  if (lineageMirrorSweep) {
+   await runJob('lineage-mirror-failed', async () => {
+    lineageMirror = await lineageMirrorSweep();
+   });
   }
  
   // Coach seed (Q-110 door 1): cluster claims → un-coached Directions.
@@ -1219,12 +1246,11 @@ shouldStop?: () => boolean;
   // Runs after lineage mirror and before tripwire — it is pure vault work
   // and does not touch any model.
   let coachSeed: DocketReport['coachSeed'];
-  if (!stopped() && deps.coachSeedSweep) {
-   try {
-    coachSeed = await deps.coachSeedSweep();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'coach-seed-failed', detail: String(err) });
-   }
+  const coachSeedSweep = deps.coachSeedSweep;
+  if (coachSeedSweep) {
+   await runJob('coach-seed-failed', async () => {
+    coachSeed = await coachSeedSweep();
+   });
   }
  
   // Tripwire (Q-90, ticket 132) — reads the graduation ledger against the
@@ -1239,12 +1265,14 @@ shouldStop?: () => boolean;
   // record plane off that surface. The failure goes to the operator's
   // channel — the same stderr the docket's own deferral notice uses — and
   // `scripts/loop-status.ts` shows what the sweep did or did not do.
-  if (!stopped() && deps.tripwireSweep) {
-   try {
-    await deps.tripwireSweep();
-   } catch (err) {
-    console.error(`tripwire sweep failed — the rest of the docket run is already on disk: ${String(err)}`);
-   }
+  const tripwireSweep = deps.tripwireSweep;
+  if (tripwireSweep) {
+   await runJob('tripwire-failed', tripwireSweep, {
+    sink: (_kind, err) => {
+     deps.log({ at: ts(), actor: 'clerk', kind: 'tripwire-failed', detail: String(err) });
+     console.error(`tripwire sweep failed — the rest of the docket run is already on disk: ${String(err)}`);
+    },
+   });
   }
 
   // ── 10. The wiki jobs, last and guarded (ticket 023 item 2) ──
@@ -1254,12 +1282,11 @@ shouldStop?: () => boolean;
   // consolidation are already done and on disk by the time this runs, and
   // the report still carries all four when it throws.
   let wiki: DocketReport['wiki'];
-  if (!stopped() && deps.runWikiJobs) {
-   try {
-    wiki = await deps.runWikiJobs();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'wiki-jobs-failed', detail: String(err) });
-   }
+  const runWikiJobs = deps.runWikiJobs;
+  if (runWikiJobs) {
+   await runJob('wiki-jobs-failed', async () => {
+    wiki = await runWikiJobs();
+   });
   }
 
   // ── 11. The import extraction, last and guarded (T6) ──
@@ -1270,12 +1297,11 @@ shouldStop?: () => boolean;
   // questions and the expiry are already on disk by the time this runs,
   // and the report still carries all four when it throws.
   let imports: DocketReport['imports'];
-  if (!stopped() && deps.runImportJobs) {
-   try {
-    imports = await deps.runImportJobs();
-   } catch (err) {
-    deps.log({ at: ts(), actor: 'clerk', kind: 'import-run-failed', detail: String(err) });
-   }
+  const runImportJobs = deps.runImportJobs;
+  if (runImportJobs) {
+   await runJob('import-run-failed', async () => {
+    imports = await runImportJobs();
+   });
   }
 
   // The run was cut short by the stop switch: say so, once, so the silence

@@ -1,5 +1,6 @@
 import type { Vault, QueueStore, Bud, Reading, Snippet } from '../types.js';
 import { hasConstructPole } from './clause.js';
+import { distinctFieldKeys } from '../queue/queue.js';
 
 // ── The gap-fill sweep (ticket 027) ──
 // Buds are a dead letter box: a capture the person never followed through
@@ -60,7 +61,7 @@ export async function runGapFillSweep(deps: {
  const heldBuds = new Set(
   held.filter((e) => e.bud !== undefined && e.failure !== undefined).map((e) => `${e.bud}\u0000${e.failure}`),
  );
- const heldSnippets = new Set(held.filter((e) => e.snippet !== undefined).map((e) => e.snippet));
+ const heldSnippets = distinctFieldKeys(held, 'snippet');
 
  // ── Sweep A — Buds, oldest captured first ──
  const buds = Object.values(index.buds).sort((a, b) => a.captured.localeCompare(b.captured));

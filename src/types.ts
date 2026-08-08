@@ -717,6 +717,12 @@ territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions
  coachSeed?: { clustered: number; minted: number };
  };
 
+/**
+ * The sitting phase, as `SessionState.phase` declares it. Named so the /v2
+ * vocabulary imports it instead of repeating the union by hand.
+ */
+export type Phase = 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+
 export type SessionState = {
  id: string;
  mode: Mode;
@@ -747,7 +753,7 @@ export type SessionState = {
  /** Question bank for opener/skip selection (session-local) */
  bank?: { text: string; questionForm: QuestionForm; source?: QuestionSource }[];
  questionCount: number;
- phase: 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+ phase: Phase;
  /**
   * The Queue entry whose question is on the table, awaiting the user's
   * answer. Held so the answering turn can mark the entry answered: without

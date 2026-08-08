@@ -36,3 +36,19 @@ export const ENERGY_LEVEL: Record<NonNullable<Mode['energy']>, number> = {
  medium: 1,
  high: 2,
 };
+
+/**
+ * The Mode an unprompted session runs on: nothing declared, so minutes 0,
+ * the middle energy, and the inward default target (Q-19). One declaration
+ * for the five server sites that used to rebuild it by hand.
+ */
+export const UNPROMPTED_MODE: Mode = { minutes: 0, energy: 'medium', target: 'self' };
+
+/**
+ * The Mode-energy union as a boundary check. `mode.energy` used to pass a
+ * truthiness test, so any truthy string sailed into a session; the union
+ * ('low' | 'medium' | 'high') is now enforced at the same boundary.
+ */
+export function isMode(energy: unknown): energy is Mode['energy'] {
+ return energy === 'low' || energy === 'medium' || energy === 'high';
+}

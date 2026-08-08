@@ -51,8 +51,9 @@ import type {
   ReferentRef,
   Registry,
 } from './contract.js';
-import type { ThresholdRegister } from './lint.js';
+import type { ThresholdRegister } from './thresholds.js';
 import { THRESHOLDS, shadowDecision } from './thresholds.js';
+import type { Threshold } from '../domain/thresholds.js';
 
 /**
  * Longest slug this module will mint. A canonical name has no length limit and
@@ -281,56 +282,78 @@ export function createRegistry(
    * human's glance. **Pure**: it reads the graph it is given, writes no file,
    * and mutates nothing.
    *
-   * Every pair carries BOTH referents, because a note on one entry is a note
-   * the reader of the other never sees, and either is as likely to be the page
-   * they open. T8 materializes the same fact as two `merge-candidate` findings,
-   * one per subject; here it is one tuple, and the one-sided form does not
-   * exist to be written by mistake.
-   *
-   * Shadowed (Q-35), and the shadow record is the point: nobody knows yet
-   * whether 0.85 over token overlap surfaces pairs a human would agree about.
-   * While the entry is shadowed this returns nothing at all and the log carries
-   * what it would have returned.
-   *
-   * `lint`'s `merge-candidate` finding (T8) computes this same relation over
-   * the same data, because `lint`'s signature takes a graph and not a registry
-   * — deliberately, since a registry is a thing that can write. The duplication
-   * cannot be removed from this side; it is made DETECTABLE instead, by a test
-   * that drives both over one fixture and fails the day they disagree. If they
-   * ever do, lint's is the note the user sees, and this one is wrong.
+   * The sweep itself lives in `candidatePairs` below; `lint`'s
+   * `merge-candidate` finding (T8) runs the same loop over the same data,
+   * because `lint`'s signature takes a graph and not a registry — deliberately,
+   * since a registry is a thing that can write. A test drives both over one
+   * fixture and fails the day they disagree; if they ever do, lint's is the
+   * note the user sees, and this one is wrong.
    */
   function mergeCandidates(graph: ClaimGraph): [Referent, Referent][] {
-    const t = thresholds['registry.mergeCandidateSimilarity'];
-    // The register admits booleans, because two of its entries are switches.
-    // This one is a similarity; anything else is not one and is not acted on.
-    if (typeof t.value !== 'number') return [];
-
-    const referents = [...graph.referents].sort((a, b) =>
-      a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0,
+    return candidatePairs(
+      graph.referents,
+      thresholds['registry.mergeCandidateSimilarity'],
+      log,
+      'pair merge-candidate',
     );
-    const pairs: [Referent, Referent][] = [];
-
-    for (let i = 0; i < referents.length; i++) {
-      const a = referents[i];
-      if (!a) continue;
-      for (let j = i + 1; j < referents.length; j++) {
-        const b = referents[j];
-        if (!b) continue;
-
-        const score = nameSimilarity(a.canonical, b.canonical);
-        if (score <= t.value) continue;
-
-        const would = `pair merge-candidate ${a.slug} and ${b.slug} similarity=${score.toFixed(2)}`;
-        if (!shadowDecision(t, would, log)) continue;
-
-        pairs.push([a, b]);
-      }
-    }
-
-    return pairs;
   }
 
   return { resolve, lookup, claimsFor, mergeCandidates };
+}
+
+/**
+ * Pairs of referents whose canonical names are close enough to be worth a
+ * human's glance. **Pure**: reads the referent list it is given, writes no
+ * file, and mutates nothing.
+ *
+ * Every pair carries BOTH referents, because a note on one entry is a note the
+ * reader of the other never sees, and either is as likely to be the page they
+ * open. T8 materializes the same fact as two `merge-candidate` findings, one
+ * per subject; here it is one tuple, and the one-sided form does not exist to
+ * be written by mistake.
+ *
+ * Shadowed (Q-35), and the shadow record is the point: nobody knows yet
+ * whether the similarity value surfaces pairs a human would agree about. While
+ * the entry is shadowed this returns nothing at all and the log carries what
+ * it would have returned.
+ *
+ * `label` prefixes the shadow record so each consumer's would-line reads the
+ * way it always has: `Registry.mergeCandidates` says "pair merge-candidate …",
+ * `lint`'s finding says "note merge-candidate on …".
+ */
+export function candidatePairs(
+  referents: Referent[],
+  t: Threshold,
+  log: LogFn,
+  label: string,
+): [Referent, Referent][] {
+  // The register admits booleans, because two of its entries are switches.
+  // This one is a similarity; anything else is not one and is not acted on.
+  if (typeof t.value !== 'number') return [];
+
+  const sorted = [...referents].sort((a, b) =>
+    a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0,
+  );
+  const pairs: [Referent, Referent][] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i];
+    if (!a) continue;
+    for (let j = i + 1; j < sorted.length; j++) {
+      const b = sorted[j];
+      if (!b) continue;
+
+      const score = nameSimilarity(a.canonical, b.canonical);
+      if (score <= t.value) continue;
+
+      const would = `${label} ${a.slug} and ${b.slug} similarity=${score.toFixed(2)}`;
+      if (!shadowDecision(t, would, log)) continue;
+
+      pairs.push([a, b]);
+    }
+  }
+
+  return pairs;
 }
 
 /**
@@ -359,7 +382,7 @@ export function nameSimilarity(a: string, b: string): number {
 }
 
 /** Unicode-aware, so a name with an accent in it is one token and not three. */
-function nameTokens(name: string): Set<string> {
+export function nameTokens(name: string): Set<string> {
   return new Set(
     name
       .toLowerCase()

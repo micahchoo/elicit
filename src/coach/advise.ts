@@ -25,6 +25,7 @@ import {
 import { relevantClaims, type CoachFacts } from './license.js';
 import type { CoachStore } from './store.js';
 import type { Complete } from '../types.js';
+import { stripFences } from '../clerk/compose-gate.js';
 
 export type AdviceOutcome =
  | { outcome: 'minted'; note: AdviceNote; replaced: boolean }
@@ -68,14 +69,6 @@ export function buildAdviceInput(facts: CoachFacts, slug: string): AdvicePromptI
   quests,
   artifactNames,
  };
-}
-
-/** Strips markdown code fences from LLM output, keeping the inner content — the harvest path's posture. */
-function stripFences(raw: string): string {
- let s = raw.trim();
- s = s.replace(/^```(?:json)?\s*\n?/i, '');
- s = s.replace(/\n?```\s*$/, '');
- return s.trim();
 }
 
 /**

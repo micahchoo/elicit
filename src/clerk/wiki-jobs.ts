@@ -91,7 +91,7 @@ import type { IndexFingerprint, VaultDiff } from './watermark.js';
 import { sittingsOfCites } from '../wiki/status.js';
 import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
 import type { Threshold } from '../domain/thresholds.js';
-import type { ThresholdRegister } from '../wiki/lint.js';
+import type { ThresholdRegister } from '../wiki/thresholds.js';
 import { SUPERSEDE_MODEL_UPGRADE, readingTime, shadowCollector } from '../wiki/contract.js';
 import type { ApplyDeps } from '../wiki/ops.js';
 import { recomputeStatus as opsRecomputeStatus } from '../wiki/ops.js';
@@ -323,22 +323,14 @@ function byId<T extends { id: string }>(a: T, b: T): number {
  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** The prose of the first cite that resolves, or the empty string. */
-function quoteFor(claim: Claim, graph: ClaimGraph): string {
- for (const cite of claim.cites) {
-  const snippet = graph.snippets[snippetIdOf(cite)];
-  if (snippet) return snippet.prose;
- }
- return '';
-}
-
 /**
  * The prose of the first resolving cited snippet, or the empty string.
  *
- * Ticket 060's lint path needs the VERBATIM user prose behind a claim to
- * quote, and it needs the same lookup twice per pair — so the shared snippet
- * id half of a `snippetId@version` cite is resolved through `graph.snippets`
- * here rather than at each call site.
+ * The one quoting lookup in the file: the sweep, the opposition judgments and
+ * the re-measure compose all quote through it, and ticket 060's lint path
+ * needs it twice per pair — so the shared snippet id half of a
+ * `snippetId@version` cite is resolved through `graph.snippets` here rather
+ * than at each call site.
  */
 function firstProse(claim: Claim, graph: ClaimGraph): string {
  for (const cite of claim.cites) {
@@ -443,9 +435,27 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
  /** What job 1 minted or rewrote, and therefore what job 1.5 must embed. */
  const touched = new Set<string>();
 
+ // The run's snapshot, rebuilt ONCE and invalidated only at the write
+ // boundaries that change it. Before this memo the file rebuilt the same
+ // graph up to ten times a run (the gate, once per job, the watermark
+ // fingerprint, and once per confirmed candidate), each rebuild a full vault
+ // scan. The graph is a join of the claim store's slice with the vault index,
+ // so the ONLY writes that can stale it are claim writes (the sweep's and the
+ // discriminated pass's applyOps) and `writeContradiction`; candidates, the
+ // queue and the watermark are not part of it. Each write boundary calls
+ // `invalidateGraph` at the write itself, so a later read — the watermark
+ // fingerprint, or `recomputeStatus` after a confirmation — always sees a
+ // fresh graph.
+ let graphCache: ClaimGraph | null = null;
  const graph = (): ClaimGraph => {
-  const index = deps.vault.rebuildIndex();
-  return { ...deps.store.loadSlice(), snippets: index.snippets, readings: index.readings };
+  if (graphCache === null) {
+   const index = deps.vault.rebuildIndex();
+   graphCache = { ...deps.store.loadSlice(), snippets: index.snippets, readings: index.readings };
+  }
+  return graphCache;
+ };
+ const invalidateGraph = (): void => {
+  graphCache = null;
  };
 
  // ── Ticket 076: the two gates, computed once so a skipped job costs only a log line ──
@@ -489,9 +499,9 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
  };
 
  try {
-  await guardGated('presweep-confirmation', () => jobPresweepConfirmation(deps, report, graph, log, model));
-  await guardGated('discriminated-answer', () => jobRangeDiscrimination(deps, graph, log, model));
-  await guardGated('sweep', () => jobSweep(deps, report, graph, log, model, touched));
+  await guardGated('presweep-confirmation', () => confirmAnsweredRemeasures(deps, report, graph, log, model, 'presweep', invalidateGraph));
+  await guardGated('discriminated-answer', () => jobRangeDiscrimination(deps, graph, log, model, invalidateGraph));
+  await guardGated('sweep', () => jobSweep(deps, report, graph, log, model, touched, invalidateGraph));
   await guardGated('prime', () => jobPrime(deps, report, graph, touched, watermark));
   await guardGated('lint', () => jobLint(deps, report, graph, log, thresholds));
   await guardGated('candidates', () => jobCandidates(deps, report, graph, log, model, poles, spend));
@@ -502,7 +512,7 @@ export async function runWikiJobs(deps: WikiJobDeps): Promise<WikiJobsReport> {
   // that exact ordering.
   if (indexRan) writeWatermark(deps.vaultRoot, fingerprintOf(graph(), deps.store.listCandidates()));
   await guardGated('remeasure', () => jobRemeasure(deps, report, graph, log, poles, spend));
-  await guardGated('confirmation', () => jobConfirmation(deps, report, graph, log, model));
+  await guardGated('confirmation', () => confirmAnsweredRemeasures(deps, report, graph, log, model, 'confirmation', invalidateGraph));
   report.shadow = collector.records;
   log({
    at: nowIso(),
@@ -539,6 +549,7 @@ async function jobSweep(
  log: LogFn,
  model: string,
  touched: Set<string>,
+ invalidateGraph: () => void,
 ): Promise<void> {
  const graph = graphOf();
  const swept = deps.store.sweptReadingIds();
@@ -681,6 +692,9 @@ async function jobSweep(
   model,
   log,
  });
+ // The ops wrote claims — the claims half of the graph is stale now, so the
+ // memo is dropped before the next read (job 1.5, or the watermark fingerprint).
+ invalidateGraph();
 
  report.applied = result.applied.length;
  report.rejected = result.rejected.length;
@@ -690,8 +704,9 @@ async function jobSweep(
 
  // Ticket 067: which claims this job created or rewrote. Read from the store
  // rather than from `graphOf()`, because the claims are the only half needed
- // and rebuilding the vault index for them would be a sixth pass over the
- // snippets to answer a question about the wiki.
+ // and the ops above just invalidated the memo — rebuilding the vault index
+ // for them would be a full pass over the snippets to answer a question about
+ // the wiki.
  //
  // No liveness filter, and that is deliberate rather than forgotten. No op
  // both rewrites a body and retires the claim — MERGE archives its sources
@@ -1017,7 +1032,7 @@ async function jobCandidates(
   }
 
   const [a, b] = pooled.pair;
-  const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
+  const quotes = { a: firstProse(a, graph), b: firstProse(b, graph) };
   // Q-52: the poles must be verbatim in the quotes the model was shown, so a
   // pair whose evidence is not in hand cannot be judged at all.
   if (quotes.a === '' || quotes.b === '') continue;
@@ -1135,7 +1150,7 @@ async function jobRemeasure(
 
   try {
    const draft = await deps.composeRemeasure(
-    { a, b, poleA: pair.poleA, poleB: pair.poleB, proseA: quoteFor(a, graph) },
+    { a, b, poleA: pair.poleA, poleB: pair.poleB, proseA: firstProse(a, graph) },
     originalQuestions(a, b, graph),
     deps.complete,
    );
@@ -1192,7 +1207,7 @@ async function recoverPoles(
 ): Promise<{ poleA: string; poleB: string } | null> {
  if (spend.opposition >= bound(THRESHOLDS['clash.judgmentsPerRun'])) return null;
 
- const quotes = { a: quoteFor(a, graph), b: quoteFor(b, graph) };
+ const quotes = { a: firstProse(a, graph), b: firstProse(b, graph) };
  if (quotes.a === '' || quotes.b === '') return null;
 
  spend.opposition++;
@@ -1219,34 +1234,40 @@ async function recoverPoles(
 }
 
 // ---------------------------------------------------------------------------
-// Pre-sweep confirmation (ticket 070)
+// Answered re-measure confirmation (Q-30 stages 3-4, Q-53, ticket 070)
 // ---------------------------------------------------------------------------
 
 /**
- * Judge answered re-measures BEFORE the sweep, so the answer's cite is not yet
- * absorbed into a pole claim and Q-53's held-sittings check can pass.
+ * Judge answered re-measures, in one pass per slot in the run.
  *
- * Ticket 070: job 1 (sweep) absorbs the re-measure answer's cite into a pole
- * claim via UPDATE. When job 5 then judges, `confirmingReadings` computes the
- * held-sittings set from both claims' cites — which now INCLUDES the answer's
- * own sitting. Q-53 correctly refuses every reading from that sitting, and the
- * candidate is stranded permanently at `pending-remeasure`.
+ * The pass IS the ordering (ticket 070): `presweep` runs BEFORE the sweep, so
+ * the answer's cite is not yet absorbed into a pole claim and Q-53's
+ * held-sittings check can pass; `confirmation` runs after the sweep as a
+ * safety net and skips anything the presweep pass already judged. The only
+ * behavioral difference between the passes is the log detail that names them.
  *
- * Running this pass first, against a graph where the cite is not yet on any
- * pole, ensures the answer's sitting is always admissible. `jobConfirmation`
- * (job 5) still runs after the sweep as a safety net; it skips any candidate
- * this pass already judged.
+ * Ticket 070's failure mode: job 1 (sweep) absorbs the re-measure answer's
+ * cite into a pole claim via UPDATE. When job 5 then judges,
+ * `confirmingReadings` computes the held-sittings set from both claims' cites
+ * — which now INCLUDES the answer's own sitting. Q-53 correctly refuses every
+ * reading from that sitting, and the candidate is stranded permanently at
+ * `pending-remeasure`. Running the presweep pass first, against a graph where
+ * the cite is not yet on any pole, ensures the answer's sitting is always
+ * admissible.
  */
-async function jobPresweepConfirmation(
+async function confirmAnsweredRemeasures(
  deps: WikiJobDeps,
  report: WikiJobsReport,
  graphOf: () => ClaimGraph,
  log: LogFn,
  model: string,
+ pass: 'presweep' | 'confirmation',
+ invalidateGraph: () => void,
 ): Promise<void> {
  const graph = graphOf();
  const claims = new Map(graph.claims.map((c) => [c.id, c]));
  const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
+ const job = pass === 'presweep' ? 'presweep-confirmation' : 'confirmation';
 
  for (const candidate of deps.store.listCandidates()) {
   if (candidate.status !== 'pending-remeasure') continue;
@@ -1254,6 +1275,8 @@ async function jobPresweepConfirmation(
   const askedAt = candidate.remeasureAskedAt;
   if (queueId === undefined || askedAt === undefined) continue;
 
+  // A candidate whose entry still reads `asked` is skipped. That is the
+  // normal state, not a leak: an unanswered drawn entry never expires.
   if (entries.get(queueId)?.status !== 'answered') continue;
 
   const a = claims.get(candidate.pair[0]);
@@ -1261,6 +1284,9 @@ async function jobPresweepConfirmation(
   if (!a || !b) continue;
 
   const readings = confirmingReadings(graph, askedAt, a, b);
+  // No admissible reading is not a dissolution — the answer may not have been
+  // harvested yet, and retiring the pair here would spend it on a run that
+  // learned nothing.
   if (readings.length === 0) continue;
 
   try {
@@ -1278,6 +1304,8 @@ async function jobPresweepConfirmation(
     continue;
    }
 
+   // Confirmed AND structurally verified — T7 did the verifying, and this
+   // job never inspects the boolean itself.
    const at = nowIso();
    const contradiction: Contradiction = {
     id: ulid(),
@@ -1294,23 +1322,30 @@ async function jobPresweepConfirmation(
     body: juxtaposition(a, b, result),
    };
    deps.store.writeContradiction(contradiction);
+   // The graph now contains a Contradiction the memo predates — drop it so
+   // the recomputation below reads the one just written (Q-29's mechanical
+   // `contested` depends on `computeStatus` seeing it).
+   invalidateGraph();
    log({
     at,
     actor: 'clerk',
     kind: 'contradiction-opened',
-    detail: `type=${result.type} presweep`,
+    detail: pass === 'presweep' ? `type=${result.type} presweep` : `type=${result.type}`,
     refs: [a.id, b.id, candidate.id],
    });
    deps.store.writeCandidate({ ...candidate, status: 'confirmed' });
    report.contradictionsOpened++;
 
+   // Both claims go `contested` MECHANICALLY (Q-29). Nothing here writes a
+   // status by hand; `computeStatus` reads the graph the Contradiction is
+   // now part of and answers.
    recomputeStatus([a.id, b.id], deps, graphOf, log, at, model);
   } catch (err) {
    log({
     at: nowIso(),
     actor: 'clerk',
     kind: JOB_FAILED,
-    detail: `job=presweep-confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
+    detail: `job=${job} candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
    });
   }
  }
@@ -1334,6 +1369,7 @@ async function jobRangeDiscrimination(
  graphOf: () => ClaimGraph,
  log: LogFn,
  model: string,
+ invalidateGraph: () => void,
 ): Promise<void> {
  const graph = graphOf();
  const claims = new Map(graph.claims.map((c) => [c.id, c]));
@@ -1399,6 +1435,9 @@ async function jobRangeDiscrimination(
     { readingIds: readings.map((r) => r.id) },
     { store: deps.store, registry: deps.registry, graph, model, log },
    );
+   // Both SUPERSEDEs wrote claims — the graph the watermark fingerprint and
+   // the next passes read must include them, so the memo drops here.
+   invalidateGraph();
 
    log({
     at: nowIso(),
@@ -1419,97 +1458,6 @@ async function jobRangeDiscrimination(
  }
 }
 
-// ---------------------------------------------------------------------------
-// Job 5 — confirmation (Q-30 stages 3-4, Q-53)
-// ---------------------------------------------------------------------------
-async function jobConfirmation(
- deps: WikiJobDeps,
- report: WikiJobsReport,
- graphOf: () => ClaimGraph,
- log: LogFn,
- model: string,
-): Promise<void> {
- const graph = graphOf();
- const claims = new Map(graph.claims.map((c) => [c.id, c]));
- const entries = new Map(deps.queue.list().map((e) => [e.id, e]));
-
- for (const candidate of deps.store.listCandidates()) {
-  if (candidate.status !== 'pending-remeasure') continue;
-  const queueId = candidate.remeasureQueueId;
-  const askedAt = candidate.remeasureAskedAt;
-  if (queueId === undefined || askedAt === undefined) continue;
-
-  // A candidate whose entry still reads `asked` is skipped. That is the
-  // normal state, not a leak: an unanswered drawn entry never expires.
-  if (entries.get(queueId)?.status !== 'answered') continue;
-
-  const a = claims.get(candidate.pair[0]);
-  const b = claims.get(candidate.pair[1]);
-  if (!a || !b) continue;
-
-  const readings = confirmingReadings(graph, askedAt, a, b);
-  // No admissible reading is not a dissolution — the answer may not have been
-  // harvested yet, and retiring the pair here would spend it on a run that
-  // learned nothing.
-  if (readings.length === 0) continue;
-
-  try {
-   const result = await deps.judgeConfirmation(
-    candidate,
-    { readings, snippets: graph.snippets },
-    { a, b },
-    deps.complete,
-   );
-   if (!result) continue;
-
-   if (!result.confirmed) {
-    dissolve(deps, candidate, dissolutionOutcome(result.reason));
-    report.candidatesDissolved++;
-    continue;
-   }
-
-   // Confirmed AND structurally verified — T7 did the verifying, and this
-   // job never inspects the boolean itself.
-   const at = nowIso();
-   const contradiction: Contradiction = {
-    id: ulid(),
-    type: result.type,
-    claims: [a.id, b.id],
-    candidate: candidate.id,
-    remeasureQueueId: queueId,
-    evidence: result.evidence,
-    status: 'open',
-    model,
-    modelAt: at,
-    opened: at,
-    updated: at,
-    body: juxtaposition(a, b, result),
-   };
-   deps.store.writeContradiction(contradiction);
-   log({
-    at,
-    actor: 'clerk',
-    kind: 'contradiction-opened',
-    detail: `type=${result.type}`,
-    refs: [a.id, b.id, candidate.id],
-   });
-   deps.store.writeCandidate({ ...candidate, status: 'confirmed' });
-   report.contradictionsOpened++;
-
-   // Both claims go `contested` MECHANICALLY (Q-29). Nothing here writes a
-   // status by hand; `computeStatus` reads the graph the Contradiction is
-   // now part of and answers.
-   recomputeStatus([a.id, b.id], deps, graphOf, log, at, model);
-  } catch (err) {
-   log({
-    at: nowIso(),
-    actor: 'clerk',
-    kind: JOB_FAILED,
-    detail: `job=confirmation candidate=${candidate.id} ${err instanceof Error ? err.message : String(err)}`,
-   });
-  }
- }
-}
 
 /**
  * The readings a confirmation may rest on.

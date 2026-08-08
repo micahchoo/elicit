@@ -22,18 +22,30 @@ type ServerRoute = { method: string; pattern: string; regex: RegExp };
 
 const ROUTE_RE = /app\.(get|post|put|delete|patch)\s*\(\s*(['"`])(\/[^'"`]*)\2/g;
 
-/** Every route src/server.ts registers whose path starts with /api.
+/** Every route src/ registers whose path starts with /api.
  * Middleware (app.use) is not a route, and the static catch-all ('/*')
- * 404s /api paths — neither can satisfy a client call. */
+ * 404s /api paths — neither can satisfy a client call. Scans the whole
+ * src/ tree because route registration is not server.ts's alone: the
+ * session cluster lives in src/session/routes.ts (Wave B1) and a future
+ * extraction may move another cluster out. */
 function serverRoutes(): ServerRoute[] {
- const text = readFileSync(join(ROOT, 'src', 'server.ts'), 'utf-8');
  const routes: ServerRoute[] = [];
- for (const m of text.matchAll(ROUTE_RE)) {
-  const method = m[1]!.toUpperCase();
-  const pattern = m[3]!;
-  if (!pattern.startsWith('/api')) continue;
-  routes.push({ method, pattern, regex: routeToRegex(pattern) });
- }
+ const walk = (dir: string): void => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+   const path = join(dir, entry.name);
+   if (entry.isDirectory()) walk(path);
+   else if (entry.name.endsWith('.ts')) {
+    const text = readFileSync(path, 'utf-8');
+    for (const m of text.matchAll(ROUTE_RE)) {
+     const method = m[1]!.toUpperCase();
+     const pattern = m[3]!;
+     if (!pattern.startsWith('/api')) continue;
+     routes.push({ method, pattern, regex: routeToRegex(pattern) });
+    }
+   }
+  }
+ };
+ walk(join(ROOT, 'src'));
  return routes;
 }
 

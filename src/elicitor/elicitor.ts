@@ -13,6 +13,7 @@ import type {
  Turn,
  Prosody,
  Vault,
+ QueueEntry,
  QueueStore,
  LexicalIndex,
 } from '../types.js';
@@ -66,6 +67,25 @@ import type { RandomizerDraw } from '../randomizer/randomizer.js';
  */
 const sessionVaultRoots = new Map<string, string>();
 
+/**
+ * One shared bank draw (ticket 021). Applies the weak-form filter to every
+ * bank pool; if the filter empties the pool, fall through to the unfiltered
+ * bank — a weak question beats no question. The opener and the drawFallback
+ * path both route through here, so the filter has exactly one home.
+ */
+function bankDraw(
+ bank: StarterQuestion[],
+): { text: string; questionForm: QuestionForm; source?: QuestionSource } {
+ const filtered = bank.filter((q) => !isWeakForm(q.text));
+ const pool = filtered.length > 0 ? filtered : bank;
+ const pick = pool[Math.floor(Math.random() * pool.length)]!;
+ return {
+  text: pick.text,
+  questionForm: pick.questionForm,
+  ...(pick.source ? { source: pick.source } : {}),
+ };
+}
+
 /** Picks an opener from the question bank or forms one from mode.topic. */
 function pickOpener(
  bank: StarterQuestion[],
@@ -77,17 +97,37 @@ function pickOpener(
    questionForm: 'deliberative',
   };
  }
- // Apply weak-form filter to bank draws only (ticket 021).
- // If the filter empties the pool, fall through to unfiltered bank —
- // a weak question beats no question.
- const filtered = bank.filter((q) => !isWeakForm(q.text));
- const pool = filtered.length > 0 ? filtered : bank;
- const pick = pool[Math.floor(Math.random() * pool.length)]!;
- return {
-  text: pick.text,
-  questionForm: pick.questionForm,
-  ...(pick.source ? { source: pick.source } : {}),
- };
+ return bankDraw(bank);
+}
+
+/**
+ * The one opener cascade: requested shuffle first, then a queue draw (only
+ * when the shuffle drew nothing), then a system randomizer offer (only when
+ * both drew nothing), then the bank. The pre-cascade sites ordered it this
+ * way; this is their single home so every opener path falls the same.
+ */
+function resolveOpener(
+ deps: {
+  shuffleRequested?: boolean;
+  randomizer?: (invokedBy: 'user' | 'system') => RandomizerDraw | null;
+  queue: QueueStore;
+ },
+ mode: Mode,
+ bank: StarterQuestion[],
+):
+ | { kind: 'random'; draw: RandomizerDraw }
+ | { kind: 'queue'; draw: QueueEntry }
+ | {
+  kind: 'bank';
+  opener: { text: string; questionForm: QuestionForm; source?: QuestionSource };
+ } {
+ const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
+ const queueDraw = shuffled ? null : deps.queue.draw(mode);
+ const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
+ const randomDraw = shuffled ?? offered;
+ if (randomDraw) return { kind: 'random', draw: randomDraw };
+ if (queueDraw) return { kind: 'queue', draw: queueDraw };
+ return { kind: 'bank', opener: pickOpener(bank, mode.topic) };
 }
 
 export function startSession(
@@ -172,34 +212,31 @@ export function startSession(
   if (deps.vaultRoot) sessionVaultRoots.set(id, deps.vaultRoot);
 
   // Determine the opener but do NOT write it yet.
-  const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
-  const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode);
-  const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
-  const randomDraw = shuffled ?? offered;
+  const resolved = resolveOpener(deps, normalizedMode, bank);
   let pendingOpener: SessionState['pendingOpener'];
   let openQueueEntryId: string | undefined;
 
-  if (randomDraw) {
+  if (resolved.kind === 'random') {
+   const draw = resolved.draw;
    pendingOpener = {
-    text: randomDraw.question,
-    questionForm: randomDraw.questionForm,
-    ...(randomDraw.draw.kind === 'deck'
-     ? { questionSource: { channel: randomDraw.draw.channel, blockId: randomDraw.draw.blockId } }
+    text: draw.question,
+    questionForm: draw.questionForm,
+    ...(draw.draw.kind === 'deck'
+     ? { questionSource: { channel: draw.draw.channel, blockId: draw.draw.blockId } }
      : {}),
    };
-  } else if (queueDraw) {
-   openQueueEntryId = queueDraw.id;
-    pendingOpener = {
-    text: queueDraw.question,
-    questionForm: queueDraw.questionForm,
-    ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
+  } else if (resolved.kind === 'queue') {
+   openQueueEntryId = resolved.draw.id;
+   pendingOpener = {
+    text: resolved.draw.question,
+    questionForm: resolved.draw.questionForm,
+    ...(resolved.draw.gap ? { gap: resolved.draw.gap } : {}),
    };
   } else {
-   const opener = pickOpener(bank, normalizedMode.topic);
    pendingOpener = {
-    text: opener.text,
-    questionForm: opener.questionForm,
-    ...(opener.source ? { questionSource: opener.source } : {}),
+    text: resolved.opener.text,
+    questionForm: resolved.opener.questionForm,
+    ...(resolved.opener.source ? { questionSource: resolved.opener.source } : {}),
    };
   }
 
@@ -225,48 +262,45 @@ export function startSession(
   };
  }
 
- // ── Pre-135 path: no greeting, opener fires first ──
- const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
- const queueDraw = shuffled ? null : deps.queue.draw(normalizedMode);
- const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
- const randomDraw = shuffled ?? offered;
- let openerTurn: Turn;
- let openQueueEntryId: string | undefined;
+// ── Pre-135 path: no greeting, opener fires first ──
+const resolved = resolveOpener(deps, normalizedMode, bank);
+let openerTurn: Turn;
+let openQueueEntryId: string | undefined;
 
- if (randomDraw) {
-  openerTurn = {
-   role: 'agent',
-   text: randomDraw.question,
-   at: started,
-   questionForm: randomDraw.questionForm,
-   ...(randomDraw.draw.kind === 'deck'
-    ? {
-     questionSource: {
-      channel: randomDraw.draw.channel,
-      blockId: randomDraw.draw.blockId,
-     },
-    }
-    : {}),
-  };
- } else if (queueDraw) {
-  openQueueEntryId = queueDraw.id;
-  openerTurn = {
-   role: 'agent',
-   text: queueDraw.question,
-   at: started,
-   questionForm: queueDraw.questionForm,
-   ...(queueDraw.gap ? { gap: queueDraw.gap } : {}),
-  };
- } else {
-  const opener = pickOpener(bank, normalizedMode.topic);
-  openerTurn = {
-   role: 'agent',
-   text: opener.text,
-   at: started,
-   questionForm: opener.questionForm,
-   ...(opener.source ? { questionSource: opener.source } : {}),
-  };
- }
+if (resolved.kind === 'random') {
+ const draw = resolved.draw;
+ openerTurn = {
+  role: 'agent',
+  text: draw.question,
+  at: started,
+  questionForm: draw.questionForm,
+  ...(draw.draw.kind === 'deck'
+   ? {
+    questionSource: {
+     channel: draw.draw.channel,
+     blockId: draw.draw.blockId,
+    },
+   }
+   : {}),
+ };
+} else if (resolved.kind === 'queue') {
+ openQueueEntryId = resolved.draw.id;
+ openerTurn = {
+  role: 'agent',
+  text: resolved.draw.question,
+  at: started,
+  questionForm: resolved.draw.questionForm,
+  ...(resolved.draw.gap ? { gap: resolved.draw.gap } : {}),
+ };
+} else {
+ openerTurn = {
+  role: 'agent',
+  text: resolved.opener.text,
+  at: started,
+  questionForm: resolved.opener.questionForm,
+  ...(resolved.opener.source ? { questionSource: resolved.opener.source } : {}),
+ };
+}
 
 deps.vault.startTranscript(id, {
  mode: normalizedMode,
@@ -907,16 +941,18 @@ function drawFallback(s: SessionState): Probe | null {
   });
  }
 
- // Bank fallback
- const unused = (s.bank ?? []).filter(
-  (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
- );
- if (unused.length > 0) {
-  const pick = unused[Math.floor(Math.random() * unused.length)]!;
-  return emitProbe(s, pick.text, pick.questionForm, 'bank', {
-   ...(pick.source ? { source: pick.source } : {}),
-  });
- }
+// Bank fallback. One shared bank draw (ticket 021): the weak-form filter
+// applies here too, and a weak question still beats no question — when the
+// filter empties the unused pool, the unfiltered pool serves.
+const unused = (s.bank ?? []).filter(
+ (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
+);
+if (unused.length > 0) {
+ const pick = bankDraw(unused);
+ return emitProbe(s, pick.text, pick.questionForm, 'bank', {
+  ...(pick.source ? { source: pick.source } : {}),
+ });
+}
 
  return null;
 }

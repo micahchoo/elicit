@@ -38,26 +38,10 @@ import { dirname, join } from 'node:path';
 import type { Facet } from '../types.js';
 import type { Claim, ClaimGraph, LintFinding, LogFn } from './contract.js';
 import { shadowDecision } from './thresholds.js';
+import type { ThresholdRegister } from './thresholds.js';
 import { isLive } from './clash.js';
-import { nameSimilarity } from './registry.js';
-import type { THRESHOLDS } from './thresholds.js';
-import type { Threshold } from '../domain/thresholds.js';
-
-/**
- * The register, by its KEYS rather than by its shipped values.
- *
- * `typeof THRESHOLDS` would be the obvious annotation and it is the wrong one:
- * `satisfies Record<string, Threshold>` preserves the boolean literals, so
- * `THRESHOLDS['lint.godNodeFanout'].live` has the type `false`, not `boolean`.
- * Under that annotation no caller can pass a register with the entry flipped
- * live — including the test that proves the shadow is what withholds the
- * finding, rather than a bug. Mapping the keys to the declared `Threshold`
- * keeps every key literal (so no lookup here is `| undefined` under
- * `noUncheckedIndexedAccess`), keeps a new register entry appearing here for
- * free, and depends on the one thing this module actually needs: that these
- * names exist and carry a value and a liveness.
- */
-export type ThresholdRegister = { [K in keyof typeof THRESHOLDS]: Threshold };
+import { candidatePairs, nameSimilarity, nameTokens } from './registry.js';
+import { resolveCite } from './status.js';
 
 export function lint(
   graph: ClaimGraph,
@@ -94,20 +78,17 @@ export function lint(
 type CiteFate = 'current' | 'stale' | 'dead';
 
 function fateOf(cite: string, snippets: ClaimGraph['snippets']): CiteFate {
-  const at = cite.lastIndexOf('@');
-  if (at <= 0) return 'dead';
+  const resolved = resolveCite(cite, snippets);
+  if (!resolved) return 'dead';
 
-  const latest = snippets[cite.slice(0, at)];
-  if (!latest) return 'dead';
-
-  const version = Number(cite.slice(at + 1));
+  const latest = snippets[resolved.snippetId]!;
   // A cite ahead of the latest version resolves to nothing on disk. It is the
   // fabrication case the write boundary rejects, so it should be unreachable;
   // read as dead rather than stale, because "ask the user if it is still true"
   // is the wrong question about evidence that never existed.
-  if (!Number.isInteger(version) || version < 1 || version > latest.version) return 'dead';
+  if (!Number.isInteger(resolved.version) || resolved.version < 1) return 'dead';
 
-  return version < latest.version ? 'stale' : 'current';
+  return resolved.version < latest.version ? 'stale' : 'current';
 }
 
 /**
@@ -266,10 +247,13 @@ function godNodeFindings(
  * Shadowed (Q-35), and the shadow record is the point: nobody knows yet whether
  * 0.85 over token overlap surfaces pairs a human would agree about.
  *
- * `Registry.mergeCandidates` (T10) computes the same relation over the same
- * data. The duplication is the price of `lint`'s signature, which takes a graph
- * and not a registry — deliberately, since a registry is a thing that can
- * write. If the two ever disagree, THIS one is the note the user sees.
+ * The O(n²) sweep is `candidatePairs` (registry.ts), shared with
+ * `Registry.mergeCandidates` (T10): the same sort, the same similarity gate and
+ * the same shadow decision feed both, so this note and that tuple cannot drift.
+ * This function only splits each pair into the two one-sided notes the user
+ * sees. `lint`'s signature takes a graph and not a registry — deliberately,
+ * since a registry is a thing that can write; if the two consumers ever
+ * disagree, THIS one is the note the user sees.
  */
 function mergeCandidateFindings(
   graph: ClaimGraph,
@@ -277,30 +261,16 @@ function mergeCandidateFindings(
   log: LogFn,
 ): LintFinding[] {
   const t = thresholds['registry.mergeCandidateSimilarity'];
-  if (typeof t.value !== 'number') return [];
-
-  const referents = [...graph.referents].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   const findings: LintFinding[] = [];
 
-  for (let i = 0; i < referents.length; i++) {
-    const a = referents[i];
-    if (!a) continue;
-    for (let j = i + 1; j < referents.length; j++) {
-      const b = referents[j];
-      if (!b) continue;
+  for (const [a, b] of candidatePairs(graph.referents, t, log, 'note merge-candidate on')) {
+    const score = nameSimilarity(a.canonical, b.canonical);
 
-      const score = nameSimilarity(a.canonical, b.canonical);
-      if (score <= t.value) continue;
-
-      const would = `note merge-candidate on ${a.slug} and ${b.slug} similarity=${score.toFixed(2)}`;
-      if (!shadowDecision(t, would, log)) continue;
-
-      // Both entries, because a note on one of them is a note the user reading
-      // the other never sees, and either is as likely to be the page they open.
-      const detail = `"${a.canonical}" and "${b.canonical}" may name one referent (similarity ${score.toFixed(2)})`;
-      findings.push({ kind: 'merge-candidate', subject: a.slug, detail, refs: [a.slug, b.slug] });
-      findings.push({ kind: 'merge-candidate', subject: b.slug, detail, refs: [b.slug, a.slug] });
-    }
+    // Both entries, because a note on one of them is a note the user reading
+    // the other never sees, and either is as likely to be the page they open.
+    const detail = `"${a.canonical}" and "${b.canonical}" may name one referent (similarity ${score.toFixed(2)})`;
+    findings.push({ kind: 'merge-candidate', subject: a.slug, detail, refs: [a.slug, b.slug] });
+    findings.push({ kind: 'merge-candidate', subject: b.slug, detail, refs: [b.slug, a.slug] });
   }
 
   return findings;
@@ -452,10 +422,6 @@ function weakEvidenceFindings(
   return findings;
 }
 
-/** Unicode-aware, so a name with an accent in it is one token and not three. */
-function nameTokens(name: string): Set<string> {
-  return new Set(name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 0));
-}
 /**
  * Closed-class words that never name an occasion: prepositions,
  * determiners, conjunctions, auxiliaries, pronouns, and the

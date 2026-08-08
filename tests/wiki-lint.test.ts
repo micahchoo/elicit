@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { lint, type ThresholdRegister } from '../src/wiki/lint.js';
+import { lint } from '../src/wiki/lint.js';
+import type { ThresholdRegister } from '../src/wiki/thresholds.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { Claim, ClaimGraph, LogFn, Referent } from '../src/wiki/contract.js';
 import type { Complete, Facet, Snippet } from '../src/types.js';

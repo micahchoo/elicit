@@ -388,10 +388,12 @@ describe('mechanism exposure registry (ticket 077)', () => {
 
  it('fails on a synthetic live mechanism with no caller', () => {
   // `resonateHybrid` used to be the example; 068 wired it, so it now HAS
-  // callers and the forged entry would pass. PROTOCOLS has none — the
-  // file-based registry replaced it — so the rule still fires on it.
+  // callers and the forged entry would pass. `PROTOCOLS` then held the
+  // slot until Wave A deleted the superseded table; `loadKtgSkeletonOrThrow`
+  // holds it now — tests-only, no production caller, so the rule still
+  // fires on it.
   const forged: MechanismEntry[] = [
-   { module: 'src/elicitor/protocol', name: 'PROTOCOLS', status: 'live' },
+   { module: 'src/ktg/loader', name: 'loadKtgSkeletonOrThrow', status: 'live' },
   ];
   const violations = checkExposures(forged, FILES, EMITTED.kinds);
   expect(violations.join('\n')).toContain('live with no caller');

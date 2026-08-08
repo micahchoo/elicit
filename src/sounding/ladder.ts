@@ -126,3 +126,14 @@ export function applyGate(
   }
   return { state: s, end: choice };
 }
+
+/**
+ * The gate word as a boundary check: the three words are a closed union
+ * (Q-44), and every gate route — the sounding gate and the everyday gate —
+ * used to re-type the same `choice !== 'continue' && ...` chain by hand.
+ * One predicate, so a fourth word cannot be admitted by one route and
+ * rejected by the other.
+ */
+export function validateGateChoice(choice: unknown): choice is GateChoice {
+  return choice === 'continue' || choice === 'park' || choice === 'another-day';
+}

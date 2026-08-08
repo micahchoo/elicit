@@ -353,6 +353,11 @@ export async function buildReviewSurface(item: ImportReviewItem | null): Promise
     navTo: (screen: string) => {
       nav.push(screen);
     },
+    text: ((s: string) => new ShimText(s)) as unknown as ImportReviewDeps['text'],
+    // The review never reads deps.document (the selection verb is optional
+    // and omitted here, so the editor opens empty as it did in Node); a
+    // typed placeholder satisfies the widened seam.
+    document: {} as Document,
   };
   renderImportReview(deps);
   await flush();

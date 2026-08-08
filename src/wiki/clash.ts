@@ -66,6 +66,7 @@ import type {
  Registry,
 } from './contract.js';
 import { shadowDecision } from './thresholds.js'
+import { sittingsOfCites } from './status.js';
 import type { Threshold } from '../domain/thresholds.js';
 
 // ── The interface every channel implements ──
@@ -178,24 +179,6 @@ function orderPair(a: Claim, b: Claim): [Claim, Claim] {
 }
 
 /**
- * The sittings a claim draws on, read through its cites.
- *
- * A cite is `snippetId@version`; the snippet's `provenance.session` is the
- * sitting. A cite the graph cannot resolve contributes nothing — the set comes
- * back smaller, never wrong.
- */
-function sessionsOf(claim: Claim, graph: ClaimGraph): Set<string> {
- const out = new Set<string>();
- for (const cite of claim.cites) {
-  const id = cite.split('@')[0];
-  if (!id) continue;
-  const session = graph.snippets[id]?.provenance.session;
-  if (session) out.add(session);
- }
- return out;
-}
-
-/**
  * Whether two claims are two sentences of one sitting.
  *
  * Q-65's ORDERING key (ticket 083), not an exclusion predicate: a pair that
@@ -213,8 +196,11 @@ function sessionsOf(claim: Claim, graph: ClaimGraph): Set<string> {
  * same-sitting — ignorance is not evidence of sameness.
  */
 export function sameSitting(a: Claim, b: Claim, graph: ClaimGraph): boolean {
- const sa = sessionsOf(a, graph);
- const sb = sessionsOf(b, graph);
+ // The `'drop'` policy: a sessionless snippet contributes no sitting, because
+ // ignorance is not evidence of sameness (status' evidence arithmetic, by
+ // contrast, keys a sessionless snippet on its id — absent is never equal).
+ const sa = sittingsOfCites(a.cites, graph.snippets, 'drop');
+ const sb = sittingsOfCites(b.cites, graph.snippets, 'drop');
  if (sa.size !== 1 || sb.size !== 1) return false;
  const [only] = sa;
  return only !== undefined && sb.has(only);

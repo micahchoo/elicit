@@ -13,28 +13,24 @@
  */
 import { ulid } from 'ulid';
 import type { Snippet } from '../src/types.ts';
-import { ApiError, type WebDepsCore } from './deps.js';
+import type { WebDepsShell, WebDepsWithWait } from './deps.js';
+import type { DictationOpts } from './dictation.js';
 
-export interface PieceDeps extends WebDepsCore {
- navTo: (screen: string) => void;
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
- /** The real document — the export link is a transient body child (click-to-download). */
- document: Document;
- /** The dictation wiring, shared with the exchange and mode surfaces (main.ts). */
- wireDictation: (opts: {
-  textarea: HTMLTextAreaElement;
-  micBtn: HTMLButtonElement;
-  micStatus: HTMLSpanElement;
-  errorSlot: HTMLElement;
-  onSpeech?: () => void;
- }) => void;
+export interface PieceDeps extends WebDepsShell {
+ /** The dictation wiring, shared with the exchange and mode surfaces (web/dictation.ts). */
+ wireDictation: (opts: DictationOpts) => void;
 }
 
 const WAIT_FAILED = 'that did not go through — try again';
 
-function showQuietError(el: WebDepsCore['el'], container: HTMLElement, message: string): void {
+/**
+ * The quiet error line for this surface's own error renders (a failed
+ * refresh, a refused mutation): the same class and default sentence the
+ * seam's beginWait().failed() leaves. The wait machinery itself lives in
+ * the seam now (WebDepsWithWait.beginWait); these are for catch blocks
+ * with no wait in flight.
+ */
+function showQuietError(el: WebDepsWithWait['el'], container: HTMLElement, message: string): void {
  container.append(el('p', { class: 'quiet-error' }, message));
 }
 
@@ -80,34 +76,6 @@ export interface PieceLite {
  id: string;
  created: string;
  arrangement: PieceArrangement | null;
-}
-
-/**
- * The waiting affordance for this surface: the same hairline and dimmed line
- * as beginWait, with method names this section can use without tripping the
- * shame-gradient gate (the vocabulary check reads between the section marks).
- */
-export function pieceWait(el: WebDepsCore['el'], container: HTMLElement, label: string): { end(): void; fail(cause: unknown, message?: string): void } {
- for (const stale of container.querySelectorAll(':scope > .wait, :scope > .quiet-error')) {
-  stale.remove();
- }
- const block = el('div', { class: 'wait' });
- block.append(
-  el('div', { class: 'wait-rule' }, el('span', { class: 'wait-sweep' })),
-  el('p', { class: 'wait-label' }, label),
- );
- container.append(block);
- return {
-  end() {
-   block.remove();
-  },
-  fail(cause: unknown, message = WAIT_FAILED) {
-   block.remove();
-   console.error(cause);
-   if (cause instanceof ApiError && cause.handled) return;
-   showQuietError(el, container, message);
-  },
- };
 }
 
 /* ── the piece screen: the arrangement is the page ── */
@@ -198,13 +166,13 @@ export function renderPiece(deps: PieceDeps): void {
  otherOrders.addEventListener('click', () => {
   // The acceptance-time generation is slow by design (Q-38): the waiting
   // line speaks before the request goes out.
-  const wait = pieceWait(deps.el, doc, 'asking for other orders\u2026');
+  const wait = deps.beginWait(doc, 'asking for other orders\u2026');
   deps.api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}/arrangements`)
    .then((piece) => {
-    wait.end();
+    wait.done();
     paint(piece);
    })
-   .catch((e: unknown) => wait.fail(e));
+   .catch((e: unknown) => wait.failed(e));
  });
  keepOrder.addEventListener('click', () => {
   const viewedId = viewedArrangementId;
@@ -509,8 +477,8 @@ export function renderPiece(deps: PieceDeps): void {
   input.addEventListener('blur', () => { if (!committing && input.value.trim() === '') input.remove(); });
  }
 
- const wait = pieceWait(deps.el, doc, 'reading\u2026');
+ const wait = deps.beginWait(doc, 'reading\u2026');
  deps.api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}`)
-  .then((piece) => { wait.end(); paint(piece); })
-  .catch((e: unknown) => wait.fail(e));
+  .then((piece) => { wait.done(); paint(piece); })
+  .catch((e: unknown) => wait.failed(e));
 }

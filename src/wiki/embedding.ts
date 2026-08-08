@@ -242,6 +242,27 @@ export function cosine(a: number[], b: number[]): number {
 }
 
 /**
+ * A cached vector that is still valid for this id under this model.
+ *
+ * Both embedding channels read the same record shape and apply the same
+ * validity rules — same id, same model, body unchanged — so the check lives
+ * here once; each channel maps its own item onto it (`claim.id`/`claim.body`,
+ * `snippet.id`/`snippet.prose`).
+ */
+export function cachedVector(
+  cached: Map<string, EmbeddingRecord>,
+  model: string,
+  id: string,
+  body: string,
+): number[] | undefined {
+  const record = cached.get(id);
+  if (!record) return undefined;
+  if (record.model !== model) return undefined;
+  if (record.hash !== bodyHash(body)) return undefined;
+  return record.vector;
+}
+
+/**
  * The `cap` most recently updated live claims, returned in id order.
  *
  * Two sorts, both load-bearing: recency picks WHICH claims are in the window,
@@ -296,7 +317,7 @@ export function fileEmbeddingStore(vaultRoot: string): EmbeddingIndexStore {
  * object of the wrong shape is exactly what a half-finished format migration
  * leaves behind, and a `vector` of strings would silently make every cosine 0.
  */
-function asRecord(value: unknown): EmbeddingRecord | null {
+export function asRecord(value: unknown): EmbeddingRecord | null {
   if (typeof value !== 'object' || value === null) return null;
   const v = value as Record<string, unknown>;
   if (typeof v.claimId !== 'string' || v.claimId === '') return null;
@@ -304,6 +325,108 @@ function asRecord(value: unknown): EmbeddingRecord | null {
   if (!Array.isArray(v.vector) || v.vector.length === 0) return null;
   if (!v.vector.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
   return { claimId: v.claimId, hash: v.hash, model: v.model, vector: v.vector as number[] };
+}
+
+// ── The shared prime loop (both embedding channels) ──
+
+/**
+ * Embed a list of items in batches of `EMBED_BATCH`, one request per batch,
+ * writing each completed batch into `cached` in place and asking the caller to
+ * persist before the next one starts.
+ *
+ * This is the prime loop this channel's `prime` and the semantic channel's
+ * `prime` both ran privately. It lives here because this module owns `Embed`
+ * and `EmbeddingRecord`; the caller owns the parts that differ between the two
+ * keyspaces: which items to embed (already filtered and capped), how a budget
+ * stop is recorded (`onBudgetExceeded`), and where the cache is persisted
+ * (`persistBatch`).
+ *
+ * **It never throws and never rejects.** A refused connection, a timeout, a
+ * slow HTTP 500 on a cold model, a short vector list, a batch that came back
+ * without a usable vector — each stops the loop, keeps every batch that
+ * already succeeded, and logs one `embedding-unavailable` event. Running out
+ * of budget is a stop, not an error: `onBudgetExceeded` is called and the loop
+ * returns cleanly, so the next run continues from the cache.
+ */
+export async function embedBatches(options: {
+  /** The texts to embed, one item per text, in order, with the id each vector is filed under. */
+  items: { id: string; body: string }[];
+  embed: Embed;
+  /** The embedder's name, written into every record this loop produces. */
+  model: string;
+  /** The caller's budget; the deadline is `clock() + budgetMs`. */
+  budgetMs: number;
+  /** Injectable clock, checked once per batch. */
+  clock: () => number;
+  log: LogFn;
+  /** The cache the fresh records are written into, in place. */
+  cached: Map<string, EmbeddingRecord>;
+  /**
+   * The caller's record of a budget stop. Receives how many texts were
+   * embedded and how many are still waiting, so each channel logs its own
+   * policy (a clip here, a shadow decision in the semantic channel).
+   */
+  onBudgetExceeded: (embedded: number, pending: number) => void;
+  /** Called after every completed batch, so the caller's keyspace can persist. */
+  persistBatch: () => void;
+  /**
+   * Tagged onto the unavailable detail as `subject=…` after `model=…`; omit
+   * for the clash channel, which logs no subject.
+   */
+  subject?: string;
+  /** The noun naming one item in a per-item failure detail (`claim`, `snippet`). */
+  noun: string;
+}): Promise<void> {
+  const { items, embed, model, budgetMs, clock, log, cached, onBudgetExceeded, persistBatch, noun } = options;
+  const subject = options.subject ?? '';
+  const deadline = clock() + budgetMs;
+  let embedded = 0;
+  let stopped: string | undefined;
+
+  for (let i = 0; i < items.length; i += EMBED_BATCH) {
+    if (clock() >= deadline) {
+      onBudgetExceeded(embedded, items.length - embedded);
+      break;
+    }
+    const batch = items.slice(i, i + EMBED_BATCH);
+    let vectors: number[][];
+    try {
+      vectors = await embed(batch.map((item) => item.body));
+    } catch (err) {
+      stopped = err instanceof Error ? err.message : String(err);
+      break;
+    }
+    if (vectors.length !== batch.length) {
+      // Zipping a short list back onto the inputs would file one item's
+      // vector under another item's id, and nothing downstream could tell.
+      stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
+      break;
+    }
+    const fresh: EmbeddingRecord[] = [];
+    for (const [j, item] of batch.entries()) {
+      const vector = vectors[j];
+      if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
+        stopped = `${noun} ${item.id} came back without a usable vector`;
+        break;
+      }
+      fresh.push({ claimId: item.id, hash: bodyHash(item.body), model, vector });
+    }
+    if (stopped) break;
+    for (const record of fresh) cached.set(record.claimId, record);
+    embedded += fresh.length;
+    // Persist per batch: this is what makes prime resumable, so the budget
+    // above and the cold-start failure below both cost time and never work.
+    persistBatch();
+  }
+
+  if (stopped !== undefined) {
+    log({
+      at: new Date().toISOString(),
+      actor: 'clerk',
+      kind: 'embedding-unavailable',
+      detail: `model=${model}${subject ? ` subject=${subject}` : ''} embedded=${embedded} pending=${items.length - embedded} error=${stopped}`,
+    });
+  }
 }
 
 // ── The channel ──
@@ -338,17 +461,9 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
     });
   }
 
-  function unavailable(detail: string): void {
-    log({ at: new Date().toISOString(), actor: 'clerk', kind: 'embedding-unavailable', detail });
-  }
-
   /** A vector that is still valid for this claim under this model. */
   function vectorFor(claim: Claim): number[] | undefined {
-    const record = loaded().get(claim.id);
-    if (!record) return undefined;
-    if (record.model !== model) return undefined;
-    if (record.hash !== bodyHash(claim.body)) return undefined;
-    return record.vector;
+    return cachedVector(loaded(), model, claim.id, claim.body);
   }
 
   return {
@@ -393,49 +508,19 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
         (c) => (only === undefined || only.has(c.id)) && vectorFor(c) === undefined,
       );
 
-      const deadline = clock() + budgetMs;
-      let embedded = 0;
-      let stopped: string | undefined;
-
-      for (let i = 0; i < missing.length; i += EMBED_BATCH) {
-        if (clock() >= deadline) {
-          clip('budget', `budgetMs=${budgetMs} embedded=${embedded} pending=${missing.length - embedded}`);
-          break;
-        }
-        const batch = missing.slice(i, i + EMBED_BATCH);
-        let vectors: number[][];
-        try {
-          vectors = await embed(batch.map((c) => c.body));
-        } catch (err) {
-          stopped = err instanceof Error ? err.message : String(err);
-          break;
-        }
-        if (vectors.length !== batch.length) {
-          // Zipping a short list back onto the inputs would file one claim's
-          // vector under another claim's id, and nothing downstream could tell.
-          stopped = `expected ${batch.length} vectors, received ${vectors.length}`;
-          break;
-        }
-        const fresh: EmbeddingRecord[] = [];
-        for (const [j, claim] of batch.entries()) {
-          const vector = vectors[j];
-          if (!vector || vector.length === 0 || !vector.every((n) => Number.isFinite(n))) {
-            stopped = `claim ${claim.id} came back without a usable vector`;
-            break;
-          }
-          fresh.push({ claimId: claim.id, hash: bodyHash(claim.body), model, vector });
-        }
-        if (stopped) break;
-        for (const record of fresh) cached.set(record.claimId, record);
-        embedded += fresh.length;
-        // Persist per batch: this is what makes prime resumable, so the budget
-        // above and the cold-start failure below both cost time and never work.
-        persist(graph, cached, store);
-      }
-
-      if (stopped !== undefined) {
-        unavailable(`model=${model} embedded=${embedded} pending=${missing.length - embedded} error=${stopped}`);
-      }
+      await embedBatches({
+        items: missing,
+        embed,
+        model,
+        budgetMs,
+        clock,
+        log,
+        cached,
+        noun: 'claim',
+        onBudgetExceeded: (embedded, pending) =>
+          clip('budget', `budgetMs=${budgetMs} embedded=${embedded} pending=${pending}`),
+        persistBatch: () => persist(graph, cached, store),
+      });
     },
 
     /**

@@ -22,8 +22,9 @@
  * never about the person, and it survives a fresh start (Q-89).
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
+
+import { appendLine, readLines } from '../jsonl.js';
 
 /** A rate measured over a window, as the ledger records it. */
 export type MetricReading = {
@@ -124,8 +125,7 @@ export type LedgerLine = GraduationLine | DemotionLine | ReGraduationLine | Reje
  * line or does not see it, and never sees half of one.
  */
 export function appendLedger(path: string, line: LedgerLine): void {
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(line)}\n`, 'utf-8');
+  appendLine(dirname(path), basename(path), JSON.stringify(line));
 }
 
 /**
@@ -139,9 +139,8 @@ export function appendLedger(path: string, line: LedgerLine): void {
  * a crash cost the loop its whole memory.
  */
 export function readLedger(path: string): LedgerLine[] {
-  if (!existsSync(path)) return [];
   const lines: LedgerLine[] = [];
-  for (const raw of readFileSync(path, 'utf-8').split('\n')) {
+  for (const raw of readLines(dirname(path), basename(path))) {
     const trimmed = raw.trim();
     if (trimmed === '') continue;
     try {

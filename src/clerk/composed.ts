@@ -24,6 +24,7 @@ import type { ThresholdLogFn } from '../domain/thresholds.js';
 import { guardComposed } from '../language/emit-form.js';
 import { readAllRepairs } from '../repair/store.js';
 import { isUnderRepair } from '../repair/consult.js';
+import { composeWithRetry, corrective, FRAMING_RULE, stripFences, type Rejection } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,14 +57,6 @@ function warnReject(message: string): void {
  } catch {
   // The log must never break composition.
  }
-}
-
-/** Strips markdown code fences from LLM output, keeping the inner content. */
-function stripFences(raw: string): string {
- let s = raw.trim();
- s = s.replace(/^```(?:json)?\s*\n?/i, '');
- s = s.replace(/\n?```\s*$/, '');
- return s.trim();
 }
 
 /**
@@ -150,16 +143,6 @@ function isDegenerateComposition(
 // The composed-question gate
 // ---------------------------------------------------------------------------
 
-/** Why a composed question was refused. Each reason drives its own retry. */
-type Rejection =
- | 'no-quote'
- | 'unframed-quote'
- | 'degenerate'
- | 'not-interrogative'
- | 'first-person'
- | 'repeats-original'
- | 'summary-echo';
-
 /**
  * Checks that apply once a verbatim fragment is in hand.
  *
@@ -208,31 +191,6 @@ export function checkQuotesSource(question: string, source: string): QuoteResult
  const rejection = checkAfterQuote(question, fragment);
  if (rejection) return { ok: false, rejection };
  return { ok: true, fragment };
-}
-
-/**
- * Build the corrective suffix for the single retry. `quoteRule` is the
- * path-specific verbatim requirement, repeated in every correction so the
- * retry never trades one invariant for another.
- */
-function corrective(rejection: Rejection, quoteRule: string): string {
- if (rejection === 'summary-echo') {
-  return 'Your question must NOT repeat or closely paraphrase the history summary lines shown above. Use the snippet for your quote, not the summaries.';
- }
- switch (rejection) {
-  case 'no-quote':
-   return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
-  case 'unframed-quote':
-   return `CRITICAL: Your previous response was rejected because it wove the speaker's words into your own sentence. Put their words inside quotation marks. Then ask your question after them, in your own words. ${quoteRule}`;
-  case 'degenerate':
-   return `CRITICAL: Your previous response was rejected because it only handed the speaker their own words back. ${quoteRule} Then ask your own question around that quote.`;
-  case 'not-interrogative':
-   return `CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark. ${quoteRule}`;
-  case 'first-person':
-   return `CRITICAL: Your previous response was rejected because it spoke in the first person outside the quote. Keep the quoted words exactly as they are; everywhere else address the speaker as "you" — never "I", "my", or "me". ${quoteRule}`;
-  case 'repeats-original':
-   return `CRITICAL: Your previous response was rejected because it repeated the question that first elicited the snippet. Ask something different. ${quoteRule}`;
- }
 }
 
 /** Wrap text as a single user turn for LLM calls that need a Turn[]. */
@@ -294,28 +252,6 @@ function buildOpenerDraft(
 // ---------------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------------
-
-/**
- * The one shape every composed question takes (040).
- *
- * Splicing the user's words into the middle of the agent's clause produced
- * "When did you last experience the kind of resonance that I thought that I
- * long lost?" — syntax bent around the fragment until it meant nothing, and no
- * way for the reader to tell whose "I" that was. Framing separates the two
- * voices on the page: the quote is untouched and visibly theirs, the question
- * is the agent's own.
- *
- * Q-36 holds either side of the quotation mark. Inside it, the model has no
- * freedom at all — the words are the user's, character for character. Outside
- * it, the model has full freedom over what it asks; the example below fixes
- * the shape, never the wording.
- */
-const FRAMING_RULE = `HOW TO USE THEIR WORDS — frame the quote, never splice it:
-Put the speaker's exact words inside quotation marks. Then ask your question after them, in your own words.
-Shape: You wrote: "<their exact words>." <your question>?
-The shape is fixed. The question is yours — write your own, do not copy this example.
-Never weave their words into the grammar of your own sentence.
-Keep the quoted words exactly as they wrote them, first person and all. Outside the quotation marks, address the speaker as "you".`;
 
 /**
  * The sitting's method for P1/P2 composition (ticket 158): the protocol def's
@@ -429,35 +365,20 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST contain this exact substring, inside quotation marks: "${light.phrase}".`;
 
- const raw = await complete(prompt, userTurn(turnText), {
-  temperature: 0.4,
- });
- let question = stripFences(raw).trim();
-
- let rejection = checkAroundPhrase(question, light.phrase, turnText);
- if (!rejection) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: follow-up rejected', warnReject).ok) return null;
-  return question;
- }
-
- // One retry with corrective prompt
- warnReject(`Composed: follow-up rejected (${rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
- const retryRaw = await complete(retryPrompt, userTurn(turnText), {
-  temperature: 0.4,
- });
- question = stripFences(retryRaw).trim();
-
- rejection = checkAroundPhrase(question, light.phrase, turnText);
- if (!rejection) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: follow-up retry rejected', warnReject).ok) return null;
-  return question;
- }
-
- warnReject(
-  `Composed: follow-up retry also rejected (${rejection}) — returning null`,
+ const send = (p: string) => complete(p, userTurn(turnText), { temperature: 0.4 });
+ return composeWithRetry(
+  'follow-up',
+  send,
+  prompt,
+  (question) => {
+   const rejection = checkAroundPhrase(question, light.phrase, turnText);
+   return rejection
+    ? { ok: false, rejection }
+    : { ok: true, question, value: question };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,35 +421,20 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST contain this exact substring, inside quotation marks: "${hit.sharedPhrase}".`;
 
- const raw = await complete(prompt, userTurn(turnText), {
-  temperature: 0.4,
- });
- const question = stripFences(raw).trim();
-
- let rejection = checkAroundPhrase(question, hit.sharedPhrase, turnText);
- if (!rejection) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: juxtaposition rejected', warnReject).ok) return null;
-  return question;
- }
-
- // One retry
- warnReject(`Composed: juxtaposition rejected (${rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(rejection, quoteRule)}`;
- const retryRaw = await complete(retryPrompt, userTurn(turnText), {
-  temperature: 0.4,
- });
- const retryQuestion = stripFences(retryRaw).trim();
-
- rejection = checkAroundPhrase(retryQuestion, hit.sharedPhrase, turnText);
- if (!rejection) {
-  if (!guardComposed(retryQuestion, { asked: [] }, 'Composed: juxtaposition retry rejected', warnReject).ok) return null;
-  return retryQuestion;
- }
-
- warnReject(
-  `Composed: juxtaposition retry also rejected (${rejection}) — returning null`,
+ const send = (p: string) => complete(p, userTurn(turnText), { temperature: 0.4 });
+ return composeWithRetry(
+  'juxtaposition',
+  send,
+  prompt,
+  (question) => {
+   const rejection = checkAroundPhrase(question, hit.sharedPhrase, turnText);
+   return rejection
+    ? { ok: false, rejection }
+    : { ok: true, question, value: question };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -594,47 +500,28 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
- let question = stripFences(raw).trim();
-
- let check = checkQuotesSource(question, snippet.prose);
- if (check.ok) {
-  const echoLine = summaryLines && summaryLines.length > 0
-   ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
-   : null;
-  if (echoLine) {
-   check = { ok: false, rejection: 'summary-echo' };
-   warnReject(`Composed: opener rejected (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
-  } else {
-   if (!guardComposed(question, { asked: [] }, 'Composed: opener rejected', warnReject).ok) return null;
-   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
-  }
- }
-
- // One retry
- warnReject(`Composed: opener rejected (${check.rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
- const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
- question = stripFences(retryRaw).trim();
- check = checkQuotesSource(question, snippet.prose);
-
- if (check.ok) {
-  const echoLine2 = summaryLines && summaryLines.length > 0
-   ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
-   : null;
-  if (echoLine2) {
-   check = { ok: false, rejection: 'summary-echo' };
-   warnReject(`Composed: opener retry also rejected (summary-echo) — shares span with: "${echoLine2.slice(0, 80)}"`);
-  } else {
-   if (!guardComposed(question, { asked: [] }, 'Composed: opener retry rejected', warnReject).ok) return null;
-   return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting);
-  }
- }
-
- warnReject(
-  `Composed: opener retry also rejected (${check.rejection}) — returning null`,
+ const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ return composeWithRetry(
+  'opener',
+  send,
+  prompt,
+  (question, phase) => {
+   const check = checkQuotesSource(question, snippet.prose);
+   if (check.ok) {
+    const echoLine = summaryLines && summaryLines.length > 0
+     ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
+     : null;
+    if (echoLine) {
+     warnReject(`${phase === 'first' ? 'Composed: opener rejected' : 'Composed: opener retry also rejected'} (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
+     return { ok: false, rejection: 'summary-echo' };
+    }
+    return { ok: true, question, value: buildOpenerDraft(snippet, question, check.fragment, 'composed', 'session', sitting) };
+   }
+   return { ok: false, rejection: check.rejection };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -668,30 +555,20 @@ Return only the question text. No markdown, no commentary.`;
   ? (shadowDecision(THRESHOLDS['stillTrue.formSelection'], `use form=${ideal} instead of deliberative for still-true on snippet ${snippet.id}`, log) ? ideal : 'deliberative')
   : 'deliberative';
 
- // Attempt 1
- const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
- const question1 = stripFences(raw).trim();
- const attempt1 = tryBuildStillTrue(snippet, question1, sitting, form);
- if (attempt1.ok) {
-  if (!guardComposed(question1, { asked: [] }, 'Composed: still-true rejected', warnReject).ok) return null;
-  return attempt1.draft;
- }
-
- // One retry — enforce every constraint, corrected for what failed
- warnReject(`Composed: still-true rejected (${attempt1.rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
- const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
- const question2 = stripFences(retryRaw).trim();
- const attempt2 = tryBuildStillTrue(snippet, question2, sitting, form);
- if (attempt2.ok) {
-  if (!guardComposed(question2, { asked: [] }, 'Composed: still-true retry rejected', warnReject).ok) return null;
-  return attempt2.draft;
- }
-
- warnReject(
-  `Composed: still-true retry also rejected (${attempt2.rejection}) — returning null`,
+ const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ return composeWithRetry(
+  'still-true',
+  send,
+  prompt,
+  (question) => {
+   const attempt = tryBuildStillTrue(snippet, question, sitting, form);
+   return attempt.ok
+    ? { ok: true, question, value: attempt.draft }
+    : { ok: false, rejection: attempt.rejection };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- return null;
 }
 
 type StillTrueResult =
@@ -818,39 +695,19 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const raw = await complete(
-  '',
-  [{ role: 'user', text: prompt, at: '' }],
-  { temperature: 0.4 },
+ const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ return composeWithRetry(
+  'expedition',
+  send,
+  prompt,
+  (question) => {
+   const check = checkQuotesSource(question, snippet.prose);
+   if (!check.ok) return { ok: false, rejection: check.rejection };
+   return { ok: true, question, value: buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting) };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- let question = stripFences(raw).trim();
-
- let check = checkQuotesSource(question, snippet.prose);
- if (check.ok) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: expedition rejected', warnReject).ok) return null;
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
- }
-
- // One retry
- warnReject(`Composed: expedition rejected (${check.rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
- const retryRaw = await complete(
-  '',
-  [{ role: 'user', text: retryPrompt, at: '' }],
-  { temperature: 0.4 },
- );
- question = stripFences(retryRaw).trim();
- check = checkQuotesSource(question, snippet.prose);
-
- if (check.ok) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: expedition retry rejected', warnReject).ok) return null;
-  return buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
- }
-
- warnReject(
-  `Composed: expedition retry also rejected (${check.rejection}) — returning null`,
- );
- return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -910,31 +767,22 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
- let question = stripFences(raw).trim();
- let check = checkQuotesSource(question, snippet.prose);
- if (check.ok) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: other-minds expedition rejected', warnReject).ok) return null;
-  const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
-  draft.errandKind = 'other-minds';
-  draft.errandPerson = personName;
-  return draft;
- }
- // One retry
- warnReject(`Composed: other-minds expedition rejected (${check.rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(check.rejection, quoteRule)}`;
- const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
- question = stripFences(retryRaw).trim();
- check = checkQuotesSource(question, snippet.prose);
- if (check.ok) {
-  if (!guardComposed(question, { asked: [] }, 'Composed: other-minds expedition retry rejected', warnReject).ok) return null;
-  const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
-  draft.errandKind = 'other-minds';
-  draft.errandPerson = personName;
-  return draft;
- }
- warnReject(`Composed: other-minds expedition retry also rejected (${check.rejection}) — returning null`);
- return null;
+ const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ return composeWithRetry(
+  'other-minds expedition',
+  send,
+  prompt,
+  (question) => {
+   const check = checkQuotesSource(question, snippet.prose);
+   if (!check.ok) return { ok: false, rejection: check.rejection };
+   const draft = buildOpenerDraft(snippet, question, check.fragment, 'composed', 'days', sitting);
+   draft.errandKind = 'other-minds';
+   draft.errandPerson = personName;
+   return { ok: true, question, value: draft };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
+ );
 }
 
 // ---------------------------------------------------------------------------
@@ -1011,30 +859,20 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from passage 1 inside quotation marks AND an exact phrase from passage 2 inside its own quotation marks: passage 1 "${prose.a}", passage 2 "${prose.b}".`;
 
- // Attempt 1
- const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
- const question1 = stripFences(raw).trim();
- const attempt1 = tryBuildDiscriminating(claims, prose, question1);
- if (attempt1.ok) {
-  if (!guardComposed(question1, { asked: [] }, 'Composed: discriminating rejected', warnReject).ok) return null;
-  return attempt1.draft;
- }
-
- // One retry — enforce every constraint, corrected for what failed
- warnReject(`Composed: discriminating rejected (${attempt1.rejection}), retrying`);
- const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
- const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
- const question2 = stripFences(retryRaw).trim();
- const attempt2 = tryBuildDiscriminating(claims, prose, question2);
- if (attempt2.ok) {
-  if (!guardComposed(question2, { asked: [] }, 'Composed: discriminating retry rejected', warnReject).ok) return null;
-  return attempt2.draft;
- }
-
- warnReject(
-  `Composed: discriminating retry also rejected (${attempt2.rejection}) — returning null`,
+ const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ return composeWithRetry(
+  'discriminating',
+  send,
+  prompt,
+  (question) => {
+   const attempt = tryBuildDiscriminating(claims, prose, question);
+   return attempt.ok
+    ? { ok: true, question, value: attempt.draft }
+    : { ok: false, rejection: attempt.rejection };
+  },
+  (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+  warnReject,
  );
- return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1146,30 +984,20 @@ Return only the question text. No markdown, no commentary.`;
 
   const quoteRule = `Your question MUST set off an exact phrase from this intention inside quotation marks: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
 
-  // Attempt 1
-  const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
-  const question1 = stripFences(raw).trim();
-  const attempt1 = tryBuildOutcome(snippet, question1, horizon, sitting);
-  if (attempt1.ok) {
-   if (!guardComposed(question1, { asked: [] }, 'Composed: outcome question rejected', warnReject).ok) return null;
-   return attempt1.draft;
-  }
-
-  // One retry — enforce every constraint, corrected for what failed
-  warnReject(`Composed: outcome question rejected (${attempt1.rejection}), retrying`);
-  const retryPrompt = `${prompt}\n\n${corrective(attempt1.rejection, quoteRule)}`;
-  const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
-  const question2 = stripFences(retryRaw).trim();
-  const attempt2 = tryBuildOutcome(snippet, question2, horizon, sitting);
-  if (attempt2.ok) {
-   if (!guardComposed(question2, { asked: [] }, 'Composed: outcome question retry rejected', warnReject).ok) return null;
-   return attempt2.draft;
-  }
-
-  warnReject(
-    `Composed: outcome question retry also rejected (${attempt2.rejection}) — returning null`,
+  const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+  return composeWithRetry(
+    'outcome question',
+    send,
+    prompt,
+    (question) => {
+      const attempt = tryBuildOutcome(snippet, question, horizon, sitting);
+      return attempt.ok
+        ? { ok: true, question, value: attempt.draft }
+        : { ok: false, rejection: attempt.rejection };
+    },
+    (rejection) => `${prompt}\n\n${corrective(rejection, quoteRule)}`,
+    warnReject,
   );
-  return null;
 }
 
 type OutcomeResult =

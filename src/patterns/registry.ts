@@ -8,6 +8,7 @@
 
 import { resolve } from 'node:path';
 import { createDefRegistry, type DefSource } from '../defs/loader.js';
+import { FACETS } from '../queue/facet-balance.js';
 import type { Facet } from '../types.js';
 import type { Pattern, PatternId, PatternTier, Operator } from './types.js';
 
@@ -26,11 +27,12 @@ function parseOperators(raw: unknown): Operator[] {
   return raw.filter((o): o is Operator => typeof o === 'string' && valid.has(o as Operator));
 }
 
-const VALID_FACETS = new Set<Facet>([
-  'episode', 'general-event', 'lifetime-period', 'fact', 'construct',
-  'intention', 'value', 'causal-theory', 'know-what', 'know-how',
-  'habit', 'know-why', 'momentary-state',
-]);
+/**
+ * Every facet a pattern file may name — the full canonical set, derived from
+ * FACETS (src/queue/facet-balance.ts) so the two lists cannot drift (the
+ * filter, never a hand-maintained second enumeration).
+ */
+const VALID_FACETS = new Set<Facet>(FACETS);
 
 function parseFacets(raw: unknown): Facet[] {
   if (!Array.isArray(raw)) return [];

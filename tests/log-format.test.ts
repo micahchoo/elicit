@@ -840,6 +840,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'coach-seed-minted', detail: 'slug=rest name=Rest claims=4', reads: 'minted an un-coached direction from a claim cluster' },
  { kind: 'coach-seed-evaluated', detail: 'themes=3 clusterSizes=[4,2,3]', reads: 'evaluated coach seeding — cluster sizes logged' },
  { kind: 'coach-seed-failed', detail: 'directory missing', reads: 'coach seed sweep failed' },
+ { kind: 'tripwire-failed', detail: 'boom', reads: 'the tripwire sweep failed' },
  { kind: 'coach-seeded-reoffer', detail: 'slug=rest parkedClaims=3 currentClaims=6', reads: 're-offered a parked seeded direction' },
  // Q-110 door 2: user-declared direction from wiki claim
  { kind: 'direction-created', detail: 'slug=rest via=wiki-claim claim=01KZ...', reads: 'you made a direction from a wiki claim' },

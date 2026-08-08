@@ -18,6 +18,7 @@ import type { Index, QueueEntry, Snippet } from '../types.js';
 import type { Claim } from '../wiki/contract.js';
 import type { CoachFacts } from './license.js';
 import matter from 'gray-matter';
+import { readTranscripts } from '../vault/transcripts.js';
 import {
  directionSlugFor,
  normalizeOption,
@@ -69,30 +70,20 @@ export function createCoachStore(vaultRoot: string): CoachStore {
 
 /**
  * Frontmatter of every transcript, with the quest/direction tags T4 adds.
- * Derived, cheap, recomputed. A transcript without a `session` or a `started`
- * key is not a sitting the coach can reason about and is skipped.
+ * Derived, cheap, recomputed — delegates the read to vault/transcripts.ts
+ * (the transcript read owner), so the Date-vs-string `started` normalization
+ * is handled in exactly one place. A transcript without a `started` key is
+ * not a sitting the coach can reason about and is skipped.
  */
 export function readSittingTags(vaultRoot: string): SittingTag[] {
- const dir = join(vaultRoot, 'transcripts');
- let files: string[];
- try {
-  files = readdirSync(dir);
- } catch {
-  return [];
- }
  const tags: SittingTag[] = [];
- for (const f of files) {
-  if (!f.endsWith('.md')) continue;
-  const parsed = matter.read(join(dir, f));
-  const data = parsed.data as Record<string, unknown>;
-  const session = data.session as string | undefined;
-  const started = data.started as string | undefined;
-  if (!session || !started) continue;
+ for (const t of readTranscripts(vaultRoot)) {
+  if (!t.started) continue;
   tags.push({
-   session,
-   started,
-   ...(data.quest ? { quest: data.quest as string } : {}),
-   ...(data.direction ? { direction: data.direction as string } : {}),
+   session: t.session,
+   started: t.started,
+   ...(t.quest ? { quest: t.quest } : {}),
+   ...(t.direction ? { direction: t.direction } : {}),
   });
  }
  return tags;

@@ -14,10 +14,10 @@
  * reader can tell "nothing reached" from "the mechanism is broken".
  */
 
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { appendEvent } from '../log/activity.js';
+import { appendLine, readLines } from '../jsonl.js';
 import type { Survey } from './survey.js';
 import type { LogFn } from '../wiki/contract.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
@@ -138,9 +138,7 @@ const DECLINE_LEDGER = join('imports', 'reach-declines.jsonl');
 /** Record one decline: one JSON line in the ledger, and one activity event. */
 export function appendReachDecline(vaultRoot: string, path: string): void {
  const at = new Date().toISOString();
- const file = join(vaultRoot, DECLINE_LEDGER);
- mkdirSync(join(vaultRoot, 'imports'), { recursive: true });
- appendFileSync(file, `${JSON.stringify({ at, path })}\n`, 'utf-8');
+ appendLine(vaultRoot, DECLINE_LEDGER, JSON.stringify({ at, path }));
  appendEvent(vaultRoot, {
   at,
   actor: 'elicitor',
@@ -153,13 +151,7 @@ export function appendReachDecline(vaultRoot: string, path: string): void {
  * ledger is re-read on every call — a decline is a fact, not a cache. */
 export function reachDeclines(vaultRoot: string): Map<string, string> {
  const declines = new Map<string, string>();
- let text: string;
- try {
-  text = readFileSync(join(vaultRoot, DECLINE_LEDGER), 'utf-8');
- } catch {
-  return declines;
- }
- for (const raw of text.split('\n')) {
+ for (const raw of readLines(vaultRoot, DECLINE_LEDGER)) {
   if (raw.trim() === '') continue;
   try {
    const line = JSON.parse(raw) as { at?: unknown; path?: unknown };

@@ -34,10 +34,10 @@
  * after every commit (tests/import-repair.test.ts greps for LLM imports).
  */
 
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
+import { appendLine, readLines } from '../jsonl.js';
 import type { QueueStore, Snippet, Vault } from '../types.js';
 import type { LogFn } from '../wiki/contract.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
@@ -254,14 +254,8 @@ function readBud(vaultRoot: string, budId: string): { fragment: string } | null 
 }
 
 function readRepairLedger(vaultRoot: string): LedgerLine[] {
- let text: string;
- try {
-  text = readFileSync(join(vaultRoot, LEDGER_REL), 'utf-8');
- } catch {
-  return [];
- }
  const lines: LedgerLine[] = [];
- for (const raw of text.split('\n')) {
+ for (const raw of readLines(vaultRoot, LEDGER_REL)) {
   if (raw.trim() === '') continue;
   try {
    const line = JSON.parse(raw) as LedgerLine;
@@ -282,7 +276,5 @@ function readRepairLedger(vaultRoot: string): LedgerLine[] {
 }
 
 function appendRepairLedger(vaultRoot: string, line: LedgerLine): void {
- const file = join(vaultRoot, LEDGER_REL);
- mkdirSync(join(vaultRoot, 'imports'), { recursive: true });
- appendFileSync(file, `${JSON.stringify(line)}\n`, 'utf-8');
+ appendLine(vaultRoot, LEDGER_REL, JSON.stringify(line));
 }

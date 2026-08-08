@@ -90,6 +90,9 @@ const STRING_CONST = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*'([^']*)'/g;
 /** A function head: `name(params) {`, `name(params): T {`, `function name(params) {`. */
 const HEAD = /(?<![.\w$])(?:function\s+)?(#?[A-Za-z_$][\w$]*)\s*\(/g;
 
+/** An arrow-function head: `const name = (params) => {`, `const name = async (params): T => {`. */
+const ARROW_HEAD = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/g;
+
 /** A span of the source, as `[start, end)`. */
 type Span = [number, number];
 
@@ -246,23 +249,34 @@ function paramName(param: string): string {
 type Head = { name: string; open: number; close: number; params: string[] };
 
 /**
- * Every function head in a file — `name(params) {`, `name(params): T {` — with
+ * Every function head in a file — `name(params) {`, `name(params): T {`,
+ * `const name = (params) => {`, `const name = async (params): T => {` — with
  * the span of its parameter list. A call expression has no body after its
- * bracket, which is what separates the two.
+ * bracket, which is what separates the two. `async` and the control-flow
+ * keywords (`if`, `for`, `catch`, …) are not function names; `async` is
+ * skipped so an arrow's real name wins, and the others are left alone — a
+ * stray `catch (e)` that happens to consume a site is the scanner's
+ * long-standing tolerance, not a resolution to rely on.
  */
 function heads(code: string): Head[] {
  const out: Head[] = [];
- for (const m of code.matchAll(HEAD)) {
-  const open = m.index + m[0].length - 1;
-  const list = splitList(code, open);
-  if (!list) continue;
-  if (!/^\)\s*(?::[^{;=]*)?\s*\{/.test(code.slice(list.close))) continue;
-  out.push({
-   name: m[1]!,
-   open,
-   close: list.close,
-   params: list.items.map(([a, b]) => code.slice(a, b)),
-  });
+ const scans: [string, string][] = [['HEAD', HEAD.source], ['ARROW_HEAD', ARROW_HEAD.source]];
+ for (const [, source] of scans) {
+  const re = new RegExp(source, 'g');
+  for (const m of code.matchAll(re)) {
+   const name = m[1]!;
+   if (name === 'async') continue;
+   const open = m.index + m[0].length - 1;
+   const list = splitList(code, open);
+   if (!list) continue;
+   if (!/^\)\s*(?::[^{;=]*)?\s*(?:=>\s*)?\{/.test(code.slice(list.close))) continue;
+   out.push({
+    name,
+    open,
+    close: list.close,
+    params: list.items.map(([a, b]) => code.slice(a, b)),
+   });
+  }
  }
  return out;
 }

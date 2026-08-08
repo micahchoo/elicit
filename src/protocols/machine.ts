@@ -1,5 +1,5 @@
 import type { Complete, Turn } from '../types.js';
-import type { ProtocolDef } from './registry.js';
+import { getProtocol, type ProtocolDef } from './registry.js';
 
 /**
  * The protocol phase machine (ticket 159, slice 1): the per-sitting driver
@@ -227,4 +227,45 @@ export function advanceMachine(
   return { state, closed: false };
  }
  return { state: { ...state, phaseIndex: targetIndex }, closed: false };
+}
+
+// ── Phase meta for the wire ──
+
+/**
+ * The machine's phase meta for the wire (ticket 159). Every sitting now
+ * carries a machine (reflective formalized in slice 4), so the turn
+ * response's `phase` field is always this object — { id, label, step, of } —
+ * and the polymorphic session-phase-string wire is retired. The session
+ * phase string still rides the session response, the gate routes, and the
+ * end responses, where the sounding suites pin it. Returns undefined only
+ * for a machine-less machine (unreachable on the /turn route today);
+ * callers fall back to the session phase string when it does. The queue
+ * enrich site builds the same meta for parked-machine pointers — this is
+ * the single copy of the shape (Wave B).
+ */
+export function machinePhaseMeta(
+ machine: MachineState | undefined,
+ peopleSource?: () => string[],
+): { id: string; label: string; step: number; of: number; renderer?: string; triad?: { names: string[] } } | undefined {
+ if (machine === undefined) return undefined;
+ // The machine names its OWN protocol: a resumed machine (ticket 159,
+ // slice 5) can run an instrument the session was not rotated into, and
+ // the phase meta must follow the machine, never the session declaration.
+ const phases = getProtocol(machine.protocol)?.phases;
+ if (phases === undefined || phases.length === 0) return undefined;
+ const phase = phases[machine.phaseIndex];
+ if (phase === undefined) return undefined;
+ // The UI-phase contract (ticket 159, slice 6): a phase that declares a
+ // renderer carries it on the meta so the client can dispatch on it. The
+ // 'triads' renderer additionally carries the three names as chips
+ // (slice 7) — the same slice-3 people source the composed prompt uses, so
+ // the chips can never name a different set than the model's question.
+ return {
+  id: phase.id,
+  label: phase.label,
+  step: machine.phaseIndex + 1,
+  of: phases.length,
+  ...(phase.renderer !== undefined ? { renderer: phase.renderer } : {}),
+  ...(phase.renderer === 'triads' ? { triad: { names: (peopleSource?.() ?? []).slice(0, 3) } } : {}),
+ };
 }

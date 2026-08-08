@@ -286,6 +286,20 @@ export const THRESHOLDS = {
 export type ThresholdName = keyof typeof THRESHOLDS;
 
 /**
+ * The register, by its KEYS rather than by its shipped values.
+ *
+ * `typeof THRESHOLDS` would be the obvious annotation and it is the wrong one:
+ * `satisfies Record<string, Threshold>` preserves the boolean literals, so
+ * `THRESHOLDS['lint.godNodeFanout'].live` has the type `false`, not `boolean`.
+ * Mapping the keys to the declared `Threshold` keeps every key literal (so no
+ * lookup is `| undefined` under `noUncheckedIndexedAccess`), keeps a new
+ * register entry appearing here for free, and widens `live` to `boolean` so a
+ * caller can pass a register with an entry flipped live — the door a test uses
+ * to prove a shadow is what withholds a mechanism, rather than a bug.
+ */
+export type ThresholdRegister = { [K in keyof typeof THRESHOLDS]: Threshold };
+
+/**
  * Whether this threshold is licensed to act RIGHT NOW: its declared `live`
  * flag, minus any demotion standing against its name (Q-90, ticket 132).
  *

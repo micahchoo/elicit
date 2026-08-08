@@ -21,6 +21,7 @@
 
 import type { QueueStore, QueueDraft } from '../types.js';
 import type { CoverageStore } from './coverage.js';
+import { distinctFieldKeys } from '../queue/queue.js';
 
 /** The activity-log sink both sweeps emit through. */
 export type GapFillSweepLog = (e: {
@@ -99,12 +100,12 @@ export function runGapFillSweepCore(
     status.set(id, coverage.readReading(id)?.status ?? 'unprobed');
   }
 
-  // One question per node, ever — any queue status blocks re-minting.
-  const existing = new Set<string>();
-  for (const entry of queue.list()) {
-    const key = entry[pointerKey];
-    if (key && entry.source === source) existing.add(key);
-  }
+  // One question per node, ever — any queue status blocks re-minting. The
+  // per-source filter composes on top of the shared distinct-field read.
+  const existing = distinctFieldKeys(
+    queue.list().filter((entry) => entry.source === source),
+    pointerKey,
+  );
 
   const minted: GapFillCandidate[] = [];
   let processed = 0;

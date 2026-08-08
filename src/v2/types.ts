@@ -21,14 +21,13 @@
  */
 
 import type { Authorship, DatingRule } from '../import/contract.js';
-import type { Mode, QuestionForm, SoundingEnd } from '../types.js';
+import type { Mode, Phase, QuestionForm, SoundingEnd } from '../types.js';
 
 /**
- * The sitting phase, as `SessionState.phase` declares it. Repeated rather
- * than imported because `src/types.ts` spells the union inline and exports no
- * name for it; a mismatch shows up as a type error at the translation site.
+ * The sitting phase — `SessionState.phase`'s union, imported rather than
+ * re-spelled (the union used to be repeated here, where it could drift).
  */
-export type Phase = 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+export type { Phase };
 
 /**
  * Every addressable context. Closed — there is no CRUD escape.

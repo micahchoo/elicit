@@ -92,6 +92,7 @@ export type EventKind =
  'coach-seed-evaluated' |
  'coach-seed-failed' |
  'coach-seeded-reoffer' |
+ 'tripwire-failed' |
  'artifact-declared' |
  'queue-rung' |
  'queue-floor' |

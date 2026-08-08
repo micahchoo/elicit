@@ -25,7 +25,6 @@ import type { SurveyNode } from '../src/import/survey.js';
 import type { ScanResponse, WebDepsCore } from './deps.js';
 
 export type SurveyMapDeps = WebDepsCore & {
-  navTo: (screen: string, opts?: { focus?: string }) => void;
   folder: string;
   /** A node path to open the map at, scrolled to and expanded. */
   focus?: string;

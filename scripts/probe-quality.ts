@@ -1,6 +1,13 @@
 import { makeComplete } from '../src/llm.js';
-import { REFLECTIVE_INTERVIEW_PROMPT } from '../src/elicitor/protocol.js';
+import { getProtocol } from '../src/protocols/registry.js';
 const complete = makeComplete();
+// The reflective system prompt lives in the file-based protocol def — the
+// prompt literal was deleted from src/elicitor/protocol.ts (Wave A), and
+// the defs/*.md registry is its one home. A missing def is repo
+// corruption: fail loudly rather than complete() with an empty prompt.
+const def = getProtocol('reflective');
+if (!def) throw new Error('reflective protocol def not found');
+const REFLECTIVE_INTERVIEW_PROMPT = def.prompt;
 const convs: { role: 'agent'|'user'; text: string }[][] = [
   [
     { role: 'agent', text: 'What do you believe about how people change?' },

@@ -35,7 +35,7 @@ import { renderTerritory } from './territory.js';
 import type { TerritoryResponse } from '../src/territory.js';
 import { lineageBlock } from './lineage.js';
 import { readableDate } from './dates.js';
-import type { SweepBacklogResponse, WebDepsCore, WebDepsWithWait } from './deps.js';
+import type { SweepBacklogResponse, WebDepsShell } from './deps.js';
 
 /**
  * The /api/snippets wire view: a Snippet that may carry a resolved-referent
@@ -73,18 +73,7 @@ interface WikiResponse {
  repairClaimIds?: string[];
 }
 
-export interface WikiDeps extends WebDepsCore {
- beginWait: WebDepsWithWait['beginWait'];
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
- /** A bare text node — the lens sentence and the backlog link are text, never elements. */
- text: (content: string) => Text;
- /**
-  * The real document: the read-watch and correcting-mode machinery listens
-  * on it (visibilitychange, keydown) — injected, never a global touch.
-  */
- document: Document;
+export interface WikiDeps extends WebDepsShell {
  /** The view height the dwell rule measures against (half the view). */
  window: Window;
 }

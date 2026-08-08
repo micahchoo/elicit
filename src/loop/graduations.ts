@@ -21,24 +21,27 @@
  * imported by the registry every wiki module reads): no top-level I/O, no
  * throw on any path, an absent or malformed file reading as "nothing is
  * graduated" — the state of a fresh instance.
+ *
+ * The store itself lives in src/loop/key-store.ts — one crash-tolerant
+ * key-store parameterized by root, file name and entry field, shared with
+ * demotions. This module is the graduation-shaped adapter over it; the
+ * public surface below is unchanged.
  */
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-const GRADUATIONS_FILE = 'graduations.json';
-
-/** The on-disk shape. An object, not a bare array, so a reader can see what it is. */
-type GraduationsFile = { graduated: string[] };
+import { createKeyStore } from './key-store.js';
 
 /** Where the store lives when nobody says — per call, never captured at load. */
 function defaultDataDir(): string {
   return process.env.ELICIT_DATA_DIR ?? join(process.cwd(), 'data');
 }
 
-function graduationsPath(dataDir: string): string {
-  return join(dataDir, GRADUATIONS_FILE);
-}
+/** The graduation store: `data/graduations.json`, entry field `graduated`. */
+const store = createKeyStore({
+  root: defaultDataDir,
+  fileName: 'graduations.json',
+  entryField: 'graduated',
+});
 
 /**
  * The graduated mechanism keys. Absent, unreadable or malformed reads as an
@@ -46,15 +49,7 @@ function graduationsPath(dataDir: string): string {
  * anything.
  */
 export function readGraduations(dataDir: string): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(graduationsPath(dataDir), 'utf-8'));
-    if (parsed === null || typeof parsed !== 'object') return new Set();
-    const list = (parsed as GraduationsFile).graduated;
-    if (!Array.isArray(list)) return new Set();
-    return new Set(list.filter((k): k is string => typeof k === 'string'));
-  } catch {
-    return new Set();
-  }
+  return store.readAll(dataDir);
 }
 
 /**
@@ -64,32 +59,14 @@ export function readGraduations(dataDir: string): Set<string> {
  * failure, exactly like a hand-edited demotion.
  */
 export function addGraduation(dataDir: string, key: string): void {
-  const graduated = readGraduations(dataDir);
-  graduated.add(key);
-  mkdirSync(dataDir, { recursive: true });
-  const file: GraduationsFile = { graduated: [...graduated].sort() };
-  writeFileSync(graduationsPath(dataDir), `${JSON.stringify(file, null, 1)}\n`, 'utf-8');
+  store.addOne(dataDir, key);
 }
-
-/** Cache, same contract as demotions: re-read when the file signature moves. */
-let cache: { dir: string; token: string; graduated: Set<string> } | null = null;
 
 /**
  * Whether this mechanism key is graduated, read from disk at the moment of
- * the question. Used by `isLive`; `dataDir` defaults to the instance's data
- * directory.
+ * the question through the store's stat-token cache. Used by `isLive`;
+ * `dataDir` defaults to the instance's data directory.
  */
 export function isGraduated(key: string, dataDir: string = defaultDataDir()): boolean {
-  let token: string;
-  try {
-    const stat = statSync(graduationsPath(dataDir));
-    token = `${stat.mtimeMs}:${stat.size}`;
-  } catch {
-    cache = null;
-    return false;
-  }
-  if (cache === null || cache.dir !== dataDir || cache.token !== token) {
-    cache = { dir: dataDir, token, graduated: readGraduations(dataDir) };
-  }
-  return cache.graduated.has(key);
+  return store.isIn(key, dataDir);
 }

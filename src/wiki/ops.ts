@@ -23,7 +23,7 @@
 // field is shape-checked at runtime even though `ClerkOp` already forbids it.
 
 import { ulid } from 'ulid';
-import { computeStatus } from './status.js';
+import { computeStatus, resolveCite } from './status.js';
 import type {
   Claim,
   ClaimGraph,
@@ -122,12 +122,9 @@ function bodyProblem(v: unknown): string | null {
  * the fabrication case, and it is dropped the way a fabricated harvest cut is.
  */
 function citeResolves(cite: string, graph: ClaimGraph): boolean {
-  const at = cite.lastIndexOf('@');
-  if (at <= 0) return false;
-  const snippet = graph.snippets[cite.slice(0, at)];
-  if (!snippet) return false;
-  const version = Number(cite.slice(at + 1));
-  return Number.isInteger(version) && version >= 1 && version <= snippet.version;
+  const resolved = resolveCite(cite, graph.snippets);
+  if (!resolved) return false;
+  return Number.isInteger(resolved.version) && resolved.version >= 1;
 }
 
 function unresolvedCite(cites: string[], graph: ClaimGraph): string | null {

@@ -58,7 +58,7 @@ export function panelLine(
 export interface PanelLineDeps {
   el: WebDepsCore['el'];
   /** A bare text node — the offer line is a text node, never an element. */
-  text: (content: string) => Text;
+  text: WebDepsCore['text'];
 }
 
 let renderDeps: PanelLineDeps | null = null;

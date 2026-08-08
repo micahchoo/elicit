@@ -19,6 +19,7 @@ import {
  underRepresented,
  type FacetDistribution,
 } from './facet-balance.js';
+import { citeParts } from '../wiki/status.js';
 
 
 /**
@@ -229,6 +230,79 @@ function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
 }
 
 /**
+ * The optional QueueEntry fields, in write order — the single source of
+ * truth for serialization. Both #parseEntry (frontmatter → entry) and
+ * #write (entry → frontmatter) iterate THIS list, so a new optional field
+ * is one line here plus its type in types.ts — the read and write
+ * directions cannot drift apart the way two hand-kept enumerations could.
+ * Every field is guarded on both sides, never a present key holding
+ * `undefined` — `matter.stringify` throws on that and the whole write is
+ * lost — and absent stays absent on the read-back.
+ */
+type OptionalEntryKey = {
+ [K in keyof QueueEntry]-?: undefined extends QueueEntry[K] ? K : never;
+}[keyof QueueEntry];
+
+const OPTIONAL_ENTRY_FIELDS = [
+ // Absent until `markAnswered` writes it. Its absence is the uptake
+ // signal's "not yet", never a zero (ticket 041).
+ 'answeredAt',
+ // The Claim a lint-minted still-true question is about. Read back
+ // because the still-true dedupe keys on it across restarts (Q-31).
+ 'claim',
+ // The quest a reflection question follows. Read back because the
+ // (quest, session) pair is the dedupe key across restarts (Q-75).
+ 'quest',
+ // The Gap this entry was minted to fill. Read back because the gap link
+ // has to survive a restart: the mint wrote it, the draw read it (Q-39).
+ 'gap',
+ // The Bud and the recorded failure this gap-fill entry asks about.
+ // Read back because the per-failure dedupe keys on the pair across
+ // restarts (ticket 027).
+ 'bud',
+ 'failure',
+ // The snippet a half-Construct question is about. Read back because
+ // the construct dedupe keys on it across restarts (ticket 027).
+ 'snippet',
+ // The pair an undiscriminated-range question stands between (ticket
+ // 060). Read back because the pair is the dedupe key and the answer's
+ // routing address, across restarts.
+ 'claims',
+ 'cites',
+ 'quotedFragment',
+ // Absent stays absent — an entry written before `target` existed makes
+ // no target claim, and the draw treats that as eligible for either.
+ 'target',
+ 'topic',
+ 'targetFacet',
+ 'modeNeeds',
+ 'direction',
+ // The ladder a parked-sounding pointer names. Read back because the
+ // resume route keys on it across restarts (Q-3: the ladder file is the
+ // truth, the pointer only points).
+ 'soundingId',
+ // The side-record a parked-machine pointer names (ticket 159, slice 5).
+ // Read back for the same reason as soundingId: the record file is the
+ // truth, the pointer only points — and machineProtocol survives a
+ // corrupt record so the restart still runs the parked instrument.
+ 'machineId',
+ 'machineProtocol',
+ // The legacy DRM file a parked-drm pointer names (ticket 159, slice 6:
+ // the drm resume route's compat read keys on it across restarts, Q-3 —
+ // the record file is the truth, the pointer only points).
+ 'drmId',
+ // The KTG territory node this entry was minted for. Read back because
+ // the dedupe key is the node id across restarts (094).
+ 'territoryNode',
+ // The atlas region this entry was minted for. Read back because the
+ // dedupe key is the region id across restarts (110, graduated 2026-08-03).
+ 'atlasRegion',
+ // The gazetteer entities this question targets. Read back because
+ // the frontier dedupe keys on entity id across restarts (100).
+ 'subjects',
+] as const satisfies readonly OptionalEntryKey[];
+
+/**
  * The sitting-level engagement state (Q-115, ticket 148 reopened). The
  * strike unit is the SITTING's relationship to the queue: a sitting whose
  * queue-drawn opener gets a pivoted-away reply is one strike, and two
@@ -278,7 +352,7 @@ class QueueStoreImpl implements QueueStore {
  }
 
  #parseEntry(data: Record<string, unknown>): QueueEntry {
-  return {
+  const out: Record<string, unknown> = {
    id: data.id as string,
    status: data.status as QueueEntry['status'],
    source: data.source as QueueEntry['source'],
@@ -288,117 +362,35 @@ class QueueStoreImpl implements QueueStore {
    sharpness: data.sharpness as QueueEntry['sharpness'],
    horizon: data.horizon as QueueEntry['horizon'],
    created: data.created as string,
-   ...(data.cites ? { cites: data.cites as NonNullable<QueueEntry['cites']> } : {}),
-   // Absent until `markAnswered` writes it. Its absence is the uptake
-   // signal's "not yet", never a zero (ticket 041).
-   ...(data.answeredAt ? { answeredAt: data.answeredAt as string } : {}),
-   // The Claim a lint-minted still-true question is about. Read back
-   // because the still-true dedupe keys on it across restarts (Q-31).
-   ...(data.claim ? { claim: data.claim as string } : {}),
-   // The quest a reflection question follows. Read back because the
-   // (quest, session) pair is the dedupe key across restarts (Q-75).
-   ...(data.quest ? { quest: data.quest as string } : {}),
-   // The Gap this entry was minted to fill. Read back because the gap link
-   // has to survive a restart: the mint wrote it, the draw read it (Q-39).
-   ...(data.gap ? { gap: data.gap as string } : {}),
-   // The Bud and the recorded failure this gap-fill entry asks about.
-   // Read back because the per-failure dedupe keys on the pair across
-   // restarts (ticket 027).
-   ...(data.bud ? { bud: data.bud as string } : {}),
-   ...(data.failure ? { failure: data.failure as string } : {}),
-   // The snippet a half-Construct question is about. Read back because
-   // the construct dedupe keys on it across restarts (ticket 027).
-   ...(data.snippet ? { snippet: data.snippet as string } : {}),
-   // The pair an undiscriminated-range question stands between (ticket
-   // 060). Read back because the pair is the dedupe key and the answer's
-   // routing address, across restarts.
-   ...(data.claims ? { claims: data.claims as string[] } : {}),
-   ...(data.quotedFragment
-    ? { quotedFragment: data.quotedFragment as NonNullable<QueueEntry['quotedFragment']> }
-    : {}),
-   // Absent stays absent — an entry written before `target` existed makes
-   // no target claim, and the draw treats that as eligible for either.
-   ...(data.target ? { target: data.target as NonNullable<QueueEntry['target']> } : {}),
-   ...(data.topic ? { topic: data.topic as NonNullable<QueueEntry['topic']> } : {}),
-   ...(data.targetFacet
-    ? { targetFacet: data.targetFacet as NonNullable<QueueEntry['targetFacet']> }
-    : {}),
-   ...(data.modeNeeds
-    ? { modeNeeds: data.modeNeeds as NonNullable<QueueEntry['modeNeeds']> }
-    : {}),
-   ...(data.direction
-    ? { direction: data.direction as NonNullable<QueueEntry['direction']> }
-    : {}),
-   // The ladder a parked-sounding pointer names. Read back because the
-   // resume route keys on it across restarts (Q-3: the ladder file is the
-   // truth, the pointer only points).
-   ...(data.soundingId ? { soundingId: data.soundingId as string } : {}),
-   // The legacy DRM file a parked-drm pointer names (ticket 159, slice 6).
-   // Read back for the same reason as soundingId: the drm resume route's
-   // compat read keys on it across restarts (Q-3 — the record file is the
-   // truth, the pointer only points). Pre-slice-6 pointers never persisted
-   // it; the field is additive so old files still parse.
-   ...(data.drmId ? { drmId: data.drmId as string } : {}),
-   // The side-record a parked-machine pointer names (ticket 159, slice 5).
-   // Read back for the same reason as soundingId: the record file is the
-   // truth, the pointer only points — and machineProtocol survives a
-   // corrupt record so the restart still runs the parked instrument.
-   ...(data.machineId ? { machineId: data.machineId as string } : {}),
-   ...(data.machineProtocol ? { machineProtocol: data.machineProtocol as string } : {}),
-   // The KTG territory node this entry was minted for. Read back because
-   // the dedupe key is the node id across restarts (094).
-   ...(data.territoryNode ? { territoryNode: data.territoryNode as string } : {}),
-   // The atlas region this entry was minted for. Read back because the
-   // dedupe key is the region id across restarts (110, graduated 2026-08-03).
-   ...(data.atlasRegion ? { atlasRegion: data.atlasRegion as string } : {}),
-   // The gazetteer entities this question targets. Read back because
-   // the frontier dedupe keys on entity id across restarts (100).
-   ...(data.subjects ? { subjects: data.subjects as string[] } : {}),
   };
+  // The optional fields, driven by the same list #write emits — absent
+  // stays absent (a field never written is a field never read back).
+  for (const key of OPTIONAL_ENTRY_FIELDS) {
+   if (data[key]) out[key] = data[key];
+  }
+  return out as unknown as QueueEntry;
  }
 
  #write(entry: QueueEntry): void {
-  const { id, status, source, license, question, questionForm, sharpness, horizon, created } =
-   entry;
   const fm: Record<string, unknown> = {
-   id,
-   status,
-   source,
-   license,
-   question,
-   questionForm,
-   sharpness,
-   horizon,
-   created,
+   id: entry.id,
+   status: entry.status,
+   source: entry.source,
+   license: entry.license,
+   question: entry.question,
+   questionForm: entry.questionForm,
+   sharpness: entry.sharpness,
+   horizon: entry.horizon,
+   created: entry.created,
   };
   // Every optional field is written under a guard, never as a present key
   // holding `undefined` — `matter.stringify` throws on that and the whole
-  // write is lost.
-  if (entry.answeredAt) fm.answeredAt = entry.answeredAt;
-  if (entry.claim) fm.claim = entry.claim;
- if (entry.quest) fm.quest = entry.quest;
-  if (entry.gap) fm.gap = entry.gap;
-  if (entry.bud) fm.bud = entry.bud;
-  if (entry.failure) fm.failure = entry.failure;
-  if (entry.snippet) fm.snippet = entry.snippet;
-  if (entry.claims) fm.claims = entry.claims;
-  if (entry.cites) fm.cites = entry.cites;
-  if (entry.quotedFragment) fm.quotedFragment = entry.quotedFragment;
-  if (entry.target) fm.target = entry.target;
-  if (entry.topic) fm.topic = entry.topic;
-  if (entry.targetFacet) fm.targetFacet = entry.targetFacet;
-  if (entry.modeNeeds) fm.modeNeeds = entry.modeNeeds;
-  if (entry.direction) fm.direction = entry.direction;
- if (entry.soundingId) fm.soundingId = entry.soundingId;
- if (entry.machineId) fm.machineId = entry.machineId;
- if (entry.machineProtocol) fm.machineProtocol = entry.machineProtocol;
- // The legacy DRM file a parked-drm pointer names (ticket 159, slice 6:
- // the drm resume route's compat read keys on it across restarts, Q-3 —
- // the record file is the truth, the pointer only points).
- if (entry.drmId) fm.drmId = entry.drmId;
-  if (entry.territoryNode) fm.territoryNode = entry.territoryNode;
-  if (entry.atlasRegion) fm.atlasRegion = entry.atlasRegion;
-  if (entry.subjects) fm.subjects = entry.subjects;
+  // write is lost. The same list drives #parseEntry's read-back, so the
+  // two directions cannot drift apart.
+  for (const key of OPTIONAL_ENTRY_FIELDS) {
+   const v = entry[key];
+   if (v) fm[key] = v;
+  }
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#dir(), `${entry.id}.md`), content, 'utf-8');
  }
@@ -480,7 +472,9 @@ add(draft: QueueDraft): QueueEntry {
     ? all.filter(e => {
         const fc = e.cites?.[0];
         if (!fc) return true;
-        return !this.#deferredSnippets.has(fc.split('@')[0]!);
+        const first = citeParts(fc);
+        if (!first) return true;
+        return !this.#deferredSnippets.has(first.snippetId);
       })
     : all;
 
@@ -806,12 +800,23 @@ add(draft: QueueDraft): QueueEntry {
      this.#engagement.write(eng);
    }
 
-   // Ticket 148's original per-thread deferral, kept as built: it needs a
-   // thread served twice, which the measured one-serve-per-snippet queue
-   // never does, but a queue that DOES re-serve a thread still deserves it.
+   // Ticket 148's original per-thread deferral — its own method, so the
+   // Q-115 sitting ledger above and the per-thread policy below stay
+   // separable; both policies are unchanged.
+   return this.#deferThreadAfterStrikes(entry, hasOverlap);
+ }
+
+ /**
+  * Ticket 148's original per-thread deferral, kept as built: it needs a
+  * thread served twice, which the measured one-serve-per-snippet queue
+  * never does, but a queue that DOES re-serve a thread still deserves it.
+  */
+ #deferThreadAfterStrikes(entry: QueueEntry, hasOverlap: boolean): boolean {
    const firstCite = entry.cites?.[0];
    if (!firstCite) return false;
-   const threadKey = firstCite.split('@')[0]!;
+   const first = citeParts(firstCite);
+   if (!first) return false;
+   const threadKey = first.snippetId;
    if (hasOverlap) { this.#threadStrikes.set(threadKey, 0); return false; }
    const strikes = (this.#threadStrikes.get(threadKey) ?? 0) + 1;
    this.#threadStrikes.set(threadKey, strikes);
@@ -822,7 +827,7 @@ add(draft: QueueDraft): QueueEntry {
        if (e.status !== 'pending') continue;
        const eCite = e.cites?.[0];
        if (!eCite) continue;
-       if (eCite.split('@')[0] === threadKey) { e.status = 'deferred'; this.#write(e); }
+       if (citeParts(eCite)?.snippetId === threadKey) { e.status = 'deferred'; this.#write(e); }
      }
      this.#append({ kind: 'thread-deferred', detail: `thread=${threadKey} strikes=${strikes}`, refs: [threadKey] });
      return true;

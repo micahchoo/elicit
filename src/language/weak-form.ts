@@ -3,6 +3,10 @@
  *
  * A question is rejected when it is a yes/no form, bundles multiple
  * questions, or carries leading junk (markdown prefixes, numbers, etc.).
+ *
+ * The filter is a preference, not a ban: when it empties the pool, the
+ * callers fall through to the unfiltered bank — a weak question beats no
+ * question. That policy lives here so every caller shares it (ticket 021).
  */
 const YES_NO_VERBS: Record<string, true> = {
 	do: true,

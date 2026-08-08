@@ -416,6 +416,9 @@ const SENTENCES = {
  'coach-seed-evaluated': () => 'evaluated coach seeding — cluster sizes logged',
  'coach-seed-failed': () => 'coach seed sweep failed',
  'coach-seeded-reoffer': () => 're-offered a parked seeded direction',
+ // The loop-harness tripwire (ticket 132): a dwell/demotion sweep failure.
+ // The rest of the run is already on disk — this is a harness-health line.
+ 'tripwire-failed': () => 'the tripwire sweep failed',
  'artifact-declared': () => 'you declared an artifact by the name you gave it',
  
  // ── The queue's degradation ladder (Q-55) ──

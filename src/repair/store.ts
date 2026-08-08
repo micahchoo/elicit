@@ -8,31 +8,21 @@
 // by the next consultation without any rebuild step.
 
 import { join } from 'node:path';
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-} from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { appendLine, readLines } from '../jsonl.js';
 import type { RepairRecord } from '../types.js';
 
 const REPAIRS_DIR = 'repairs';
 
 /** Write one repair record. Appends a JSON line to vault/repairs/<snippetId>.jsonl. */
 export function writeRepair(root: string, record: RepairRecord): void {
-  const dir = join(root, REPAIRS_DIR);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const id = record.snippetRef.split('@')[0]!;
-  const file = join(dir, `${id}.jsonl`);
-  appendFileSync(file, JSON.stringify(record) + '\n', 'utf-8');
+  appendLine(root, join(REPAIRS_DIR, `${id}.jsonl`), JSON.stringify(record));
 }
 
 /** Read all repair records for one snippet id. */
 function readRepairs(root: string, snippetId: string): RepairRecord[] {
-  const file = join(root, REPAIRS_DIR, `${snippetId}.jsonl`);
-  if (!existsSync(file)) return [];
-  const lines = readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean);
+  const lines = readLines(root, join(REPAIRS_DIR, `${snippetId}.jsonl`));
   return lines.map(l => JSON.parse(l) as RepairRecord);
 }
 
@@ -43,8 +33,7 @@ export function readAllRepairs(root: string): RepairRecord[] {
   const records: RepairRecord[] = [];
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.jsonl')) continue;
-    const lines = readFileSync(join(dir, f), 'utf-8').trim().split('\n').filter(Boolean);
-    for (const line of lines) records.push(JSON.parse(line) as RepairRecord);
+    for (const line of readLines(root, join(REPAIRS_DIR, f))) records.push(JSON.parse(line) as RepairRecord);
   }
   return records;
 }

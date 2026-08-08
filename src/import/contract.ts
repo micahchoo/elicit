@@ -125,6 +125,15 @@ text?: string;
 };
 
 /**
+ * The three decision verbs at runtime — the array mirror of
+ * `ImportDecision.action` above, so the review route's rejection and the
+ * type can never drift. `restate` is absent here for the same reason it is
+ * absent from the type (Q-58, documented above): the array IS the type's
+ * runtime face, not a second opinion.
+ */
+export const IMPORT_ACTIONS = ['approve', 'trim', 'discard'] as const;
+
+/**
  * A passage the PERSON chose (ruled 2026-08-04): the review surface lets the
  * reader keep a passage the harvester did not propose — including on a piece
  * where it proposed nothing. Plain verbatim text, held to exactly the gates a

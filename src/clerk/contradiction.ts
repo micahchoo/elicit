@@ -52,6 +52,7 @@ import {
  quotesFragmentSetOff,
 } from '../language/guards.js';
 import { widenToClause } from './clause.js';
+import { corrective, FRAMING_RULE, stripFences, type Rejection } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
 // Budgets
@@ -102,14 +103,6 @@ export const UNVERIFIED_CONFIRMATION = 'unverified-confirmation';
 // ---------------------------------------------------------------------------
 // Small pure helpers
 // ---------------------------------------------------------------------------
-
-/** Strip markdown fences an instructed-not-to model adds anyway. */
-function stripFences(raw: string): string {
- let s = raw.trim();
- s = s.replace(/^```(?:json)?\s*\n?/i, '');
- s = s.replace(/\n?```\s*$/, '');
- return s.trim();
-}
 
 /**
  * Clip with NO ellipsis marker.
@@ -269,49 +262,6 @@ export async function judgeOpposition(
 // ---------------------------------------------------------------------------
 
 /**
- * Copied verbatim from `src/clerk/composed.ts`, which does not export it.
- *
- * Copied rather than imported because this task creates one file and edits
- * none, and copied rather than reworded because the guard that checks the
- * output (`quotesFragmentSetOff`) accepts exactly the shape this text
- * describes: drift between the instruction and the check is how a compose path
- * starts returning null on every call.
- */
-const FRAMING_RULE = `HOW TO USE THEIR WORDS — frame the quote, never splice it:
-Put the speaker's exact words inside quotation marks. Then ask your question after them, in your own words.
-Shape: You wrote: "<their exact words>." <your question>?
-The shape is fixed. The question is yours — write your own, do not copy this example.
-Never weave their words into the grammar of your own sentence.
-Keep the quoted words exactly as they wrote them, first person and all. Outside the quotation marks, address the speaker as "you".`;
-
-/** Why a re-measure was refused. Each reason drives its own correction. */
-type Rejection =
- | 'no-quote'
- | 'unframed-quote'
- | 'not-interrogative'
- | 'first-person'
- | 'repeats-original'
- | 'names-the-tension';
-
-function corrective(rejection: Rejection, pole: string): string {
- const quoteRule = `Your question MUST contain this exact phrase, inside quotation marks: "${pole}".`;
- switch (rejection) {
-  case 'no-quote':
-   return `CRITICAL: Your previous response was rejected because it did not quote the speaker verbatim. ${quoteRule}`;
-  case 'unframed-quote':
-   return `CRITICAL: Your previous response was rejected because it wove the speaker's words into your own sentence. Put their words inside quotation marks. Then ask your question after them, in your own words. ${quoteRule}`;
-  case 'not-interrogative':
-   return `CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark. ${quoteRule}`;
-  case 'first-person':
-   return `CRITICAL: Your previous response was rejected because it spoke in the first person outside the quote. Keep the quoted words exactly as they are; everywhere else address the speaker as "you" — never "I", "my", or "me". ${quoteRule}`;
-  case 'repeats-original':
-   return `CRITICAL: Your previous response was rejected because it re-asked a question they have already answered. Ask about the same thing from a completely different angle — a specific occasion, a comparison, a case where it did not hold. ${quoteRule}`;
-  case 'names-the-tension':
-   return `CRITICAL: Your previous response was rejected because it repeated a summary written about the speaker back at them. Ask only about their own words. ${quoteRule}`;
- }
-}
-
-/**
  * The gate every re-measure passes. Ordered so the cheapest and most
  * fundamental refusal comes first, and so an unframed splice is rejected as a
  * splice before its "I" is judged (040: masking a spliced fragment would
@@ -419,7 +369,7 @@ Return only the question text. No markdown, no commentary.`;
   // compose path in the tree runs (`composeStillTrue`). Two attempts, then
   // silence: a third would spend a 40s clerk call to hear the same refusal.
   console.warn(`Contradiction: re-measure rejected (${rejection}), retrying`);
-  const retry = capPrompt([prompt, corrective(rejection, pole)], COMPOSE_BUDGET_CHARS);
+  const retry = capPrompt([prompt, corrective(rejection, `Your question MUST contain this exact phrase, inside quotation marks: "${pole}".`, 'remeasure')], COMPOSE_BUDGET_CHARS);
   raw = await askOnce(complete, retry, COMPOSE_TEMPERATURE);
   question = stripFences(raw).trim();
   rejection = checkRemeasure(question, pole, candidate.poleB, bodies, originalQuestions);

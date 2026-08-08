@@ -26,6 +26,8 @@
 // somebody thought of.
 
 import type { Complete, Facet, Reading, Snippet, Turn } from '../types.js';
+import { FACETS } from '../queue/facet-balance.js';
+import { stripFences } from './compose-gate.js';
 import {
   assertUserTurn,
   capPrompt,
@@ -254,14 +256,6 @@ function citeResolves(cite: string, snippets: Record<string, Snippet>): boolean 
 // Parsing
 // ---------------------------------------------------------------------------
 
-/** Strips markdown code fences, keeping the inner content. */
-function stripFences(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, '');
-  s = s.replace(/\n?```\s*$/, '');
-  return s.trim();
-}
-
 /**
  * The op objects the model produced, or null when nothing parsed.
  *
@@ -313,21 +307,11 @@ const REFERENT_KINDS: Record<Referent['kind'], true> = {
   other: true,
 };
 
-const FACETS: Record<Facet, true> = {
-  episode: true,
-  'general-event': true,
-  'lifetime-period': true,
-  fact: true,
-  construct: true,
-  intention: true,
-  value: true,
-  'causal-theory': true,
-  'momentary-state': true,
-  'know-what': true,
-  'know-how': true,
-  habit: true,
-  'know-why': true,
-};
+// The Facet vocabulary is not kept here: FACETS (../queue/facet-balance.ts) is
+// the canonical runtime list, imported rather than re-declared. A Set for the
+// membership check below, so a `facet` string arriving from JSON is tested
+// against the same list every other consumer uses.
+const FACET_SET: ReadonlySet<string> = new Set<string>(FACETS);
 
 /** A required string field: present, a string, and not just whitespace. */
 function text(v: unknown): string | null {
@@ -424,7 +408,7 @@ function shapeOp(
       const cites = resolvedCites(raw['cites'], snippets);
       if (cites === null) return { ok: false, reason: 'MINT without cites that resolve' };
       const facet = typeof raw['facet'] === 'string' ? raw['facet'] : '';
-      if (!(facet in FACETS)) return { ok: false, reason: `MINT with facet "${facet}"` };
+      if (!FACET_SET.has(facet)) return { ok: false, reason: `MINT with facet "${facet}"` };
       return {
         ok: true,
         op: {
