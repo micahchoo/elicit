@@ -74,7 +74,6 @@ function makeQueueEntry(overrides?: Partial<QueueEntry>): QueueEntry {
     license: 'CC0',
     question: 'What do you think?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
     created: '2026-06-01T12:00:00Z',
     ...overrides,
@@ -181,7 +180,6 @@ describe('composeOtherMindsExpedition', () => {
     expect(draft.errandPerson).toBe('Ada');
     expect(draft.source).toBe('composed');
     expect(draft.horizon).toBe('days');
-    expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
     expect(draft.questionForm).toBe('deliberative');
     expect(draft.cites).toEqual(['s1@3']);
@@ -291,7 +289,6 @@ function otherMindsDraft(person: string): QueueDraft {
     license: 'CC0',
     question: `Go ask ${person} about "Meetings steal my best hours". What surprised you, and what does it change?`,
     questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const,
     horizon: 'days' as const,
     cites: ['sn1@3'],
     quotedFragment: 'Meetings steal my best hours',
@@ -320,7 +317,6 @@ describe('runDocket other-minds expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition: vi.fn().mockResolvedValue(null),
       composeOtherMindsExpedition,
       gazetteerStore: gazetteer,
@@ -357,14 +353,12 @@ describe('runDocket other-minds expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition: vi.fn().mockResolvedValue({
         source: 'composed' as const,
         license: 'CC0',
         question: 'Research "Meetings steal my best hours". What surprised you, and what does it change?',
         questionForm: 'deliberative' as const,
-        sharpness: 'weak' as const,
-        horizon: 'days' as const,
+            horizon: 'days' as const,
         cites: ['sn1@3'],
         quotedFragment: 'Meetings steal my best hours',
       } satisfies QueueDraft),
@@ -391,7 +385,6 @@ describe('runDocket other-minds expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition: vi.fn().mockResolvedValue(null),
       composeOtherMindsExpedition,
       gazetteerStore: gazetteer,

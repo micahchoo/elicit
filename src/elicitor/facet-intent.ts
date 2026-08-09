@@ -13,7 +13,7 @@
  * 25 constructs to 0 episodes (ticket 042).
  */
 
-import type { Facet, RedLight } from '../types.js';
+import type { Facet } from '../types.js';
 
 /**
  * Ordered rules — first match wins. The order is a specificity ladder: an
@@ -127,22 +127,6 @@ export function classifyFacetIntent(question: string): Facet | null {
   return null;
 }
 
-/**
- * The facet a Red Light asks for. A red light names what is MISSING from the
- * user's last utterance, so the follow-up's intent is fixed by the light:
- * an abstraction with no episode under it wants the episode.
- */
-export function facetIntentForRedLight(kind: RedLight['kind']): Facet {
-  switch (kind) {
-    case 'abstraction-no-episode':
-      return 'episode';
-    case 'cause-no-event':
-      return 'episode';
-    case 'pole-no-contrast':
-      return 'construct';
-    case 'odd-term':
-      return 'construct';
-    case 'unexplored-referent':
-      return 'fact';
-  }
-}
+// facetIntentForRedLight died with the red-light channel (canon §10 cut,
+// 2026-08-09): the probe flow no longer composes follow-ups from red lights,
+// so nothing maps a light's kind to a facet.

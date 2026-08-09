@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
@@ -12,18 +12,23 @@ import { createFileAuth } from '../src/auth/auth.js';
 import { createClaimStore } from '../src/wiki/store.js';
 import { makeFakeComplete } from '../src/fake-responder.js';
 import { readEvents } from '../src/log/activity.js';
-import { facetHeading, lintNote } from '../src/queue/source-label.js';
 import type { Claim, Contradiction } from '../src/wiki/contract.js';
 import type { Facet, Snippet } from '../src/types.js';
 
 /**
- * The two wiki routes, driven through the REAL app.
+ * The wiki routes, driven through the REAL app.
  *
  * Every assertion below goes through `createApp` and `app.fetch`, never through
  * a hand-built handler, because the failure this suite exists to catch is the
  * one this campaign has shipped five times: a seam that compiles, tests green,
  * and reaches nothing. The read-log assertions read the FILE ON DISK rather
  * than the response body for the same reason.
+ *
+ * The response under test is the CONTEXTUALIZER (Batch B, §11): your passages
+ * grouped into neighborhoods, each with a context line, the contradiction
+ * exhibits, and the lens's freshness. The claim apparatus receded from the
+ * surface — the claim verb routes below still exist (the /v2 personas and the
+ * read-log instrument speak them), and their tests stay.
  *
  * No port is ever bound. `app.fetch` with a loopback `remoteAddr` is the whole
  * transport, so nothing here can collide with a live instance.
@@ -93,19 +98,34 @@ function claim(id: string, facet: Facet, cites: string[], over?: Partial<Claim>)
   };
 }
 
-/** The response shape `GET /api/wiki` answers with. */
+/** The response shape `GET /api/wiki` answers with — the contextualizer. */
+type WikiPassage = {
+  id: string;
+  prose: string;
+  captured: string;
+  question: string;
+  position: number | null;
+  context?: { text: string; echoes: string[]; at: string };
+};
+
 type WikiResponse = {
-  facets: { facet: Facet; heading: string; claims: Claim[] }[];
+  neighborhoods: { name: string; passages: WikiPassage[] }[];
   contradictions: Contradiction[];
-  lint: { kind: string; subject: string; note: string }[];
+  freshness: { readThrough: string | null; sittingsBehind: number; lastSittingAt: string | null };
   lintedAt: string | null;
   all: boolean;
 };
 
+/** Every passage id on the page, in page order. */
+function passageIds(body: WikiResponse): string[] {
+  return body.neighborhoods.flatMap((n) => n.passages.map((p) => p.id));
+}
+
 // ── The fixture ──
 //
-// One vault, five snippets, and claims whose citation graph has a KNOWN shape,
-// so the coreness ordering is a fact rather than whatever came back.
+// One vault, five snippets (the passages), and claims whose citation graph has
+// a KNOWN shape — the claim vault is not deleted, its store tests survive, and
+// the contradictions it carries still render as exhibits.
 
 describe('the wiki routes', () => {
   let app: Hono;
@@ -139,7 +159,8 @@ describe('the wiki routes', () => {
 
     // `hub` sits on four snippets, `island` on one and alone. Coreness is
     // 2-hop snippet reach normalized against the graph max, so hub = 1 and
-    // island = 1/4 — a strict order, not a tie.
+    // island = 1/4 — a strict order, not a tie. (The claim essay receded;
+    // the vault still holds the claims, and their files still exist.)
     store.writeClaim(
       claim('hub', 'construct', [
         `${snips[0]!.id}@1`,
@@ -166,10 +187,6 @@ describe('the wiki routes', () => {
         supersedeReason: 'narrowed',
       }),
     );
-
-    // Every cite unresolvable — the one lint finding that is not shadowed, so
-    // the response's lint list is deterministic.
-    store.writeClaim(claim('orphan', 'fact', ['nosuch@1']));
 
     const contradiction = (id: string, status: 'open' | 'dissolved'): Contradiction => ({
       id,
@@ -201,8 +218,8 @@ describe('the wiki routes', () => {
       authStore: createFileAuth(join(dir, '.auth.json')),
       onDocketSettled: barrier.onDocketSettled,
     });
-    // The boot docket runs the wiki jobs, which is where the lint findings the
-    // route serves come from. Waiting for it is what makes this the real seam.
+    // The boot docket runs the wiki jobs, which is where the lint stamp the
+    // route serves comes from. Waiting for it is what makes this the real seam.
     await barrier.waitFor(1);
   });
 
@@ -210,87 +227,157 @@ describe('the wiki routes', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  // ── GET /api/wiki ──
+  // ── GET /api/wiki — the contextualizer ──
 
-  it('groups claims by facet, with a heading a person can read', async () => {
+  it('serves every passage exactly once, grouped into neighborhoods', async () => {
     const res = await get(app, '/api/wiki');
     expect(res.status).toBe(200);
     const body = (await res.json()) as WikiResponse;
 
-    const facets = body.facets.map((f) => f.facet);
-    expect(facets).toContain('construct');
-    expect(facets).toContain('value');
-    // A heading over an empty section is noise.
-    for (const group of body.facets) expect(group.claims.length).toBeGreaterThan(0);
+    expect(body.neighborhoods.length).toBeGreaterThan(0);
+    for (const n of body.neighborhoods) {
+      expect(n.name).toMatch(/\S/);
+      expect(n.passages.length).toBeGreaterThan(0);
+    }
+    const ids = passageIds(body);
+    expect(ids).toHaveLength(5);
+    expect(new Set(ids).size).toBe(5);
+    // Every snippet is on the page — the contextualizer hides nothing.
+    for (const s of snips) expect(ids).toContain(s.id);
+    // `all` rides the wire (the ?all=1 query echo) for the foot toggle.
+    expect(body.all).toBe(false);
+    const allBody = (await (await get(app, '/api/wiki?all=1')).json()) as WikiResponse;
+    expect(allBody.all).toBe(true);
+    expect(passageIds(allBody)).toEqual(ids);
+  });
 
-    for (const group of body.facets) {
-      expect(group.heading).toBe(facetHeading(group.facet));
-      // Ticket 063: no hyphenated machine literal reaches a reading surface,
-      // and no heading IS the literal. `fact` inside "Steady facts" leaks
-      // nothing; `causal-theory` over a page of prose is a debug string.
-      expect(group.heading.toLowerCase()).not.toBe(group.facet);
-      if (group.facet.includes('-')) expect(group.heading).not.toContain(group.facet);
+  it('carries the mechanical facts per passage — when, what asked, where it stood', async () => {
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    const all = body.neighborhoods.flatMap((n) => n.passages);
+    for (const p of all) {
+      expect(p.prose).toMatch(/\S/);
+      expect(Date.parse(p.captured)).not.toBeNaN();
+      expect(typeof p.question).toBe('string');
+      expect(p.position).toBeNull(); // no span in this fixture
+      // No claim apparatus on the wire: no status, no range, no cites.
+      expect((p as Record<string, unknown>).status).toBeUndefined();
+      expect((p as Record<string, unknown>).range).toBeUndefined();
+      expect((p as Record<string, unknown>).cites).toBeUndefined();
     }
   });
 
-  it('orders claims within a facet by coreness, most connected first', async () => {
-    const res = await get(app, '/api/wiki');
-    const body = (await res.json()) as WikiResponse;
-    const construct = body.facets.find((f) => f.facet === 'construct');
-    expect(construct).toBeDefined();
-    expect(construct!.claims.map((c) => c.id)).toEqual(['hub', 'island']);
+  it('renders a context line per passage once the context job has run (Batch B)', async () => {
+    // B2's store, in its on-disk shape: vault/wiki/context-lines.json.
+    const lines = [
+      {
+        passageId: snips[0]!.id,
+        text: 'Said in January, after a question about the kitchen window.',
+        echoes: [snips[1]!.id],
+        at: '2026-01-02T00:00:00.000Z',
+        model: 'test-model',
+      },
+    ];
+    writeFileSync(join(dir, 'wiki', 'context-lines.json'), JSON.stringify(lines), 'utf-8');
+
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    const first = body.neighborhoods
+      .flatMap((n) => n.passages)
+      .find((p) => p.id === snips[0]!.id);
+    expect(first).toBeDefined();
+    expect(first!.context).toEqual({
+      text: 'Said in January, after a question about the kitchen window.',
+      echoes: [snips[1]!.id],
+      at: '2026-01-02T00:00:00.000Z',
+    });
+    // The model stamp stays in the store — no model name reaches the wire.
+    expect(JSON.stringify(first!.context)).not.toContain('test-model');
+
+    // The other passages have no line yet — the client renders the fallback.
+    for (const n of body.neighborhoods) {
+      for (const p of n.passages) {
+        if (p.id !== snips[0]!.id) expect(p.context).toBeUndefined();
+      }
+    }
+
+    // Restore: the store is derived state (Q-3), the next test runs clean.
+    rmSync(join(dir, 'wiki', 'context-lines.json'), { force: true });
   });
 
-  it('leaves archived and superseded claims out of the default reading', async () => {
-    const res = await get(app, '/api/wiki');
-    const body = (await res.json()) as WikiResponse;
-    const ids = body.facets.flatMap((f) => f.claims.map((c) => c.id));
-    expect(ids).not.toContain('gone');
-    expect(ids).not.toContain('old');
-    expect(ids).toContain('hub');
-    expect(body.all).toBe(false);
+  it('falls back to a deterministic lexical grouping when the neighborhoods store is empty', async () => {
+    // C1's store is absent in the fresh fixture; the page must still render,
+    // grouped deterministically (by provenance session) with no embedding
+    // channel. Two reads are the same page.
+    rmSync(join(dir, 'wiki', 'neighborhoods.json'), { force: true });
+    const a = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    const b = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    expect(a.neighborhoods.map((n) => n.name)).toEqual(b.neighborhoods.map((n) => n.name));
+    expect(passageIds(a)).toEqual(passageIds(b));
+    expect(passageIds(a)).toHaveLength(5);
   });
 
-  it('includes them under ?all=1 — nothing is deleted, it is just not the default', async () => {
-    const res = await get(app, '/api/wiki?all=1');
-    const body = (await res.json()) as WikiResponse;
-    const ids = body.facets.flatMap((f) => f.claims.map((c) => c.id));
-    expect(ids).toContain('gone');
-    expect(ids).toContain('old');
-    expect(body.all).toBe(true);
+  it('renders a present-but-empty store honestly — the job ran and found no themes (C1)', async () => {
+    // A store with zero clusters is a fact, not a gap: the clustering job
+    // ran and found no themes. The page says so instead of silently
+    // re-grouping lexically as if the job had not run.
+    writeFileSync(
+      join(dir, 'wiki', 'neighborhoods.json'),
+      JSON.stringify({ rebuiltAt: '2026-01-03T00:00:00.000Z', source: 'embedding', clusters: [] }),
+      'utf-8',
+    );
+
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    expect(body.neighborhoods).toHaveLength(1);
+    expect(body.neighborhoods[0]!.name).toBe('no themes yet');
+    // Every passage still renders, exactly once — the page is your words.
+    expect(passageIds(body)).toHaveLength(5);
+    expect(new Set(passageIds(body)).size).toBe(5);
+
+    rmSync(join(dir, 'wiki', 'neighborhoods.json'), { force: true });
   });
 
-  it('keeps the ordering stable when ?all=1 widens the reading', async () => {
-    // Coreness is normalized against the whole graph, so hub stays ahead of
-    // island whether or not the archived claims are shown.
-    const body = (await (await get(app, '/api/wiki?all=1')).json()) as WikiResponse;
-    const construct = body.facets.find((f) => f.facet === 'construct')!;
-    const order = construct.claims.map((c) => c.id);
-    expect(order.indexOf('hub')).toBeLessThan(order.indexOf('island'));
+  it('serves the neighborhoods store when C1\'s job has run', async () => {
+    // C1's store shape: vault/wiki/neighborhoods.json. The store wins when
+    // present; leftover passages (harvested since the last rebuild) still
+    // render through the lexical fallback, appended after the store's own
+    // clusters so the page is always the whole corpus.
+    const storeFile = {
+      rebuiltAt: '2026-01-03T00:00:00.000Z',
+      source: 'lexical' as const,
+      clusters: [
+        { name: 'the kitchen window', passageIds: [snips[0]!.id, snips[3]!.id] },
+        { name: 'rust and departures', passageIds: [snips[1]!.id] },
+      ],
+    };
+    writeFileSync(join(dir, 'wiki', 'neighborhoods.json'), JSON.stringify(storeFile), 'utf-8');
+
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    const names = body.neighborhoods.map((n) => n.name);
+    // The store's own clusters come first, in the store's order.
+    expect(names.slice(0, 2)).toEqual(['the kitchen window', 'rust and departures']);
+    const first = body.neighborhoods[0]!;
+    expect(first.passages.map((p) => p.id)).toEqual([snips[0]!.id, snips[3]!.id]);
+    // The two un-clustered passages (sourdough, telescopes) are not lost:
+    // they render in appended fallback neighborhoods, exactly once each.
+    const ids = passageIds(body);
+    expect(ids).toContain(snips[2]!.id);
+    expect(ids).toContain(snips[4]!.id);
+    expect(new Set(ids).size).toBe(5);
+
+    // Restore: the fallback test above must run from a clean slate.
+    rmSync(join(dir, 'wiki', 'neighborhoods.json'), { force: true });
   });
 
-  it('returns the open contradiction as material, and the dissolved one only under ?all=1', async () => {
+  it('carries every contradiction in the default payload — the lens decides visibility (wave 5)', async () => {
     const plain = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
-    expect(plain.contradictions.map((c) => c.id)).toEqual(['live']);
-    // Q-15: met as material. The body carries the two dated poles.
+    expect(plain.contradictions.map((c) => c.id).sort()).toEqual(['live', 'settled']);
+    const settled = plain.contradictions.find((c) => c.id === 'settled');
+    expect(settled!.status).toBe('dissolved');
+    expect(settled!.updated).toBe(NOW);
+    // The exhibit body carries the two dated poles.
     expect(plain.contradictions[0]!.body).toContain('morning light');
 
     const all = (await (await get(app, '/api/wiki?all=1')).json()) as WikiResponse;
     expect(all.contradictions.map((c) => c.id).sort()).toEqual(['live', 'settled']);
-  });
-
-  it('renders a lint finding as a note, with no identifier in it', async () => {
-    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
-    const orphan = body.lint.find((f) => f.subject === 'orphan');
-    expect(orphan, 'the orphan-claim finding did not reach the route').toBeDefined();
-    expect(orphan!.note).toBe(lintNote('orphan-claim'));
-
-    // Ticket 038: the leak that closed a ticket was ids on a surface a person
-    // reads. `LintFinding.detail` names the dead cites; the route drops it.
-    const rendered = JSON.stringify(body.lint);
-    expect(rendered).not.toContain('nosuch@1');
-    expect(rendered).not.toContain('detail');
-    expect(rendered).not.toContain('refs');
   });
 
   it('says when the wiki was last read, so silence and absence do not look alike', async () => {
@@ -315,9 +402,199 @@ describe('the wiki routes', () => {
     expect(after, 'reading the wiki wrote shadow records').toBe(before);
   });
 
-  // ── POST /api/wiki/claim/:id/read ──
+  // ── POST /api/wiki/passage/:id/read — the contextualizer's lens instrument ──
 
-  it('records a read on disk, dated, with the surface that read it (Q-21)', async () => {
+  it('records a passage read on disk, dated, with the surface that read it (Q-21)', async () => {
+    const res = await post(app, `/api/wiki/passage/${snips[0]!.id}/read`, { surface: 'wiki' });
+    expect(res.status).toBe(200);
+
+    const reads = readFileSync(join(dir, 'wiki', 'passage-reads.jsonl'), 'utf-8').trim().split('\n');
+    const last = JSON.parse(reads[reads.length - 1]!) as { passageId: string; at: string; surface: string };
+    expect(last.passageId).toBe(snips[0]!.id);
+    expect(last.surface).toBe('wiki');
+    expect(Date.parse(last.at)).not.toBeNaN();
+  });
+
+  it('answers 404 for a passage that is not there, and writes nothing', async () => {
+    const res = await post(app, '/api/wiki/passage/nosuchpassage/read', { surface: 'wiki' });
+    expect(res.status).toBe(404);
+  });
+
+  it('defaults the surface rather than writing undefined into the file', async () => {
+    await post(app, `/api/wiki/passage/${snips[1]!.id}/read`);
+    const reads = readFileSync(join(dir, 'wiki', 'passage-reads.jsonl'), 'utf-8').trim().split('\n');
+    const last = JSON.parse(reads[reads.length - 1]!) as { surface: string };
+    expect(last.surface).toMatch(/\S/);
+  });
+
+  // ── Wave 5: freshness (the lens's server gaps) ──
+
+  it('ships the freshness block — read-through is the latest read, and an empty vault has no sittings', async () => {
+    // The fixture has transcripts only after the next test writes them, so
+    // here the census is empty and the read-through is the last recorded read.
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    expect(body.freshness.readThrough).toBeTypeOf('string');
+    expect(Date.parse(body.freshness.readThrough!)).not.toBeNaN();
+    expect(body.freshness.sittingsBehind).toBe(0);
+    expect(body.freshness.lastSittingAt).toBeNull();
+  });
+
+  it('freshness counts only non-import sittings started after the read-through', async () => {
+    // A read through to "now", then three transcripts: one earlier, one
+    // later, and one later-but-imported (the cadence's rule — a bulk import
+    // is dated pieces, not someone sitting down).
+    await post(app, `/api/wiki/passage/${snips[0]!.id}/read`, { surface: 'wiki' });
+    const transcripts = join(dir, 'transcripts');
+    mkdirSync(transcripts, { recursive: true });
+    writeFileSync(
+      join(transcripts, 's-before.md'),
+      '---\nsession: s-before\nstarted: \'2000-01-01T00:00:00.000Z\'\nprotocol: self\n---\n',
+    );
+    writeFileSync(
+      join(transcripts, 's-behind.md'),
+      '---\nsession: s-behind\nstarted: \'2099-01-01T00:00:00.000Z\'\nprotocol: self\n---\n',
+    );
+    writeFileSync(
+      join(transcripts, 's-import.md'),
+      '---\nsession: s-import\nstarted: \'2099-02-01T00:00:00.000Z\'\nprotocol: import\n---\n',
+    );
+
+    const body = (await (await get(app, '/api/wiki')).json()) as WikiResponse;
+    expect(body.freshness.readThrough).toBeTypeOf('string');
+    expect(body.freshness.sittingsBehind).toBe(1); // s-behind only — the import does not count
+    expect(body.freshness.lastSittingAt).toBe('2099-01-01T00:00:00.000Z');
+  });
+
+  // ── Batch B (§11): the contextualizer's three verbs ──
+
+  it('context-fix rewrites the line, keeps its echoes, stamps at, and drops the model', async () => {
+    writeFileSync(
+      join(dir, 'wiki', 'context-lines.json'),
+      JSON.stringify([{
+        passageId: snips[0]!.id,
+        text: 'Said in January, after a question about the kitchen window.',
+        echoes: [snips[1]!.id],
+        at: '2026-01-02T00:00:00.000Z',
+        model: 'test-model',
+      }]),
+      'utf-8',
+    );
+
+    const res = await post(app, `/api/wiki/passage/${snips[0]!.id}/context-fix`, {
+      text: 'Said in February, after a question about the window — not the kitchen.',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const lines = JSON.parse(readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8')) as {
+      passageId: string;
+      text: string;
+      echoes: string[];
+      at: string;
+      model?: string;
+    }[];
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text).toBe('Said in February, after a question about the window — not the kitchen.');
+    expect(lines[0]!.echoes).toEqual([snips[1]!.id]); // echoes kept
+    expect(Date.parse(lines[0]!.at)).not.toBeNaN(); // stamped — new under the lens
+    expect(lines[0]!.model).toBeUndefined(); // user-fixed lines carry no Q-34 stamp
+
+    rmSync(join(dir, 'wiki', 'context-lines.json'), { force: true });
+  });
+
+  it('context-fix answers 400 for a missing, empty, or non-string line, and writes nothing', async () => {
+    writeFileSync(
+      join(dir, 'wiki', 'context-lines.json'),
+      JSON.stringify([{ passageId: snips[0]!.id, text: 'a line', echoes: [], at: NOW }]),
+      'utf-8',
+    );
+    const before = readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8');
+    await post(app, `/api/wiki/passage/${snips[0]!.id}/context-fix`);
+    for (const text of ['', '   ', 42]) {
+      const res = await post(app, `/api/wiki/passage/${snips[0]!.id}/context-fix`, { text });
+      expect(res.status).toBe(400);
+    }
+    expect(readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8')).toBe(before);
+    rmSync(join(dir, 'wiki', 'context-lines.json'), { force: true });
+  });
+
+  it('context-fix answers 404 for a passage that is not there, and 400 when no line exists to fix', async () => {
+    const res = await post(app, '/api/wiki/passage/nosuchpassage/context-fix', { text: 'x' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown passage' });
+
+    // The passage is real but the context job has not run for it: nothing
+    // to fix — the mechanical fallback is facts, not agent ink.
+    const noLine = await post(app, `/api/wiki/passage/${snips[1]!.id}/context-fix`, { text: 'x' });
+    expect(noLine.status).toBe(400);
+  });
+
+  it('unlink-echo detaches one echo, keeps the line, and stamps at', async () => {
+    writeFileSync(
+      join(dir, 'wiki', 'context-lines.json'),
+      JSON.stringify([{
+        passageId: snips[0]!.id,
+        text: 'Said in January — it echoes the rust and the ferry.',
+        echoes: [snips[1]!.id, snips[2]!.id],
+        at: '2026-01-02T00:00:00.000Z',
+      }]),
+      'utf-8',
+    );
+
+    const res = await post(app, `/api/wiki/passage/${snips[0]!.id}/unlink-echo`, { echo: snips[1]!.id });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const lines = JSON.parse(readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8')) as {
+      passageId: string;
+      text: string;
+      echoes: string[];
+      at: string;
+    }[];
+    expect(lines[0]!.text).toBe('Said in January — it echoes the rust and the ferry.'); // untouched
+    expect(lines[0]!.echoes).toEqual([snips[2]!.id]);
+    expect(Date.parse(lines[0]!.at)).not.toBeNaN();
+
+    rmSync(join(dir, 'wiki', 'context-lines.json'), { force: true });
+  });
+
+  it('unlink-echo answers 400 for an echo the line does not carry, and for a missing echo', async () => {
+    writeFileSync(
+      join(dir, 'wiki', 'context-lines.json'),
+      JSON.stringify([{ passageId: snips[0]!.id, text: 'a line', echoes: [], at: NOW }]),
+      'utf-8',
+    );
+    const before = readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8');
+    const missing = await post(app, `/api/wiki/passage/${snips[0]!.id}/unlink-echo`, { echo: snips[1]!.id });
+    expect(missing.status).toBe(400);
+    await post(app, `/api/wiki/passage/${snips[0]!.id}/unlink-echo`);
+    expect(readFileSync(join(dir, 'wiki', 'context-lines.json'), 'utf-8')).toBe(before);
+    rmSync(join(dir, 'wiki', 'context-lines.json'), { force: true });
+  });
+
+  it('unlink-echo answers 404 for a passage that is not there', async () => {
+    const res = await post(app, '/api/wiki/passage/nosuchpassage/unlink-echo', { echo: 'x' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown passage' });
+  });
+
+  it('direction creates an un-coached Direction from a passage (Q-110 door 2)', async () => {
+    const res = await post(app, `/api/wiki/passage/${snips[0]!.id}/direction`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { direction: { slug: string; name: string } };
+    expect(body.direction.name).toBe(snips[0]!.prose);
+    expect(body.direction.slug).toMatch(/\S/);
+  });
+
+  it('direction answers 404 for a passage that is not there', async () => {
+    const res = await post(app, '/api/wiki/passage/nosuchpassage/direction');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown passage' });
+  });
+
+  // ── The retained claim routes (the /v2 personas and the read-log speak them) ──
+
+  it('records a claim read on disk, dated, with the surface that read it (Q-21)', async () => {
     const res = await post(app, '/api/wiki/claim/hub/read', { surface: 'wiki' });
     expect(res.status).toBe(200);
 
@@ -328,16 +605,9 @@ describe('the wiki routes', () => {
     expect(Date.parse(stored!.readLog[0]!.at)).not.toBeNaN();
   });
 
-  it('records the second read too — the instrument counts, it does not deduplicate', async () => {
+  it('records the second claim read too — the instrument counts, it does not deduplicate', async () => {
     await post(app, '/api/wiki/claim/hub/read', { surface: 'wiki' });
     expect(createClaimStore(dir).readClaim('hub')!.readLog).toHaveLength(2);
-  });
-
-  it('defaults the surface rather than writing undefined into the file', async () => {
-    await post(app, '/api/wiki/claim/island/read');
-    const log = createClaimStore(dir).readClaim('island')!.readLog;
-    expect(log).toHaveLength(1);
-    expect(log[0]!.surface).toMatch(/\S/);
   });
 
   it('answers 404 for a claim that is not there, and writes nothing', async () => {
@@ -345,12 +615,107 @@ describe('the wiki routes', () => {
     expect(res.status).toBe(404);
   });
 
-  it('changes only the read-log — a read is never an edit', async () => {
+  // ── Batch A (ruling 2026-08-08): the retained margin verbs — narrower, unlink, push down ──
+
+  it('narrower edits only the claim\'s range and stamps updated', async () => {
     const before = createClaimStore(dir).readClaim('worth')!;
-    await post(app, '/api/wiki/claim/worth/read', { surface: 'wiki' });
-    const after = createClaimStore(dir).readClaim('worth')!;
-    expect({ ...after, readLog: [] }).toEqual({ ...before, readLog: [] });
-    expect(after.readLog).toHaveLength(1);
+    const res = await post(app, '/api/wiki/claim/worth/narrower', { range: 'only on Saturdays' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const stored = createClaimStore(dir).readClaim('worth')!;
+    expect(stored.range).toBe('only on Saturdays');
+    expect(Date.parse(stored.updated)).not.toBeNaN();
+    // Body, cites, status, attestation: untouched.
+    expect({ ...stored, range: before.range, updated: before.updated }).toEqual(before);
+  });
+
+  it('narrower answers 400 for a missing, empty, or non-string range, and writes nothing', async () => {
+    const before = createClaimStore(dir).readClaim('worth')!;
+    await post(app, '/api/wiki/claim/worth/narrower');
+    for (const range of ['', '   ', 42]) {
+      const res = await post(app, '/api/wiki/claim/worth/narrower', { range });
+      expect(res.status).toBe(400);
+    }
+    expect(createClaimStore(dir).readClaim('worth')).toEqual(before);
+  });
+
+  it('narrower answers 404 for a claim that is not there', async () => {
+    const res = await post(app, '/api/wiki/claim/nosuchclaim/narrower', { range: 'x' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown claim' });
+  });
+
+  it('unlink detaches one cite, keeps the rest in order, and stamps updated', async () => {
+    const before = createClaimStore(dir).readClaim('hub')!;
+    const cite = before.cites[0]!;
+    const res = await post(app, '/api/wiki/claim/hub/unlink', { cite });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const stored = createClaimStore(dir).readClaim('hub')!;
+    expect(stored.cites).toEqual(before.cites.slice(1));
+    expect(stored.cites).not.toContain(cite);
+    expect(Date.parse(stored.updated)).not.toBeNaN();
+    expect({ ...stored, cites: before.cites, updated: before.updated }).toEqual(before);
+  });
+
+  it('unlink answers 400 for a cite the claim does not carry, and writes nothing', async () => {
+    const before = createClaimStore(dir).readClaim('hub')!;
+    const res = await post(app, '/api/wiki/claim/hub/unlink', { cite: 'nosuch@1' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'no such cite' });
+    expect(createClaimStore(dir).readClaim('hub')).toEqual(before);
+  });
+
+  it('unlink answers 400 for a missing, empty, or non-string cite', async () => {
+    const before = createClaimStore(dir).readClaim('hub')!;
+    await post(app, '/api/wiki/claim/hub/unlink');
+    for (const cite of ['', '   ', 42]) {
+      const res = await post(app, '/api/wiki/claim/hub/unlink', { cite });
+      expect(res.status).toBe(400);
+    }
+    expect(createClaimStore(dir).readClaim('hub')).toEqual(before);
+  });
+
+  it('unlink refuses to leave a claim citeless (Q-21)', async () => {
+    const res = await post(app, '/api/wiki/claim/island/unlink', {
+      cite: createClaimStore(dir).readClaim('island')!.cites[0]!,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/evidence/i);
+    expect(createClaimStore(dir).readClaim('island')!.cites).toHaveLength(1);
+  });
+
+  it('unlink answers 404 for a claim that is not there', async () => {
+    const res = await post(app, '/api/wiki/claim/nosuchclaim/unlink', { cite: 'x@1' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown claim' });
+  });
+
+  it('push down retires the claim as a past self — archived with the fixed reason, the file kept (Q-29)', async () => {
+    const before = createClaimStore(dir).readClaim('worth')!;
+    const res = await post(app, '/api/wiki/claim/worth/push-down');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const stored = createClaimStore(dir).readClaim('worth')!;
+    expect(stored.archived).toBe(true);
+    expect(stored.archiveReason).toBe('user-push-down');
+    expect(Date.parse(stored.updated)).not.toBeNaN();
+    // The file stays; the essay renders it aside, never deletes it (Q-29).
+    expect(existsSync(join(dir, 'wiki', 'claims', 'worth.md'))).toBe(true);
+    // The rest of the claim is untouched.
+    expect(stored.body).toBe(before.body);
+    expect(stored.cites).toEqual(before.cites);
+    expect(stored.status).toBe(before.status);
+    expect(stored.attested).toBe(before.attested);
+  });
+
+  it('push down answers 404 for a claim that is not there', async () => {
+    const res = await post(app, '/api/wiki/claim/nosuchclaim/push-down');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'unknown claim' });
   });
 });
 
@@ -387,7 +752,7 @@ describe('the wiki routes behind the gate', () => {
   });
 
   it('refuses an unauthenticated read-log write', async () => {
-    expect((await post(app, '/api/wiki/claim/hub/read', { surface: 'wiki' })).status).toBe(401);
+    expect((await post(app, '/api/wiki/passage/nosuch/read', { surface: 'wiki' })).status).toBe(401);
   });
 
   it('opens both to a logged-in session', async () => {
@@ -396,9 +761,9 @@ describe('the wiki routes behind the gate', () => {
     const cookie = /elicit_session=[^;]+/.exec(login.headers.get('set-cookie') ?? '')?.[0];
     expect(cookie).toBeDefined();
     expect((await get(app, '/api/wiki', cookie)).status).toBe(200);
-    // No such claim in this vault, so 404 rather than 401 is the proof the
+    // No such passage in this vault, so 404 rather than 401 is the proof the
     // gate opened and the handler ran.
-    expect((await post(app, '/api/wiki/claim/hub/read', undefined, cookie)).status).toBe(404);
+    expect((await post(app, '/api/wiki/passage/nosuch/read', undefined, cookie)).status).toBe(404);
   });
 });
 
@@ -440,9 +805,7 @@ describe('resonance on the live turn path', () => {
    * event, and it is the one an emitter guarded by `if (hits.length)` drops.
    */
   it('emits resonance-checked on a turn that echoes nothing', async () => {
-    const start = await post(app, '/api/session', {
-      mode: { minutes: 10, energy: 'medium', target: 'self' },
-    });
+    const start = await post(app, '/api/session', {});
     const { sessionId } = (await start.json()) as { sessionId: string };
 
     await post(app, `/api/session/${sessionId}/turn`, {
@@ -458,9 +821,7 @@ describe('resonance on the live turn path', () => {
   });
 
   it('counts the hits when the vault does echo', async () => {
-    const start = await post(app, '/api/session', {
-      mode: { minutes: 10, energy: 'medium', target: 'self' },
-    });
+    const start = await post(app, '/api/session', {});
     const { sessionId } = (await start.json()) as { sessionId: string };
 
     const before = readEvents(dir).filter((e) => e.kind === 'resonance-checked').length;

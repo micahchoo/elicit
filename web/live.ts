@@ -3,8 +3,8 @@
  * server pushes one SSE event per log append (Q-23 — every actor writes
  * through that spine, so an append IS "something changed"). Screens that
  * only READ re-render when the log moves; screens holding the person's
- * unsent words or pending decisions (exchange, drm, harvest, piece,
- * import, coach) are never re-rendered underneath them.
+ * unsent words or pending decisions (the room, harvest, piece, import,
+ * coach) are never re-rendered underneath them.
  *
  * Injection, not import (the seam, web/deps.ts): navTo and the current
  * screen arrive via initLive at boot — the territory pattern. The one
@@ -35,8 +35,13 @@ function wired(): LiveDeps {
  return deps;
 }
 
+// Read-only surfaces re-render when the log moves. The today surface
+// refreshes through its own in-place activity reader (redesign defect 3)
+// and the room holds the person's unsent words (the answer field), so
+// neither is ever a live-refresh target — the set has no room entries
+// (wave 4) and never will.
 const LIVE_SCREENS: ReadonlySet<Screen> = new Set<Screen>([
- 'waiting', 'wiki', 'reviews', 'inbox', 'unprompted',
+ 'review', 'about-you', 'your-words',
 ]);
 let liveSource: EventSource | null = null;
 let liveTimer: ReturnType<typeof setTimeout> | null = null;

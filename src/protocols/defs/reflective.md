@@ -10,10 +10,11 @@ questionForm: theoretical
 # empty (ticket 079): one sentence, no conversation reference, no placeholders.
 floorProbe: "What would it cost you to be wrong about that?"
 # The instrument's phase machine (ticket 159, slice 4): reflective is ONE
-# phase wrapping the current P1/P2/P3 flow. The machine question is composed
-# from this distilled ways-in prompt and is the P3-equivalent — P1
-# juxtaposition and P2 red-light stay the dominant channels, and the machine
-# serves only when both are quiet. minExchanges 0: a one-phase machine never
+# phase wrapping the probe flow. The machine question is composed
+# from this distilled ways-in prompt and is the fallback probe — P1
+# juxtaposition stays the dominant channel, and the machine serves only
+# when it is quiet.
+# minExchanges 0: a one-phase machine never
 # gates on floors; the marker closes the sitting.
 phases:
   - id: ways-in

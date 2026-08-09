@@ -1,15 +1,15 @@
 /**
  * The import cluster (Wave D1 extraction): every /api/import route — scan,
  * next (GET+POST), decisions, exclude, survey (GET+POST), region — plus
- * the reach pair and the importNext/importSurvey helpers, moved wholesale
- * out of src/server.ts. Wire shapes, route paths, log kinds, and error
- * statuses are byte-identical to the pre-extraction server.
+ * the importNext/importSurvey helpers, moved wholesale out of src/server.ts.
+ * Wire shapes, route paths, log kinds, and error statuses are byte-identical
+ * to the pre-extraction server.
  *
  * The handlers close over exactly the bindings ImportDeps names: the
  * staging and region stores server.ts owns (also shared with the Clerk's
  * docket thunks), the vault/queue/root trio, the server's emit seam, the
- * x-elicit-pure read detector (129 — survey and reach skip their writes
- * under it) and the docket start handle (scan re-triggers extraction).
+ * x-elicit-pure read detector (129 — survey skips its write under it) and
+ * the docket start handle (scan re-triggers extraction).
  * The dropped-line marks are classified by src/import/body.ts — the one
  * copy of the `clean` vocabulary (moved home with the classifier).
  */
@@ -24,11 +24,9 @@ import { AUTHORS, IMPORT_ACTIONS } from './contract.js';
 import { validateDecisions } from '../guards.js';
 import { droppedRegions } from './body.js';
 import {
- appendReachDecline,
  bodyHash,
  compilePattern,
  pipelineCommit,
- pipelineReach,
  pipelineScan,
  pipelineSurvey,
  type ScanPipelineResult,
@@ -37,7 +35,6 @@ import {
 import type { ImportStore } from './store.js';
 import type { RegionStore } from './region.js';
 import type { QueueStore, Vault } from '../types.js';
-import type { LogFn } from '../wiki/contract.js';
 
 /**
  * The bindings the import handlers close over. The stores are the SAME
@@ -56,7 +53,7 @@ interface ImportDeps {
  vaultRoot: string;
  /** The server's activity-log seam. */
  serverEmit: ServerEmitFn;
- /** The x-elicit-pure read detector (129): survey and reach skip their writes under it. */
+ /** The x-elicit-pure read detector (129): survey skips its write under it. */
  isPureRead: (c: Context) => boolean;
  /** The docket start handle — the scan route re-triggers extraction behind the response (T6). */
  startDocket: (trigger: string) => void;
@@ -298,37 +295,5 @@ app.post('/api/import/region', async (c) => {
   authorship: body.authorship as Authorship,
  });
  return c.json({ slug: record.slug });
-});
-
-// GET /api/reach → { offer: ReachOffer | null, root: string | null }
-// Read-only and cheap: reads the survey snapshot and the pending queue,
-// never the folder — a route that re-walked 5,000 files on every waiting-
-// surface render is a route the person would feel. Offer-only (Q-62):
-// silence does nothing, and every evaluation is logged. `root` is the
-// survey root the offer's path is relative to — the waiting surface needs
-// it to open the map AT the offered region (014 T14); null when never
-// surveyed.
-app.get('/api/reach', (c) => {
- // A pure read offers and records nothing (129) — same rule as the coach
- // offer: the evaluation record belongs to the server clock, not to a read.
- const log: LogFn = isPureRead(c) ? () => {} : (e) => appendEvent(vaultRoot, e as ActivityEvent);
- // The pipeline owns the meeting — the survey snapshot and the live
- // pending queue become exactly one offer (Q-62), never the folder.
- const { offer, root } = pipelineReach({ vaultRoot, queue: deps.queue, log });
- return c.json({ offer, root });
-});
-
-// POST /api/reach/decline {path} → {ok: true}
-// One click, one recorded decline: the region falls behind every region not
-// declined more recently (Q-22 — recorded signal, never escalated; the
-// offer never asks why and never chases).
-app.post('/api/reach/decline', async (c) => {
- const body = await c.req.json<{ path?: string }>();
- const path = typeof body.path === 'string' ? body.path.trim() : '';
- if (path.length === 0) {
-  return c.json({ error: 'path is required' }, 400);
- }
- appendReachDecline(vaultRoot, path);
- return c.json({ ok: true });
 });
 }

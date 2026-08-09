@@ -237,7 +237,6 @@ function buildOpenerDraft(
   questionForm: questionForm ?? 'deliberative',
   cites: [`${snippet.id}@${snippet.version}`],
   quotedFragment,
-  sharpness: 'weak',
   horizon,
   ...(sitting?.target ? { target: sitting.target } : {}),
   ...(sitting?.topic ? { topic: sitting.topic } : {}),
@@ -817,7 +816,6 @@ function tryBuildDiscriminating(
     ...claims.b.cites.filter((c) => !claims.a.cites.includes(c)),
    ],
    quotedFragment: checkA.fragment,
-   sharpness: 'weak',
    horizon: 'session',
   },
  };
@@ -1031,7 +1029,6 @@ function tryBuildOutcome(
       questionForm: 'deliberative' as QuestionForm,
       cites: [`${snippet.id}@${snippet.version}`],
       quotedFragment: check.fragment,
-      sharpness: 'weak',
       horizon: outcomeHorizon,
       ...(sitting?.target ? { target: sitting.target } : {}),
       ...(sitting?.topic ? { topic: sitting.topic } : {}),

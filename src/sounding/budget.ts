@@ -13,6 +13,14 @@ const MIN_RUNGS = 8;
 const MAX_RUNGS = 12;
 
 /**
+ * The fixed question count a sitting runs on (canon §5.3): minutes are no
+ * longer declared, so the budget is one constant. Both the elicitor's door
+ * (`questionCount >= SESSION_BUDGET - 2`) and the descent allowance read it,
+ * so they cannot drift apart.
+ */
+export const SESSION_BUDGET = 10;
+
+/**
  * Turns the sitting's remaining budget into a rung count for the offer.
  *
  * The two close moves are NEVER inside the allowance: `rungAllowance` computes
@@ -20,7 +28,7 @@ const MAX_RUNGS = 12;
  * back. Always `8 <= allowance <= 12`, `checkpointRung === Math.ceil(allowance / 2)`.
  */
 export function rungAllowance(mode: Mode, questionCount: number): { allowance: number; checkpointRung: number } {
-  const budget = Math.min(20, Math.max(10, mode.minutes));
+  const budget = SESSION_BUDGET;
   const remaining = budget - 2 - questionCount; // the two close moves, reserved (Q-20, Q-47)
   const allowance = Math.min(MAX_RUNGS, Math.max(MIN_RUNGS, remaining));
   return { allowance, checkpointRung: Math.ceil(allowance / 2) };

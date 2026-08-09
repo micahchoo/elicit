@@ -84,11 +84,13 @@ function getPrefixes(): string[] {
 const EXACT_GET_RULES: ((p: string) => boolean)[] = [
  (p) => p === '/api/queue' || p.startsWith('/api/queue?'),
  (p) => p === '/api/wiki' || p.startsWith('/api/wiki?'),
- (p) => p === '/api/reach' || p.startsWith('/api/reach?'),
  (p) => /^\/api\/piece\/[^/]+$/.test(p),
- (p) => /^\/api\/piece\/[^/]+\/export$/.test(p),
+ (p) => /^\/api\/piece\/[^/]+\/export(\/questions)?$/.test(p),
  (p) => p === '/api/coach/waiting',
  (p) => /^\/api\/coach\/(?!direction$|quest$|waiting$)[^/]+$/.test(p),
+ // The session-open read (redesign wave 1): a GET_PREFIXES entry, mirrored
+ // here so the test resolves it as GET even before the prefix list loads.
+ (p) => p === '/api/session/open',
 ];
 
 function isReadPath(path: string, prefixes: string[]): boolean {

@@ -40,7 +40,7 @@ const ANSWER =
 const CUT_ONE = 'I moved the workbench under the window last spring.';
 const CUT_TWO = 'The light changed what I was willing to start.';
 
-const MODE = { minutes: 25, energy: 'medium' as const, target: 'self' as const };
+const MODE = { target: 'self' as const };
 
 let root: string;
 let app: Hono;
@@ -196,11 +196,22 @@ describe('open — entering a context (ticket 129)', () => {
   expect(body.turn?.target).toBe('self');
  });
 
- it('refuses a sitting opened with no mode, and an unknown re kind, as bad-request', async () => {
+ it('opens a sitting without a mode — the server defaults target self', async () => {
+  // Canon §5.2: minutes/energy are not declared and no mode is required to
+  // open a sitting; the server supplies target 'self'. A body whose mode is
+  // target-only is the only shape the adapter forwards.
   const noMode = await post('/v2/open', { re: { kind: 'sitting' } });
-  expect(noMode.status).toBe(400);
-  expect((await jsonOf<Failure>(noMode)).error.code).toBe('bad-request');
+  expect(noMode.status).toBe(200);
+  const body = await jsonOf<Envelope>(noMode);
+  expect(body.re.kind).toBe('sitting');
+  expect(body.turn?.target).toBe('self');
 
+  const withTarget = await post('/v2/open', { re: { kind: 'sitting' }, mode: { target: 'self' } });
+  expect(withTarget.status).toBe(200);
+  expect((await jsonOf<Envelope>(withTarget)).turn?.target).toBe('self');
+ });
+
+ it('refuses an unknown re kind as bad-request', async () => {
   const bogus = await post('/v2/open', { re: { kind: 'diary' } });
   expect(bogus.status).toBe(400);
   const failure = await jsonOf<Failure>(bogus);
@@ -284,17 +295,16 @@ describe('act — the non-prose verbs (ticket 129)', () => {
   expect(body.turn?.kind === 'probe' || body.notices !== undefined).toBe(true);
  });
 
- it('defer returns the question to the queue with the declared need', async () => {
+ it('defer returns the question to the queue as a plain open question', async () => {
   const opened = await openSitting();
   const before = queue.list({ source: 'user-declared' }).length;
   const res = await post('/v2/act', {
    re: { kind: 'sitting', id: opened.re.id },
-   verb: { v: 'defer', need: 'time' },
+   verb: { v: 'defer' },
   });
   expect(res.status).toBe(200);
   const after = queue.list({ source: 'user-declared' });
   expect(after.length).toBe(before + 1);
-  expect(after.at(-1)!.modeNeeds?.minMinutes).toBe(45);
   expect(readEvents(root).map((e) => e.kind)).toContain('question-deferred');
  });
 
@@ -417,10 +427,9 @@ describe('view — the projections are pure (ticket 129)', () => {
   for (let i = 0; i < count; i++) {
    queue.add({
     source: 'gap-fill',
-    license: 'arrangement-gap',
+    license: 'CC0',
     question: `what did the ${i}th change ask of you?`,
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'session',
    });
   }
@@ -450,8 +459,9 @@ describe('view — the projections are pure (ticket 129)', () => {
 
   const projected = await get('/v2/view?scope=wiki');
   expect(projected.status).toBe(200);
-  const body = await jsonOf<{ view: { facets: { claims: unknown[] }[] } }>(projected);
-  expect(body.view.facets.length).toBeGreaterThan(0);
+  // Batch B (§11): the projection is the contextualizer's passages view.
+  const body = await jsonOf<{ view: { neighborhoods: { passages: unknown[] }[] } }>(projected);
+  expect(body.view.neighborhoods.length).toBeGreaterThan(0);
   expect(stamps()).toBe(before);
 
   expect((await get('/api/wiki')).status).toBe(200);
@@ -466,7 +476,7 @@ describe('view — the projections are pure (ticket 129)', () => {
  });
 
  it('answers the read-only scopes and refuses an unknown one', async () => {
-  for (const scope of ['snippets', 'pieces', 'harvest-queue', 'cadence', 'reach', 'coach-waiting', 'auth-status', 'stt-status', 'anniversary']) {
+  for (const scope of ['snippets', 'pieces', 'harvest-queue', 'cadence', 'coach-waiting', 'auth-status', 'stt-status']) {
    const res = await get(`/v2/view?scope=${scope}`);
    expect([scope, res.status]).toEqual([scope, 200]);
   }

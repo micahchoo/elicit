@@ -15,9 +15,11 @@ import type {
  ClashOutcome,
  Contradiction,
  LogFn,
+ PushDownResult,
  Referent,
  Registry,
  SweepLine,
+ UnlinkResult,
 } from '../src/wiki/contract.js';
 import { THRESHOLDS } from '../src/wiki/thresholds.js';
 import type { Threshold } from '../src/domain/thresholds.js';
@@ -132,6 +134,9 @@ function fakeStore(candidates: ClashCandidate[]): ClaimStore {
   readClaim: no('readClaim') as (id: string) => Claim | null,
   attest: no('attest') as (id: string) => Claim | null,
   edit: no('edit') as (id: string, body: string, cite: string) => Claim | null,
+  narrow: no('narrow') as (id: string, range: string) => Claim | null,
+  unlink: no('unlink') as (id: string, cite: string) => UnlinkResult,
+  pushDown: no('pushDown') as (id: string) => PushDownResult,
   writeContradiction: no('writeContradiction') as (c: Contradiction) => void,
   listContradictions: no('listContradictions') as () => Contradiction[],
   writeCandidate: no('writeCandidate') as (c: ClashCandidate) => void,

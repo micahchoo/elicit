@@ -59,7 +59,9 @@ async function makeApp(script: string[]): Promise<{ app: Hono; root: string; que
  const queue = createQueueStore(root);
  const index = buildIndex([]);
  const authStore = createFileAuth(join(root, '.auth.json'));
- const app = await createApp({ vault, complete, queue, index, vaultRoot: root, authStore });
+ // The route can no longer select cdm (the pick and the rotation are dead,
+ // canon §10), so the createApp protocolName seam drives the machine.
+ const app = await createApp({ vault, complete, queue, index, vaultRoot: root, authStore, protocolName: 'cdm' });
  return { app, root, queue };
 }
 
@@ -75,12 +77,14 @@ async function post<T>(app: Hono, path: string, body?: unknown): Promise<T> {
 
 async function newSession(
  app: Hono,
- extra?: { protocol?: string },
+ extra?: { target?: 'self' | 'domain' },
 ): Promise<string> {
- const body: { mode: { minutes: number; energy: string; topic: string }; protocol?: string } = {
-  mode: { minutes: 20, energy: 'medium', topic: 'the orchard' },
+ const body: { mode: { target?: string; topic: string } } = {
+  mode: {
+   topic: 'the orchard',
+   ...(extra?.target !== undefined ? { target: extra.target } : {}),
+  },
  };
- if (extra?.protocol !== undefined) body.protocol = extra.protocol;
  const res = await post<SessionResponse>(app, '/api/session', body);
  expect(res.sessionId).toBeTruthy();
  return res.sessionId;
@@ -107,7 +111,7 @@ async function parkAtAccount(
  app: Hono,
  queue: QueueStore,
 ): Promise<{ parkedSession: string; pointerId: string }> {
- const parkedSession = await newSession(app, { protocol: 'cdm' });
+ const parkedSession = await newSession(app, { target: 'domain' });
  await post<TurnResponse>(app, `/api/session/${parkedSession}/turn`, { text: 'I remember the call that cost us the quarter.' });
  await post<TurnResponse>(app, `/api/session/${parkedSession}/turn`, { text: 'The stakes were higher than the plan admitted.' });
 
@@ -126,7 +130,7 @@ async function parkAtAccount(
 describe('the machine side-record (ticket 159, slice 5)', () => {
  it('park writes the record with the phase, and the phase advance already wrote it', async () => {
   const { app, root, queue } = await makeApp([...TO_ACCOUNT]);
-  const id = await newSession(app, { protocol: 'cdm' });
+  const id = await newSession(app, { target: 'domain' });
 
   await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I remember the call that cost us the quarter.' });
   // The second answer ratifies [NEXT_PHASE:account]: the side-record is
@@ -176,7 +180,7 @@ describe('the machine side-record (ticket 159, slice 5)', () => {
 
   // The person resumes the parked machine inside a REFLECTIVE sitting — the
   // machine's own protocol must stay authoritative across the resume.
-  const resumedSession = await newSession(app, { protocol: 'reflective' });
+  const resumedSession = await newSession(app, { target: 'self' });
   const resumed = await post<TurnResponse>(app, `/api/session/${resumedSession}/machine/resume`, {
    queueEntryId: pointerId,
   });
@@ -210,7 +214,7 @@ describe('the machine side-record (ticket 159, slice 5)', () => {
 
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   try {
-   const resumedSession = await newSession(app, { protocol: 'reflective' });
+   const resumedSession = await newSession(app, { target: 'self' });
    const resumed = await post<TurnResponse>(app, `/api/session/${resumedSession}/machine/resume`, {
     queueEntryId: pointerId,
    });
@@ -231,7 +235,7 @@ describe('the machine side-record (ticket 159, slice 5)', () => {
   const CUT1 = JSON.stringify({ cuts: [{ text: 'I remember the call that cost us the quarter.', sourceTurn: 0, facet: 'construct', stance: 'self-observation', reading: 'the risk mattered', standalone: true }] });
   const CUT2 = JSON.stringify({ cuts: [{ text: 'The stakes were higher than the plan admitted.', sourceTurn: 1, facet: 'construct', stance: 'self-observation', reading: 'the stakes mattered', standalone: true }] });
   const { app, root } = await makeApp([...TO_ACCOUNT, CUT1, CUT2]);
-  const fresh = await newSession(app, { protocol: 'cdm' });
+  const fresh = await newSession(app, { target: 'domain' });
   await post<TurnResponse>(app, `/api/session/${fresh}/turn`, { text: 'I remember the call that cost us the quarter.' });
   await post<TurnResponse>(app, `/api/session/${fresh}/turn`, { text: 'The stakes were higher than the plan admitted.' });
   expect(existsSync(join(root, 'machines', `${fresh}.json`))).toBe(true);
@@ -245,7 +249,7 @@ describe('the machine side-record (ticket 159, slice 5)', () => {
    'What did you notice first as the situation began to move?',
   ]);
   const { parkedSession, pointerId } = await parkAtAccount(app2, queue2);
-  const resumedSession = await newSession(app2, { protocol: 'reflective' });
+  const resumedSession = await newSession(app2, { target: 'self' });
   await post<TurnResponse>(app2, `/api/session/${resumedSession}/machine/resume`, { queueEntryId: pointerId });
   expect(existsSync(join(root2, 'machines', `${parkedSession}.json`))).toBe(true);
 

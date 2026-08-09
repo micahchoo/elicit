@@ -323,7 +323,6 @@ describe('runIntentionHorizonAnnotations', () => {
     expect(entry.question).toBe('When did you expect to finish the migration?');
     expect(entry.questionForm).toBe('deliberative');
     expect(entry.horizon).toBe('session');
-    expect(entry.sharpness).toBe('weak');
     expect(entry.cites).toEqual([`${s.id}@1`]);
     // Ticket 114, QR-4: the dating question is model prose, not a user
     // quote — no quotedFragment, so the UI shows no "from your own words"
@@ -413,7 +412,6 @@ describe('runOutcomeQuestions', () => {
       if (entry) {
         expect(entry.question).toBe(outcomeAnswer(s.prose));
         expect(entry.questionForm).toBe('deliberative');
-        expect(entry.sharpness).toBe('weak');
         expect(entry.license).toBe('CC0');
       }
     }
@@ -433,7 +431,6 @@ describe('runOutcomeQuestions', () => {
       license: 'CC0',
       question: `You wrote "${snippets[0]!.prose}" Did it get done?`,
       questionForm: 'deliberative',
-      sharpness: 'weak',
       horizon: 'session',
       created: new Date().toISOString(),
       cites: [`${snippets[0]!.id}@1`],

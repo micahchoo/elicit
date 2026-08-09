@@ -2,23 +2,30 @@ import { describe, test, expect } from 'vitest';
 import { rungAllowance, expectedLengthSentence } from '../src/sounding/budget.js';
 
 describe('rungAllowance', () => {
-  test('a long remaining budget is capped at twelve rungs', () => {
-    expect(rungAllowance({ minutes: 20, energy: 'high' }, 5).allowance).toBe(12);
+  test('runs on the fixed SESSION_BUDGET, not a declared minutes value', () => {
+    // The budget is one constant (canon §5.3): 10 questions, door at 8. The
+    // mode no longer declares minutes, so any mode derives the same allowance.
+    const a = rungAllowance({}, 5).allowance;
+    const b = rungAllowance({ target: 'domain' }, 5).allowance;
+    expect(a).toBe(8);
+    expect(b).toBe(8);
   });
 
   test('a short remaining budget floors at eight rungs', () => {
-    // 15m budget = 15; close reserved at 13; entered at question 11 → 2 remaining → floored to 8.
-    expect(rungAllowance({ minutes: 15, energy: 'high' }, 11).allowance).toBe(8);
+    // Budget 10; close reserved at 8; entered at question 11 → remaining
+    // negative → floored to 8.
+    expect(rungAllowance({}, 11).allowance).toBe(8);
   });
 
-  test('a mid remaining budget converts straight across', () => {
-    // 20m budget = 20; close reserved at 18; entered at question 8 → 10 remaining.
-    expect(rungAllowance({ minutes: 20, energy: 'high' }, 8).allowance).toBe(10);
+  test('the close reservation holds: entered exactly at the door still has 8', () => {
+    // remaining = 10 - 2 - questionCount. Entered at question 8 (the door)
+    // → 0 remaining → floored to 8.
+    expect(rungAllowance({}, 8).allowance).toBe(8);
   });
 
   test('the checkpoint is the halfway rung, rounded up', () => {
-    expect(rungAllowance({ minutes: 20, energy: 'high' }, 5).checkpointRung).toBe(6);
-    expect(rungAllowance({ minutes: 15, energy: 'high' }, 11).checkpointRung).toBe(4);
+    expect(rungAllowance({}, 5).checkpointRung).toBe(4);
+    expect(rungAllowance({}, 11).checkpointRung).toBe(4);
   });
 });
 

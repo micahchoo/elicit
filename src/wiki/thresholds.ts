@@ -133,12 +133,12 @@ export const THRESHOLDS = {
   graduatesWhen:
    'Already live, and the liveness is not what is unearned. Q-35 governs SELECTION mechanisms and this selects nothing; Q-56 says bounds ship live. The consequence is one reversible act — gap-question minting stops and picking the Piece up resumes it (Q-41) — so a shadowed auto-set-down would be no feature at all rather than a cautious one. PROVISIONAL in its VALUE: 45 days is a guess with no evidence behind it. It earns a real number when the log shows how long a real Piece sits between touches, and the first evidence is the T14 run.',
  },
- 'piece.gapsPerCandidate': {
-  name: 'piece.gapsPerCandidate',
+ 'piece.gapsPerPass': {
+  name: 'piece.gapsPerPass',
   value: 3,
   live: true,
   graduatesWhen:
-   'Already live: a cap on how many gaps one model-proposed Arrangement may mark is a bound, and Q-56 puts bounds in force from birth — a shadowed cap writes "I would have stopped at 3" while the model marks without limit, which is worse than no cap because the mechanism is what generated the work. Every clip emits threshold-clipped, so the value stays honest. It is re-tuned from that record, never from argument.',
+   'Already live: a cap on how many gap findings one composition sweep pass may mark is a bound, and Q-56 puts bounds in force from birth — a shadowed cap writes "I would have stopped at 3" while the model marks without limit, which is worse than no cap because the mechanism is what generated the work. The renamed successor of piece.gapsPerCandidate (redesign-2026-08-09 §7: the cap moved from gaps-per-candidate to gaps-per-pass, and findings must be distinct kinds). Every clip emits composition-gap-clipped, so the value stays honest. It is re-tuned from that record, never from argument.',
  },
  'reach.nameOverlapMinTerms': {
   name: 'reach.nameOverlapMinTerms',
@@ -255,7 +255,7 @@ export const THRESHOLDS = {
   value: 500,
   live: true,
   graduatesWhen:
-   'Already live per Q-56 — a bound in shadow is not a bound. PROVISIONAL in VALUE only: 500 is a wall-clock ceiling for one run, and because prime is resumable nothing is permanently excluded by it. The clip record is what sets the real number.',
+   'Already live per Q-56 — a bound in shadow is not a bound. Batch C3 (the §12 debts): the channel default is now corpus-sized — coverageQuota(corpus.length) from src/wiki/embedding.ts (EMBED_COVERAGE_RATIO x the corpus, floored) — so this entry remains the explicit-override seam (SemanticDeps.primeCap) and the record of the bound\'s liveness. A clipped explicit cap still emits threshold-clipped.',
  },
  'resonance.primeBudgetMs': {
   name: 'resonance.primeBudgetMs',
@@ -280,6 +280,44 @@ export const THRESHOLDS = {
   live: true,
   graduatesWhen:
    'Already live: Q-56 makes quotas live at birth, since a quota in shadow lets the run it was meant to bound proceed unbounded. PROVISIONAL per Q-30 — the VALUE is unearned, not the liveness. Every clip emits threshold-clipped, and that record is what resizes it.',
+ },
+
+// ── Neighborhoods (§12.3 — passages into themes, Batch C1) ──
+
+ 'neighborhoods.passageCap': {
+  name: 'neighborhoods.passageCap',
+  value: 1000,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a cap on how many passages one clustering run may group is a bound, and a bound in shadow is not a bound. Every clip emits threshold-clipped plus the neighborhoods-built coverage sentence, so a clipped corpus reads as a sentence on the activity log, never a silence. PROVISIONAL value: 1000 is a ceiling for a personal corpus; the clip record resizes it.',
+ },
+ 'neighborhoods.minVectorCoverage': {
+  name: 'neighborhoods.minVectorCoverage',
+  value: 0.5,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a floor on vector coverage before the embedding channel is trusted to group passages; below it the job falls back to deterministic lexical grouping and the fallback IS the coverage sentence (§12: starvation must be a sentence, never a silence). 0.5 is provisional — requiring at least half the corpus vectored before the channel acts; the coverage field of the neighborhoods-built line resizes it.',
+ },
+ 'neighborhoods.embeddingJoin': {
+  name: 'neighborhoods.embeddingJoin',
+  value: 0.55,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a similarity floor on joining a passage to a theme\'s centroid, never a selector: a passage that qualifies for nothing starts a theme of its own (no argmax, §12.3). 0.55 sits just above the 0.5 semantic noise floor so near-orthogonal passages never share a theme. PROVISIONAL value; the neighborhoods-built record resizes it.',
+ },
+ 'neighborhoods.lexicalJoin': {
+  name: 'neighborhoods.lexicalJoin',
+  value: 0.25,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — the content-word Jaccard floor on joining a passage to a theme when no vector exists: a quarter of a passage\'s words in common with a theme\'s vocabulary is the working definition of "same theme" for the fallback channel. PROVISIONAL value; the neighborhoods-built record resizes it.',
+ },
+ 'contextLines.perRun': {
+  name: 'contextLines.perRun',
+  value: 10,
+  live: true,
+  graduatesWhen:
+   'LIVE at birth under Q-56 — a quota on how many context lines one docket run may compose, and a quota in shadow lets the run it bounds proceed unbounded. PROVISIONAL value: 10 is a ceiling for one run; the job is read-then-upsert and resumable, so a clipped run loses no work and the context-lines-composed coverage sentence is what resizes it.',
  },
 } satisfies Record<string, Threshold>;
 

@@ -12,9 +12,9 @@
  * entry — any status blocks re-minting (the gap-fill any-status rule).
  *
  * Questions are ZERO-LLM templates: each one names the TOPIC like any opener,
- * never the gap (Q-79: "you've never mentioned X" is banned). Weak sharpness
- * by structural design — atlas regions are deliberately crude territory maps,
- * so the questions are soft openers. Never chain follow-ups.
+ * never the gap (Q-79: "you've never mentioned X" is banned). Soft openers by
+ * structural design — atlas regions are deliberately crude territory maps,
+ * and the questions never chain follow-ups.
  *
  * Region-to-corpus links are readings under Q-50 statuses (unconfirmed until
  * touched), never priors (Q-66 killed priors). Coverage is a fact about the
@@ -103,7 +103,6 @@ function atlasCandidates(
           license: `atlas gap: region ${region.id} (${atlas.instrument})`,
           question,
           questionForm: 'deliberative',
-          sharpness: 'weak',
           horizon: 'session',
           atlasRegion: region.id,
         },
@@ -127,8 +126,8 @@ function atlasCandidates(
 /**
  * Generate an opener-depth question for an atlas region.
  * Names the TOPIC like any opener — never frames a gap as a lack (Q-79).
- * Weak sharpness by design: atlas regions are deliberately crude territory
- * maps, so questions are soft openers that never chain follow-ups.
+ * Soft openers by design: atlas regions are deliberately crude territory
+ * maps, so questions never chain follow-ups.
  */
 function atlasRegionQuestion(region: AtlasRegion): string | null {
   const topic = region.oneLine?.trim();

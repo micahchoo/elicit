@@ -95,7 +95,7 @@ describe('sounding resume (plan Task 12)', () => {
   const root = makeRoot();
   const l = parkedLadder();
   const entry = parkedEntry(root, l);
-  const resumed = resumeSounding(root, entry, { minutes: 20, energy: 'medium' }, 4, 'the descent moved from the workshop to the shelf');
+  const resumed = resumeSounding(root, entry, {}, 4, 'the descent moved from the workshop to the shelf');
   expect(resumed).not.toBeNull();
   const q = await composeFromCompacted(resumed!.compacted, makeScriptedComplete(SCRIPT), okGuard);
   expect(q).not.toBeNull();
@@ -107,7 +107,7 @@ describe('sounding resume (plan Task 12)', () => {
   const root = makeRoot();
   const l = parkedLadder();
   const entry = parkedEntry(root, l);
-  const resumed = resumeSounding(root, entry, { minutes: 20, energy: 'medium' }, 4, null);
+  const resumed = resumeSounding(root, entry, {}, 4, null);
   expect(resumed).not.toBeNull();
   const q = await composeFromCompacted(resumed!.compacted, makeScriptedComplete(SCRIPT), okGuard);
   expect(q).not.toBeNull();
@@ -122,16 +122,18 @@ describe('sounding resume (plan Task 12)', () => {
   const l = parkedLadder();
   const entry = parkedEntry(root, l);
   expect(l.allowance).toBe(8); // the parked ladder's number, for contrast
-  const { state } = resumeSounding(root, entry, { minutes: 20, energy: 'high' }, 4, null)!;
-  expect(state.allowance).toBe(12);
-  expect(state.checkpointRung).toBe(6);
+  // The new sitting's budget is the constant: SESSION_BUDGET 10, close
+  // reserved at 8; at questionCount 4 the remaining 4 floors to 8.
+  const { state } = resumeSounding(root, entry, {}, 4, null)!;
+  expect(state.allowance).toBe(8);
+  expect(state.checkpointRung).toBe(4);
  });
 
  test('the licensing answer is carried forward, not rewritten', () => {
   const root = makeRoot();
   const l = parkedLadder();
   const entry = parkedEntry(root, l);
-  const { state } = resumeSounding(root, entry, { minutes: 20, energy: 'medium' }, 4, null)!;
+  const { state } = resumeSounding(root, entry, {}, 4, null)!;
   expect(state.licensingAnswer).toBe(l.licensingAnswer);
  });
 
@@ -139,7 +141,7 @@ describe('sounding resume (plan Task 12)', () => {
   const root = makeRoot();
   const l = parkedLadder();
   const entry = parkedEntry(root, l);
-  const { state } = resumeSounding(root, entry, { minutes: 20, energy: 'medium' }, 4, null)!;
+  const { state } = resumeSounding(root, entry, {}, 4, null)!;
   const grown = addRung(state, 'a fresh question', PHRASE, 'a new answer here', NOW);
   writeLadder(root, { ...grown, ended: NOW, endedBy: 'park' });
   const reloaded = readLadder(root, entry.soundingId!);
@@ -156,11 +158,10 @@ describe('sounding resume (plan Task 12)', () => {
    license: 'user',
    question: 'a parked question',
    questionForm: 'deliberative',
-   sharpness: 'weak',
    horizon: 'session',
    soundingId: '01K0MISSING00000000000000A',
   });
-  expect(resumeSounding(root, pointerToNothing, { minutes: 20, energy: 'medium' }, 4, null)).toBe(null);
+  expect(resumeSounding(root, pointerToNothing, {}, 4, null)).toBe(null);
  });
 
  test('picking it up clears it from the waiting surface', async () => {
@@ -196,7 +197,7 @@ describe('sounding resume (plan Task 12)', () => {
  }
 
  async function newSession(app: Hono): Promise<string> {
-  const res = await post(app, '/api/session', { mode: { minutes: 20, energy: 'medium' } });
+  const res = await post(app, '/api/session', { mode: {} });
   expect(res.sessionId).toBeTruthy();
   return res.sessionId as string;
  }

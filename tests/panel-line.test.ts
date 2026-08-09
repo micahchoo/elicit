@@ -11,9 +11,9 @@ import { panelLine } from '../web/panel-line.js';
 
 describe('the waiting panels\' three-state line (ticket 154)', () => {
   it('offers the line text when a panel has something to offer', () => {
-    expect(panelLine('offer', 'the backlog', 'the wiki is 3 readings behind')).toEqual({
+    expect(panelLine('offer', 'the backlog', 'the page about you is 3 readings behind')).toEqual({
       kind: 'offer',
-      text: 'the wiki is 3 readings behind',
+      text: 'the page about you is 3 readings behind',
     });
   });
 

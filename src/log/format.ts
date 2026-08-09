@@ -75,12 +75,9 @@ function askedFrom(source: string | undefined): string {
  }
 }
 
-/** A sitting the elicitor just opened: `mode=25m/high protocol=ladder`. */
+/** A sitting the elicitor just opened: `target=self protocol=ladder`. */
 function sittingStarted(f: DetailFields): string {
- const mode = /^(\d+)m\/(\w+)$/.exec(f.mode ?? '');
- const opening = mode
-  ? `started a ${mode[1]}-minute sitting at ${mode[2]} energy`
-  : 'started a sitting';
+ const opening = 'started a sitting';
  return f.protocol ? `${opening} using the ${f.protocol} protocol` : opening;
 }
 
@@ -198,13 +195,11 @@ function harvestProposed(f: DetailFields): string {
 
 /**
  * The queue's draw filters, in the reader's words. The log names them as the
- * code does — `modeNeeds`, `sharpness` — and a field name is not English.
+ * code does — `horizon`, `target` — and a field name is not English.
  */
 const CONSTRAINTS: Record<string, string> = {
  'facet-balance': 'the balance of facets',
  'status': 'the check for an unanswered question',
- 'modeNeeds': 'what this sitting has time and energy for',
- 'sharpness': 'the sharpness this sitting allows',
  'horizon': 'how far off a question looks',
  'target': 'what this sitting is for',
 };
@@ -283,8 +278,6 @@ const COMMIT_REFUSED: Record<string, string> = {
 /** One sentence per kind. Every emitted kind has an entry; unknown kinds fall through. */
 const SENTENCES = {
  'run-started': () => 'started a docket run',
- 'anniversary-drawn': () => 'drew an anniversary card',
- 'anniversary-evaluated': () => 'evaluated anniversaries — nothing written on this day',
  'pulse-answered': () => 'answered the opening pulse',
  'index-rebuilt': (_f, d) => `rebuilt the index from ${count(nth(d, 0), 'snippet')}`,
  'docket-run': (_f, d) => `ran the docket: minted ${count(nth(d, 0), 'question')}, expired ${nth(d, 1)}`,
@@ -308,14 +301,6 @@ const SENTENCES = {
  'question-answered-direct': () => 'answered an open question in writing — the harvest reads it now',
  'opener-minted': (_f, d) => `minted ${count(nth(d, 0), 'opener')}`,
  'opener-failed': () => 'could not mint an opener',
- 'still-true-minted': (_f, d) => `minted ${count(nth(d, 0), 'still-true question')}`,
- 'still-true-failed': () => 'could not mint a still-true question',
- // Neither the sitting's started nor the snippet's captured parses as a
- // date — the snippet can be neither old nor fresh, so it is set aside in
- // neither direction (seeding Task 5). The count is the whole story; the
- // ids stay off the surface.
- 'still-true-undateable': (_f, d) =>
-  `set aside ${count(nth(d, 0), 'snippet')} whose writing time nothing says`,
  'expedition-minted': () => 'minted an expedition from an earlier snippet',
  'expedition-failed': () => 'could not mint an expedition',
  'expired': (_f, d) => `expired ${count(nth(d, 0), 'question')}`,
@@ -349,10 +334,6 @@ const SENTENCES = {
   return m ? `expired a stale ${m[1]} template question` : 'expired a stale template question';
  },
  'template-sweep-failed': () => 'could not finish the one-time template sweep',
- 'gap-fill-minted': (f) => `minted ${count(num(f, 'minted'), 'gap-fill question')} into the queue`,
- 'gap-fill-clipped': (f, d) => `enforced the gap-fill cap at ${f.cap ?? 'its setting'} and clipped: ${detailClause(d, 'clipped')}`,
- 'gap-fill-pole-skip': () => 'skipped a half-Construct whose prose has no construct pole',
- 'gap-fill-failed': () => 'could not run the gap-fill sweep',
  'territory-gap-fill': (f) => `minted ${count(num(f, 'minted'), 'territory question')} from the KTG skeleton`,
  'territory-gap-fill-failed': () => 'could not run the territory gap-fill sweep',
  'atlas-gap-fill-candidate': () => 'evaluated an atlas region — shadow mode, candidate logged, nothing minted',
@@ -372,11 +353,7 @@ const SENTENCES = {
  'question-rejected': (f) =>
   `a drafted ${f.site ?? 'question'} failed the ${f.reason ?? 'emit'} gate and was not asked`,
  'juxtaposition-offered': () => 'offered a juxtaposition against an earlier snippet',
- 'question-deferred': (f) => {
-  if (f.needs === 'time') return 'deferred a question until you have more time';
-  if (f.needs === 'energy') return 'deferred a question until you have more energy';
-  return 'deferred a question';
- },
+ 'question-deferred': () => 'deferred a question',
  'harvest-proposed': (f) => harvestProposed(f),
  'harvest-started': (f) => `started a background harvest of ${count(num(f, 'chunks'), 'turn')}`,
  // A failed harvest is either every chunk failing to parse (the parsed=false
@@ -416,6 +393,15 @@ const SENTENCES = {
  'coach-seed-evaluated': () => 'evaluated coach seeding — cluster sizes logged',
  'coach-seed-failed': () => 'coach seed sweep failed',
  'coach-seeded-reoffer': () => 're-offered a parked seeded direction',
+ // §12.3 — neighborhoods (passages into themes, Batch C1): the coverage
+ // sentence IS the §12 debt — a clipped or starved pass reads here, never
+ // as a silence.
+ 'neighborhoods-built': (f) => {
+  const base = `grouped ${count(num(f, 'clustered'), 'passage')} into ${count(num(f, 'neighborhoods'), 'neighborhood')}`;
+  const skipped = num(f, 'skipped');
+  return skipped > 0 ? `${base} — ${skipped} ${skipped === 1 ? 'passage' : 'passages'} not yet grouped` : base;
+ },
+ 'neighborhoods-failed': () => 'could not group your passages into themes',
  // The loop-harness tripwire (ticket 132): a dwell/demotion sweep failure.
  // The rest of the run is already on disk — this is a harness-health line.
  'tripwire-failed': () => 'the tripwire sweep failed',
@@ -568,6 +554,18 @@ const SENTENCES = {
  'embedding-unavailable': (f) =>
   `could not reach ${f.model ?? 'the embedding model'}: ` +
   `${num(f, 'embedded')} claims embedded, ${num(f, 'pending')} still waiting`,
+// §12's coverage sentence (Batch C3): standing vector coverage of one
+// keyspace after an embedding job, with the gap named. `noun` is the
+// keyspace's singular — `passage` for the snippet store, `claim` for the
+// wiki channel; `covered` is the standing count after the job, `fresh` the
+// run's own work (in the raw detail), `unembedded` the gap the sentence
+// exists to name. Always emitted, so a fully covered corpus reads as a
+// sentence too — a zero is never a silence (copy rule 5).
+ 'embedding-coverage': (f) =>
+  `embedded ${num(f, 'covered')} of ${count(num(f, 'total'), f.noun ?? 'passage')} — ` +
+  `${num(f, 'unembedded')} unembedded`,
+ 'coverage-embedding-failed': () =>
+  'could not finish the embedding coverage pass — the rest of the docket work is already on disk',
  'clash-checked': (f) =>
   `found ${count(num(f, 'pool'), 'pair')} that might contradict${channels(f.channels)}, ` +
   `suppressed ${num(f, 'suppressed')}, reproposed ${num(f, 'reproposed')}`,
@@ -609,9 +607,14 @@ const SENTENCES = {
  // sentence lands here because `formatEvent` keys on kind alone, so writing it
  // now renders whoever emits it later (S15). A `hits=` field is read when the
  // emitter supplies one; otherwise the first number in the line is the count.
- 'resonance-checked': (f, d) =>
-  `looked for echoes of what was just said and found ` +
-  `${f.hits === undefined ? nth(d, 0) : num(f, 'hits')}`,
+ 'resonance-checked': (f, d) => {
+  const hits = f.hits === undefined ? nth(d, 0) : num(f, 'hits');
+  // Batch C3: the staging verdict with its evidence — how many of the found
+  // echoes came from the semantic channel (found by meaning, not words).
+  const sem = num(f, 'semantic');
+  const semClause = sem > 0 ? `, ${sem} by meaning` : '';
+  return `looked for echoes of what was just said and found ${hits}${semClause}`;
+ },
 
 // ── The import pipeline: a folder scan, and the refusals that answer it (Q-57) ──
 
@@ -748,36 +751,6 @@ const SENTENCES = {
 'repair-question-capped': (f) =>
  `deferred ${count(num(f, 'deferred'), 'repair question')} — the live cap is full`,
 
-// ── The reach licence (seeding Task 11): one offer, every evaluation logged ──
-
-// Emitted by reachOffer on EVERY run (Q-62: silence with a record is the
-// difference between 'nothing reached' and 'the mechanism is broken'). The
-// detail carries the counts, the winner and the overlap — the record a real
-// vault re-tunes the threshold from. The sentence shows the region's own
-// name, never the path.
-'reach-evaluated': (f) => {
- const candidates = num(f, 'candidates');
- const head = `weighed ${count(num(f, 'nodes'), 'region')} against the live questions: ` +
-  `${count(candidates, 'region')} cleared the name bar`;
- if (f.offered === 'true') {
-  const best = (f.best ?? '').split('/').pop() || 'one';
-  return `${head}, and offered ${best} (${num(f, 'overlap')} shared terms)`;
- }
- return `${head}, so nothing was offered`;
-},
-// Emitted when an offer is produced: the region, its unread count and the
-// terms that earned it — the licence in the person's own folder names.
-'reach-offered': (f) => {
- const name = (f.path ?? '').split('/').pop() || 'a region';
- const terms = (f.terms ?? 'its own names').split(',').join(', ');
- return `offered ${name} (${count(num(f, 'unread'), 'unread note')}), matched by ${terms}`;
-},
-// Emitted by appendReachDecline: a decline reorders, never suppresses
-// (Q-22) — the region falls behind every region not declined more recently.
-'reach-declined': (f) => {
- const name = (f.path ?? '').split('/').pop() || 'a region';
- return `set ${name} aside — it falls behind every region not declined more recently`;
-},
 
 // ── The surfaced usage stamp (015) ──
 
@@ -807,8 +780,18 @@ const SENTENCES = {
 'gap-cleared': () => 'cleared a gap by pinning its answer into the piece',
 'piece-exported': (f) =>
  `exported a piece with ${count(num(f, 'paragraphs'), 'paragraph')}`,
+'piece-exported-questions': (f) =>
+ `exported a piece with ${count(num(f, 'paragraphs'), 'paragraph')} and its open questions`,
 'piece-set-down': () => 'set the piece down',
 'piece-picked-up': () => 'picked the piece up again',
+// The gathering verbs (Batch D3): offer accept/deny, model-gap dismiss,
+// discard and search-and-place. The piece and snippet ids stay in the
+// JSONL — the sentences name the act, not the objects.
+'piece-offer-accepted': () => 'put an offered passage into the piece',
+'piece-offer-declined': () => 'set an offered passage aside for good',
+'piece-gap-dismissed': () => 'dismissed a model-found gap — it was not a gap',
+'piece-discarded': () => 'discarded the piece — the file stays',
+'piece-placed': () => 'placed a passage into the piece',
 // The two docket piece jobs (010 T10): the stale-pin sweep flags, never
 // re-pins (Q-39); auto-set-down is silent (Q-22), logged (Q-23), and
 // reversible — and the sentence carries no reproach, no count of days and
@@ -818,25 +801,65 @@ const SENTENCES = {
 'piece-set-down-auto': () => 'set the piece down after a long quiet',
 'piece-jobs-failed': () => 'could not finish the piece work this run — the rest of the docket work is already on disk',
 
-// ── The candidate arrangements (T11): the one model call in the slice ──
+// ── The composition gap sweep (redesign-2026-08-09 §7, §10) ──
 
-// Emitted once per propose run with the surviving count. Zero is a valid,
-// non-exceptional outcome: the person keeps the chronology they already had.
-// The detail carries `count=2`; the reader hears it as other orders of the
-// SAME material, never new paragraphs.
+// Emitted once per composition whose findings were kept: the count and the
+// kinds (leap, unsupported, thin, unclosed). The ids stay in the JSONL
+// where the audit trail belongs (Q-6, Q-24); the sentence names the act.
+'composition-gap-found': (f) =>
+ `noted ${count(num(f, 'gaps'), 'gap')} in a piece (${f.kinds ?? '…'})`,
+// Emitted once per run with the pass totals — the record the probation
+// floor reads: found (model findings), placed (holes stored after dedupe),
+// skipped (a seam already asked or durably dismissed).
+'composition-gap-swept': (f) =>
+ `swept the pieces for gaps — found ${num(f, 'found')}, kept ${count(num(f, 'placed'), 'hole')}`,
+// Emitted when the run cap left open compositions unexamined — Q-56's clip
+// record for the renamed bound (piece.gapsPerPass).
+'composition-gap-clipped': (f) =>
+ `left ${count(num(f, 'clipped'), 'piece')} unexamined this run — the pass cap`,
+// The faster expiry (§10): "if you ignored it for three sittings, the
+// model was wrong." The sentence states the fact without reproach (Q-15):
+// the question lapsed, and lapse is what expiry is.
+'composition-gap-expired': (f) =>
+ `let ${count(num(f, 'expired'), 'model-found gap question')} lapse after ${num(f, 'sittings')} sittings`,
+'composition-gap-failed': () =>
+ 'could not finish the gap sweep this run — the rest of the docket work is already on disk',
+
+// ── The ordering subsystem, deleted (§9 of the composition redesign) ──
+// These three kinds are HISTORY: nothing emits them anymore — the
+// /arrangements and /choose routes died with the ordering, and the gap
+// sweep (composition-gap) replaced the model's half of gap-finding. The
+// sentences stay so lines already in the JSONL still render.
+
+// The gap-finder's old 'arrangements-proposed' count line, for lines
+// already written.
 'arrangements-proposed': (_f, d) =>
  `offered ${count(nth(d, 0), 'other order')} of the same material`,
-// Emitted once per drop — a whole candidate refused, or a piece of one (a
-// Marginalia or a gap) refused while its candidate survived. The detail
-// names the reason and the principle; the rejection rate is the metric that
-// says whether the model can do this job at all (T14 reads it).
+// The old refusal line — a candidate or a piece of one set aside.
 'arrangement-rejected': (f) =>
  `set one proposed order aside (${f.reason ?? 'a boundary check'})`,
-// Emitted when the person takes a candidate arrangement as current (T12).
-// The detail carries the principle — the one word the person can use; the
-// ids stay in the JSONL where the audit trail belongs.
-'arrangement-chosen': (f) =>
- `kept the ${f.principle ?? 'chronology'} order for the piece`,
+// The old choose line. The `?? 'chronology'` fallback named a Principle
+// that no longer exists; the sentence keeps its meaning without it.
+'arrangement-chosen': () => 'kept the order you chose',
+
+// ── Auto-gather (redesign-2026-08-09 §5.3): the first probation entry ──
+// Emitted once per sitting per run with the counts — zero is a valid,
+// non-exceptional outcome (a sitting whose passages none of the open
+// compositions want). The skipped count separates durable denial and
+// already-pinned passages from genuine offers, so the probation record can
+// tell "offered and refused" from "never offered".
+'auto-gather-offered': (f) =>
+ `offered ${count(num(f, 'offered'), 'passage')} to ${count(num(f, 'compositions'), 'open composition')} from the sitting` +
+ (num(f, 'skipped') > 0 ? `, skipping ${count(num(f, 'skipped'), 'passage')} already decided` : '') +
+ (num(f, 'failed') > 0 ? `, ${count(num(f, 'failed'), 'composition')} unanswered` : ''),
+// Emitted per composition whose answer failed to parse or whose write
+// threw — the run continues, and the line names the composition only, never
+// the model's words.
+'auto-gather-failed': () => 'could not gather one composition this sitting',
+// Emitted when the store refused an offer it should never have seen — a
+// declined passage re-offered would be the nag the durable denial exists
+// to prevent, so the refusal is logged rather than swallowed.
+'auto-gather-skipped': () => 'refused to re-offer a passage the composition already decided',
 
 // ── The sounding slice (plan Task 8): the offer, the gate, the park ──
 
@@ -844,7 +867,7 @@ const SENTENCES = {
 // record, licensed or not, and the line reports what the four reasons
 // found — the record, never a judgment of the person.
  'sounding-license': (f) =>
-  `ran the entry license: late ${f.late ?? '?'}, energy ${f.energy ?? '?'}, ` +
+  `ran the entry license: late ${f.late ?? '?'}, ` +
   `sustained ${f.sustained ?? '?'}` +
   (f.sustainedValue !== undefined ? ` (jaccard ${f.sustainedValue})` : '') +
   `, unoffered ${f.unoffered ?? '?'} — ` +
@@ -900,6 +923,13 @@ const SENTENCES = {
  // stay in the JSONL (Q-6, Q-24) — the sentence names what happened, not who.
  'repair-expired': () => 'expired a question citing a repaired snippet',
  'thread-deferred': () => 'deferred a thread after two disengaged replies',
+ 'topic-declared': (f, detail) =>
+  `you named what this sitting is about: ${detailClause(detail, 'topic') || '…'}`,
+ // ── Context lines (Batch B2, §11) ──
+ // The coverage line is the §12 debt paid: composed and skipped on one
+ // sentence, so a starved run reads as a sentence, never a silence.
+ 'context-lines-composed': (f) => `wrote context lines for ${count(num(f, 'composed'), 'passage')} this run — ${count(num(f, 'skipped'), 'passage')} skipped`,
+ 'context-lines-failed': () => 'could not run the context-line job',
  } satisfies Record<EventKind, (f: DetailFields, detail: string) => string>;
  
  /**

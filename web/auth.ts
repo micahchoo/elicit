@@ -1,5 +1,5 @@
 /**
- * The auth screens — login, setup, and the done screen — moved whole from
+ * The auth screens — login and setup — moved whole from
  * main.ts (wave C); every rendered string, class, DOM structure and e2e
  * selector is byte-identical.
  *
@@ -21,11 +21,12 @@ export interface AuthDeps {
  beginWait: WebDepsWithWait['beginWait'];
  clear: () => void;
  setScreen: (screen: string) => void;
- renderShell: () => void;
  /** The live-refresh start, called once a login succeeds. */
  startLiveRefresh: () => void;
- /** The buds from the last harvest, shown on the done screen (ticket 140). */
- pendingBuds: () => unknown[];
+ /** Wave 4 (canon §5.1): the no-lobby first launch — called on setup
+ *  success instead of navTo('today'). main.ts wires it to auto-open a
+ *  session and land on the room with the promise line. */
+ onSetupDone: () => void;
 }
 
 let authDeps: AuthDeps | null = null;
@@ -70,7 +71,7 @@ export function renderLogin() {
    await deps.api('/api/login', { password: input.value });
    wait.done();
    deps.startLiveRefresh();
-   deps.navTo('mode');
+   deps.navTo('today');
   } catch (e) {
    const rejected = e instanceof ApiError && e.status === 401;
    wait.failed(e, rejected ? 'wrong password' : undefined);
@@ -113,7 +114,7 @@ export function renderSetup() {
  // Who the vault is about — optional, skippable, changeable later via
  // POST /api/profile. The wiki writes about the person; given a name and
  // pronouns it uses them instead of "the user".
- const nameHint = deps.el('p', { style: 'color: var(--dim); font-size: 0.9rem; margin: 0.75rem 0 0.5rem' }, 'what should the wiki call you? (optional)');
+ const nameHint = deps.el('p', { style: 'color: var(--dim); font-size: 0.9rem; margin: 0.75rem 0 0.5rem' }, 'what should it call you? (optional)');
  const nameInput = deps.el('input', {
   class: 'login-input',
   type: 'text',
@@ -127,7 +128,7 @@ export function renderSetup() {
  const submit = deps.el('button', { class: 'submit-btn' }, 'set password');
  const errorSlot = deps.el('div', { class: 'error-slot' });
  const backLink = deps.el('button', { class: 'nav-link' }, '\u2190 back');
- backLink.addEventListener('click', () => deps.navTo('mode'));
+ backLink.addEventListener('click', () => deps.navTo('today'));
 
  submit.addEventListener('click', async () => {
   const pw = input.value;
@@ -159,7 +160,7 @@ export function renderSetup() {
     }
    }
    wait.done();
-   deps.navTo('mode');
+   deps.onSetupDone();
   } catch (e) {
    wait.failed(e);
    submit.disabled = false;
@@ -173,33 +174,4 @@ export function renderSetup() {
  div.append(backLink, heading, hint, input, confirm, nameHint, nameInput, pronounsInput, submit, errorSlot);
  deps.surface.append(div);
  input.focus();
-}
-
-/* ── Done screen ── */
-
-export function renderDone() {
- const deps = wired();
- deps.clear();
- deps.setScreen('done');
- deps.renderShell();
- const div = deps.el('div', { class: 'screen active' });
- const msg = deps.el(
-  'p',
-  { class: 'done-message' },
-  'your answers are saved.',
- );
- const backBtn = deps.el('button', { class: 'submit-btn', style: 'margin-top: 1rem' }, 'back');
- backBtn.addEventListener('click', () => deps.navTo('mode'));
- div.append(msg, backBtn);
-
- if (deps.pendingBuds().length > 0) {
-  const budsSection = deps.el('div', { class: 'done-buds' });
-  budsSection.append(deps.el('p', { class: 'done-buds-heading' }, `${deps.pendingBuds().length} fragment${deps.pendingBuds().length === 1 ? '' : 's'} did not stand on ${deps.pendingBuds().length === 1 ? 'its' : 'their'} own`));
-  for (const bud of deps.pendingBuds()) {
-   const b = bud as { text: string };
-   budsSection.append(deps.el('p', { class: 'done-bud-text' }, b.text));
-  }
-  div.append(budsSection);
- }
- deps.surface.append(div);
 }

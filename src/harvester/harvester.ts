@@ -864,19 +864,7 @@ export function decide(
   * carries no channel.
   */
  channelOf?: (proposal: CutProposal) => CaptureChannel | undefined
- ): { snippets: Snippet[]; buds: Bud[]; duplicateCount: number } {
-  // Best-effort: the dedupe set rides an index read that can fail (a
-  // background docket run may hold or break the index). A failed read
-  // skips dedupe for this batch — it must never block saving what the
-  // user approved (the e2e contract: snippets are saved either way).
-  let existingBodies: Set<string>;
-  try {
-   const index = vault.rebuildIndex();
-   existingBodies = new Set(Object.values(index.snippets).map(s => s.prose));
-  } catch {
-   existingBodies = new Set();
-  }
-  let duplicateCount = 0;
+ ): { snippets: Snippet[]; buds: Bud[] } {
   const snippets: Snippet[] = [];
 
  for (const decision of decisions) {
@@ -899,8 +887,6 @@ export function decide(
   switch (decision.action) {
    case 'approve': {
 
-     // Exact-body dedupe against vault (ticket 145)
-     if (existingBodies.has(proposal.text)) { duplicateCount++; continue; }
     const snippet = vault.saveSnippet(proposal.text, provenance);
     // Reading carries only facet, stance, reading, cites (Q-4 — no questionForm)
     vault.saveReading({
@@ -917,7 +903,6 @@ export function decide(
     if (!decision.text) continue;
     // Trim must be a substring of the proposal text
     if (!proposal.text.includes(decision.text)) continue;
-     if (existingBodies.has(decision.text)) { duplicateCount++; break; }
 
     const snippet = vault.saveSnippet(decision.text, provenance);
     vault.saveReading({
@@ -959,7 +944,19 @@ export function decide(
   }
  }
 
-  return { snippets, buds: [], duplicateCount };
+  return { snippets, buds: [] };
+}
+
+/**
+ * The pending-record projection of propose()'s buds (Wave 2 S1): the
+ * fragment text plus the reason propose() itself attached, verbatim —
+ * the failure literal it pushed into `Bud.failures` ('standalone',
+ * 'mid-sentence' or 'label'). No new reason taxonomy is invented here;
+ * the review surface renders these with the same words. A bud carrying
+ * several recorded failures keeps them joined, in record order.
+ */
+export function pendingBudEntries(buds: Bud[]): { text: string; reason: string }[] {
+ return buds.map((b) => ({ text: b.fragment, reason: b.failures.join('; ') }));
 }
 
 // ---------------------------------------------------------------------------

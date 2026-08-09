@@ -301,7 +301,6 @@ describe('composeRemeasure', () => {
   expect(draft?.question).toBe(GOOD_QUESTION);
   expect(draft?.quotedFragment).toBe(POLE_A);
   expect(draft?.source).toBe('contradiction-remeasure');
-  expect(draft?.sharpness).toBe('weak');
   expect(draft?.horizon).toBe('session');
   expect(draft?.questionForm).toBe('deliberative');
   // Cited to BOTH sides: one question is asked, and the answer is evidence

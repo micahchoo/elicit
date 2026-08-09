@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
-import { readSurvey, surveyFolder, writeSurvey, type Survey, type SurveyNode } from '../src/import/survey.js';
+import { surveyFolder, writeSurvey, type Survey, type SurveyNode } from '../src/import/survey.js';
 import { bodyHash } from '../src/import/scan.js';
 import { createImportStore } from '../src/import/store.js';
 import { FIXTURE_FILES } from './fixtures/seeding-vault/manifest.js';
@@ -76,18 +76,14 @@ describe('surveyFolder (a model-free map of the tree, harvested state from the s
     expect(src).not.toMatch(/from ['"][^'"]*llm|from ['"][^'"]*harvester|: Complete\b/);
   });
 
-  it('a written survey reads back after a restart', () => {
-    const s = surveyFolder(FIXTURE, store);
-    writeSurvey(vaultRoot, s);
-    expect(readSurvey(vaultRoot)!.nodes).toHaveLength(s.nodes.length);
-  });
-
-  it('readSurvey is null on a vault that was never surveyed', () => {
-    const empty = mkdtempSync(join(tmpdir(), 'survey-empty-'));
-    try {
-      expect(readSurvey(empty)).toBeNull();
-    } finally {
-      rmSync(empty, { recursive: true, force: true });
-    }
-  });
+ it('a written survey reads back after a restart', () => {
+  const s = surveyFolder(FIXTURE, store);
+  writeSurvey(vaultRoot, s);
+  // readSurvey died with the reach pipeline (canon §10 cut) — the snapshot
+  // itself is the contract, read directly off disk.
+  const snapshot = JSON.parse(readFileSync(join(vaultRoot, 'imports', 'survey.json'), 'utf-8')) as {
+   nodes: unknown[];
+  };
+  expect(snapshot.nodes).toHaveLength(s.nodes.length);
+ });
 });

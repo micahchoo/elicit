@@ -304,4 +304,28 @@ describe('checkQuestion', () => {
       }),
     ).toBe('near-duplicate');
   });
+
+  it('rejects a bare declarative echo with no question mark', () => {
+    expect(
+      checkQuestion('You wrote: "yes"', { asked: [] }),
+    ).toBe('not-interrogative');
+  });
+
+  it('rejects a flat declarative sentence', () => {
+    expect(checkQuestion('I need to go to the gym.', { asked: [] })).toBe(
+      'not-interrogative',
+    );
+  });
+
+  it('accepts a question ending in a question mark', () => {
+    expect(
+      checkQuestion('When did the silence start?', { asked: [] }),
+    ).toBe('ok');
+  });
+
+  it('accepts a question whose question mark carries a trailing closer', () => {
+    expect(
+      checkQuestion('Did you feel that too?"', { asked: [] }),
+    ).toBe('ok');
+  });
 });

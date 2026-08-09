@@ -25,17 +25,17 @@ export function sourceWord(source: OpenerSource): string {
 export function originWord(origin: HarvestOrigin): string {
  switch (origin) {
   case 'harvest': return 'sitting';
-  case 'unprompted': return 'unprompted';
+  case 'unprompted': return 'free writing';
  }
 }
 
 /** How a descent that closed without a gate press ended (012 T9). */
 export function descentCloseWord(ended: SoundingEnd): string {
  switch (ended) {
-  case 'cap': return 'the descent closed \u2014 the cap';
-  case 'convergence': return 'the descent closed \u2014 convergence';
-  case 'composition-failed': return 'the descent closed \u2014 composition failed';
-  case 'park': return 'the descent closed \u2014 parked';
-  case 'another-day': return 'the descent closed \u2014 another day';
+  case 'cap': return 'going deeper ended \u2014 it reached its limit';
+  case 'convergence': return 'going deeper ended \u2014 the thread came together';
+  case 'composition-failed': return 'going deeper ended \u2014 the next question could not be written';
+  case 'park': return 'going deeper ended \u2014 your place is held';
+  case 'another-day': return 'going deeper ended \u2014 the rest waits for another day';
  }
 }

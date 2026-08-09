@@ -308,7 +308,8 @@ export type GuardVerdict =
  | 'ok'
  | 'parrot'
  | 'conversation-referential'
- | 'near-duplicate';
+ | 'near-duplicate'
+ | 'not-interrogative';
 
 export interface GuardContext {
  /** Every question already asked this session — agent turns, in order. */
@@ -336,5 +337,6 @@ export function checkQuestion(
  }
  if (isConversationReferential(question)) return 'conversation-referential';
  if (isNearDuplicate(question, ctx.asked)) return 'near-duplicate';
+ if (!isInterrogative(question)) return 'not-interrogative';
  return 'ok';
 }

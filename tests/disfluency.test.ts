@@ -87,7 +87,6 @@ describe('queue store elision (QR-5 gate)', () => {
    license: 'user',
    question: 'Co designing and co writing, uh metaphors — what did that feel like?',
    questionForm: 'deliberative',
-   sharpness: 'sharp',
    horizon: 'now',
    quotedFragment: 'Co designing and co writing, uh metaphors',
    snippet: 'Co designing and co writing, uh metaphors',
@@ -108,7 +107,6 @@ describe('queue store elision (QR-5 gate)', () => {
    license: 'user',
    question: 'Is the human condition still the human condition?',
    questionForm: 'theoretical',
-   sharpness: 'weak',
    horizon: 'session',
    quotedFragment: 'The human condition',
   };
@@ -123,7 +121,6 @@ describe('queue store elision (QR-5 gate)', () => {
    license: 'user',
    question: 'What do I want to work on next?',
    questionForm: 'deliberative',
-   sharpness: 'sharp',
    horizon: 'session',
   };
   const entry = queue.add(draft);

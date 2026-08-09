@@ -146,6 +146,14 @@ export type ClerkOp =
  */
 export const SUPERSEDE_MODEL_UPGRADE = 'model-upgrade';
 
+/**
+ * The fixed archiveReason the user's push-down verb writes (the six margin
+ * verbs, ruling 2026-08-08): the person retired the claim as a past self.
+ * A fixed literal, the SUPERSEDE_MODEL_UPGRADE precedent — the one string
+ * the verb writes is not retyped at each call site.
+ */
+export const USER_PUSH_DOWN_REASON = 'user-push-down';
+
 // ── Identity registry (Q-32) ──
 
 export type Referent = {
@@ -497,6 +505,27 @@ export type SweepLine = {
   model: string;
 };
 
+// ── The user verbs' results (the six margin verbs, ruling 2026-08-08) ──
+
+/**
+ * The user's cite-detaching verb's result. The three refusals a route must
+ * tell apart: an unknown claim answers 404, a cite the claim does not carry
+ * answers 400, and a single-cite claim answers 400 (Q-21 — a claim cannot
+ * be left without evidence).
+ */
+export type UnlinkResult =
+  | { ok: true; claim: Claim }
+  | { ok: false; reason: 'no-claim' | 'no-cite' | 'single-cite' };
+
+/**
+ * The user's push-down verb's result. An unknown claim answers 404; a claim
+ * already retired (archived or superseded) answers 400 — a claim already
+ * set aside cannot be pushed down again.
+ */
+export type PushDownResult =
+  | { ok: true; claim: Claim }
+  | { ok: false; reason: 'no-claim' | 'no-live' };
+
 // ── The two persistence interfaces, declared here and implemented elsewhere ──
 
 /**
@@ -552,6 +581,35 @@ export interface ClaimStore {
    * not-found answer `readClaim` gives.
    */
   edit(id: string, body: string, cite: string): Claim | null;
+  /**
+   * The user's range-narrowing verb (the six margin verbs, ruling
+   * 2026-08-08): replace ONLY the claim's range — the context clause where
+   * the claim holds — and stamp `updated`, the `attest`/`edit` idiom.
+   * The body, cites and status are untouched; status is recomputed
+   * mechanically (Q-29). Null for an unknown id, the same not-found answer
+   * `readClaim` gives.
+   */
+  narrow(id: string, range: string): Claim | null;
+  /**
+   * The user's cite-detaching verb (the six margin verbs, ruling
+   * 2026-08-08): remove ONE "snippetId@version" cite from the claim's
+   * cites and stamp `updated` like the other mutations. Refuses when the
+   * claim does not carry the cite (`no-cite`), and refuses to leave a
+   * claim citeless (`single-cite` — Q-21: a claim with no evidence is an
+   * opinion; supersede or rewrite instead). `no-claim` is the same
+   * not-found answer `readClaim` gives. `status` is untouched —
+   * recomputed mechanically (Q-29), exactly as `attest`.
+   */
+  unlink(id: string, cite: string): UnlinkResult;
+  /**
+   * The user's push-down verb (the six margin verbs, ruling 2026-08-08):
+   * retire the claim as a past self — archived with the fixed reason
+   * `user-push-down`, the file kept as evidence (Q-29), the essay's aside
+   * ink. `status` is untouched — recomputed mechanically (Q-29). Refuses
+   * when the claim is already retired (`no-live`). `no-claim` is the
+   * same not-found answer `readClaim` gives.
+   */
+  pushDown(id: string): PushDownResult;
 }
 
 /**

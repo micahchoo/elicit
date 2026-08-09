@@ -82,7 +82,6 @@ export function mintReflections(input: {
     license: `Q-75 quest return quest=${input.quest.id} session=${input.session}`,
     question: template(quote),
     questionForm: 'theoretical',
-    sharpness: 'sharp',
     horizon: 'session',
     quotedFragment: quote,
    }),

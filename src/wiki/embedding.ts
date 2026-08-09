@@ -206,6 +206,33 @@ export const EMBEDDING_WINDOW = 400;
 export const EMBED_BUDGET_MS = 300_000;
 
 /**
+ * The share of the corpus one embedding run may embed — §12's debt that
+ * quotas are sized to the real corpus, never a fixed ceiling that starves a
+ * growing vault. The semantic channel's per-run prime cap defaults to
+ * `coverageQuota(corpus.length)` and the §12 full-corpus docket job primes
+ * under the same rule, so a run may embed the whole missing corpus and only
+ * the time budget (`EMBED_BUDGET_MS`) or a stopped embedder can leave a gap —
+ * and the gap is the coverage sentence (`embedding-coverage`), never a
+ * silence.
+ *
+ * Why a ratio rather than a register entry: a quota derived from the corpus
+ * cannot be one static number, and the register holds static decisions. The
+ * ratio IS the decision (Q-56: it ships live and owes the record — the
+ * coverage sentence every prime emits); the quota it yields is arithmetic.
+ * C1's clustering and B2's context-line jobs share the same discipline: a
+ * per-run quota, live at birth, coverage-logged per run.
+ */
+export const EMBED_COVERAGE_RATIO = 1;
+
+/** The floor under `coverageQuota`, so a tiny vault still gets a real quota. */
+export const EMBED_QUOTA_FLOOR = 32;
+
+/** The per-run embedding quota for a corpus of this size: `ceil(size * ratio)`, floored. */
+export function coverageQuota(corpusSize: number): number {
+  return Math.max(EMBED_QUOTA_FLOOR, Math.ceil(corpusSize * EMBED_COVERAGE_RATIO));
+}
+
+/**
  * Texts per request. Small enough that a failure costs little and the budget
  * is checked often; large enough that 400 claims is 25 round trips rather than
  * 400.
@@ -514,6 +541,14 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
         (c) => (only === undefined || only.has(c.id)) && vectorFor(c) === undefined,
       );
 
+      // The §12 coverage sentence (Batch C3): standing vector coverage of the
+      // claim keyspace after this prime, with the gap named. `covered` counts
+      // EVERY live claim with a usable vector — not the window — so a claim
+      // the recency window leaves unembedded is a sentence, never a silence.
+      const live = graph.claims.filter(isLive);
+      const total = live.length;
+      const coveredBefore = live.filter((c) => vectorFor(c) !== undefined).length;
+
       await embedBatches({
         items: missing,
         embed,
@@ -526,6 +561,14 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
         onBudgetExceeded: (embedded, pending) =>
           clip('budget', `budgetMs=${budgetMs} embedded=${embedded} pending=${pending}`),
         persistBatch: () => persist(graph, cached, store),
+      });
+
+      const covered = live.filter((c) => vectorFor(c) !== undefined).length;
+      log({
+        at: new Date().toISOString(),
+        actor: 'clerk',
+        kind: 'embedding-coverage',
+        detail: `noun=claim covered=${covered} total=${total} fresh=${covered - coveredBefore} unembedded=${total - covered}`,
       });
     },
 

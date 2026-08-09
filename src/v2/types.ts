@@ -95,12 +95,12 @@ export type Verb =
  | { v: 'attest' }
  | { v: 'challenge' }
  // piece
- | { v: 'reorder'; arrangement: string; entries: string[] }
- | { v: 'choose'; arrangement: string }
- | { v: 'arrangements' }
- | { v: 'gap'; arrangement: string; gap: string; question?: string; after?: string }
- | { v: 'gap-accept'; arrangement: string; gap: string; snippet: string; version: number }
- | { v: 'remove'; arrangement: string; entry: string }
+ // 'choose' and 'arrangements' died with pieces pass 2 (ruling 2026-08-09);
+ // the `arrangement` param died with the ordering subsystem (redesign §9).
+ | { v: 'reorder'; entries: string[] }
+ | { v: 'gap'; gap: string; question?: string; after?: string }
+ | { v: 'gap-accept'; gap: string; snippet: string; version: number }
+ | { v: 'remove'; entry: string }
  | { v: 'set-down' }
  | { v: 'pick-up' }
  | { v: 'compose'; snippets: string[] }
@@ -119,9 +119,7 @@ export type Verb =
  | { v: 'adopt'; optionId: string }
  | { v: 'decline-option'; optionId: string }
  | { v: 'retire' }
- | { v: 'coach-read' }
- // reach
- | { v: 'decline-reach'; path: string };
+ | { v: 'coach-read' }; // 'decline-reach' died with the reach offer (ruling 2026-08-09).
 
 export type VerbName = Verb['v'];
 
@@ -138,11 +136,10 @@ export type Scope =
  | 'harvest'
  | 'import-next'
  | 'import-survey'
- | 'reach'
  | 'coach-waiting'
  | 'coach'
  | 'cadence'
- | 'anniversary'
+ // 'reach' and 'anniversary' scopes died with the zero-output offers (2026-08-09).
  | 'activity'
  | 'auth-status'
  | 'stt-status';

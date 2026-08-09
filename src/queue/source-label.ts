@@ -67,6 +67,10 @@ const SOURCE_LABELS: Record<QueueEntry['source'], string> = {
  'outcome': 'from your own words',
  // Lineage mirror — questions minted from usage facts (Q-83)
  'lineage-mirror': 'from the record',
+ // Composition gaps (redesign-2026-08-09 §7): a model-found seam's question
+ // quotes one of the two adjacent paragraphs verbatim (Q-12), so the words
+ // ARE the person's own — the label says nothing about the model (Q-15).
+ 'composition-gap': 'from your own words',
 };
 
 export function sourceLabel(s: QueueEntry['source']): string {

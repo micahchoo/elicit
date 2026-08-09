@@ -57,18 +57,18 @@ import { readDRM } from '../drm/park.js';
 import type { DRMState, DrmUi } from '../drm/types.js';
 import { machinePhaseMeta, startMachine, type MachineState } from '../protocols/machine.js';
 import { parkMachinePointer, readMachineState, removeMachineState, writeMachineState } from '../protocols/park.js';
-import { getProtocol, loadProtocolDefinitions, selectProtocolForTarget } from '../protocols/registry.js';
+import { getProtocol } from '../protocols/registry.js';
 import { createRandomizer, type RandomizerDraw } from '../randomizer/randomizer.js';
 import { machineTurn, parseTriadPair, skipQuestion, startSession, userTurn } from '../elicitor/elicitor.js';
 import { CLOSING_ACKNOWLEDGMENT, CLOSING_DOOR_QUESTION } from '../elicitor/protocol.js';
-import { suggestTargetForVault } from '../elicitor/target-default.js';
 import { guardComposed } from '../language/emit-form.js';
 import { repairedSnippetIds } from '../repair/consult.js';
 import { readAllRepairs, writeRepair } from '../repair/store.js';
-import { decide, propose, HARVEST_ACTIONS, type HarvestDiagnostics } from '../harvester/harvester.js';
+import { decide, propose, pendingBudEntries, HARVEST_ACTIONS, type HarvestDiagnostics } from '../harvester/harvester.js';
+import { detectRepeats, type RepeatsFlag } from '../harvester/dedupe.js';
 import { validateDecisions } from '../guards.js';
 import { readPendingHarvest, removePendingHarvest, writePendingHarvest } from '../harvester/pending.js';
-import { isMode, moreEnergyThan, moreMinutesThan, UNPROMPTED_MODE } from '../queue/mode-needs.js';
+import { UNPROMPTED_MODE } from '../queue/mode-needs.js';
 import { openQuestionEntry } from '../queue/open-question.js';
 import { applyGate, enterSounding, gateStateFor, validateGateChoice } from '../sounding/ladder.js';
 import { expectedLengthSentence, rungAllowance } from '../sounding/budget.js';
@@ -77,6 +77,8 @@ import { parkPointer, writeLadder } from '../sounding/park.js';
 import { resumeSounding } from '../sounding/resume.js';
 import { surfaced } from '../log/surfaced.js';
 import { appendClosing, mostRecentlyModifiedTranscript, readTranscript as readVaultTranscript } from '../vault/transcripts.js';
+import { autoGatherSitting } from '../clerk/auto-gather.js';
+import { createPieceStore } from '../piece/store.js';
 
 // ── SessionCtx ──
 
@@ -104,6 +106,10 @@ refs?: string[],
 export interface SessionCtx {
  /** Live sittings, keyed by session id. */
  sessions: Map<string, SessionState>;
+ /** The machine protocol every route-created sitting runs (canon §10: the
+ *  pick and the rotation are dead). Absent = reflective — the production
+ *  default; the createApp seam lets tests drive machine protocols. */
+ protocolName?: string;
  /** The sounding offer in flight per sitting (plan Task 8). */
  soundingOffers: Map<string, { text: string; construct: string }>;
  /** Proposed harvest cuts awaiting a decision (ticket 084 fallback). */
@@ -312,12 +318,20 @@ export function startUnpromptedSitting(ctx: SessionCtx, args: {
 }
 
  /**
+  * Sessions with a background harvest in flight (ghost-harvest ticket): the
+  * fire-and-return contract means a second start for the same session no-ops —
+  * the first run already emitted harvest-started and will write the record.
+  * Removed when the run settles, so a later end of a resumed sitting can
+  * harvest again.
+ */
+ const harvestingSessions = new Set<string>();
+
+ /**
   * Fire-and-return harvest (ticket 084): /end and /unprompted answer
   * immediately, propose runs behind the response. A finished run writes its
   * record to the pending queue, restart-proof and claimable by /harvest; a
   * failed run logs as failed and writes nothing, so the transcript stays the
-  * recovery path. The queue is offer-only — deciding happens through /harvest.
-  */
+ */
  export function startBackgroundHarvest(ctx: SessionCtx, args: {
   sessionId: string;
   turns: Turn[];
@@ -327,32 +341,53 @@ export function startUnpromptedSitting(ctx: SessionCtx, args: {
   turnChannels?: (CaptureChannel | undefined)[];
   unpromptedChannel?: CaptureChannel;
  }): void {
- const { vaultRoot, serverEmit, harvestComplete, harvestPromptNow, sessionProposals } = ctx;
+  if (harvestingSessions.has(args.sessionId)) return;
+  harvestingSessions.add(args.sessionId);
+  const { vaultRoot, serverEmit, harvestComplete, harvestPromptNow, sessionProposals } = ctx;
   serverEmit(vaultRoot, 'harvester', 'harvest-started', `session=${args.sessionId} chunks=${args.turns.length}`);
-  setImmediate(() => {
-   propose(args.sessionId, args.turns, harvestComplete, harvestPromptNow())
-    .then((result) => {
-     if (result.diagnostics.parseMode === 'failed') {
-      serverEmit(vaultRoot, 'harvester', 'harvest-failed', harvestDetail(result));
-      return;
-     }
-     writePendingHarvest(vaultRoot, {
-      sessionId: args.sessionId,
-      at: new Date().toISOString(),
-      started: args.started,
-      protocol: args.protocol,
-      origin: args.origin,
-      proposals: result.proposals,
-      ...(args.turnChannels !== undefined ? { turnChannels: args.turnChannels } : {}),
-      ...(args.unpromptedChannel !== undefined ? { unpromptedChannel: args.unpromptedChannel } : {}),
-     });
-     sessionProposals.set(args.sessionId, result.proposals);
-     serverEmit(vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
-    })
-    .catch((err: unknown) => {
-     console.error(`harvest (${args.sessionId}) failed:`, String(err));
-     serverEmit(vaultRoot, 'harvester', 'harvest-failed', `session=${args.sessionId}`);
+  setImmediate(async () => {
+   try {
+    const result = await propose(args.sessionId, args.turns, harvestComplete, harvestPromptNow());
+    if (result.diagnostics.parseMode === 'failed') {
+     serverEmit(vaultRoot, 'harvester', 'harvest-failed', harvestDetail(result));
+     return;
+    }
+    // §12.1 intake dedupe: compare the proposals against the vault corpus.
+    // The index read can fail (a background docket run may hold it) — a
+    // failed read means no flags this run, never a blocked harvest.
+    let repeats: RepeatsFlag[] = [];
+    try {
+     repeats = detectRepeats(result.proposals, ctx.vault.rebuildIndex());
+    } catch {
+     repeats = [];
+    }
+    writePendingHarvest(vaultRoot, {
+     sessionId: args.sessionId,
+     at: new Date().toISOString(),
+     started: args.started,
+     protocol: args.protocol,
+     origin: args.origin,
+     proposals: result.proposals,
+     // Wave 2 S1: the record keeps propose()'s buds so the count sentence
+     // can say how many fragments couldn't stand alone. Written only when
+     // there are any — an old-shape record (no buds) reads as none.
+     ...(result.buds.length > 0 ? { buds: pendingBudEntries(result.buds) } : {}),
+     // Batch C2 (§12.1): near-duplicates against the corpus as it exists
+     // when this harvest lands, detected at intake and written with the
+     // record so the review row can say so before the person decides.
+     // Flag-only — never a silent drop; absent reads as no repeats.
+     ...(repeats.length > 0 ? { repeats } : {}),
+     ...(args.turnChannels !== undefined ? { turnChannels: args.turnChannels } : {}),
+     ...(args.unpromptedChannel !== undefined ? { unpromptedChannel: args.unpromptedChannel } : {}),
     });
+    sessionProposals.set(args.sessionId, result.proposals);
+    serverEmit(vaultRoot, 'harvester', 'harvest-proposed', harvestDetail(result));
+   } catch (err: unknown) {
+    console.error(`harvest (${args.sessionId}) failed:`, String(err));
+    serverEmit(vaultRoot, 'harvester', 'harvest-failed', `session=${args.sessionId}`);
+   } finally {
+    harvestingSessions.delete(args.sessionId);
+   }
   });
  }
 
@@ -369,6 +404,7 @@ export function createSessionRoutes(app: Hono, ctx: SessionCtx): void {
   vaultRoot: ctx.vaultRoot,
   complete: ctx.complete,
   gazetteerStore: ctx.gazetteerStore,
+  ...(ctx.protocolName !== undefined ? { protocolName: ctx.protocolName } : {}),
  };
  const {
   sessions,
@@ -413,39 +449,38 @@ function drmStartedOf(c: Context, state: SessionState): Response | null {
  return null;
 }
 
-// POST /api/session {mode, shuffle?, protocol?} → {sessionId, question, target, source?}
+// GET /api/session/open → {sessionId: string} | {sessionId: null}
+// The Today door (redesign wave 1): the most recent live sitting in the
+// in-memory map, else null. The map keeps ended sittings — a sitting
+// leaves it only when an empty sitting ends (ticket 145's guard) — so an
+// ended session (endedAt set) is skipped: insertion order is opening order,
+// and the last non-ended key is the most recently opened live sitting.
+// Read-only: no side effects.
+ app.get('/api/session/open', (c) => {
+  let sessionId: string | null = null;
+  for (const [id, state] of sessions) {
+   if (!state.endedAt) sessionId = id;
+  }
+  return c.json({ sessionId });
+ });
+
+ // POST /api/session {mode?, shuffle?} → {sessionId, question, target, source?}
  app.post('/api/session', async (c) => {
-  const body = await c.req.json<{ mode: Mode; shuffle?: boolean; protocol?: string }>();
+  const body = await c.req.json<{ mode?: Mode; shuffle?: boolean }>();
 
   const mode = body.mode;
-  if (!mode || typeof mode.minutes !== 'number' || !isMode(mode.energy)) {
-   return c.json({ error: 'invalid mode' }, 400);
+  if (mode !== undefined && mode.target !== undefined && mode.target !== 'self' && mode.target !== 'domain') {
+   return c.json({ error: 'invalid target' }, 400);
   }
 
   // Q-115: advance the sitting counter the queue engagement ledger keys on
   // BEFORE any draw this sitting makes.
   deps.queue.noteSittingStarted();
 
-  // Absent target: fall back to what the corpus asks for, not inward by
-  // reflex (Q-19, ticket 042). An explicit target always wins.
-  const suggestion = suggestTargetForVault(deps.vaultRoot);
-  const target: Target = mode.target ?? suggestion.target;
-  const normalized: Mode = { ...mode, target };
-
-  // Protocol selection (ticket 153): an explicit {protocol} validated against
-  // the registry wins; absent means the deterministic rotation on session
-  // count, exactly as before. The chosen def lands in the same place either
-  // way — startSession's protocolName below — so a picked protocol is
-  // indistinguishable from a rotated one downstream. A pick is never
-  // target-filtered: the person asked for that instrument (e.g. a domain
-  // protocol during a self sitting is their call).
-  const protocolDefs = loadProtocolDefinitions();
-  const sessionCount = listSessions(deps.vaultRoot).length;
-  const pickedProtocol = body.protocol !== undefined ? getProtocol(body.protocol) : undefined;
-  if (body.protocol !== undefined && pickedProtocol === undefined) {
-   return c.json({ error: `unknown protocol: ${body.protocol}` }, 400);
-  }
-  const selectedProtocol = pickedProtocol ?? selectProtocolForTarget(target, sessionCount, protocolDefs);
+  // No mode means the inward default (canon §5.2 — one word begin, no
+  // declarations); an explicit target always wins.
+  const target: Target = mode?.target ?? 'self';
+  const normalized: Mode = mode ? { ...mode, target } : { target };
 
   // The Randomizer (Q-18). Wrapped so the response can say what was dealt:
   // `startSession` returns a SessionState, and no SessionState carries the
@@ -485,8 +520,7 @@ function drmStartedOf(c: Context, state: SessionState): Response | null {
    queue: deps.queue,
    index: currentIndex(),
    ...(semanticIndex ? { semantic: semanticIndex } : {}),
-   protocolName: selectedProtocol.name,
-   randomizer,
+    randomizer,
    vaultRoot: deps.vaultRoot,
    greetingText,
    // The phase machine's people source (ticket 159, slice 3): the
@@ -496,10 +530,11 @@ function drmStartedOf(c: Context, state: SessionState): Response | null {
     .filter((e) => e.kind === 'person')
     .map((e) => e.name),
    ...(body.shuffle ? { shuffleRequested: true } : {}),
+   ...(deps.protocolName !== undefined ? { protocolName: deps.protocolName } : {}),
   });
   sessions.set(state.id, state);
   const opener = state.pendingOpener!;
-  serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `mode=${normalized.minutes}m/${normalized.energy} target=${target} declared=${mode.target !== undefined} protocol=${selectedProtocol.name} shuffle=${body.shuffle === true}`);
+  serverEmit(deps.vaultRoot, 'elicitor', 'session-started', `target=${target} declared=${mode?.target !== undefined} protocol=${state.protocol} shuffle=${body.shuffle === true}`);
 
   // Usage stamps (015): what this opening actually served to the person.
   // A resurfacing draw puts the snippet itself on the table; a queue draw
@@ -650,11 +685,17 @@ return (question: string) =>
     : hits;
 
   const hitCount = cleanHits.length;
+  // Batch C3: the staging verdict with its evidence — which channel found
+  // the hits. Lexical serves first (Q-17); a semantic count above zero is
+  // the meaning channel standing in the lexical silence, and the log line
+  // names both so the staging is observable, never assumed.
+  const lexicalHits = cleanHits.filter((h) => h.channel === 'lexical').length;
+  const semanticHits = hitCount - lexicalHits;
   serverEmit(
    deps.vaultRoot,
    'elicitor',
    'resonance-checked',
-   `session=${sessionId} hits=${hitCount}`,
+   `session=${sessionId} hits=${hitCount} lexical=${lexicalHits} semantic=${semanticHits}`,
   );
 
   // The rider is built AFTER userTurn. When the elicitor composed a
@@ -678,7 +719,13 @@ return (question: string) =>
  // Two disengaged replies running defer the whole thread (never expire —
  // dormancy is signal, Q-56).
  const answeredEntryId = state.openQueueEntryId;
+ const phaseBefore = state.phase;
  const result = await userTurn(state, body.text, body.spoken, turnProsody, pair);
+ // A turn landing resumes the sitting (ghost-harvest ticket): clear the end
+ // timestamp so the today door offers it again. Any in-flight harvest is
+ // stale — records are keyed by session and the resumed sitting's own later
+ // harvest supersedes it (later write wins), so the turn is never refused.
+ delete state.endedAt;
  if (answeredEntryId) {
   deps.queue.recordReplyDisengagement(answeredEntryId, body.text);
  }
@@ -688,12 +735,12 @@ return (question: string) =>
   state.turnChannels = [...(state.turnChannels ?? []), body.channel];
 
   // Activity event for close phase entry
-  if (state.phase === 'closing-door') {
+  if (phaseBefore !== 'closing-door' && state.phase === 'closing-door') {
    serverEmit(deps.vaultRoot, 'elicitor', 'close-phase-entered', `session=${sessionId}`);
   }
 
   const inQuietPhase = state.sounding !== undefined || state.finishedSounding !== undefined
-   || state.phase === 'closing-door' || state.phase === 'closing-bookmark';
+   || state.phase === 'closing-door';
   if (result.kind === 'probe' && result.juxtaposedSnippet) {
    riderSnippetId = result.juxtaposedSnippet.snippetId;
   } else if (!inQuietPhase && cleanHits.length > 0) {
@@ -774,7 +821,7 @@ return (question: string) =>
     // sustainedValue is the measured mean adjacent Jaccard — the ONLY numeric
     // evidence the threshold can ever be re-tuned from (Q-62; ticket 142
     // computed it and this line used to drop it).
-    `late=${lic.reasons.late} energy=${lic.reasons.energy} sustained=${lic.reasons.sustained} sustainedValue=${lic.sustainedValue.toFixed(3)} unoffered=${lic.reasons.unoffered} licensed=${lic.licensed}`,
+    `late=${lic.reasons.late} sustained=${lic.reasons.sustained} sustainedValue=${lic.sustainedValue.toFixed(3)} unoffered=${lic.reasons.unoffered} licensed=${lic.licensed}`,
    );
    if (lic.licensed) {
     state.soundingOffer = 'offered';
@@ -812,9 +859,33 @@ return (question: string) =>
    ...(soundingOfferWire ? { soundingOffer: soundingOfferWire } : {}),
    ...(servedQuotedFragment ? { quotedFragment: servedQuotedFragment } : {}),
   });
- });
+});
 
- // POST /api/session/:id/skip → question | exhausted
+// POST /api/session/:id/declare {topic} → {ok, topic} (redesign wave 4)
+// Declaration by utterance: the person names what this sitting is about.
+// The topic lands on the sitting Mode, so the next composed probe keeps
+// the sitting on its named subject. Same guards as the turn route: a
+// missing session 404s, a blank topic 400s. A declaration is a frame,
+// not words the model answers, so no turn is recorded.
+app.post('/api/session/:id/declare', async (c) => {
+ const sessionId = c.req.param('id');
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+
+ const body = await c.req.json<{ topic?: unknown }>();
+ const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
+ if (topic.length === 0) {
+  return c.json({ error: 'topic is required' }, 400);
+ }
+
+ // Last declaration wins: the Mode carries one topic for the sitting.
+ state.mode = { ...state.mode, topic };
+
+ serverEmit(deps.vaultRoot, 'elicitor', 'topic-declared', `session=${sessionId} topic=${topic}`);
+ return c.json({ ok: true, topic });
+});
+
+// POST /api/session/:id/skip → question | exhausted
  // When the opener is still pending (greeting path, ticket 135), the skip
  // replaces the pending opener and writes the replaced question as a
  // skipped turn for audit.
@@ -861,22 +932,14 @@ return (question: string) =>
  });
 
  // POST /api/session/:id/defer {need?} → question | exhausted
- // The question returns to the Queue with the declared Mode needs. Distinct
- // from skip in the log; like skip, it does not consume budget.
+ // The question returns to the Queue as a plain open question. Distinct from
+ // skip in the log; like skip, it does not consume budget. The declared-Mode
+ // needs (time/energy) that used to ride the body died with the declarations
+ // (canon §9 wave 1) — the entry carries no needs.
  app.post('/api/session/:id/defer', async (c) => {
   const sessionId = c.req.param('id');
   const state = sessionOf(c, sessionId);
   if (state instanceof Response) return state;
-
-  let need: unknown;
-  try {
-   need = (await c.req.json<{ need?: unknown }>()).need;
-  } catch {
-   // No body — deferred with no declared need
-  }
-  if (need !== undefined && need !== 'time' && need !== 'energy') {
-   return c.json({ error: `invalid need "${String(need)}" — expected "time" or "energy"` }, 400);
-  }
 
   // The question on the table: the pending opener while the greeting holds
   // the first turn (ticket 135), else the last agent turn.
@@ -885,28 +948,20 @@ return (question: string) =>
     : [...state.turns].reverse().find((t) => t.role === 'agent');
   if (!deferred) return c.json({ error: 'no question to defer' }, 400);
 
-  const modeNeeds: QueueEntry['modeNeeds'] | undefined =
-   need === 'time'
-    ? { minMinutes: moreMinutesThan(state.mode.minutes) }
-    : need === 'energy'
-     ? { energy: moreEnergyThan(state.mode.energy) }
-     : undefined;
-
-  deps.queue.add({
-   ...openQuestionEntry({
+  deps.queue.add(
+   openQuestionEntry({
     source: 'user-declared',
     license: 'user',
     question: deferred.text,
     questionForm: deferred.questionForm ?? 'deliberative',
    }),
-   ...(modeNeeds ? { modeNeeds } : {}),
-  });
+  );
 
   serverEmit(
    deps.vaultRoot,
    'elicitor',
    'question-deferred',
-   `session=${sessionId} needs=${need ?? 'none'}`,
+   `session=${sessionId}`,
   );
 
   const result = skipQuestion(state);
@@ -1761,6 +1816,9 @@ state.turns.push(agentTurn);
   * destination. The caller has already 404'd on a missing session.
   */
  function endSessionHarvest(state: SessionState, sessionId: string): { status: string; sessionId: string } {
+  // A second end no-ops (ghost-harvest ticket): the sitting already ended —
+  // no re-harvest, no re-write of machine records, no second harvest-started.
+  if (state.endedAt) return { status: 'already-ended', sessionId };
   // Close abandoned sittings (ticket 135): if the last turn is an agent
   // question, write a ## closing section so no transcript ends unanswered.
   const turns = state.turns;
@@ -1794,6 +1852,9 @@ state.turns.push(agentTurn);
    sessions.delete(sessionId);
    return { status: 'empty', sessionId };
   }
+  // The end timestamp: the today door hides ended sittings and a second
+  // /end no-ops. Cleared when a turn lands — the sitting resumed.
+  state.endedAt = new Date().toISOString();
   startBackgroundHarvest(ctx, {
    sessionId,
    turns,
@@ -1858,7 +1919,7 @@ state.turns.push(agentTurn);
   // park stays in the close without re-asking the door or re-parking. A
   // missing machine state parks nothing (defensive — every sitting is a
   // machine sitting today, but the record write is the machine's act).
-  if (state.phase === 'closing-door' || state.phase === 'closing-bookmark') {
+  if (state.phase === 'closing-door') {
    return c.json({ kind: 'door', text: CLOSING_DOOR_QUESTION, phase: state.phase });
   }
   const now = new Date().toISOString();
@@ -1939,15 +2000,62 @@ state.turns.push(agentTurn);
 
   serverEmit(deps.vaultRoot, 'harvester', 'session-harvested', `kept=${result.snippets.length} budded=${result.buds.length}`, result.snippets.map((s) => s.id));
 
+  // §12.1: the receipt shows the dedupe sentence only for passages the
+  // person actually kept. The flags ride the record (read before it is
+  // removed below); each kept snippet is stamped with the flag of the
+  // proposal it came from, mirroring decide()'s own keep rules (approve
+  // always saves; trim/restate save only when they carry text), so the
+  // receipt needs no index arithmetic.
+  const repeatByProposal = new Map((record?.repeats ?? []).map((r) => [r.proposal, r]));
+  // One flag per KEPT decision, in decide()'s own order: approve always
+  // keeps; trim/restate keep only when they carry text; discard keeps
+  // nothing. The i-th kept decision is the i-th snippet, so the zips
+  // align — a discard between two keeps must not shift the flag.
+  const keptFlags: (RepeatsFlag | undefined)[] = [];
+  for (const d of body.decisions) {
+   const keeps = d.action === 'approve' || ((d.action === 'trim' || d.action === 'restate') && d.text !== undefined);
+   if (keeps) keptFlags.push(repeatByProposal.get(d.proposal));
+  }
+  const snippets = result.snippets.map((s, i) => {
+   const flag = keptFlags[i];
+   return flag !== undefined
+    ? { ...s, repeats: { olderSnippetId: flag.olderSnippetId, olderCaptured: flag.olderCaptured } }
+    : s;
+  });
+
   // The snippets are on disk, so the answer is ready. The docket that
   // reindexes them and mints their openers runs behind this response.
   startDocket('harvest');
+
+  // §5.3 auto-gather (redesign-2026-08-09): after each harvest, ONE model
+  // call per OPEN composition asks whether any of this sitting's kept
+  // passages belong — judged against the subject line and the existing
+  // material, claim-free (§5, Q-37 amended). Fire-and-forget, never on the
+  // response path; it only writes Offers (Q-39 — nothing is placed without
+  // the person's touch), and a denied passage is never offered again. The
+  // store instance is a file facade over the same pieces/ the boot owns, so
+  // a second instance sees every write the piece routes make (Q-3).
+  if (result.snippets.length > 0) {
+   const pieces = createPieceStore(deps.vaultRoot, {
+    snippets: () => deps.vault.rebuildIndex().snippets,
+   });
+   void autoGatherSitting({
+    pieces,
+    snippets: () => deps.vault.rebuildIndex().snippets,
+    passages: result.snippets,
+    complete: clerkComplete,
+    log: (e) => serverEmit(deps.vaultRoot, e.actor, e.kind, e.detail),
+    sourceSitting: sessionId,
+   }).catch((err: unknown) => {
+    serverEmit(deps.vaultRoot, 'clerk', 'auto-gather-failed', `session=${sessionId}: ${String(err)}`);
+   });
+  }
 
   // A decided harvest leaves the queue; the map entry goes with it so a
   // later decide cannot double-claim the same material.
   if (record) removePendingHarvest(deps.vaultRoot, sessionId);
   sessionProposals.delete(sessionId);
 
-  return c.json({ snippets: result.snippets, buds: result.buds });
+  return c.json({ snippets, buds: result.buds, repeats: result.snippets.map((s, i) => keptFlags[i]).filter((f): f is RepeatsFlag => f !== undefined) });
  });
 }

@@ -244,7 +244,7 @@ describe('readSittingTags', () => {
  it('reads a transcript written by vault.startTranscript and returns no quest key when untagged', () => {
   const vault = createVault(root);
   vault.startTranscript('sit-1', {
-   mode: { minutes: 15, energy: 'medium' },
+   mode: {},
    protocol: 'laddered-grid',
    started: '2026-08-03T08:00:00.000Z',
   });
@@ -264,7 +264,7 @@ describe('readSittingTags', () => {
    join(dir, 'sit-2.md'),
    matter.stringify('', {
     session: 'sit-2',
-    mode: { minutes: 15, energy: 'medium' },
+    mode: {},
     protocol: 'laddered-grid',
     started: '2026-08-03T09:00:00.000Z',
     quest: '01HZ-tagged',
@@ -276,7 +276,7 @@ describe('readSittingTags', () => {
    join(dir, 'sit-3.md'),
    matter.stringify('', {
     session: 'sit-3',
-    mode: { minutes: 15, energy: 'medium' },
+    mode: {},
     protocol: 'laddered-grid',
     started: '2026-08-03T10:00:00.000Z',
    }),

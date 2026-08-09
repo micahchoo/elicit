@@ -11,11 +11,10 @@ export const defaultQuestionForm: QuestionForm = 'deliberative';
 
 
 export const CLOSING_DOOR_QUESTION = "Anything else we didn't touch?";
-export const CLOSING_BOOKMARK_QUESTION = 'Where should we pick up?';
 
-/** The closing acknowledgment — not a question. Rendered after the bookmark
+/** The closing acknowledgment — not a question. Rendered after the closing-door
  *  answer, never written to the transcript (the transcript ends on the
- *  user's bookmark answer). Says what happens next mechanically so the
+ *  user's door answer). Says what happens next mechanically so the
  *  end-of-sitting wait label has an antecedent (ticket 135). Must not
  *  paraphrase the user into new claims (Q-12 verbatim discipline). */
 export const CLOSING_ACKNOWLEDGMENT = "I'm preparing what you shared for review. Proposals will be waiting on the review screen — you can approve, trim, or restate any passage. Only what you keep enters the wiki.";

@@ -47,7 +47,6 @@ describe('composeOutcomeQuestion', () => {
     expect(draft.question).toBe(GOOD_QUESTION);
     expect(draft.license).toBe('CC0');
     expect(draft.questionForm).toBe('deliberative');
-    expect(draft.sharpness).toBe('weak');
     expect(draft.cites).toEqual(['sn-out-1@2']);
   });
 

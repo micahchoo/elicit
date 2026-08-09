@@ -29,7 +29,7 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { startSession, userTurn } from '../src/elicitor/elicitor.js';
-import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
+import { CLOSING_DOOR_QUESTION } from '../src/elicitor/protocol.js';
 import type { Complete, QueueStore, Snippet, Turn, Vault } from '../src/types.js';
 import type { CutProposal } from '../src/types.js';
 
@@ -135,9 +135,7 @@ async function getRaw(app: Hono, path: string): Promise<Response> {
 }
 
 async function newSession(app: Hono): Promise<string> {
- const res = await post<{ sessionId: string }>(app, '/api/session', {
-  mode: { minutes: 10, energy: 'medium' },
- });
+ const res = await post<{ sessionId: string }>(app, '/api/session', {});
  expect(res.sessionId).toBeTruthy();
  return res.sessionId;
 }
@@ -187,7 +185,7 @@ describe('reflective is a machine instance (ticket 159, slice 4)', () => {
    'You wrote: "career direction question." What has changed about that since?',
   ]);
   const session = startSession(
-   { minutes: 30, energy: 'medium', target: 'self' },
+   { target: 'self' },
    {
     complete,
     vault: makeFakeVault(),
@@ -217,7 +215,7 @@ describe('reflective is a machine instance (ticket 159, slice 4)', () => {
    'What did the restlessness look like before that?',
   ]);
   const session = startSession(
-   { minutes: 30, energy: 'medium', target: 'self' },
+   { target: 'self' },
    {
     complete,
     vault: makeFakeVault(),
@@ -298,20 +296,14 @@ describe('the gate row is the standard control surface (ticket 159, slice 4)', (
   expect(gate.text).toBe(CLOSING_DOOR_QUESTION);
   expect(gate.phase).toBe('closing-door');
 
-  // The door answer brings the bookmark question; the bookmark answer
-  // saturates — the close questions are fixed text, so no script entries
-  // are consumed.
-  const door = await post<{ kind: string; text: string; phase: typeof WAYS_IN_META }>(
+  // The door answer saturates — the close questions are fixed text, so no
+  // script entries are consumed, and the close creates no queue entry.
+  const door = await post<{ kind: string }>(
    app,
    `/api/session/${id}/turn`,
    { text: 'Nothing else for now.' },
   );
-  expect(door.kind).toBe('probe');
-  expect(door.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  expect(door.phase).toEqual(WAYS_IN_META);
-
-  const bookmark = await post<{ kind: string }>(app, `/api/session/${id}/turn`, { text: 'I want to keep writing about the garden in spring.' });
-  expect(bookmark.kind).toBe('saturated');
+  expect(door.kind).toBe('saturated');
 
   // Park did not harvest: no pending record, no closing section.
   const pending = await getRaw(app, `/api/harvest-queue/${id}`);

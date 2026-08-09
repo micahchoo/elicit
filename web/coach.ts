@@ -108,7 +108,7 @@ function returnBox(deps: CoachDeps, slug: string, questId: string, rerender: () 
 function paintMargin(deps: CoachDeps, page: CoachPageData, rerender: () => void): void {
  if (!page.advice) return;
  const margin = deps.el('aside', { class: 'coach-margin' });
- margin.append(deps.el('h3', { class: 'coach-margin-label' }, 'a note'));
+ margin.append(deps.el('h3', { class: 'coach-margin-label' }, 'here is a note'));
  for (const option of coachOptionRows(page.advice)) {
   const row = deps.el('div', { class: 'coach-option' });
   row.append(deps.el('p', { class: 'coach-option-text' }, option.text));
@@ -123,7 +123,7 @@ function paintMargin(deps: CoachDeps, page: CoachPageData, rerender: () => void)
    await deps.api(`/api/coach/${page.slug}/decline-option`, { optionId: option.id });
    rerender();
   });
-  leaveIt.addEventListener('click', () => deps.navTo('waiting'));
+  leaveIt.addEventListener('click', () => deps.navTo('today'));
   row.append(takeUp, notThis, leaveIt);
   margin.append(row);
  }
@@ -132,7 +132,7 @@ function paintMargin(deps: CoachDeps, page: CoachPageData, rerender: () => void)
 
 function paintArtifactForm(deps: CoachDeps, slug: string, rerender: () => void): void {
  const form = deps.el('div', { class: 'coach-artifact-form' });
- form.append(deps.el('h3', { class: 'coach-margin-label' }, 'an artifact'));
+ form.append(deps.el('h3', { class: 'coach-margin-label' }, 'name an artifact to keep'));
  const pointer = deps.el('input', { class: 'coach-artifact-field', type: 'text', placeholder: 'where it lives' });
  const name = deps.el('input', { class: 'coach-artifact-field', type: 'text', placeholder: 'the name you give it' });
  const sentence = deps.el('input', { class: 'coach-artifact-field', type: 'text', placeholder: 'one sentence about it' });
@@ -154,7 +154,7 @@ function paintArtifactForm(deps: CoachDeps, slug: string, rerender: () => void):
  * Render the Coach page for one slug. The paint happens first — reading a
  * page is not an act — then POST /read marks the visit and lets
  * page-opened license a fresh mint in the background (Q-77). A 404 means
- * the lens is off (Q-73): the waiting surface takes over quietly.
+ * the lens is off (Q-73): the today surface takes over quietly.
  */
 export function renderCoachPage(deps: CoachDeps, slug: string): void {
  let cancelled = false;
@@ -174,6 +174,6 @@ export function renderCoachPage(deps: CoachDeps, slug: string): void {
   })
   .catch(() => {
    if (cancelled) return;
-   deps.navTo('waiting');
+   deps.navTo('today');
   });
 }

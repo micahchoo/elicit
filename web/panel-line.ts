@@ -55,13 +55,13 @@ export function panelLine(
 }
 
 /**
- * The sweep-backlog offer sentence (tickets 139/156): "the wiki is N
- * readings behind". One sentence shared by the waiting surface's offer
- * line and the wiki page's door — the count changes, the sentence never
- * forks.
+ * The sweep-backlog offer sentence (tickets 139/156): "the page about you
+ * is N readings behind". One sentence shared by the waiting surface's
+ * offer line and the wiki page's door — the count changes, the sentence
+ * never forks.
  */
 export function backlogSentence(n: number): string {
-  return `the wiki is ${n} readings behind`;
+  return `the page about you is ${n} readings behind`;
 }
 
 /** The DOM verbs the wrapper needs, injected once at boot (web/deps.ts). */

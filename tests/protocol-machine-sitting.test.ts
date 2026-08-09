@@ -3,117 +3,23 @@
  * before P1, the recorder/advance/close control flow, the people-grid
  * gazetteer degradation, and the phase meta on the turn response.
  *
- * The wire tests drive createApp + /api/session + /api/session/:id/turn
- * (the sounding-routes harness pattern) with scripted completes. The mode
+ * The machine-shape tests drive the elicitor directly (startSession +
+ * userTurn) with scripted completes, decoupled from the route: the protocol
+ * pick and the rotation are both dead (canon §10 — patterns are drawn, not
+ * chosen), so the route can no longer select a machine protocol. The mode
  * carries a topic so the opener is the deterministic "You mentioned …"
  * form — the near-duplicate guard compares against prior agent turns, and
  * a fixed opener keeps the scripted questions provably distinct.
  */
 
-import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import type { Hono } from 'hono';
+import { describe, it, expect } from 'vitest';
 
-import { createVault } from '../src/vault/vault.js';
 import { makeScriptedComplete } from './fakes.js';
-import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
-import { createApp } from '../src/server.js';
-import { createFileAuth } from '../src/auth/auth.js';
-import { createGazetteerStore, type GazetteerStore } from '../src/clerk/gazetteer-store.js';
 import { startSession, userTurn } from '../src/elicitor/elicitor.js';
+import { machinePhaseMeta } from '../src/protocols/machine.js';
 import { CLOSING_DOOR_QUESTION } from '../src/elicitor/protocol.js';
 import type { Complete, QueueStore, Turn, Vault } from '../src/types.js';
-
-// ── Wire types (the asserted surface; extra fields are ignored) ──
-
-interface TurnResponse {
- kind: string;
- text?: string;
- questionForm?: string;
-/** The machine phase meta — the turn response's phase field is always this shape (ticket 159, slice 4); the renderer and the triad names ride it when the phase declares the chip surface (slice 7). */
- phase?: { id: string; label: string; step: number; of: number; renderer?: string; triad?: { names: string[] } };
-}
-
-interface SessionResponse {
- sessionId: string;
- protocol?: string;
- question?: string;
-}
-
-// ── Wire harness (the sounding-routes pattern) ──
-
-const roots: string[] = [];
-
-afterAll(() => {
- for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-async function makeApp(
- script: string[],
- opts?: { gazetteerPeople?: string[] },
-): Promise<{ app: Hono; root: string }> {
- const root = mkdtempSync(join(tmpdir(), 'elicit-machine-'));
- roots.push(root);
- const vault = createVault(root);
- const complete = makeScriptedComplete(script);
- const queue = createQueueStore(root);
- const index = buildIndex([]);
- const authStore = createFileAuth(join(root, '.auth.json'));
- let gazetteerStore: GazetteerStore | undefined;
- if (opts?.gazetteerPeople !== undefined) {
-  gazetteerStore = createGazetteerStore(join(root, 'gazetteer'));
-  opts.gazetteerPeople.forEach((name, i) => {
-   gazetteerStore!.put({
-    id: `person-${name.toLowerCase()}`,
-    name,
-    kind: 'person',
-    aliases: [],
-    mentions: [],
-    updatedAt: new Date(Date.now() + i).toISOString(),
-   });
-  });
- }
- const app = await createApp({
-  vault,
-  complete,
-  queue,
-  index,
-  vaultRoot: root,
-  authStore,
-  ...(gazetteerStore !== undefined ? { gazetteerStore } : {}),
- });
- return { app, root };
-}
-
-/** POST and parse JSON; T is the asserted response shape, checked at the call site. */
-async function post<T>(app: Hono, path: string, body?: unknown): Promise<T> {
- const init: RequestInit =
-  body === undefined
-   ? { method: 'POST' }
-   : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
- const res = await app.fetch(new Request(`http://localhost${path}`, init), { remoteAddr: '127.0.0.1' });
- return (await res.json()) as T;
-}
-
-async function newSession(
- app: Hono,
- extra?: { protocol?: string; target?: string; topic?: string },
-): Promise<{ id: string; res: SessionResponse }> {
- const mode: { minutes: number; energy: string; target?: string; topic?: string } = {
-  minutes: 20,
-  energy: 'medium',
-  ...(extra?.target !== undefined ? { target: extra.target } : {}),
-  ...(extra?.topic !== undefined ? { topic: extra.topic } : {}),
- };
- const body: { mode: typeof mode; protocol?: string } = { mode };
- if (extra?.protocol !== undefined) body.protocol = extra.protocol;
- const res = await post<SessionResponse>(app, '/api/session', body);
- expect(res.sessionId).toBeTruthy();
- return { id: res.sessionId, res };
-}
 
 // ── Direct-elicitor fixtures (the elicitor.test.ts pattern) ──
 
@@ -184,26 +90,37 @@ describe('the phase machine in the sitting (ticket 159, slice 3)', () => {
    // Turn 4: saturated at the last phase → the closing door.
    '[SATURATED]',
   ];
-  const { app } = await makeApp(script);
-  const { id } = await newSession(app, { protocol: 'cdm', target: 'domain', topic: 'the orchard' });
+  // The route can no longer select cdm (the protocol pick and the rotation
+  // are both dead — canon §10), so drive the elicitor directly with the
+  // protocolName seam, the way the concept-sorting and people-grid tests do.
+  const session = startSession(
+   { target: 'domain', topic: 'the orchard' },
+   {
+    complete: makeScriptedComplete(script),
+    vault: makeFakeVault(),
+    queue: makeFakeQueue(),
+    index: buildIndex([]),
+    protocolName: 'cdm',
+   },
+  );
 
-  const t1 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I remember the call that cost us the quarter.' });
+  const t1 = await userTurn(session, 'I remember the call that cost us the quarter.');
   expect(t1.kind).toBe('probe');
-  expect(t1.text).toBe('What made that moment a genuine crossroads for you?');
-  expect(t1.phase).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
+  if (t1.kind === 'probe') expect(t1.text).toBe('What made that moment a genuine crossroads for you?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
 
-  const t2 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'The stakes were higher than the plan admitted.' });
-  expect(t2.text).toBe('What did you notice first as the situation began to move?');
-  expect(t2.phase).toEqual({ id: 'account', label: 'walk it through', step: 2, of: 3 });
+  const t2 = await userTurn(session, 'The stakes were higher than the plan admitted.');
+  if (t2.kind === 'probe') expect(t2.text).toBe('What did you notice first as the situation began to move?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'account', label: 'walk it through', step: 2, of: 3 });
 
-  const t3 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'First came the silence, then the numbers.' });
-  expect(t3.text).toBe('What did you weigh hardest before committing to that choice?');
-  expect(t3.phase).toEqual({ id: 'decision-probes', label: 'decision probes', step: 3, of: 3 });
+  const t3 = await userTurn(session, 'First came the silence, then the numbers.');
+  if (t3.kind === 'probe') expect(t3.text).toBe('What did you weigh hardest before committing to that choice?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'decision-probes', label: 'decision probes', step: 3, of: 3 });
 
   // [SATURATED] at the last phase closes through the ordinary door flow.
-  const t4 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I weighed the risk of being wrong more than anything.' });
+  const t4 = await userTurn(session, 'I weighed the risk of being wrong more than anything.');
   expect(t4.kind).toBe('probe');
-  expect(t4.text).toBe(CLOSING_DOOR_QUESTION);
+  if (t4.kind === 'probe') expect(t4.text).toBe(CLOSING_DOOR_QUESTION);
  });
 
  it('a twice-rejected machine question falls through to the ordinary channel; the machine resumes the same phase next turn', async () => {
@@ -214,50 +131,111 @@ describe('the phase machine in the sitting (ticket 159, slice 3)', () => {
    // parrot the phase prompt)…
    'ask the person to recall one specific challenging case',
    'ask the person to recall one specific challenging case',
-   // …so the ordinary channels serve this turn: red-lights, then P3.
-   '{}',
+   // …so the ordinary channels serve this turn: the generic probe (the
+   // red-light channel is cut — canon §10).
    'What made that call so hard to make?',
    // Turn 3: the machine resumes at the SAME phase.
    'What did you learn about yourself from that call?',
   ];
-  const { app } = await makeApp(script);
-  const { id } = await newSession(app, { protocol: 'cdm', target: 'domain', topic: 'the orchard' });
+  // The route can no longer select cdm — drive the elicitor directly (the
+  // protocolName seam), like the concept-sorting and people-grid tests.
+  const session = startSession(
+   { target: 'domain', topic: 'the orchard' },
+   {
+    complete: makeScriptedComplete(script),
+    vault: makeFakeVault(),
+    queue: makeFakeQueue(),
+    index: buildIndex([]),
+    protocolName: 'cdm',
+   },
+  );
 
-  const t1 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I remember the call that cost us the quarter.' });
-  expect(t1.text).toBe('What made that moment a genuine crossroads for you?');
-  expect(t1.phase).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
+  const t1 = await userTurn(session, 'I remember the call that cost us the quarter.');
+  expect(t1.kind).toBe('probe');
+  if (t1.kind === 'probe') expect(t1.text).toBe('What made that moment a genuine crossroads for you?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
 
-  const t2 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'The stakes were higher than the plan admitted.' });
-  // The P3 channel served this turn — the machine question never reached the person.
-  expect(t2.text).toBe('What made that call so hard to make?');
+  const t2 = await userTurn(session, 'The stakes were higher than the plan admitted.');
+  // The generic probe served this turn — the machine question never reached the person.
+  if (t2.kind === 'probe') expect(t2.text).toBe('What made that call so hard to make?');
   // The machine state is untouched: same phase, same step.
-  expect(t2.phase).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
 
-  const t3 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I felt the weight of choosing alone.' });
+  const t3 = await userTurn(session, 'I felt the weight of choosing alone.');
   // The machine resumed and served its own question at the SAME phase.
-  expect(t3.text).toBe('What did you learn about yourself from that call?');
-  expect(t3.phase).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
+  if (t3.kind === 'probe') expect(t3.text).toBe('What did you learn about yourself from that call?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'recall', label: 'recall a hard call', step: 1, of: 3 });
  });
 
- it('people-grid with fewer than three gazetteer people degrades to reflective, which now carries its own machine meta', async () => {
-  const { app } = await makeApp(['{}', 'What makes you say that?'], { gazetteerPeople: ['Ana'] });
-  const { id, res } = await newSession(app, { protocol: 'people-grid', target: 'self', topic: 'the people at work' });
+ it('a declarative echo from the machine is rejected as not-interrogative, retried once, and falls through to a real question', async () => {
+  const script = [
+   // Turn 1: the name-the-kinds question is served.
+   'What kinds of work keep showing up for you?',
+   // Turn 2: the machine hands the person's own words back — no question
+   // mark — on BOTH the first attempt and the corrective retry…
+   'You wrote: "I mostly deal with contracts and budgets."',
+   'You wrote: "I mostly deal with contracts and budgets."',
+   // …so the ordinary channels serve this turn: red-lights, then P3.
+   '{}',
+   'Which of the piles you named would be hardest to give up?',
+  ];
+  // concept-sorting is unreachable by rotation (only cdm/laddered-grid rotate
+  // for 'domain' at a fresh vault), so drive the elicitor directly — the
+  // machine-shape assertion, decoupled from the rotation (canon §10).
+  const session = startSession(
+   { target: 'domain', topic: 'the work I take on' },
+   {
+    complete: makeScriptedComplete(script),
+    vault: makeFakeVault(),
+    queue: makeFakeQueue(),
+    index: buildIndex([]),
+    protocolName: 'concept-sorting',
+   },
+  );
+
+  const t1 = await userTurn(session, 'I mostly deal with contracts, budgets, and timelines.');
+  expect(t1.kind).toBe('probe');
+  if (t1.kind === 'probe') expect(t1.text).toBe('What kinds of work keep showing up for you?');
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'name-the-kinds', label: 'name the kinds', step: 1, of: 3 });
+
+  const t2 = await userTurn(session, 'Budgets are the ones I keep putting off.');
+  // The echo never reached the person: the P3 channel served this turn.
+  expect(t2.kind).toBe('probe');
+  if (t2.kind === 'probe') expect(t2.text).toBe('Which of the piles you named would be hardest to give up?');
+  // The machine state is untouched: same phase, same step.
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'name-the-kinds', label: 'name the kinds', step: 1, of: 3 });
+ });
+
+ it('people-grid with fewer than three people degrades to reflective, which now carries its own machine meta', async () => {
+  // people-grid is rotation:false (canon §10 — patterns are drawn, not
+  // chosen), so the machine-shape tests drive the elicitor directly.
+  const session = startSession(
+   { target: 'self', topic: 'the people at work' },
+   {
+    complete: makeScriptedComplete(['{}', 'What makes you say that?']),
+    vault: makeFakeVault(),
+    queue: makeFakeQueue(),
+    index: buildIndex([]),
+    protocolName: 'people-grid',
+    peopleSource: () => ['Ana'],
+   },
+  );
 
   // The degradation is decided inside startSession; the client hears the
   // effective protocol, not the picked one.
-  expect(res.protocol).toBe('reflective');
+  expect(session.protocol).toBe('reflective');
 
-  const t1 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I keep comparing the people I trust with the people I admire.' });
+  const t1 = await userTurn(session, 'I keep comparing the people I trust with the people I admire.');
   expect(t1.kind).toBe('probe');
   // P1 finds nothing and P2 lights nothing, so the machine question serves
   // — reflective is a machine instance (ticket 159, slice 4), its ways-in
   // prompt the P3-equivalent.
-  expect(t1.text).toBe('What makes you say that?');
+  if (t1.kind === 'probe') expect(t1.text).toBe('What makes you say that?');
   // …and the phase meta is present: every sitting now carries the machine.
-  expect(t1.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
+  expect(machinePhaseMeta(session.protocolMachine)).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
  });
 
- it('people-grid triads: the turn response carries the chip renderer and the names; a tapped pair submits cleanly', async () => {
+ it('people-grid triads: the phase meta carries the chip renderer and the names; a tapped pair submits cleanly', async () => {
   const script = [
    // Turn 1: the triads question (the names ride the composed prompt).
    // Guard-safe: the def prompt quotes the floor question, so a scripted
@@ -266,17 +244,27 @@ describe('the phase machine in the sitting (ticket 159, slice 3)', () => {
    // Turn 2: after the tapped pair + reasoning, the contrast move.
    'What do the two you chose share that the third one lacks?',
   ];
-  const { app } = await makeApp(script, { gazetteerPeople: ['Ana', 'Bea', 'Cleo'] });
-  const { id } = await newSession(app, { protocol: 'people-grid', target: 'self', topic: 'the people at work' });
+  // people-grid is rotation:false — drive the elicitor directly, as the
+  // people-source section below does (canon §10).
+  const session = startSession(
+   { target: 'self', topic: 'the people at work' },
+   {
+    complete: makeScriptedComplete(script),
+    vault: makeFakeVault(),
+    queue: makeFakeQueue(),
+    index: buildIndex([]),
+    protocolName: 'people-grid',
+    peopleSource: () => ['Ana', 'Bea', 'Cleo'],
+   },
+  );
 
-  const t1 = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I keep comparing the people I trust with the people I admire.' });
+  const t1 = await userTurn(session, 'I keep comparing the people I trust with the people I admire.');
   expect(t1.kind).toBe('probe');
-  expect(t1.text).toBe('If these three stood in a room together, which two would understand each other first?');
+  if (t1.kind === 'probe') expect(t1.text).toBe('If these three stood in a room together, which two would understand each other first?');
   // The phase meta carries the renderer contract (slice 6) plus the three
   // names the chips render (slice 7) — the same people source as the
   // composed prompt, so the chips can never name a set the model did not.
-  // (The gazetteer store orders by recency, so assert the set, not the order.)
-  expect(t1.phase).toEqual({
+  expect(machinePhaseMeta(session.protocolMachine, () => ['Ana', 'Bea', 'Cleo'])).toEqual({
    id: 'triads',
    label: 'which two are alike',
    step: 1,
@@ -284,18 +272,15 @@ describe('the phase machine in the sitting (ticket 159, slice 3)', () => {
    renderer: 'triads',
    triad: { names: expect.arrayContaining(['Ana', 'Bea', 'Cleo']) },
   });
-  expect(t1.phase?.triad?.names).toHaveLength(3);
+  expect(machinePhaseMeta(session.protocolMachine, () => ['Ana', 'Bea', 'Cleo'])?.triad?.names).toHaveLength(3);
 
   // The tapped pair rides the answer as an additive optional field; the
-  // route contract is unchanged for the prose-only turn above.
-  const t2 = await post<TurnResponse>(app, `/api/session/${id}/turn`, {
-   text: "they're both the ones I turn to first",
-   pair: ['Ana', 'Bea'],
-  });
+  // elicitor records it into the machine ui and the contrast move serves.
+  const t2 = await userTurn(session, "they're both the ones I turn to first", undefined, undefined, ['Ana', 'Bea']);
   expect(t2.kind).toBe('probe');
-  expect(t2.text).toBe('What do the two you chose share that the third one lacks?');
+  if (t2.kind === 'probe') expect(t2.text).toBe('What do the two you chose share that the third one lacks?');
   // Still the triads phase — the machine advances only on a ratified marker.
-  expect(t2.phase).toEqual({
+  expect(machinePhaseMeta(session.protocolMachine, () => ['Ana', 'Bea', 'Cleo'])).toEqual({
    id: 'triads',
    label: 'which two are alike',
    step: 1,
@@ -316,7 +301,7 @@ describe('the machine people source (ticket 159, slice 3)', () => {
    return 'If these three stood in a room together, which two would understand each other first?';
   };
   const session = startSession(
-   { minutes: 30, energy: 'medium', target: 'self' },
+   { target: 'self' },
    {
     complete: recording,
     vault: makeFakeVault(),
@@ -353,7 +338,7 @@ describe('the machine people source (ticket 159, slice 3)', () => {
    return 'If these three stood in a room together, which two would understand each other first?';
   };
   const session = startSession(
-   { minutes: 30, energy: 'medium', target: 'self' },
+   { target: 'self' },
    {
     complete: recording,
     vault: makeFakeVault(),

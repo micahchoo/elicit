@@ -31,8 +31,6 @@ function makeProvenance(overrides?: Partial<Provenance>): Provenance {
 
 function makeMode(overrides?: Partial<Mode>): Mode {
   return {
-    minutes: 30,
-    energy: 'medium',
     ...overrides,
   };
 }
@@ -174,7 +172,7 @@ describe('Vault', () => {
 
   it('transcript frontmatter carries the Mode', () => {
     const session = 'test-session-mode';
-    const mode: Mode = { minutes: 25, energy: 'low', topic: 'philosophy' };
+    const mode: Mode = { target: 'self', topic: 'philosophy' };
     vault.startTranscript(session, {
       mode,
       protocol: 'reflective-interview',
@@ -185,8 +183,7 @@ describe('Vault', () => {
       join(root, 'transcripts', `${session}.md`),
       'utf-8',
     );
-    expect(raw).toContain('minutes: 25');
-    expect(raw).toContain('energy: low');
+    expect(raw).toContain('target: self');
     expect(raw).toContain('topic: philosophy');
   });
 
@@ -228,9 +225,7 @@ describe('Vault', () => {
     expect(raw).toBe(
       '---\n' +
         'session: test-session-plain\n' +
-        'mode:\n' +
-        '  minutes: 30\n' +
-        '  energy: medium\n' +
+        'mode: {}\n' +
         'protocol: reflective-interview\n' +
         "started: '2026-08-03T00:00:00.000Z'\n" +
         '---\n' +

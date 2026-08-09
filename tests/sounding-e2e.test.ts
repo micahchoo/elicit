@@ -16,7 +16,7 @@ import { runDocket } from '../src/clerk/docket.js';
 import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
 import { runLadderSummaries } from '../src/clerk/sounding-summary.js';
 import { appendEvent, type ActivityEvent } from '../src/log/activity.js';
-import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
+import { CLOSING_DOOR_QUESTION } from '../src/elicitor/protocol.js';
 import type { Complete, QueueStore, Vault } from '../src/types.js';
 
 // ── Helpers ──
@@ -147,7 +147,7 @@ function aRichAnswer(i: number): string {
  return RUNG_ANSWERS[i - 1]!;
 }
 
-/** The bookmark answer both sittings give; the second sitting's opener draws it. */
+/** The door answer both sittings give; never drawn as the next opener (the close declares no queue entry). */
 const BOOKMARK = 'I want to keep writing about the garden in spring.';
 
 /** The scripted complete pair for one composed turn: red-light JSON, then the question. */
@@ -159,9 +159,9 @@ function turnScript(phrase: string, question: string): string[] {
 }
 
 /** Test A's script: six pre-offer turns, the accept's rung-0 composition,
- * rungs 1-5, the checkpoint continue's composition, rungs 7-11. The checkpoint
- * turn and the cap turn compose nothing. (Allowance 12, checkpoint 6 —
- * re-derived 2026-08-05 gate-repair.) */
+ * rungs 1-3, the checkpoint continue's composition, rungs 5-7. The checkpoint
+ * turn and the cap turn compose nothing. (Allowance 8, checkpoint 4 — the
+ * fixed SESSION_BUDGET 10 floors the allowance at 8, canon §5.3.) */
 function capScript(): string[] {
  const out: string[] = [];
  for (let i = 0; i < 6; i++) {
@@ -170,12 +170,12 @@ function capScript(): string[] {
  // The accept composes rung 0 from the licensing answer — phrase differs from
  // the pre-offer turn that earned the offer.
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3, 4, 5]) {
+ for (const k of [1, 2, 3]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
- // rung 6 → checkpoint: no calls; the continue composes rung 7's question.
- out.push(...turnScript(RUNG_PHRASES[6]!, followUp(RUNG_PHRASES[6]!, RUNG_TAILS[6]!)));
- for (const k of [7, 8, 9, 10, 11]) {
+ // rung 4 → checkpoint: no calls; the continue composes rung 5's question.
+ out.push(...turnScript(RUNG_PHRASES[4]!, followUp(RUNG_PHRASES[4]!, RUNG_TAILS[4]!)));
+ for (const k of [5, 6, 7]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
  return out;
@@ -190,16 +190,16 @@ function parkScript(): string[] {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- // rungs 1-5 (answers 1-5, each composing the next rung's question).
- for (const k of [1, 2, 3, 4, 5]) {
+ // rungs 1-3 (answers 1-3, each composing the next rung's question).
+ for (const k of [1, 2, 3]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
  // park: no calls. Then the docket's ladder-summary job, one line.
  out.push('it ran from being seen to a shed nobody entered');
  // The second sitting's resume: a question composed FRESH, quoting the last
- // kept answer (rung 5's answer — RUNG_ANSWERS[4] holds 'being seen').
- out.push(...turnScript('being seen', followUp('being seen', 'What does being seen need from you this week?')));
- // The resumed answer is the checkpoint (rung 6, no composition); the park
+ // kept answer — rung 3's answer, RUNG_ANSWERS[2] ('I left the work…').
+ out.push(...turnScript('I left the work on the desk overnight', followUp('I left the work on the desk overnight', 'What did the overnight change about the work?')));
+ // The resumed answer is the checkpoint (rung 4, no composition); the park
  // gate composes nothing either.
  return out;
 }
@@ -238,8 +238,8 @@ async function makeApp(script: string[], modelName?: string): Promise<TestApp> {
  return { app, root, queue, vault, complete };
 }
 
-async function newSession(app: Hono, minutes = 20): Promise<string> {
- const res = await post(app, '/api/session', { mode: { minutes, energy: 'medium' } });
+async function newSession(app: Hono): Promise<string> {
+ const res = await post(app, '/api/session', {});
  expect(res.sessionId).toBeTruthy();
  return res.sessionId;
 }
@@ -264,7 +264,7 @@ describe('soundings end to end (Task 13)', () => {
   // 1. Turn until the license fires; the offer arrives with a number in its sentence.
   const { res: offer, licensingAnswer } = await turnUntilLicensed(app, id);
   expect(offer.soundingOffer).toBeDefined();
-  expect(offer.soundingOffer.allowance).toBe(12);
+  expect(offer.soundingOffer.allowance).toBe(8);
   expect(offer.soundingOffer.sentence).toContain(String(offer.soundingOffer.allowance));
 
   // 2. Accept: rung 0's question is composed. The foothold is asserted from
@@ -272,15 +272,15 @@ describe('soundings end to end (Task 13)', () => {
   const accepted = await post(app, `/api/session/${id}/sounding`, { accept: true });
   expect(accepted.kind).toBe('probe');
   expect(accepted.text).toBeTruthy();
-  expect(accepted.sounding).toEqual({ rung: 0, of: 12, checkpoint: false });
+  expect(accepted.sounding).toEqual({ rung: 0, of: 8, checkpoint: false });
 
   // 3. Answer every rung, never pressing park or another-day — the checkpoint's
   //    mandatory continue is the mechanism, not a gate word.
   let soundingId: string | undefined;
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= 8; i++) {
    const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) {
-    // 4. The cap closed the descent on the twelfth answer, with the door
+    // 4. The cap closed the descent on the eighth answer, with the door
     //    question already on the wire.
     expect(res.descentClosed).toBe('cap');
     expect(res.soundingId).toBeTruthy();
@@ -292,17 +292,17 @@ describe('soundings end to end (Task 13)', () => {
     soundingId = res.soundingId;
     break;
    }
-   if (i === 6) {
+   if (i === 4) {
     expect(res.kind).toBe('checkpoint');
     expect(res.text).toBeUndefined();
-    expect(res.sounding).toEqual({ rung: 6, of: 12, checkpoint: true });
+    expect(res.sounding).toEqual({ rung: 4, of: 8, checkpoint: true });
     const gate = await post(app, `/api/session/${id}/sounding/gate`, { choice: 'continue' });
     expect(gate.kind).toBe('probe');
     expect(gate.text).toBeTruthy();
    } else {
     expect(res.kind).toBe('probe');
     expect(res.text).toBeTruthy();
-    expect(res.sounding).toEqual({ rung: i, of: 12, checkpoint: false });
+    expect(res.sounding).toEqual({ rung: i, of: 8, checkpoint: false });
    }
   }
   expect(soundingId).toBeDefined();
@@ -325,14 +325,9 @@ describe('soundings end to end (Task 13)', () => {
    expect(rung.question).toContain(rung.foothold);
   }
 
-  // 5. The sitting continues: the door answer brings the bookmark question,
-  //    and the bookmark answer saturates.
-  const door = await post(app, `/api/session/${id}/turn`, { text: 'Nothing else for now.' });
-  expect(door.kind).toBe('probe');
-  expect(door.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  expect(door.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
-  const bookmark = await post(app, `/api/session/${id}/turn`, { text: BOOKMARK });
-  expect(bookmark.kind).toBe('saturated');
+  // 5. The sitting continues: the door answer saturates.
+  const door = await post(app, `/api/session/${id}/turn`, { text: BOOKMARK });
+  expect(door.kind).toBe('saturated');
  });
 
  it('the descent that is parked and picked up: the pointer is never drawn, the docket summarizes it, and the resumed chain keeps its footing', async () => {
@@ -340,16 +335,16 @@ describe('soundings end to end (Task 13)', () => {
   const id1 = await newSession(app);
   await turnUntilLicensed(app, id1);
   const accepted = await post(app, `/api/session/${id1}/sounding`, { accept: true });
-  expect(accepted.sounding).toEqual({ rung: 0, of: 12, checkpoint: false });
+  expect(accepted.sounding).toEqual({ rung: 0, of: 8, checkpoint: false });
 
-  // 1. Five rungs, each carrying the gate reading and the next question
-  //    together. The descent parks BEFORE the checkpoint (rung 6): the
+  // 1. Three rungs, each carrying the gate reading and the next question
+  //    together. The descent parks BEFORE the checkpoint (rung 4): the
   //    resume's first answer then lands ON the checkpoint.
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 3; i++) {
    const res = await post(app, `/api/session/${id1}/turn`, { text: aRichAnswer(i) });
    expect(res.kind).toBe('probe');
    expect(res.text).toBeTruthy();
-   expect(res.sounding).toEqual({ rung: i, of: 12, checkpoint: false });
+   expect(res.sounding).toEqual({ rung: i, of: 8, checkpoint: false });
   }
 
   // 2. Park: the ladder file holds every rung, the Queue holds one pointer,
@@ -364,7 +359,7 @@ describe('soundings end to end (Task 13)', () => {
   const ladder = readLadder(root, soundingId);
   expect(ladder).not.toBeNull();
   expect(ladder!.endedBy).toBe('park');
-  expect(ladder!.rungs.length).toBe(5);
+  expect(ladder!.rungs.length).toBe(3);
   expect(ladder!.licensingAnswer).toContain(ladder!.rungs[0]!.foothold);
   for (let i = 1; i < ladder!.rungs.length; i++) {
    expect(ladder!.rungs[i - 1]!.answer).toContain(ladder!.rungs[i]!.foothold);
@@ -372,7 +367,7 @@ describe('soundings end to end (Task 13)', () => {
   const pointers = queue.list({ source: 'parked-sounding' });
   expect(pointers).toHaveLength(1);
   const pointer = pointers[0]!;
-  const draw = queue.draw({ minutes: 20, energy: 'medium', target: 'self' });
+  const draw = queue.draw({ target: 'self' });
   expect(draw).toBeNull();
 
   // 5. Run the docket: the ladder-summary job stamps one line for the parked
@@ -383,7 +378,6 @@ describe('soundings end to end (Task 13)', () => {
    complete,
    buildIndex: (snippets) => buildIndex(snippets),
    composeOpener,
-   composeStillTrue,
    listSessions: () => [],
    runLadderSummaries,
    modelName: 'test-clerk',
@@ -400,18 +394,17 @@ describe('soundings end to end (Task 13)', () => {
   expect(summary.data.at).toBeInstanceOf(Date);
   expect(summary.content.trim()).toBe('it ran from being seen to a shed nobody entered');
 
-  // The first sitting still closes cleanly: door then bookmark.
-  const door1 = await post(app, `/api/session/${id1}/turn`, { text: 'Nothing else for now.' });
-  expect(door1.kind).toBe('probe');
-  expect(door1.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  const saturated1 = await post(app, `/api/session/${id1}/turn`, { text: BOOKMARK });
-  expect(saturated1.kind).toBe('saturated');
+  // The first sitting still closes cleanly: the door answer saturates.
+  const door1 = await post(app, `/api/session/${id1}/turn`, { text: BOOKMARK });
+  expect(door1.kind).toBe('saturated');
 
-  // 6. A second sitting: the opener is the bookmark the first sitting declared
-  //    — never the parked pointer's question.
-  const sess2 = await post(app, '/api/session', { mode: { minutes: 20, energy: 'medium' } });
+  // 6. A second sitting: the close declared no queue entry, so the opener is
+  //    drawn fresh — never the parked pointer's question, never the first
+  //    sitting's door answer.
+  const sess2 = await post(app, '/api/session', { mode: {} });
   expect(sess2.sessionId).toBeTruthy();
-  expect(sess2.question).toBe(BOOKMARK);
+  expect(sess2.question).toBeTruthy();
+  expect(sess2.question).not.toBe(BOOKMARK);
   expect(sess2.question).not.toBe(ladder!.rungs.at(-1)!.question);
   const id2 = sess2.sessionId as string;
 
@@ -422,20 +415,20 @@ describe('soundings end to end (Task 13)', () => {
   expect(resumed.kind).toBe('probe');
   expect(resumed.text).toBeTruthy();
   expect(resumed.text).not.toBe(ladder!.rungs.at(-1)!.question);
-  expect(ladder!.rungs.at(-1)!.answer).toContain('being seen');
-  expect(resumed.text).toContain('being seen');
-  expect(resumed.sounding).toEqual({ rung: ladder!.rungs.length, of: 12, checkpoint: false });
+  expect(ladder!.rungs.at(-1)!.answer).toContain('I left the work');
+  expect(resumed.text).toContain('I left the work on the desk overnight');
+  expect(resumed.sounding).toEqual({ rung: ladder!.rungs.length, of: 8, checkpoint: false });
 
   // Answer the resumed question: addRung enforces the backwards chain live.
-  // The resumed allowance is 12, so its checkpoint is ceil(12/2) = 6 — the
+  // The resumed allowance is 8, so its checkpoint is ceil(8/2) = 4 — the
   // very next rung. The answer lands as the checkpoint, question withheld.
-  const rung6 = await post(app, `/api/session/${id2}/turn`, { text: aRichAnswer(6) });
+  const rung6 = await post(app, `/api/session/${id2}/turn`, { text: aRichAnswer(4) });
   expect(rung6.kind).toBe('checkpoint');
   expect(rung6.text).toBeUndefined();
-  expect(rung6.sounding).toEqual({ rung: 6, of: 12, checkpoint: true });
+  expect(rung6.sounding).toEqual({ rung: 4, of: 8, checkpoint: true });
 
   // 8. Park again — one descent, one file — and the second sitting still ends
-  //    with the door question and then the bookmark question.
+  //    with the door question and then saturation.
   const parked2 = await post(app, `/api/session/${id2}/sounding/gate`, { choice: 'park' });
   expect(parked2.kind).toBe('descent-closed');
   expect(parked2.endedBy).toBe('park');
@@ -443,14 +436,11 @@ describe('soundings end to end (Task 13)', () => {
   expect(parked2.soundingId).toBe(soundingId);
   const ladder2 = readLadder(root, soundingId);
   expect(ladder2).not.toBeNull();
-  expect(ladder2!.rungs.length).toBe(6);
-  expect(ladder2!.rungs[4]!.answer).toContain(ladder2!.rungs[5]!.foothold);
-  expect(ladder2!.rungs[5]!.question).toContain(ladder2!.rungs[5]!.foothold);
+  expect(ladder2!.rungs.length).toBe(4);
+  expect(ladder2!.rungs[2]!.answer).toContain(ladder2!.rungs[3]!.foothold);
+  expect(ladder2!.rungs[3]!.question).toContain(ladder2!.rungs[3]!.foothold);
 
-  const door2 = await post(app, `/api/session/${id2}/turn`, { text: 'Nothing else for now.' });
-  expect(door2.kind).toBe('probe');
-  expect(door2.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  const saturated2 = await post(app, `/api/session/${id2}/turn`, { text: 'Somewhere else.' });
-  expect(saturated2.kind).toBe('saturated');
+  const door2 = await post(app, `/api/session/${id2}/turn`, { text: 'Somewhere else.' });
+  expect(door2.kind).toBe('saturated');
  });
 });

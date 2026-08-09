@@ -67,7 +67,6 @@ function makeQueueEntry(overrides?: Partial<QueueEntry>): QueueEntry {
     license: 'CC0',
     question: 'What do you think?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
     created: '2026-06-01T12:00:00Z',
     ...overrides,
@@ -230,7 +229,6 @@ describe('composeExpedition', () => {
     const draft = result!;
     expect(draft.source).toBe('composed');
     expect(draft.horizon).toBe('days');
-    expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
     expect(draft.questionForm).toBe('deliberative');
     expect(draft.cites).toEqual(['s1@3']);
@@ -356,7 +354,6 @@ describe('runDocket expedition minting', () => {
         license: 'CC0',
         question: 'Research deep work. What surprised you, and what does it change?',
         questionForm: 'deliberative' as const,
-        sharpness: 'weak' as const,
         horizon: 'days' as const,
         cites: ['sn1@3'],
         quotedFragment: 'deep work',
@@ -369,7 +366,6 @@ describe('runDocket expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition,
       log: vi.fn(),
       listSessions: vi.fn().mockReturnValue([]),
@@ -401,13 +397,11 @@ describe('runDocket expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition: vi.fn().mockResolvedValue({
         source: 'composed' as const,
         license: 'CC0',
         question: 'Research deep work. What surprised you, and what does it change?',
         questionForm: 'deliberative' as const,
-        sharpness: 'weak' as const,
         horizon: 'days' as const,
         cites: ['sn1@3'],
         quotedFragment: 'deep work',
@@ -441,7 +435,6 @@ describe('runDocket expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition: vi.fn().mockRejectedValue(new Error('model timeout')),
       log,
       listSessions: vi.fn().mockReturnValue([]),
@@ -472,7 +465,6 @@ describe('runDocket expedition minting', () => {
       complete: vi.fn() as unknown as Complete,
       buildIndex: vi.fn().mockReturnValue(MOCK_IDX),
       composeOpener: vi.fn().mockResolvedValue(null),
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       composeExpedition,
       log: vi.fn(),
       listSessions: vi.fn().mockReturnValue([]),

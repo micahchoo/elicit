@@ -19,6 +19,19 @@ export function repairedSnippetIds(repairs: RepairRecord[]): Set<string> {
   return new Set(repairs.map(r => r.snippetRef.split('@')[0]!));
 }
 
+/** The max repair `at` per bare snippet id (wave 5 — the since-last-read lens
+ * needs the repair DATE, not just the taint: `repairClaims[id].at > lastRead`
+ * is what makes a claim full-ink again). Same strip-@version rule as the set. */
+export function repairAtsById(repairs: RepairRecord[]): Map<string, string> {
+  const ats = new Map<string, string>();
+  for (const r of repairs) {
+    const id = r.snippetRef.split('@')[0]!;
+    const prev = ats.get(id);
+    if (prev === undefined || r.at > prev) ats.set(id, r.at);
+  }
+  return ats;
+}
+
 /** The set of full snippetRefs (snippetId@version) under repair. */
 function repairedSnippetRefs(repairs: RepairRecord[]): Set<string> {
   return new Set(repairs.map(r => r.snippetRef));

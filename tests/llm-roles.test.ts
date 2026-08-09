@@ -229,9 +229,7 @@ describe('server role wiring', () => {
 
   // A sitting is foreground work: a person is waiting on every turn.
   log.length = 0;
-  const sessRes = await call(app, '/api/session', {
-   mode: { minutes: 10, energy: 'medium', target: 'self' },
-  });
+  const sessRes = await call(app, '/api/session', {});
   const { sessionId } = (await sessRes.json()) as { sessionId: string };
   await call(app, `/api/session/${sessionId}/turn`, { text: 'It is the applause I am after.' });
   expect(log.length).toBeGreaterThan(0);
@@ -253,7 +251,7 @@ describe('server role wiring', () => {
   for (const session of ['session-one', 'session-two']) {
    const at = new Date().toISOString();
    vault.startTranscript(session, {
-    mode: { minutes: 10, energy: 'medium', target: 'self' },
+    mode: {},
     protocol: 'reflective',
     started: at,
    });

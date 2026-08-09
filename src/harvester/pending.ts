@@ -17,6 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CaptureChannel, CutProposal } from '../types.js';
+import type { RepeatsFlag } from './dedupe.js';
 
 export type PendingHarvest = {
  sessionId: string;
@@ -29,6 +30,23 @@ export type PendingHarvest = {
  /** Origin of the kept material; decide() stamps it into Provenance. */
  origin: 'harvest' | 'unprompted';
  proposals: CutProposal[];
+ /**
+  * propose()'s buds — the fragments that couldn't stand alone — with the
+  * reason propose() itself recorded for each (Wave 2 S1). Optional:
+  * records written before this field existed read as absent, and the
+  * surface treats absent as none.
+  */
+ buds?: { text: string; reason: string }[];
+ /**
+  * Near-duplicate flags (Batch C2, §12.1): which proposals repeat a snippet
+  * already in the corpus, detected at intake against the vault index as it
+  * exists when the harvest lands. Flag-only — the passage is always kept;
+  * the sentence ("this repeats what you said Tuesday — keep both?") renders
+  * on the review row and the receipt from this field. Optional: records
+  * written before the field existed read as absent, and the surface treats
+  * absent as no repeats.
+  */
+ repeats?: RepeatsFlag[];
  /**
   * Capture channel per user-turn ordinal, index-aligned with
   * `CutProposal.sourceTurn`. Sitting harvests only. Present only when the

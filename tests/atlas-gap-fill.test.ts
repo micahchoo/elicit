@@ -182,7 +182,6 @@ describe('atlas gap-fill sweep — live mode (graduated 2026-08-03)', () => {
     expect(entries.length).toBe(2);
     for (const entry of entries) {
       expect(entry.atlasRegion).toBeDefined();
-      expect(entry.sharpness).toBe('weak');
       expect(entry.question).toMatch(/^Tell me about /);
     }
     for (const e of logEntries) {

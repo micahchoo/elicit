@@ -10,7 +10,6 @@
  */
 
 import {
- directionSlugFor,
  type AdviceNote,
  type ArtifactRecord,
  type CoachLicenseEvent,
@@ -98,7 +97,7 @@ export function relevantClaims(
   * word (measured on the same corpus: "Students", "Luisa", "Fabricated").
   * A miss here costs only name quality, so a small closed list is enough.
   */
- const GENERIC_NAME_WORDS = new Set([
+ export const GENERIC_NAME_WORDS = new Set([
   'former', 'three', 'four', 'five', 'years', 'strong', 'certain', 'entire',
   'most', 'more', 'less', 'will', 'ever', 'cannot', 'would', 'could',
   'should', 'must', 'might', 'about', 'because', 'without', 'being',

@@ -84,15 +84,7 @@ export type DrawProvenance =
   stratum: Stratum;
   /** ISO date of the SITTING the snippet came from, not of its import. */
   wroteAt: string;
- }
- | {
-  kind: 'anniversary';
-  snippetId: string;
-  version: number;
-  stratum: Stratum;
-  /** ISO date of the sitting the snippet came from. */
-  wroteAt: string;
- };
+ }; // The 'anniversary' member died with the on-this-day offer (ruling 2026-08-09).
 
 /**
  * What the lineage mirror read — the evidence variant for mirror questions
@@ -147,8 +139,6 @@ export type DeckEntry = {
 export type Target = 'self' | 'domain';
 
 export type Mode = {
- minutes: number;
- energy: 'low' | 'medium' | 'high';
  topic?: string;
  target?: Target;
 };
@@ -419,7 +409,10 @@ source:
  // Ticket 106: outcome questions — "did this intention come to pass?"
  | 'outcome'
  // Lineage mirror — questions minted from usage facts (Q-83)
- | 'lineage-mirror';
+ | 'lineage-mirror'
+ // The composition gap sweep (redesign-2026-08-09 §7): a model-found seam's
+ // question, minted by the person's `ask this` — keyed (composition, gap).
+ | 'composition-gap';
  license: string;
  question: string;
  questionForm: QuestionForm;
@@ -449,6 +442,23 @@ source:
   * the thing that licensed it, across restarts (Q-39).
   */
  gap?: string;
+/**
+ * The composition a composition-gap entry belongs to (redesign-2026-08-09
+ * §7). Optional, because only 'composition-gap' entries carry one — and
+ * load-bearing, because (composition, gap) is the pair the "one question
+ * per found gap" dedupe keys on across restarts: the sweep re-finds a seam
+ * with a fresh gap id, so the composition half is what stops a re-mint.
+ * Same shape as `claim` and `gap`, which exist for the same reason.
+ */
+ composition?: string;
+/**
+ * The sitting counter at the moment a composition-gap entry was minted
+ * (redesign-2026-08-09 §10). Optional, because only 'composition-gap'
+ * entries carry one — and load-bearing, because the faster expiry ("if you
+ * ignored it for three sittings, the model was wrong") is measured in
+ * sittings, not days, and the ledger has no timestamp per sitting.
+ */
+ createdSitting?: number;
  /**
   * The Bud this entry was minted for, and the recorded failure it asks
   * about. Optional, because only gap-fill entries minted by the Bud sweep
@@ -499,8 +509,6 @@ source:
   * never as construct.
   */
  targetFacet?: Facet;
- modeNeeds?: { minMinutes?: number; energy?: 'low' | 'medium' | 'high' };
- sharpness: 'weak' | 'sharp';
  direction?: string;
  horizon: 'now' | 'session' | 'days';
  created: string;
@@ -643,13 +651,28 @@ export interface QueueStore {
   * were expired.
   */
  expireTailBeyond(keep: number, filter?: (e: QueueEntry) => boolean): number;
- /**
-  * QR-6: set ONE entry to 'expired' and write it back. The primitive the
-  * one-time template sweep persists through; the caller owns the policy
-  * (who is never expired) and the Activity Log line. A no-op on an id
-  * nothing reads back.
-  */
- markExpired(id: string): void;
+/**
+ * QR-6: set ONE entry to 'expired' and write it back. The primitive the
+ * one-time template sweep persists through; the caller owns the policy
+ * (who is never expired) and the Activity Log line. A no-op on an id
+ * nothing reads back.
+ */
+markExpired(id: string): void;
+/**
+ * The composition gap sweep's expiry (redesign-2026-08-09 §10): a pending
+ * 'composition-gap' entry whose minted sitting is more than `sittings`
+ * sittings behind the current counter expires — "if you ignored it for
+ * three sittings, the model was wrong". Days are not the unit: a sitting
+ * is the unit the person actually ignores questions in. Never touches
+ * answered entries, never touches other sources, and an entry without a
+ * minted sitting (a record written before the field existed) waits on the
+ * normal days-based rule instead. Returns how many entries were expired.
+ * Optional so a caller predating the field — a test fake, or a store
+ * hand-rolled to the older shape — compiles unchanged: the sweep guards
+ * with `?? 0`, and production always wires the real store, which
+ * implements it.
+ */
+expireModelGaps?(sittings: number): number;
 }
 
 export interface LexicalIndex {
@@ -693,13 +716,6 @@ export type DocketReport = {
   */
  annotations?: { annotated: number; silent: number; failed: number };
 /**
- * What the gap-fill sweep did on this run, absent when a run did none.
- *
- * Structural rather than imported: this file must not depend on
- * `src/clerk/`, so the field names the minimum the docket report renders.
- */
-gapFill?: { minted: number; budQuestions: number; constructQuestions: number };
-/**
  * What the territory gap-fill sweep did on this run, absent when a run
  * did none. Structural — this file must not depend on `src/ktg/`.
  */
@@ -728,16 +744,39 @@ territoryGapFill?: { minted: number; frontierQuestions: number; failureQuestions
  lineageMirror?: { evaluated: number; minted: number };
  /** Q-110 door 1: coach seed clustering results, absent when a run did none. */
  coachSeed?: { clustered: number; minted: number };
+ /**
+  * §12.3 neighborhoods: the clustering pass grouped passages into themes,
+  * absent when a run did none. Zero-LLM.
+  */
+ neighborhoods?: { source: 'embedding' | 'lexical'; clustered: number; skipped: number; neighborhoods: number };
+ /**
+  * §12 (Batch C3): the full-corpus embedding coverage pass — how many
+  * passages hold a usable vector after the run (`covered`), how many the
+  * corpus has (`total`), and how many this run embedded (`fresh`). Absent
+  * when a run did none (no embedder wired). The pass itself logs the
+  * coverage sentence; this carries the counts into the report.
+  */
+ coverageEmbedding?: { covered: number; total: number; fresh: number };
+ /**
+  * Batch B2, §11 — what the context-line job did on this run, absent when a
+  * run did none. Structural — this file must not depend on `src/clerk/`.
+  */
+ contextLines?: { composed: number; skipped: number };
  };
 
 /**
  * The sitting phase, as `SessionState.phase` declares it. Named so the /v2
  * vocabulary imports it instead of repeating the union by hand.
  */
-export type Phase = 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+export type Phase = 'open' | 'mid' | 'closing-door';
 
 export type SessionState = {
  id: string;
+ /**
+  * Set by the end flow; the today door hides ended sessions and a second
+  * /end no-ops. Cleared when a turn lands — the sitting resumed.
+  */
+ endedAt?: string;
  mode: Mode;
  protocol: string;
  deps: {

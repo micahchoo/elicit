@@ -194,7 +194,7 @@ export const GUARDED: readonly GuardedMetric[] = [
     unit: 'sitting',
     observable: false,
     note:
-      'NOT OBSERVABLE. session-started records the declared Mode (mode=25m/high) and ' +
+      'NOT OBSERVABLE. session-started records the declared target (target=self) and ' +
       'nothing records when a sitting ended, so the achieved length cannot be read. ' +
       'The available proxy — the last event carrying the same session id — counts a ' +
       'browser tab left open as a long sitting, in the direction that hides the ' +

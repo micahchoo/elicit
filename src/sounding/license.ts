@@ -3,10 +3,10 @@
  *
  * A Sounding is offered, never auto-entered, and the offer itself must be
  * licensed, or the agent proposes descents into whatever the person happened
- * to say last. Four mechanical facts decide it: the sitting is late enough,
- * the mode is not low-energy, the last three user turns hold one thread, and
- * no offer was already made this sitting. Nothing in this file asks a model
- * anything, and nothing in it reads emotional state.
+ * to say last. Three mechanical facts decide it: the sitting is late enough,
+ * the last three user turns hold one thread, and no offer was already made
+ * this sitting. Nothing in this file asks a model anything, and nothing in
+ * it reads emotional state.
  *
  * This mechanism ships LIVE, and Q-62 is why. Q-62 amends Q-35 a second time:
  * a mechanism whose only power is to OFFER — one proposal the person declines
@@ -24,7 +24,6 @@ import { readNumber } from '../wiki/thresholds.js';
 
 export type LicenseReasons = {
   late: boolean;
-  energy: boolean;
   sustained: boolean;
   unoffered: boolean;
 };
@@ -109,7 +108,7 @@ function constructOf(turns: Turn[]): string | undefined {
 }
 
 /**
- * The entry license. `licensed` is true only when all four reasons are true;
+ * The entry license. `licensed` is true only when all three reasons are true;
  * `reasons` is always fully populated, even when `licensed` is false, because
  * the record logs what failed, not just that something did.
  */
@@ -138,19 +137,17 @@ export function licenseSounding(
   const late =
     lateEntry.live &&
     s.questionCount >= readNumber(lateEntry, 6) &&
-    s.phase !== 'closing-door' &&
-    s.phase !== 'closing-bookmark';
-  const energy = s.mode.energy !== 'low';
+    s.phase !== 'closing-door';
   const unoffered = s.soundingOffer === undefined;
   const thread = lastThreeUserTurns(s);
   // A thread needs three turns to be sustained; fewer cannot clear the bar.
   const value = thread.length >= 3 ? meanAdjacentJaccard(thread) : 0;
   const sustained = SUSTAINED.live && value >= readNumber(SUSTAINED, 0.10);
-  const licensed = late && energy && sustained && unoffered;
+  const licensed = late && sustained && unoffered;
   const construct = constructOf(thread);
   return {
     licensed,
-    reasons: { late, energy, sustained, unoffered },
+    reasons: { late, sustained, unoffered },
     sustainedValue: value,
     ...(construct ? { construct } : {}),
   };

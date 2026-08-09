@@ -18,7 +18,6 @@
  * already takes.
  */
 
-import { renderImportReview } from './import-review.js';
 import type { ScanResponse } from './deps.js';
 import { renderSurveyMap, takeDeclaredRegion } from './survey-map.js';
 import type { ImportReviewDeps, ImportReviewItem } from './import-review.js';
@@ -49,18 +48,22 @@ let lastScan: { pending: number } | null = null;
 export function renderImportEntry(deps: ImportEntryDeps): void {
   const { main, api, beginWait } = deps;
   // Resume-first: a browser may close mid-import, and the entry point must
-  // put the reader back at the next unread piece. The review renders itself.
+  // put the reader back at the next unread piece. A ready one hands off to
+  // the review route, which renders the review (or the waiting sentence).
   const wait = beginWait(main, 'looking for a piece to review…');
   void api<NextResponse>('/api/import/next')
     .then((res) => {
       wait.done();
       if (res.item) {
-        // A review opened from a declared region stays inside it (Q-68's
-        // bound): the slug is taken once, then cleared. Without one — the
-        // 19 adopted posts, or a plain folder scan — the parameter is
-        // omitted (exactOptionalPropertyTypes: no present-undefined).
+        // A ready piece hands over to the review ROUTE (wave 3) — the route
+        // does the fetch and renders the review through the same seam. A
+        // review opened from a declared region stays inside it (Q-68's
+        // bound): the slug is taken once, then cleared, and carried in the
+        // navigation options. Without one — the 19 adopted posts, or a
+        // plain folder scan — the options are omitted
+        // (exactOptionalPropertyTypes: no present-undefined).
         const region = takeDeclaredRegion();
-        renderImportReview(region ? { ...deps, region } : deps);
+        deps.navTo('import-review', region !== null ? { region } : undefined);
         return;
       }
       renderEntry(deps, res.waiting);
@@ -76,7 +79,7 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
   const surface = el('div', { class: 'screen active import-review' });
 
   if (waiting) {
-    surface.append(el('p', { class: 'import-step' }, '3 \u00b7 reading'));
+    surface.append(el('p', { class: 'import-step' }, '3 \u00b7 reading them now'));
     surface.append(el('p', { class: 'import-waiting' }, waiting));
     const advice = adviceFor(waiting);
     if (advice) {
@@ -90,14 +93,14 @@ function renderEntry(deps: ImportEntryDeps, waiting?: string): void {
     }
   }
 
-  surface.append(el('p', { class: 'import-step' }, '1 \u00b7 the folder'));
+  surface.append(el('p', { class: 'import-step' }, '1 \u00b7 tell me the folder'));
 
   // The folder prompt — one line in the mode idiom, no file picker (Q-57:
   // the app never opens a socket, and a picker adds nothing a path does not).
   const prompt = el('p', {
     style: 'display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0',
   });
-  prompt.append(el('span', {}, 'the folder:'));
+  prompt.append(el('span', {}, 'which folder?'));
   const folderInput = el('input', {
     class: 'mode-select',
     type: 'text',
@@ -195,7 +198,7 @@ function appendManifest(surface: HTMLElement, deps: ImportEntryDeps, res: ScanRe
   const start = el('button', { class: 'import-save' }, 'start reading');
   start.addEventListener('click', () => navTo('import'));
 
-  surface.append(el('p', { class: 'import-step' }, '2 \u00b7 what the scan found'));
+  surface.append(el('p', { class: 'import-step' }, '2 \u00b7 here is what the scan found'));
 
   const manifest = el('div', { style: 'display: flex; flex-direction: column; gap: 0.4rem' });
   manifest.append(counts, ...refusals, next, start);

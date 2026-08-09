@@ -35,28 +35,24 @@ export function initClient(deps: ClientDeps): void {
 
 /**
  * Read routes, by prefix. `/api/wiki` is matched exactly (with its query
- * string) rather than by prefix, because `/api/wiki/claim/:id/read` sits under
- * the same path and is the one write the wiki surface makes.
+ * string) rather than by prefix, because `/api/wiki/passage/:id/read` and the
+ * contextualizer's verbs sit under the same path and are the writes the wiki
+ * surface makes.
  */
-export const GET_PREFIXES = ['/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/anniversary', '/api/protocols', '/api/territory', '/api/sweep-backlog'];
+export const GET_PREFIXES = ['/api/activity', '/api/stt/status', '/api/cadence', '/api/snippets', '/api/harvest-queue', '/api/pieces', '/api/protocols', '/api/session/open', '/api/territory', '/api/sweep-backlog'];
 
 export function isReadPath(path: string): boolean {
  if (GET_PREFIXES.some((p) => path.startsWith(p))) return true;
  // /api/queue is matched exactly, not by prefix: the GET is the pile itself,
  // while park / unpark / answer sit under the same path and are POSTs — a
- // prefix match would send them out as GETs (the /api/reach lesson below).
+ // prefix match would send them out as GETs.
  if (path === '/api/queue' || path.startsWith('/api/queue?')) return true;
  // The piece paths are matched exactly, the way /api/wiki is: the GET reads
  // are one piece and its export, while every verb beneath /api/piece/:id/ is
  // a POST (reorder, prose, gap, gap/accept, set-down, pick-up).
- // /api/reach is matched the same exact way, not by prefix: the GET is the
- // offer itself, while /api/reach/decline sits under the same path and is
- // the one POST the reach surface makes — a prefix match would send the
- // decline out as a GET and 404 it (seeding pre-dispatch finding, 014 T14).
  return path === '/api/wiki' || path.startsWith('/api/wiki?')
-  || path === '/api/reach' || path.startsWith('/api/reach?')
   || /^\/api\/piece\/[^/]+$/.test(path)
-  || /^\/api\/piece\/[^/]+\/export$/.test(path)
+  || /^\/api\/piece\/[^/]+\/export(\/questions)?$/.test(path)
   // Coach reads: the waiting evaluation, and the page GET. Every other
   // /api/coach/* path is a write. 'waiting', 'direction' and 'quest' are
   // reserved in directionSlugFor (src/coach/contract.ts, T2), so a

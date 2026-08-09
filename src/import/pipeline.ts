@@ -12,8 +12,6 @@
  *     (014 T10), never before.
  *   - `pipelineSurvey` — the survey route's rule: compute the coarse map,
  *     then snapshot it unless the read is pure (129).
- *   - `pipelineReach` — the reach route's meeting: the survey snapshot and
- *     the live pending queue become exactly one offer (Q-62).
  *
  * A route that wants one of these sequences calls one function and shapes
  * the response; deleting this module moves the sequences BACK into the
@@ -32,15 +30,8 @@ import { adoptPriorIngest, type AdoptResult } from './adopt.js';
 import { scanFolder, type ScanResult } from './scan.js';
 import { commitImport, type CommitResult } from './commit.js';
 import { runImportRepair } from './repair.js';
-import { surveyFolder, writeSurvey, readSurvey, type Survey } from './survey.js';
-import { reachOffer, reachDeclines, termsOf, type ReachOffer } from './reach.js';
-import { createImportStore, type ImportStore, type AdmitResult } from './store.js';
-import { createRegionStore } from './region.js';
-import { classifyDroppedRun } from './body.js';
-import { runImportExtraction } from './extract.js';
-import { compilePattern } from './dating.js';
-import { appendReachDecline } from './reach.js';
-import { bodyHash } from './scan.js';
+import { surveyFolder, writeSurvey, type Survey } from './survey.js';
+import type { ImportStore, AdmitResult } from './store.js';
 import type { ImportDecision, RegionRecord } from './contract.js';
 import type { EventKind } from '../log/kinds.js';
 import type { QueueStore, Vault } from '../types.js';
@@ -58,7 +49,6 @@ export { createRegionStore } from './region.js';
 export { classifyDroppedRun } from './body.js';
 export { runImportExtraction } from './extract.js';
 export { compilePattern } from './dating.js';
-export { appendReachDecline } from './reach.js';
 export { bodyHash } from './scan.js';
 
 export type { CommitResult } from './commit.js';
@@ -210,38 +200,4 @@ export function pipelineSurvey(deps: {
   // snapshot is written by act {v:'survey'}, which is why that verb exists.
   if (deps.snapshot) writeSurvey(deps.vaultRoot, survey);
   return survey;
-}
-
-/**
- * GET /api/reach's sequence: the survey snapshot and the pending queue
- * meet in exactly one offer. Read-only and cheap — the snapshot and the
- * queue, never the folder — so a route that re-walked 5,000 files on every
- * waiting-surface render is a route the person would feel. Offer-only
- * (Q-62): silence does nothing, and every evaluation is logged by the
- * caller's log. `root` is the survey root the offer's path is relative to
- * (014 T14); null when never surveyed.
- */
-export function pipelineReach(deps: {
-  vaultRoot: string;
-  queue: QueueStore;
-  log: LogFn;
-}): { offer: ReachOffer | null; root: string | null } {
-  const survey = readSurvey(deps.vaultRoot);
-  const pending = deps.queue.list({ status: 'pending' });
-  const offer = reachOffer({
-    survey,
-    // The live Direction (Q-69): the pending queue's question text — the
-    // closest running thing this codebase has to a line of inquiry. Injected
-    // so the swap to real Directions is one call site.
-    liveTerms: () => {
-      const terms = new Set<string>();
-      for (const e of pending) {
-        for (const t of termsOf(e.question)) terms.add(t);
-      }
-      return terms;
-    },
-    declined: (p) => reachDeclines(deps.vaultRoot).get(p) ?? null,
-    log: deps.log,
-  });
-  return { offer, root: survey?.root ?? null };
 }

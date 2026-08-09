@@ -93,13 +93,13 @@ describe('repair verb (ticket 137, Q-104..Q-109)', () => {
     writeFileSync(join(qDir, `${qid}.md`), matter.stringify('', {
       id: qid, status: 'pending', source: 'composed', license: 'resonance',
       question: 'You wrote about your son — can you tell me more?',
-      questionForm: 'deliberative', sharpness: 'weak', horizon: 'session',
+      questionForm: 'deliberative', horizon: 'session',
       cites: [`${snippet.id}@${snippet.version}`],
       quotedFragment: 'My son is not dead.',
       created: new Date().toISOString(),
     }), 'utf-8');
 
-    const sesRes = await post(app, '/api/session', { mode: { minutes: 25, energy: 'medium', target: 'self' }, shuffle: false });
+    const sesRes = await post(app, '/api/session', { mode: { target: 'self' }, shuffle: false });
     const session = await sesRes.json() as { sessionId: string };
 
     const repairRes = await post(app, `/api/session/${session.sessionId}/repair`, {
@@ -136,13 +136,13 @@ describe('repair verb (ticket 137, Q-104..Q-109)', () => {
     writeFileSync(join(qDir, `${qid}.md`), matter.stringify('', {
       id: qid, status: 'pending', source: 'composed', license: 'resonance',
       question: 'You mentioned machines — can you elaborate?',
-      questionForm: 'deliberative', sharpness: 'weak', horizon: 'session',
+      questionForm: 'deliberative', horizon: 'session',
       cites: [`${snippet.id}@${snippet.version}`],
       quotedFragment: 'the machines',
       created: new Date().toISOString(),
     }), 'utf-8');
 
-    const sesRes = await post(app, '/api/session', { mode: { minutes: 25, energy: 'medium', target: 'self' }, shuffle: false });
+    const sesRes = await post(app, '/api/session', { mode: { target: 'self' }, shuffle: false });
     const session = await sesRes.json() as { sessionId: string };
 
     const repairRes = await post(app, `/api/session/${session.sessionId}/repair`, {
@@ -151,7 +151,7 @@ describe('repair verb (ticket 137, Q-104..Q-109)', () => {
     });
     expect(repairRes.status).toBe(200);
 
-    const drawn = queue.draw({ minutes: 25, energy: 'medium', target: 'self' });
+    const drawn = queue.draw({ target: 'self' });
     if (drawn) {
       expect(drawn.id).not.toBe(qid);
     }
@@ -169,7 +169,7 @@ describe('repair verb (ticket 137, Q-104..Q-109)', () => {
       session: 's1', question: 'What happened?', kind: 'harvest', questionForm: 'deliberative', channel: 'typed',
     });
 
-    const sesRes = await post(app, '/api/session', { mode: { minutes: 25, energy: 'medium', target: 'self' }, shuffle: true });
+    const sesRes = await post(app, '/api/session', { mode: { target: 'self' }, shuffle: true });
     const session = await sesRes.json() as { sessionId: string };
 
     const eventsBefore = readEvents(root).filter((e) => e.kind === 'repair').length;

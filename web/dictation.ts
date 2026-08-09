@@ -4,12 +4,23 @@
  * stream is module state, so a surface re-paint or a navigation never strands
  * a live recording behind a stale closure.
  *
+ * Streaming mode (redesign wave 4, R4): while the mic is live, audio chunks
+ * drain into the streaming transcribe endpoint in ~250ms batches and the SSE
+ * partials replace a provisional span in the answer field (the surface's
+ * textarea), so the person sees their words land live. On release, the tail
+ * flushes, the stream ends, and the end response's text — the authoritative
+ * final — replaces the provisional span. If the stream never opened (STT
+ * unavailable) or died mid-flight, the one-shot POST path is preserved
+ * byte-for-byte. wireDictation's signature is unchanged.
+ *
  * Injection, not import: `api`, `showQuietError` and the STT-availability
  * state are main.ts module-private (the import-review pattern). The STT
- * status read is the one JSON call; the transcribe POST rides the shared
+ * status read is the one JSON call; the transcribe POSTs ride the shared
  * api() with a rawBody (Float32Array buffer, never JSON-encoded), so the
  * one 401 land-on-login rule has one home — web/client.ts (the F5 debt
- * closure, wave C).
+ * closure, wave C). The SSE feed is a bare EventSource (same-origin, the
+ * session cookie rides along) — it cannot set headers, so it deliberately
+ * does not go through api().
  */
 
 import { ApiError } from './deps.js';
@@ -52,6 +63,23 @@ let _samples: Float32Array[] = [];
 let dictationActive = false;
 let dictationBusy = false;
 
+// ── Streaming state (R4) ──
+
+/** The textarea the live provisional preview writes into — refreshed by
+ *  every wireDictation call, so a re-painted surface keeps the preview. */
+let _activeTextarea: HTMLTextAreaElement | null = null;
+/** The open streaming session, null when the stream never opened. */
+let _streamId: string | null = null;
+let _streamEvents: EventSource | null = null;
+/** An audio POST (or the SSE feed) failed mid-hold: fall back to one-shot. */
+let _streamFailed = false;
+/** The interval draining worklet chunks into the stream (~250ms batches). */
+let _streamBatcher: number | null = null;
+/** The provisional span in the textarea the partials replace. */
+let _provisional: { start: number; end: number } | null = null;
+/** The final text already landed in the textarea — skip insertAtCursor. */
+let _provisionalPlaced = false;
+
 export async function startRecording(): Promise<void> {
  _samples = [];
  _audioCtx = new AudioContext({ sampleRate: 16000 });
@@ -91,6 +119,108 @@ export async function startRecording(): Promise<void> {
  source.connect(_workletNode);
 }
 
+/** Concatenate the pending worklet chunks and clear the buffer. */
+function drainPendingAudio(): Float32Array | null {
+ if (_samples.length === 0) return null;
+ let totalLen = 0;
+ for (const chunk of _samples) totalLen += chunk.length;
+ const combined = new Float32Array(totalLen);
+ let offset = 0;
+ for (const chunk of _samples) {
+  combined.set(chunk, offset);
+  offset += chunk.length;
+ }
+ _samples = [];
+ return combined;
+}
+
+/** Replace the provisional span in the active textarea with `text`. */
+function replaceProvisional(text: string): void {
+ const ta = _activeTextarea;
+ const prov = _provisional;
+ if (!ta || !prov) return;
+ const before = ta.value.slice(0, prov.start);
+ const after = ta.value.slice(prov.end);
+ ta.value = before + text + after;
+ ta.dispatchEvent(new Event('input'));
+ prov.end = prov.start + text.length;
+}
+
+/** The one-shot POST, unchanged from the pre-streaming recorder. */
+async function transcribeOneShot(deps: DictationDeps): Promise<string> {
+ const batch = drainPendingAudio();
+ if (!batch) return '';
+
+ // POST raw Float32 to server — through the shared api() (rawBody: sent
+ // as-is, never JSON-encoded), so the one 401 land-on-login rule has one
+ // home (web/client.ts) and a handled failure skips the quiet line.
+ const data = await deps.api<{ text: string }>(
+  '/api/transcribe?rate=16000',
+  undefined,
+  { method: 'POST', rawBody: batch.buffer as ArrayBuffer },
+ );
+ return data.text;
+}
+
+/** Open the streaming session and wire the live provisional preview. */
+async function beginStreaming(deps: DictationDeps): Promise<void> {
+ try {
+  const { streamId } = await deps.api<{ streamId: string }>('/api/transcribe/stream/open');
+  _streamId = streamId;
+ } catch {
+  // The stream could not be opened (STT unavailable, worker down) — the
+  // stop path falls back to the one-shot POST with the full recording.
+  _streamId = null;
+  return;
+ }
+
+ const textarea = _activeTextarea;
+ if (!textarea) return;
+ const pos = textarea.selectionStart ?? textarea.value.length;
+ _provisional = { start: pos, end: pos };
+ _provisionalPlaced = false;
+
+ const es = new EventSource(`/api/transcribe/stream/${_streamId}/events`);
+ _streamEvents = es;
+ es.addEventListener('partial', (e: Event) => {
+  const data = JSON.parse((e as MessageEvent).data as string) as { text?: unknown };
+  if (typeof data.text === 'string') replaceProvisional(data.text);
+ });
+ es.addEventListener('final', (e: Event) => {
+  const data = JSON.parse((e as MessageEvent).data as string) as { text?: unknown };
+  if (typeof data.text === 'string') {
+   replaceProvisional(data.text);
+   _provisionalPlaced = true;
+  }
+ });
+ es.onerror = () => {
+  // The feed died (server closed or network). The recording keeps going —
+  // the stop path still flushes and ends the stream, and the end response
+  // is the authoritative final regardless of the feed's health.
+  es.close();
+  _streamEvents = null;
+ };
+
+ // Drain the worklet chunks into the stream in ~250ms batches.
+ const flush = () => {
+  if (!_streamId) return;
+  const batch = drainPendingAudio();
+  if (!batch) return;
+  void deps.api(`/api/transcribe/stream/${_streamId}/audio?rate=16000`, undefined, {
+   method: 'POST',
+   rawBody: batch.buffer as ArrayBuffer,
+  }).catch((e) => {
+   if (e instanceof ApiError && e.handled) return; // the 401 hop already navigated
+   _streamFailed = true;
+   if (_streamBatcher !== null) {
+    deps.window.clearInterval(_streamBatcher);
+    _streamBatcher = null;
+   }
+  });
+ };
+ _streamBatcher = deps.window.setInterval(flush, 250);
+}
+
 export async function stopAndTranscribe(deps: DictationDeps): Promise<string> {
  // Stop media
  _workletNode?.port.close();
@@ -101,28 +231,46 @@ export async function stopAndTranscribe(deps: DictationDeps): Promise<string> {
  await _audioCtx?.close();
  _audioCtx = null;
 
- if (_samples.length === 0) return '';
-
- // Concatenate all chunks
- let totalLen = 0;
- for (const chunk of _samples) totalLen += chunk.length;
- const combined = new Float32Array(totalLen);
- let offset = 0;
- for (const chunk of _samples) {
-  combined.set(chunk, offset);
-  offset += chunk.length;
+ const streamId = _streamId;
+ const streamFailed = _streamFailed;
+ _streamId = null;
+ _streamFailed = false;
+ if (_streamBatcher !== null) {
+  deps.window.clearInterval(_streamBatcher);
+  _streamBatcher = null;
  }
- _samples = [];
+ _streamEvents?.close();
+ _streamEvents = null;
 
- // POST raw Float32 to server — through the shared api() (rawBody: sent
-// as-is, never JSON-encoded), so the one 401 land-on-login rule has one
-// home (web/client.ts) and a handled failure skips the quiet line.
- const data = await deps.api<{ text: string }>(
-  '/api/transcribe?rate=16000',
-  undefined,
-  { method: 'POST', rawBody: combined.buffer },
- );
- return data.text;
+ if (!streamId || streamFailed) {
+  // One-shot fallback: the stream never opened, or died mid-hold (the
+  // already-streamed audio is gone, but what remained still transcribes).
+  _provisional = null;
+  _provisionalPlaced = false;
+  return transcribeOneShot(deps);
+ }
+
+ // Streaming path: flush the tail, end the stream, commit the authoritative
+ // final into the provisional span (idempotent with the SSE final).
+ try {
+  const batch = drainPendingAudio();
+  if (batch) {
+   await deps.api(`/api/transcribe/stream/${streamId}/audio?rate=16000`, undefined, {
+    method: 'POST',
+    rawBody: batch.buffer as ArrayBuffer,
+   });
+  }
+  const { text } = await deps.api<{ text: string }>(`/api/transcribe/stream/${streamId}/end`);
+  if (text) {
+   replaceProvisional(text);
+   _provisionalPlaced = true;
+  }
+  _provisional = null;
+  return text;
+ } catch (e) {
+  _provisional = null;
+  throw e;
+ }
 }
 
 /* ── Shared dictation wiring ── */
@@ -143,6 +291,10 @@ const LONG_PRESS_MS = 400;
  */
 export function wireDictation(deps: DictationDeps, opts: DictationOpts) {
  const { textarea, micBtn, micStatus, errorSlot } = opts;
+
+ // The live provisional preview writes into the surface's textarea — a
+ // re-painted surface re-runs this and adopts the ongoing recording.
+ _activeTextarea = textarea;
 
  // A re-painted surface picks up a recording that is already live.
  if (dictationActive) {
@@ -171,6 +323,9 @@ export function wireDictation(deps: DictationDeps, opts: DictationOpts) {
     dictationActive = true;
     micBtn.classList.add('active');
     micStatus.textContent = 'listening\u2026';
+    // Open the streaming session in the background; the stop path falls
+    // back to one-shot if it never opens.
+    void beginStreaming(deps);
    } catch (e) {
     console.error(e);
     deps.showQuietError(errorSlot, 'the microphone did not open — check permission');
@@ -186,7 +341,10 @@ export function wireDictation(deps: DictationDeps, opts: DictationOpts) {
     const text = await stopAndTranscribe(deps);
     if (text) {
      opts.onSpeech?.();
-     insertAtCursor(text);
+     // The streaming path already landed the final text live (the
+     // provisional span became the transcript) — inserting again would
+     // duplicate it.
+     if (!_provisionalPlaced) insertAtCursor(text);
     }
    } catch (e) {
     console.error(e);
@@ -196,6 +354,7 @@ export function wireDictation(deps: DictationDeps, opts: DictationOpts) {
      deps.showQuietError(errorSlot, 'that did not come through — say it again');
     }
    }
+   _provisionalPlaced = false;
    dictationBusy = false;
    micBtn.disabled = false;
    micStatus.textContent = '';

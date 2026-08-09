@@ -3,7 +3,7 @@
  *
  * The map is a folder read as a shape: one line per node — counts, never a
  * per-file list (a list of 5,000 files is the shape Q-24 refuses) — with a
- * fully-harvested node dimmed rather than hidden, because "already in" is
+ * fully-harvested node dimmed rather than hidden, because "already kept" is
  * the information the map exists to carry.
  *
  * Clicking a node opens the declaration inline, nothing modal: how are these
@@ -83,7 +83,7 @@ export function mapLines(survey: SurveyShape): string[] {
     const indent = '  '.repeat(Math.max(0, n.path.split('/').length - 1));
     const name = `${indent}${n.path === '' ? '<root>' : n.path}`.padEnd(40);
     const t = n.total;
-    let line = `${name}${t.files} notes · ${t.harvested} in · ${t.unread} unread`;
+    let line = `${name}${t.files} notes · ${t.harvested} kept · ${t.unread} unread`;
     if (t.refused > 0) line += ` · ${t.refused} refused`;
     if (t.unread === 0) line += ' · done';
     return line;
@@ -347,7 +347,7 @@ function buildPanel(
 
 /** The direct-counts line, in the same register as the map. */
 function directSentence(n: SurveyNode): string {
-  let s = `directly: ${n.files} notes · ${n.harvested} in · ${n.unread} unread`;
+  let s = `directly: ${n.files} notes · ${n.harvested} kept · ${n.unread} unread`;
   if (n.refused > 0) s += ` · ${n.refused} refused`;
   return s;
 }

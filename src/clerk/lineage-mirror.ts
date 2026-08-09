@@ -319,7 +319,6 @@ export function runLineageMirrorSweep(deps: {
           question,
           questionForm: 'deliberative',
           horizon: 'now',
-          sharpness: 'weak',
           lineageMirror: lineage,
         };
 

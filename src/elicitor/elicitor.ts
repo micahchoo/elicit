@@ -20,14 +20,11 @@ import type {
 import {
  defaultQuestionForm,
  CLOSING_DOOR_QUESTION,
- CLOSING_BOOKMARK_QUESTION,
  CLOSING_ACKNOWLEDGMENT,
  type StarterQuestion,
 } from './protocol.js';
 import {
  getProtocol,
- selectProtocolForTarget,
- loadProtocolDefinitions,
  DEFAULT_FLOOR_PROBE,
  type ProtocolDef,
 } from '../protocols/registry.js';
@@ -50,12 +47,12 @@ import { loadQuestionBank } from './bank.js';
 import { quotablePhrase, resonateHybrid, type SemanticIndex } from '../index/semantic.js';
 import { isContentFree } from '../language/thin-answer.js';
 import { isWeakForm } from '../language/weak-form.js';
-import { composeFollowUp, composeJuxtaposition, redLights } from '../clerk/composed.js';
+import { composeJuxtaposition } from '../clerk/composed.js';
 import { composeRung } from '../clerk/sounding-rung.js';
 import { addRung, gateStateFor } from '../sounding/ladder.js';
 import { descentEnd } from '../sounding/convergence.js';
+import { SESSION_BUDGET } from '../sounding/budget.js';
 import { checkQuestion, type GuardVerdict } from '../language/guards.js';
-import { facetIntentForRedLight } from './facet-intent.js';
 import type { RandomizerDraw } from '../randomizer/randomizer.js';
 
 /**
@@ -207,10 +204,18 @@ export function startSession(
  const id = ulid();
  const started = new Date().toISOString();
  const target: Target = mode.target ?? deps.defaultTarget ?? 'self';
- const normalizedMode: Mode = { ...mode, target };
+ // Minutes and energy are no longer declarations (canon §5.2): the
+ // normalized mode carries only target and a spoken topic — stale
+ // minutes/energy in a body never reach the transcript frontmatter.
+ const normalizedMode: Mode = {
+  target,
+  ...(mode.topic !== undefined ? { topic: mode.topic } : {}),
+ };
  const bank = deps.bank ?? loadQuestionBank();
 
- const protocol = deps.protocolName ?? selectProtocolForTarget(target, 0, loadProtocolDefinitions()).name;
+ // Rotation cut (ruling 2026-08-09): the sitting runs reflective by default;
+ // a machine supplies its own protocol through deps.protocolName.
+ const protocol = deps.protocolName ?? 'reflective';
 
  // ── Machine start (ticket 159, slice 3) ──
  // A def that declares phases starts a phase machine for the sitting.
@@ -329,8 +334,7 @@ export interface Probe {
  provenance: QuestionProvenance;
  /**
   * The Facet this question asks for, when the source knows it: a queue entry
-  * tagged at curation, or a follow-up whose Red Light names what is missing.
-  * Absent means unknown — never guessed (ticket 042).
+  * tagged at curation. Absent means unknown — never guessed (ticket 042).
   */
  targetFacet?: Facet;
  /**
@@ -438,6 +442,8 @@ function guardCorrection(verdict: GuardVerdict, asked: string[]): string {
    return 'CRITICAL: Your question must be about what the speaker said — not about the conversation itself. Do not reference "this conversation" or ask about the interaction.';
   case 'near-duplicate':
    return `CRITICAL: Your question is too similar to one already asked in this conversation. Already asked: ${asked.join(' | ')}\n\nCompose a genuinely different question — different syntactic shape, different angle, different move from the repertoire.`;
+ case 'not-interrogative':
+  return 'CRITICAL: Your previous response was rejected because it was not a question. Return ONE question, addressed to the speaker, ending in a question mark.';
   case 'ok':
    return '';
  }
@@ -535,7 +541,15 @@ export async function machineTurn(
   const triadBlock = latest === undefined
    ? ''
    : `\n\nTRIAD (the person's latest selection): ${latest.selected[0]} and ${latest.selected[1]} were the two chosen as alike.`;
-  return peopleBlock === '' && triadBlock === '' ? system : `${system}${peopleBlock}${triadBlock}`;
+  // The declared topic (redesign wave 4): a mid-sitting declaration lands
+  // on s.mode.topic and rides every machine composition, so the interview
+  // channels keep the sitting on its named subject.
+  const topicBlock = s.mode.topic === undefined
+   ? ''
+   : `\n\nThe sitting's declared subject: ${s.mode.topic}. Keep questions on that subject.`;
+  return peopleBlock === '' && triadBlock === '' && topicBlock === ''
+   ? system
+   : `${system}${peopleBlock}${triadBlock}${topicBlock}`;
  };
  let lastOutput: string | undefined;
  const recording: Complete = async (system, turns, opts) => {
@@ -639,34 +653,19 @@ export async function userTurn(
   delete s.openQueueEntryId;
  }
 
- // Bookmark answer — close completes; the answer becomes a user-declared queue entry.
- // It carries this sitting's Target so a later sitting of the other kind cannot
- // draw it (045); startSession always resolves mode.target, so it is present.
- if (s.phase === 'closing-bookmark') {
-  s.deps.queue.add({
-   source: 'user-declared',
-   license: 'user',
-   question: text,
-   questionForm: 'deliberative',
-   sharpness: 'weak',
-   horizon: 'now',
-   ...(s.mode.target ? { target: s.mode.target } : {}),
-   ...(s.mode.topic ? { topic: s.mode.topic } : {}),
-  });
+ // Closing-door → the door answer saturates the sitting. The phase stays
+ // 'closing-door' until /end; the close has no bookmark question.
+ if (s.phase === 'closing-door') {
   return { kind: 'saturated', closingText: CLOSING_ACKNOWLEDGMENT };
  }
 
- // Closing-door → advance to the bookmark question
- if (s.phase === 'closing-door') {
-  s.phase = 'closing-bookmark';
-  return emitProbe(s, CLOSING_BOOKMARK_QUESTION, 'deliberative', 'close');
- }
+ // Budget: a fixed question count — minutes are not declared (canon §5.3)
+ const budget = SESSION_BUDGET;
 
- // Budget: min(20, max(10, mode.minutes))
- const budget = Math.min(20, Math.max(10, s.mode.minutes));
-
- // At budget-2, trigger the close sequence
- if (s.questionCount >= budget - 2) {
+ // At budget-2, trigger the close sequence — never mid-descent: the
+ // descent IS the sitting from that point (sounding/budget.ts doc), and
+ // its allowance reserves the close moves for after it ends.
+ if (!s.sounding && s.questionCount >= budget - 2) {
   return emitClosingDoor(s);
  }
 
@@ -736,8 +735,8 @@ export async function userTurn(
  // is the priority, and P1/P2/P3 serve one-turn stand-ins when the machine
  // question is rejected. Reflective is the exception (slice 4): its
  // one-phase machine wraps the P1/P2/P3 flow, so its ways-in question is
- // the P3-equivalent — P1 juxtaposition and P2 red-light stay the dominant
- // channels, and the machine serves only when both are quiet.
+ // the P3-equivalent — P1 juxtaposition stays the dominant channel, and
+ // the machine serves only when it is quiet.
  // The machine's OWN protocol is authoritative when a machine is present: a
  // resumed machine (ticket 159, slice 5) can run a different instrument than
  // the sitting was rotated into, and composition must follow the machine,
@@ -759,7 +758,7 @@ export async function userTurn(
   // Nothing to draw — fall through to composition
  }
 
- // ── Probe flow: juxtaposition > red-light compose > generic LLM probe ──
+ // ── Probe flow: juxtaposition > machine ways-in > generic LLM probe ──
 
  // Priority 1: resonance → juxtaposition
   const hits = await resonateHybrid(s.deps.index, s.deps.semantic, text);
@@ -814,24 +813,9 @@ export async function userTurn(
   };
  }
 
- // Priority 2: red-light detection → composed follow-up
- const lights = await redLights(text, s.deps.complete);
- for (const light of lights) {
-  const followUp = await composeFollowUp(text, light, s.deps.complete, protocolDef);
-  if (!followUp) continue;
-  const verdict = guardQuestion(s, followUp);
-  if (verdict !== 'ok') {
-   console.warn(
-    `Elicitor: composed follow-up rejected by ${verdict} guard — trying the next source`,
-   );
-   continue;
-  }
-  // The Red Light names what the utterance is missing, so it names the Facet
-  // the follow-up asks for — the one place composition knows its own intent.
-  return emitProbe(s, followUp, 'deliberative', 'composed', {
-   targetFacet: facetIntentForRedLight(light.kind),
-  });
- }
+ // Priority 2 (cut, ruling 2026-08-09): the red-light channel is gone —
+ // composition survives ONLY as resonance-licensed juxtaposition through the
+ // emit gate (above). The generic probe below is the fallback after it.
 
  // Priority 3: the machine's ways-in question for reflective (ticket 159,
  // slice 4 — its one-phase machine wraps the P1/P2/P3 flow, so the machine
@@ -846,7 +830,13 @@ export async function userTurn(
  }
 
  // Priority 3 (fallback): generic LLM probe (protocol from registry)
- const systemPrompt = protocolDef?.prompt ?? (() => { throw new Error(`Unknown protocol "${s.protocol}"`); })();
+ const basePrompt = protocolDef?.prompt ?? (() => { throw new Error(`Unknown protocol "${s.protocol}"`); })();
+ // The declared topic (redesign wave 4): a mid-sitting declaration lands on
+ // s.mode.topic, and this prompt carries it so the generic channel keeps
+ // the sitting on its named subject.
+ const systemPrompt = s.mode.topic === undefined
+  ? basePrompt
+  : `${basePrompt}\n\nThe sitting's declared subject: ${s.mode.topic}. Keep questions on that subject.`;
 
  const response = await s.deps.complete(systemPrompt, s.turns, {
   temperature: 0.8,

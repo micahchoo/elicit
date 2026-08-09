@@ -160,6 +160,107 @@ export interface SessionState {
   setPhaseMeta: (meta: PhaseMetaLike | null) => void;
 }
 
+/** A parked DRM picked up from the waiting surface: its first probe, shown by the DRM screen directly. */
+export interface DrmResumeProbe {
+  text: string;
+  episode: number;
+  of: number;
+  step: string;
+  gate: { episode: number; of: number; label: string };
+}
+
+/**
+ * The parked DRM probe the last pick-up left, taken by the DRM screen when
+ * it renders (the resume route already composed it). Take-then-clear, the
+ * same shape survey-map's takeDeclaredRegion uses. Re-homed from the
+ * waiting surface (wave 1): the Today surface writes it, the DRM screen
+ * takes it, and the seam owns the state so no surface imports another.
+ */
+let drmResumeProbe: DrmResumeProbe | null = null;
+
+/** Take the parked DRM probe, or null when none is pending. */
+export function takeDrmResumeProbe(): DrmResumeProbe | null {
+  const probe = drmResumeProbe;
+  drmResumeProbe = null;
+  return probe;
+}
+
+/** Leave the parked DRM probe for the DRM screen to take (Today's pick-up). */
+export function setDrmResumeProbe(probe: DrmResumeProbe): void {
+  drmResumeProbe = probe;
+}
+
+/**
+ * The first-launch flag (canon §5.1): set by the setup path (web/auth.ts),
+ * cleared when the first sitting ends. The room renders the promise line
+ * while it is set; Today's silent close-it clears it too (the first
+ * sitting can end there).
+ */
+let firstLaunch = false;
+/** Set by the setup path — the promise line's switch. */
+export function setFirstLaunch(v: boolean): void { firstLaunch = v; }
+/** Read by the room — the promise line renders while this is true. */
+export function isFirstLaunch(): boolean { return firstLaunch; }
+/** Cleared when the first sitting ends (the room's close paths, Today's close-it). */
+export function clearFirstLaunch(): void { firstLaunch = false; }
+
+/**
+ * The day-walk discriminator (owner decision 1): true while the open
+ * session runs the drm machine. Today's door sets it when it begins or
+ * resumes a day-walk; the room keeps it true through the walk (every drm
+ * response re-sets it) and clears it when the walk closes.
+ */
+let drmWalk = false;
+/** Set by Today's door (begin/resume a walk) and the room's drm responses. */
+export function setDrmWalk(v: boolean): void { drmWalk = v; }
+/** Read by the room — the walk furniture renders while this is true. */
+export function isDrmWalk(): boolean { return drmWalk; }
+
+/** POST /api/session's reply — the fields the begin flow writes into state (shared by Today's startSitting and the first-launch auto-open, wave 4). */
+export interface SessionResponse {
+  sessionId: string;
+  question: string;
+  /** Present when the Randomizer dealt the opener (Q-18). */
+  source?: OpenerSource;
+  /** Display-only lineage of a resurfaced opener (080) — never part of the question. */
+  snippetQuestion?: string;
+  context?: string;
+  /** The rotated pulse prompt (ticket 105): present when the server wants a momentary-state line. */
+  pulsePrompt?: string;
+  /** The protocol this sitting uses — auto-rotated by server (ticket 140). */
+  protocol?: string;
+  /** Fragment quoted in the opening question (Q-104): carries the "not mine" verb. */
+  quotedFragment?: string;
+  /** Snippet ref for the opening question's quoted fragment (Q-109). */
+  snippetRef?: string;
+}
+
+/**
+ * Write POST /api/session's reply into the session handle — the ONE copy
+ * of the field mapping, shared by Today's startSitting and the first-
+ * launch auto-open (wave 4).
+ */
+export function applySessionResponse(session: SessionState, res: SessionResponse): void {
+  session.setSessionId(res.sessionId);
+  session.setSessionProtocol(res.protocol ?? null);
+  // A fresh sitting starts with no machine phase meta (ticket 159, slice 3).
+  session.setPhaseMeta(null);
+  session.setQuotedFragment(res.quotedFragment ?? null);
+  session.setSnippetRef(res.snippetRef ?? null);
+  session.setLineageQuestion(res.snippetQuestion ?? null);
+  session.setLineageContext(res.context ?? null);
+  session.setOpenerSource(res.source ?? null);
+  if (res.pulsePrompt) {
+    session.setPulsePrompt(res.pulsePrompt);
+    session.setPendingQuestion(res.question);
+    session.setQuestion(null);
+  } else {
+    session.setPulsePrompt(null);
+    session.setPendingQuestion(null);
+    session.setQuestion(res.question);
+  }
+}
+
 /** `POST /api/session/:id/end` and `/api/unprompted` — the session whose harvest runs behind the response (084). The server answers both fields: `status` is 'harvesting' when the harvest runs behind the response, 'empty' when an empty sitting was deleted (145). */
 export interface EndResponse {
   sessionId: string;
@@ -168,27 +269,22 @@ export interface EndResponse {
 
 /**
  * The one /end → reviews hand-off: POST the end, park the session in the
- * review queue, and navigate. `gateOnHarvesting` names the per-screen
- * divergence as it works today — the exchange's two ends park the pending
- * review from the response unconditionally, the DRM screen only when the
- * harvest actually runs (status 'harvesting'). A failed end rethrows for
- * the exchange's callers to handle; the DRM screen swallows it (the
- * sitting is over either way) and navigates itself.
+ * review queue only when the harvest actually runs behind the response
+ * (status 'harvesting'), and navigate. An 'empty' sitting was deleted
+ * server-side — no record will ever land, so nothing is parked and review
+ * shows the plain queue. A failed end rethrows for the exchange's callers
+ * to handle; the DRM screen swallows it (the sitting is over either way)
+ * and navigates itself.
  */
 export async function endAndGoToReviews(
   api: WebDepsCore['api'],
   sessionId: string,
   setPendingReviewSession: (sessionId: string | null) => void,
   navTo: WebDepsCore['navTo'],
-  opts: { gateOnHarvesting: boolean },
 ): Promise<void> {
   const res = await api<EndResponse>(`/api/session/${sessionId}/end`);
-  if (opts.gateOnHarvesting) {
-    if (res.status === 'harvesting') setPendingReviewSession(sessionId);
-  } else {
-    setPendingReviewSession(res.sessionId);
-  }
-  navTo('reviews');
+  if (res.status === 'harvesting') setPendingReviewSession(sessionId);
+  navTo('review');
 }
 
 /** `POST /api/import/scan` — counts, and every file that did not come in, and why. */
@@ -219,6 +315,49 @@ export interface HarvestQueueEntry {
   protocol: string;
   origin: HarvestOrigin;
   proposalCount: number;
+  /** Fragments that couldn't stand alone (wave 2). Absent on records from before the field; the client reads absent as 0. */
+  budCount?: number;
+  /** How many proposals repeat an older passage (Batch C2). Absent on records from before the field; the client reads absent as 0. */
+  repeatsCount?: number;
+}
+
+/**
+ * The count sentence — the ONE copy, rendered by both the review row
+ * (web/reviews.ts) and Today's silent close-it (web/today.ts): "Kept N
+ * passages for your review, M fragments couldn't stand alone — read them
+ * now?" M = 0 drops the fragment clause; N = 1 / M = 1 pluralize to
+ * "passage" / "fragment". "read them now?" is part of the sentence — the
+ * tap target that opens the review is the callers'. The zero case
+ * ("Nothing waits for your review.") is the callers' too.
+ */
+export function reviewCountSentence(proposalCount: number, budCount: number): string {
+  // Every zero is a sentence (copy rule 5): a landed record with no
+  // proposals is the same zero the empty queue renders.
+  if (proposalCount === 0) return 'Nothing waits for your review.';
+  const kept = `${proposalCount} ${proposalCount === 1 ? 'passage' : 'passages'}`;
+  const fragments =
+    budCount > 0
+      ? `, ${budCount} ${budCount === 1 ? 'fragment' : 'fragments'} couldn't stand alone`
+      : '';
+  return `Kept ${kept} for your review${fragments} \u2014 read them now?`;
+}
+
+/**
+ * The dedupe sentence — the ONE copy (Batch C2, §12.1), pinned by the
+ * tests: "this repeats what you said Tuesday — keep both?" The day names
+ * the OLDER passage's capture date (the sentence's date is the older
+ * snippet's, per the user ruling). `olderCaptured` is an ISO timestamp
+ * from the wire; an unparseable one degrades to the plain date, never to
+ * a blank sentence (copy rule 5). The receipt renders one sentence per
+ * kept passage; the review row renders the same copy when a sitting's
+ * record carries repeats.
+ */
+export function repeatSentence(olderCaptured: string): string {
+  const d = new Date(olderCaptured);
+  const when = Number.isNaN(d.getTime())
+    ? olderCaptured
+    : d.toLocaleDateString(undefined, { weekday: 'long' });
+  return `this repeats what you said ${when} \u2014 keep both?`;
 }
 
 /** GET /api/sweep-backlog — ticket 139, with the dated sittings of 156. */

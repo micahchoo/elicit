@@ -36,6 +36,11 @@ const EXPECTED_OPTIONAL_KEYS = [
   'claim',
   'quest',
   'gap',
+  // The composition gap sweep (redesign-2026-08-09 §7, §10): the
+  // (composition, gap) dedupe pair and the sitting stamp of the faster
+  // expiry.
+  'composition',
+  'createdSitting',
   'bud',
   'failure',
   'snippet',
@@ -45,7 +50,6 @@ const EXPECTED_OPTIONAL_KEYS = [
   'target',
   'topic',
   'targetFacet',
-  'modeNeeds',
   'direction',
   'errandKind',
   'errandPerson',
@@ -77,7 +81,6 @@ describe('OPTIONAL_ENTRY_FIELDS serialization truth', () => {
       license: 'user',
       question: 'What has changed for you?',
       questionForm: 'deliberative',
-      sharpness: 'weak',
       horizon: 'session',
       errandKind: 'other-minds',
       errandPerson: 'Ada',

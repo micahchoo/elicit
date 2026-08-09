@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  classifyFacetIntent,
-  facetIntentForRedLight,
-} from '../src/elicitor/facet-intent.js';
+import { classifyFacetIntent } from '../src/elicitor/facet-intent.js';
 import {
   BLUEPRINT,
   applyFacetBalance,
@@ -92,15 +89,8 @@ describe('classifyFacetIntent', () => {
   });
 });
 
-describe('facetIntentForRedLight', () => {
-  it('asks for the thing the light says is missing', () => {
-    expect(facetIntentForRedLight('abstraction-no-episode')).toBe('episode');
-    expect(facetIntentForRedLight('cause-no-event')).toBe('episode');
-    expect(facetIntentForRedLight('pole-no-contrast')).toBe('construct');
-    expect(facetIntentForRedLight('odd-term')).toBe('construct');
-    expect(facetIntentForRedLight('unexplored-referent')).toBe('fact');
-  });
-});
+// facetIntentForRedLight's tests died with the red-light channel (canon
+// §10 cut, 2026-08-09) — nothing maps a light's kind to a facet anymore.
 
 // ── Deck curation helpers ─────────────────────────────────────────────────
 
@@ -351,10 +341,10 @@ describe('recentSittingTargets', () => {
   function writeSitting(id: string, target?: string): void {
     const dir = join(root, 'transcripts');
     mkdirSync(dir, { recursive: true });
-    const targetLine = target === undefined ? '' : `\n    target: ${target}`;
+    const modeBlock = target === undefined ? 'mode: {}\n' : `mode:\n    target: ${target}\n`;
     writeFileSync(
       join(dir, `${id}.md`),
-      `---\nsession: ${id}\nmode:\n    minutes: 15\n    energy: medium${targetLine}\nprotocol: sounding\n---\n\n## agent\n\nHello?\n`,
+      `---\nsession: ${id}\n${modeBlock}protocol: sounding\n---\n\n## agent\n\nHello?\n`,
     );
   }
 

@@ -17,14 +17,13 @@ import { THRESHOLDS, readNumber } from '../wiki/thresholds.js';
 import { citeSnippetId } from '../wiki/status.js';
 import { cover } from '../memory/cover.js';
 import type { Piece, PieceStore } from '../piece/contract.js';
-import { rotate, runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep } from './sweeps.js';
+import { runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep, runCompositionGapSweep } from './sweeps.js';
 
 // ── The sweep jobs (Wave B2) ──
 // The four self-contained jobs moved to sweeps.ts; re-exported here so the
 // boot wiring (docket-init.ts) and the test suite keep importing them from
-// './docket.js' unchanged. rotate is the shared rotation-cursor primitive
-// (ticket 075, ticket 106) the still-true job in this file also calls.
-export { runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep };
+// './docket.js' unchanged.
+export { runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep, runCompositionGapSweep };
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -33,16 +32,6 @@ type RangeSummary = { sessions: string[]; line: string; model: string; at: strin
 
 // ── In-process lock ──
 let running = false;
-
-// ── Still-true rotation cursor (ticket 075) ──
-// The default is in-memory: standalone callers get rotation within one
-// process. The server injects a disk-backed cursor (src/server.ts), which
-// is what makes rotation survive restarts.
-let stillTrueOffset = 0;
-const DEFAULT_STILL_TRUE_CURSOR = {
- read: (): number => stillTrueOffset,
- write: (offset: number): void => { stillTrueOffset = offset; },
-};
 
 // ── The piece sweeps (010 T10) ──
 // Two docket jobs that learn Pieces exist: the stale-pin sweep flags, never
@@ -64,11 +53,11 @@ export type PieceLog = (e: {
 
 /**
  * The stale-pin sweep (010 T10, Q-39): one flag per pin whose snippet has
- * moved on, written as Marginalia on the Piece's CURRENT arrangement. The
- * consequence of a stale pin is a dimmed note, never a re-pin — this job
- * has no write path for pins. Findings are deduped by `(on, note)` against
- * what is already on disk, so a second run writes nothing; the count
- * returned is the number of NEW Marginalia written this run.
+ * moved on, written as Marginalia on the Piece. The consequence of a stale
+ * pin is a dimmed note, never a re-pin — this job has no write path for
+ * pins. Findings are deduped by `(on, note)` against what is already on
+ * disk, so a second run writes nothing; the count returned is the number of
+ * NEW Marginalia written this run.
  */
 export async function runStalePinSweep(deps: {
  pieces: PieceStore;
@@ -78,12 +67,10 @@ export async function runStalePinSweep(deps: {
  const snippets = deps.snippets();
  let flagged = 0;
  for (const piece of deps.pieces.list()) {
-  const current = piece.arrangements.find((a) => a.id === piece.current);
-  if (current === undefined) continue;
-  const onDisk = new Set(current.marginalia.map((m) => `${m.on}\u0000${m.note}`));
-  const findings = stalePins(current, snippets).filter((m) => !onDisk.has(`${m.on}\u0000${m.note}`));
+  const onDisk = new Set(piece.marginalia.map((m) => `${m.on}\u0000${m.note}`));
+  const findings = stalePins(piece.entries, snippets).filter((m) => !onDisk.has(`${m.on}\u0000${m.note}`));
   if (findings.length === 0) continue;
-  deps.pieces.putArrangement(piece.id, { ...current, marginalia: [...current.marginalia, ...findings] });
+  deps.pieces.putMarginalia(piece.id, [...piece.marginalia, ...findings]);
   flagged += findings.length;
  }
  if (flagged > 0) {
@@ -95,11 +82,10 @@ export async function runStalePinSweep(deps: {
 /**
  * The dormancy sweep (010 T10, Q-41): a Piece nobody has touched for
  * `piece.dormancyDays` is set down. `lastTouched` is the newest of the
- * Piece's `created`, its CURRENT arrangement's `created`, and the `captured`
- * of every pin in that arrangement — the draft is what the person touches;
- * candidate arrangements are proposals, not touches. The activity log is
- * deliberately NOT consulted: it is evidence, not a dependency, and a job
- * that fails when the log is unreadable is a job that stops the Docket.
+ * Piece's `created` and the `captured` of every pin in it — the draft is
+ * what the person touches. The activity log is deliberately NOT consulted:
+ * it is evidence, not a dependency, and a job that fails when the log is
+ * unreadable is a job that stops the Docket.
  */
 export async function runDormancySweep(deps: {
  pieces: PieceStore;
@@ -111,15 +97,11 @@ export async function runDormancySweep(deps: {
  const now = Date.now();
  let setDown = 0;
  for (const piece of deps.pieces.list()) {
-  const current = piece.arrangements.find((a) => a.id === piece.current);
   const touched: string[] = [piece.created];
-  if (current !== undefined) {
-   touched.push(current.created);
-   for (const entry of current.entries) {
-    if (entry.kind !== 'pin') continue;
-    const s = snippets[entry.snippet];
-    if (s !== undefined) touched.push(s.captured);
-   }
+  for (const entry of piece.entries) {
+   if (entry.kind !== 'pin') continue;
+   const s = snippets[entry.snippet];
+   if (s !== undefined) touched.push(s.captured);
   }
   const lastTouched = touched.sort().at(-1) ?? piece.created;
   if (!isDormant(piece, lastTouched, now, days)) continue;
@@ -136,7 +118,6 @@ export async function runDocket(deps: {
  complete: Complete;
  buildIndex: (snippets: Snippet[]) => LexicalIndex;
  composeOpener: (s: Snippet, c: Complete, sitting?: SittingContext, historyBlock?: string, summaryLines?: string[]) => Promise<QueueDraft | null>;
- composeStillTrue: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeExpedition?: (s: Snippet, c: Complete, sitting?: SittingContext) => Promise<QueueDraft | null>;
  composeOtherMindsExpedition?: (
   s: Snippet,
@@ -193,6 +174,16 @@ export async function runDocket(deps: {
   */
  runWikiJobs?: () => Promise<DocketReport['wiki']>;
 /**
+ * The §12 full-corpus embedding coverage pass (Batch C3), as a docket job
+ * before the neighborhoods pass: rebuild the semantic channel over the
+ * CURRENT corpus and prime it to coverage, so every passage — not just the
+ * subset the boot-built channel captured — gets a vector, and the run logs
+ * the coverage sentence (a starved run is a sentence, never a silence).
+ * Absent means no coverage work this run (no embedder wired), and every
+ * caller predating the field behaves exactly as before.
+ */
+coverageEmbedding?: () => Promise<{ covered: number; total: number; fresh: number }>;
+/**
  * The stale-pin sweep (010 T10), as the first piece job of a run. Absent
  * means no piece work this run, and every caller predating the field
  * behaves exactly as before. Zero-LLM: it never receives the Complete.
@@ -205,21 +196,21 @@ export async function runDocket(deps: {
  */
  dormancySweep?: () => Promise<number>;
 /**
+ * The composition gap sweep (redesign-2026-08-09 §7, §10), as the third
+ * piece job of a run — after stale pins and dormancy, before the other
+ * sweeps. Model-calling (the clerk's findGaps); the second probation
+ * entry, with the named floor: every gap placed by hand. Absent means no
+ * gap work this run, and every caller predating the field behaves exactly
+ * as before.
+ */
+ compositionGapSweep?: () => Promise<{ found: number; placed: number; skipped: number; expired: number }>;
+/**
  * The referent annotation job (ticket 074), as the docket's seventh job of
  * a run. Absent means no annotation work this run, and every caller
  * predating the field behaves exactly as before. The server injects it
  * with the annotation store and the Clerk's complete bound.
  */
 referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
-/**
- * The gap-fill sweep (ticket 027), as the docket's ninth job of a run —
- * before the wiki jobs, because it is the dead-letter box (Buds and
- * half-Constructs) and the wiki work is the slowest thing in the run.
- * Absent means no sweep this run, and every caller predating the field
- * behaves exactly as before. Zero-LLM: the thunk never receives the
- * Complete — the sweep is pure vault-and-queue work.
- */
-gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
 /**
  * The territory gap-fill sweep (ticket 094), as a docket job after the
  * ordinary gap-fill sweep. Reads KTG skeletons against coverage and mints
@@ -270,6 +261,24 @@ atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number; min
   */
  coachSeedSweep?: () => Promise<{ clustered: number; minted: number }>;
  /**
+  * The neighborhoods pass (§12.3), as a docket job after the wiki jobs.
+  * ZERO-LLM: reads snippets + the snippet-vector store, clusters passages
+  * into themes, and writes the derived store the contextualizer page reads.
+  * Absent means no neighborhoods work this run, and every caller predating
+  * the field behaves exactly as before.
+  */
+ neighborhoodsJob?: () => Promise<{ source: 'embedding' | 'lexical'; clustered: number; skipped: number; neighborhoods: number }>;
+ /**
+  * The context-line composition job (Batch B2, §11), as a docket job after
+  * the neighborhoods pass. Model-calling: composes a stamped context line
+  * for every passage without one, up to the per-run quota
+  * (`contextLines.perRun`, Q-56), and logs its coverage every run — the
+  * §12 debt: starvation is a sentence on the activity log, never a silence.
+  * Absent means no context-line work this run, and every caller predating
+  * the field behaves exactly as before.
+  */
+ runContextLines?: () => Promise<{ composed: number; skipped: number }>;
+ /**
   * The import extraction (T6), as the LAST job of a run — after even the
  * wiki work, because it is the slowest thing in the run.
  *
@@ -281,13 +290,6 @@ atlasGapFillSweep?: () => Promise<{ candidateCount: number; scanned: number; min
  * run, and every caller that predates the field behaves exactly as it did.
  */
  runImportJobs?: () => Promise<{ extracted: number; remaining: number; failed: number }>;
- /**
-  * The still-true rotation cursor (ticket 075) — the count of old snippets
-  * already offered, so consecutive runs propose different snippets even
-  * when composeStillTrue keeps returning null. The default rotates in
-  * memory; the server injects a disk-backed cursor.
-  */
- stillTrueCursor?: { read: () => number; write: (offset: number) => void };
 /**
  * The intention-horizon annotation job (ticket 106), as a docket job
  * after the referent annotation job. Finds intention-facet readings and
@@ -513,88 +515,7 @@ shouldStop?: () => boolean;
    deps.log(evt);
   }
 
-  // ── 3. Still-true minting: prose written > 90 days ago, quota 2 ──
-  const ninetyDaysMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  // `captured` is FILING time (vault.saveSnippet stamps the moment of
-  // filing); `started` is WRITING time. The still-true channel exists for
-  // prose that has AGED, so it ages by when the prose was written — a note
-  // written in 2017 but filed today is invisible to the channel until 90
-  // days after filing if the filter reads `captured` (seeding Finding 2:
-  // ticket 075's "whole corpus > 90 days" was true of the prose and false
-  // of the field).
-  const startedBySession = new Map((sessions ?? []).map((s) => [s.session, s.started]));
-  /** Milliseconds a snippet's PROSE was written, or null when nothing says. */
-  const writtenAtMs = (s: Snippet): number | null => {
-    // A parseable-date check, never `??`: listSessions writes `started: ''`
-    // when a transcript has no started, `'' ?? captured` would evaluate to
-    // '', `new Date('').getTime()` is NaN, and NaN < ninetyDaysMs is false —
-    // the snippet would drop out of candidacy in silence instead of falling
-    // back to `captured` (seeding Finding 3).
-    const started = startedBySession.get(s.provenance.session);
-    const t = started === undefined ? NaN : Date.parse(started);
-    if (!Number.isNaN(t)) return t;
-    const c = Date.parse(s.captured);
-    return Number.isNaN(c) ? null : c;
-  };
-  let stillTrueCount = 0;
-  const undateable: string[] = [];
-  const oldSnippets = allSnippets.filter((s) => {
-    const t = writtenAtMs(s);
-    if (t === null) {
-      undateable.push(s.id);
-      return false;
-    }
-    return t < ninetyDaysMs;
-  });
-  if (undateable.length > 0) {
-    // Neither date parseable: excluded in neither direction — never treated
-    // as ancient (a flood from the path that knows least) and never as fresh.
-    deps.log({
-      at: ts(), actor: 'clerk', kind: 'still-true-undateable',
-      detail: `count=${undateable.length} snippets have no readable writing or filing time`,
-    });
-  }
-  // Rotate (ticket 075): take up to 2 old snippets starting at the cursor,
-  // wrapping modulo, so consecutive runs propose different candidates even
-  // when the composer keeps refusing them. The advance-past-every-offered
-  // cursor semantics live in the shared rotate() helper (sweeps.ts).
-  const cursor = deps.stillTrueCursor ?? DEFAULT_STILL_TRUE_CURSOR;
 
-  // Order by citation thinness then age: snippets with FEWER readings
-  // citing them (thinly evidenced) come first — the wiki wants
-  // triangulation on claims resting on the thinnest evidence.
-  // Within the same citation count, oldest first.
-  const citationCount = new Map<string, number>();
-  for (const r of Object.values(allReadings)) {
-   for (const cite of r.cites ?? []) {
-    const key = cite; // "snippetId@version"
-    citationCount.set(key, (citationCount.get(key) ?? 0) + 1);
-   }
-  }
-  const sortKey = (s: Snippet): number => {
-   const count = citationCount.get(`${s.id}@${s.version}`) ?? 0;
-   // Lower count sorts first; within same count, older (smaller ms) first
-   // Pack into a single number: count * 1e14 + age
-   const t = writtenAtMs(s) ?? 0;
-   return count * 1e14 + t;
-  };
-  oldSnippets.sort((a, b) => sortKey(a) - sortKey(b));
-  const stillTrueCandidates = rotate(cursor, oldSnippets, 2);
-
-
-  for (const s of stillTrueCandidates) {
-   const outcome = await mintOne(
-    s,
-    (sn) => deps.composeStillTrue(sn, deps.complete, sittingFor(sn.provenance.session)),
-    () => {
-     stillTrueCount++;
-    },
-    { kind: 'still-true-failed', detail: (sn, err) => `composeStillTrue for snippet ${sn.id} failed: ${String(err)}` },
-   );
-   if (outcome === 'stopped') break;
-  }
-
-  deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-minted', detail: `minted ${stillTrueCount} still-true` });
 
   // ── 4. Expire stale queue entries ──
   let expired = 0;
@@ -766,19 +687,19 @@ shouldStop?: () => boolean;
   }
   // end piece jobs
 
-  // ── 9. The gap-fill sweep (ticket 027) ──
-  // Guarded like the wiki jobs: a failure is one job's failure, and the
-  // index, the minted questions, the expiry and the consolidation are
-  // already on disk by the time this runs. Zero-LLM by contract (Q-12,
-  // Q-72): the thunk never receives the Complete — the sweep is pure
-  // vault-and-queue work and cannot touch the model.
-  let gapFill: DocketReport['gapFill'];
-  const gapFillSweep = deps.gapFillSweep;
-  if (gapFillSweep) {
-   await runJob('gap-fill-failed', async () => {
-    gapFill = await gapFillSweep();
-   });
+  // ── 8a. Composition gap sweep (redesign-2026-08-09 §7): the model notices
+  // seams that do not hold ──
+  // The second probation entry, guarded like every other job: a throw is
+  // one job's failure, and the rest of the run is already on disk. It
+  // follows the piece jobs because it reads the same store; it comes
+  // before the other sweeps because its minting — when the person later
+  // presses `ask this` — feeds the ordinary queue.
+  const compositionGapSweep = deps.compositionGapSweep;
+  if (compositionGapSweep) {
+   await runJob('composition-gap-failed', () => compositionGapSweep());
   }
+
+
 
   // Territory gap-fill (ticket 094) — follows the ordinary gap-fill,
   // reads KTG skeleton coverage, mints frontier and failure questions.
@@ -885,6 +806,45 @@ shouldStop?: () => boolean;
    });
   }
 
+  // ── 10a. Full-corpus embedding coverage (§12, Batch C3) ──
+  // Runs after the wiki jobs (which prime the claim keyspace) and before the
+  // neighborhoods pass (which reads the passage keyspace this job grows).
+  // Guarded like every other job: a throw is one job's failure, and the
+  // index, the minted questions and the expiry are already on disk by then.
+  let coverageEmbedding: DocketReport['coverageEmbedding'];
+  const coverageEmbeddingJob = deps.coverageEmbedding;
+  if (coverageEmbeddingJob) {
+   await runJob('coverage-embedding-failed', async () => {
+    coverageEmbedding = await coverageEmbeddingJob();
+   });
+  }
+
+  // ── 10b. Neighborhoods (§12.3): passages into themes, zero-LLM ──
+  // Follows the wiki jobs — both write the derived wiki data the page reads.
+  // Guarded like every other job: a throw is one job's failure, and the
+  // index, the minted questions and the expiry are already on disk by then.
+  let neighborhoods: DocketReport['neighborhoods'];
+  const neighborhoodsJob = deps.neighborhoodsJob;
+  if (neighborhoodsJob) {
+   await runJob('neighborhoods-failed', async () => {
+    neighborhoods = await neighborhoodsJob();
+   });
+  }
+
+  // ── 10c. Context lines (Batch B2, §11): one line per passage without one ──
+  // Follows the wiki and neighborhoods jobs — it reads the same passages and
+  // writes the derived wiki store the page reads. Model-calling, capped per
+  // run (contextLines.perRun, Q-56). Guarded like every other job: a throw
+  // is one job's failure, and the index, the minted questions and the
+  // expiry are already on disk by then.
+  let contextLines: DocketReport['contextLines'];
+  const runContextLines = deps.runContextLines;
+  if (runContextLines) {
+   await runJob('context-lines-failed', async () => {
+    contextLines = await runContextLines();
+   });
+  }
+
   // ── 11. The import extraction, last and guarded (T6) ──
   // Last because it is the slowest thing in the run and no other job may
   // wait on it — the cost is paid before the person sits down (Q-58), and
@@ -914,13 +874,15 @@ shouldStop?: () => boolean;
    ...(wiki ? { wiki } : {}),
    ...(imports ? { imports } : {}),
    ...(annotations ? { annotations } : {}),
-   ...(gapFill ? { gapFill } : {}),
-   ...(territoryGapFill ? { territoryGapFill } : {}),
+    ...(territoryGapFill ? { territoryGapFill } : {}),
    ...(gazetteerExtraction ? { gazetteerExtraction } : {}),
    ...(atlasGapFill ? { atlasGapFill } : {}),
    ...(gazetteerFrontier ? { gazetteerFrontier } : {}),
    ...(lineageMirror ? { lineageMirror } : {}),
    ...(coachSeed ? { coachSeed } : {}),
+   ...(neighborhoods ? { neighborhoods } : {}),
+   ...(coverageEmbedding ? { coverageEmbedding } : {}),
+   ...(contextLines ? { contextLines } : {}),
   };
  } finally {
   running = false;

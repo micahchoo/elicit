@@ -115,7 +115,7 @@ describe('territory gap-fill sweep', () => {
     expect(result.failureQuestions).toBe(1);
 
     const failureEntry = queue.list().find(
-      (e) => e.source === 'territory-gap-fill' && e.sharpness === 'sharp',
+      (e) => e.source === 'territory-gap-fill',
     );
     expect(failureEntry).toBeDefined();
     expect(failureEntry!.territoryNode).toBe('fake-craft.foundations.materials');
@@ -137,7 +137,6 @@ describe('territory gap-fill sweep', () => {
       license: 'test',
       question: 'existing question',
       questionForm: 'deliberative',
-      sharpness: 'weak',
       horizon: 'session',
       territoryNode: 'fake-craft.foundations.setup',
       target: 'domain',

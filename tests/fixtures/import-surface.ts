@@ -332,7 +332,25 @@ export async function flush(): Promise<void> {
  * plus capture arrays. `sent` records only calls WITH a body — the plan's
  * exclusion test asserts `sent` starts empty after a refused reason.
  */
-export async function buildReviewSurface(item: ImportReviewItem | null): Promise<ReviewSurface> {
+/** A memory-backed Storage — the draft seam's stub (finish-later drafts,
+ * §5.4). Outlives the surface it was built for, so two renders of the same
+ * piece share one store exactly as one browser tab does. */
+export function makeStorageStub(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() { return map.size; },
+    clear: () => { map.clear(); },
+    getItem: (k: string) => map.get(k) ?? null,
+    key: (i: number) => [...map.keys()][i] ?? null,
+    removeItem: (k: string) => { map.delete(k); },
+    setItem: (k: string, v: string) => { map.set(k, v); },
+  };
+}
+
+export async function buildReviewSurface(
+  item: ImportReviewItem | null,
+  storage: Storage = makeStorageStub(),
+): Promise<ReviewSurface> {
   const main = new ShimElement('div');
   const sent: ApiCall[] = [];
   const nav: string[] = [];
@@ -358,6 +376,7 @@ export async function buildReviewSurface(item: ImportReviewItem | null): Promise
     // and omitted here, so the editor opens empty as it did in Node); a
     // typed placeholder satisfies the widened seam.
     document: {} as Document,
+    storage,
   };
   renderImportReview(deps);
   await flush();

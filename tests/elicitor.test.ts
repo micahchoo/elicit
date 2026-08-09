@@ -6,7 +6,7 @@ import type { Turn, Vault, QueueStore, QueueDraft, QueueEntry, LexicalIndex } fr
 import { makeScriptedComplete } from './fakes.js';
 import { createQueueStore } from '../src/queue/queue.js';
 import { startSession, userTurn, skipQuestion } from '../src/elicitor/elicitor.js';
-import { CLOSING_DOOR_QUESTION, CLOSING_BOOKMARK_QUESTION } from '../src/elicitor/protocol.js';
+import { CLOSING_DOOR_QUESTION } from '../src/elicitor/protocol.js';
 import { getProtocol } from '../src/protocols/registry.js';
 import { readEvents } from '../src/log/activity.js';
 import { buildIndex, resonate } from '../src/index/lexical.js';
@@ -90,13 +90,12 @@ function makeFakeIndex(): LexicalIndex {
 
 /**
  * Build a scripted-complete response array for N userTurn calls.
- * Each turn consumes 2 complete calls: 1 for redLights ('{}' → empty lights),
+ * Each turn consumes 1 complete call: the generic probe (the red-light channel is cut, 2026-08-09).
  * 1 for the generic probe.
  */
 function turnResponses(probes: string[]): string[] {
  const out: string[] = [];
  for (const p of probes) {
-  out.push('{}'); // redLights — no lights
   out.push(p);    // generic probe
  }
  return out;
@@ -113,7 +112,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -136,7 +135,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
   expect(session.turns[0]!.questionSource).toEqual({
@@ -155,7 +154,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 25, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
   expect(session.bank).toEqual(bank);
@@ -167,7 +166,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium', topic: 'regret' },
+   { topic: 'regret' },
    { complete, vault, queue: q, index: idx },
   );
 
@@ -182,7 +181,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -197,32 +196,6 @@ describe('elicitor', () => {
 
  // ── facet intent on questions (ticket 042) ──
 
- test('a composed follow-up carries the facet its Red Light asks for', async () => {
-  const vault = makeFakeVault();
-  // Long enough to escape the content-free pivot, which would draw instead.
-  const answer = 'Routines are the only thing that hold my life together, mostly.';
-  const complete = makeScriptedComplete([
-   JSON.stringify({
-    lights: [{ kind: 'abstraction-no-episode', phrase: 'hold my life together' }],
-   }),
-   'You said routines "hold my life together" — what did that look like this week?',
-  ]);
-  const q = makeFakeQueue();
-  const idx = makeFakeIndex();
-  const session = startSession(
-   { minutes: 30, energy: 'medium' },
-   { complete, vault, queue: q, index: idx },
-  );
-
-  const result = await userTurn(session, answer);
-
-  expect(result.kind).toBe('probe');
-  if (result.kind === 'probe') {
-   expect(result.provenance).toBe('composed');
-   // An abstraction with no episode under it wants the episode.
-   expect(result.targetFacet).toBe('episode');
-  }
- });
 
  test('a generic probe claims no facet rather than guessing one', async () => {
   const vault = makeFakeVault();
@@ -230,7 +203,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -245,7 +218,7 @@ describe('elicitor', () => {
  test('an absent target falls back to the caller default, not to self', () => {
   const vault = makeFakeVault();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    {
     complete: makeScriptedComplete([]),
     vault,
@@ -260,7 +233,7 @@ describe('elicitor', () => {
  test('a declared target outranks the caller default', () => {
   const vault = makeFakeVault();
   const session = startSession(
-   { minutes: 30, energy: 'medium', target: 'self' },
+   { target: 'self' },
    {
     complete: makeScriptedComplete([]),
     vault,
@@ -275,7 +248,7 @@ describe('elicitor', () => {
  test('an absent target still starts a session when no default is given', () => {
   const vault = makeFakeVault();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    {
     complete: makeScriptedComplete([]),
     vault,
@@ -289,11 +262,11 @@ describe('elicitor', () => {
  test('transcript receives all turns in order via vault', async () => {
   const vault = makeFakeVault();
   // 2 userTurns → 4 complete calls
-  const complete = makeScriptedComplete(turnResponses(['Probe one', 'Probe two']));
+  const complete = makeScriptedComplete(turnResponses(['Probe one?', 'Probe two?']));
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -305,7 +278,7 @@ describe('elicitor', () => {
   expect(turns[0]!.role).toBe('agent'); // opener
   expect(turns[1]!.role).toBe('user');
   expect(turns[1]!.text).toBe('Answer one');
-  expect(turns[2]!.role).toBe('agent'); // Probe one
+  expect(turns[2]!.role).toBe('agent'); // Probe one?
   expect(turns[3]!.role).toBe('user');
   expect(turns[3]!.text).toBe('Answer two');
   expect(turns[4]!.role).toBe('agent'); // Probe two
@@ -314,11 +287,11 @@ describe('elicitor', () => {
  test('[SATURATED] from fake ends exchange', async () => {
   const vault = makeFakeVault();
   // 1 userTurn → redLights + [SATURATED] probe
-  const complete = makeScriptedComplete(['{}', '[SATURATED]']);
+  const complete = makeScriptedComplete(['[SATURATED]']);
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -336,12 +309,12 @@ describe('elicitor', () => {
   // the 8th userTurn triggers closing-door.
   // 7 userTurns × 2 complete calls = 14 responses
   const complete = makeScriptedComplete(
-   turnResponses(['P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']),
+   turnResponses(['Question two?', 'Question three?', 'Question four?', 'Question five?', 'Question six?', 'Question seven?', 'Question eight?']),
   );
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 5, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -356,37 +329,29 @@ describe('elicitor', () => {
   if (door.kind === 'probe') expect(door.text).toBe(CLOSING_DOOR_QUESTION);
   expect(session.phase).toBe('closing-door');
 
-  // 9th turn: closing-bookmark
-  const bookmark = await userTurn(session, 'A9');
-  expect(bookmark.kind).toBe('probe');
-  if (bookmark.kind === 'probe') expect(bookmark.text).toBe(CLOSING_BOOKMARK_QUESTION);
-  expect(session.phase).toBe('closing-bookmark');
-
-  // 10th turn: bookmark answer → saturated, answer lands in queue
+  // 9th turn: the door answer saturates; the close creates no queue entry.
   const result = await userTurn(session, 'I want to remember this.');
   expect(result.kind).toBe('saturated');
-  expect(q._adds).toHaveLength(1);
-  expect(q._adds[0]!.question).toBe('I want to remember this.');
+  expect(q._adds).toHaveLength(0);
  });
 
- test('the bookmark entry carries the sitting Target and topic', async () => {
-  // Same drive to the bookmark as above; the point is what the entry records.
+ test('the close answer creates no queue entry, even with a target and topic', async () => {
+  // Same drive to the close as above; the point is what the close does NOT record.
   const vault = makeFakeVault();
   const complete = makeScriptedComplete(
-   turnResponses(['P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']),
+   turnResponses(['Question two?', 'Question three?', 'Question four?', 'Question five?', 'Question six?', 'Question seven?', 'Question eight?']),
   );
   const q = makeFakeQueue();
   const session = startSession(
-   { minutes: 5, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+   { target: 'domain', topic: 'sourdough bread baking' },
    { complete, vault, queue: q, index: makeFakeIndex() },
   );
-
-  for (let i = 0; i < 9; i++) await userTurn(session, `A${i + 1}`);
+ 
+  for (let i = 0; i < 8; i++) await userTurn(session, `A${i + 1}`);
   const result = await userTurn(session, 'Come back to the hydration question.');
-
+ 
   expect(result.kind).toBe('saturated');
-  expect(q._adds[0]!.target).toBe('domain');
-  expect(q._adds[0]!.topic).toBe('sourdough bread baking');
+  expect(q._adds).toHaveLength(0);
  });
 
  test('session transcript carries mode metadata', () => {
@@ -395,12 +360,11 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 15, energy: 'low' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
-  expect(session.mode.minutes).toBe(15);
-  expect(session.mode.energy).toBe('low');
+  expect(session.mode.target).toBe('self');
   expect(session.protocol).toBe('reflective');
   expect(session.id).toBeTruthy();
  });
@@ -412,7 +376,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'high' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -434,7 +398,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const s = startSession(
-   { minutes: 25, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
   const originalText = s.turns[s.turns.length - 1]!.text;
@@ -455,7 +419,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const s = startSession(
-   { minutes: 25, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
   const result = skipQuestion(s);
@@ -474,12 +438,12 @@ describe('elicitor', () => {
   // minutes=5 → budget=10. Skip opener, then 7 probes still fit.
   // 7 userTurns × 2 = 14 responses
   const complete = makeScriptedComplete(
-   turnResponses(['P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']),
+   turnResponses(['Question two?', 'Question three?', 'Question four?', 'Question five?', 'Question six?', 'Question seven?', 'Question eight?']),
   );
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const s = startSession(
-   { minutes: 5, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -497,12 +461,8 @@ describe('elicitor', () => {
   const door = await userTurn(s, 'A8');
   expect(door.kind).toBe('probe');
 
-  // closing-bookmark
-  const bookmark = await userTurn(s, 'A9');
-  expect(bookmark.kind).toBe('probe');
-
-  // bookmark answer → saturated
-  const saturated = await userTurn(s, 'my bookmark');
+  // the door answer saturates the sitting
+  const saturated = await userTurn(s, 'A9');
   expect(saturated.kind).toBe('saturated');
  });
 
@@ -516,7 +476,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const s = startSession(
-   { minutes: 25, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -550,7 +510,7 @@ describe('elicitor', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const s = startSession(
-   { minutes: 25, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -568,14 +528,13 @@ describe('guards', () => {
   const vault = makeFakeVault();
   // 3 complete calls: redLights, bad probe (triggers guard), retry probe
   const complete = makeScriptedComplete([
-   '{}',                                                    // redLights
    'What are you trying to achieve in this conversation?',  // triggers guard
    'What drives you?',                                      // retry — passes
   ]);
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -595,14 +554,13 @@ describe('guards', () => {
   ];
   // 3 complete calls: redLights, bad probe, retry (still bad)
   const complete = makeScriptedComplete([
-   '{}',
    'What is this conversation about?',
    'Is this conversation helping you?',
   ]);
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -620,13 +578,12 @@ describe('guards', () => {
    const vault = makeFakeVault();
    // One bank question, consumed by the opener — so the fallback bank is empty.
    const bank = [{ text: 'What do you value?', questionForm: 'deliberative' as const }];
-   // 5 complete calls (ticket 159, slice 4: reflective's ways-in machine is
-   // now the P3-equivalent, so the bad probe pair is composed twice — once by
-   // the machine, which falls through, once by the generic probe): redLights,
-   // machine probe (guard), machine retry (guard), generic probe (guard),
-   // generic retry (still bad).
+    // 4 complete calls (ticket 159, slice 4: reflective's ways-in machine is
+    // now the P3-equivalent, so the bad probe pair is composed twice — once by
+    // the machine, which falls through, once by the generic probe):
+    // machine probe (guard), machine retry (guard), generic probe (guard),
+    // generic retry (still bad).
    const complete = makeScriptedComplete([
-    '{}',
     'What are you trying to achieve in this conversation?',
     'Is this conversation helping you?',
     'What are you trying to achieve in this conversation?',
@@ -636,7 +593,7 @@ describe('guards', () => {
    const q = createQueueStore(root);
    const idx = makeFakeIndex();
    const session = startSession(
-    { minutes: 30, energy: 'medium' },
+    {},
     { complete, vault, queue: q, index: idx, bank, vaultRoot: root },
    );
 
@@ -668,14 +625,13 @@ describe('guards', () => {
   ];
   // 3 complete calls: redLights, near-dup, retry
   const complete = makeScriptedComplete([
-   '{}',
    'What is your earliest memory of childhood?',  // near-dup of bank opener
    'When did you first notice that pattern?',     // retry — fresh
   ]);
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -696,7 +652,6 @@ describe('guards', () => {
   // so the near-dup pair is composed twice — by the machine, which falls
   // through, then by the generic probe).
   const complete = makeScriptedComplete([
-   '{}',
    'What do you value the most?',     // near-dup of opener
    'What do you value above all?',     // still near-dup (4/7 = 0.571)
    'What do you value the most?',
@@ -715,7 +670,7 @@ describe('guards', () => {
    draw: () => {
     queueDraws += 1;
     if (queueDraws === 1) return null;
-    return { id: 'fb', question: fallbackText, questionForm: 'deliberative' as const, source: 'composed', license: 'machine', sharpness: 'sharp', horizon: 'now', status: 'pending', created: '' };
+    return { id: 'fb', question: fallbackText, questionForm: 'deliberative' as const, source: 'composed', license: 'machine', horizon: 'now', status: 'pending', created: '' };
    },
    markAsked: () => { },
    markAnswered: () => { },
@@ -731,7 +686,7 @@ describe('guards', () => {
   };
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -796,12 +751,11 @@ describe('guard scope — every branch, not just the generic probe', () => {
   const complete = makeScriptedComplete([
    first,                                          // turn 1: juxtaposition, accepted
    second,                                         // turn 2: juxtaposition, near-duplicate
-   '{}',                                           // turn 2: redLights — no lights
    'When did you first notice yourself doing that?', // turn 2: the ways-in machine question (P3-equivalent)
   ]);
   const q = makeFakeQueue();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -818,7 +772,7 @@ describe('guard scope — every branch, not just the generic probe', () => {
    expect(two.text).not.toBe(second);
    expect(two.text).toBe('When did you first notice yourself doing that?');
    // The rejected juxtaposition fell through to reflective's machine — its
-   // ways-in question is the P3-equivalent (ticket 159, slice 4).
+    // Both machine attempts were rejected; the generic probe served.
    expect(two.provenance).toBe('machine');
   }
 
@@ -830,14 +784,14 @@ describe('guard scope — every branch, not just the generic probe', () => {
   const vault = makeFakeVault();
   const bank = [{ text: 'What is on your mind?', questionForm: 'deliberative' as const }];
   const complete = makeScriptedComplete([
-   JSON.stringify({ lights: [{ kind: 'odd-term', phrase: 'socially cheaper' }] }),
-   'You wrote "socially cheaper". What are you trying to achieve in this conversation?',
-   'When did you last notice yourself doing that?',
-  ]);
+    'What are you trying to achieve in this conversation?', // machine question — rejected
+    'Is this conversation helping you?',                   // machine retry — rejected
+    'When did you last notice yourself doing that?',       // generic probe — serves
+   ]);
   const q = makeFakeQueue();
   const idx = makeFakeIndex(); // empty — no juxtaposition
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -849,9 +803,9 @@ describe('guard scope — every branch, not just the generic probe', () => {
   expect(result.kind).toBe('probe');
   if (result.kind === 'probe') {
    expect(result.text).toBe('When did you last notice yourself doing that?');
-   // The rejected follow-up fell through to reflective's machine — its
+    // The rejected machine question fell through to the generic probe.
    // ways-in question is the P3-equivalent (ticket 159, slice 4).
-   expect(result.provenance).toBe('machine');
+    expect(result.provenance).toBe('probe');
    expect(result.text).not.toMatch(/\bthis conversation\b/i);
   }
  });
@@ -867,12 +821,11 @@ describe('guard scope — every branch, not just the generic probe', () => {
   const complete = makeScriptedComplete([
    first,
    second,
-   '{}',
    'When did you first notice yourself doing that?',
   ]);
   const q = makeFakeQueue();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -895,7 +848,7 @@ describe('startSession invariants', () => {
   ];
 
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx, bank },
   );
 
@@ -917,7 +870,7 @@ describe('startSession invariants', () => {
 
   // No bank — uses starterBank from protocol
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -949,7 +902,6 @@ describe('startSession honours the declared Target', () => {
   license: 'CC0',
   question: 'You wrote: "a resonance I long lost." What returned it to you?',
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'session',
   target: 'self',
  };
@@ -959,7 +911,7 @@ describe('startSession honours the declared Target', () => {
    queue.add(selfEntry);
 
    const session = startSession(
-    { minutes: 30, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+    { target: 'domain', topic: 'sourdough bread baking' },
     {
      complete: makeScriptedComplete([]),
      vault: makeFakeVault(),
@@ -985,7 +937,7 @@ describe('startSession honours the declared Target', () => {
    });
 
    const session = startSession(
-    { minutes: 30, energy: 'medium', target: 'domain', topic: 'sourdough bread baking' },
+    { target: 'domain', topic: 'sourdough bread baking' },
     {
      complete: makeScriptedComplete([]),
      vault: makeFakeVault(),
@@ -1004,7 +956,7 @@ describe('startSession honours the declared Target', () => {
    queue.add(selfEntry);
 
    const session = startSession(
-    { minutes: 30, energy: 'medium', target: 'self' },
+    { target: 'self' },
     {
      complete: makeScriptedComplete([]),
      vault: makeFakeVault(),
@@ -1051,7 +1003,6 @@ describe('the open queue entry — which question the next turn answers (041)', 
    license: 'machine',
    question,
    questionForm: 'deliberative',
-   sharpness: 'weak',
    horizon: 'now',
    created: '2026-08-01T00:00:00.000Z',
   };
@@ -1062,7 +1013,7 @@ describe('the open queue entry — which question the next turn answers (041)', 
 
  function open(queue: QueueStore, responses: string[]) {
   return startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    {
     complete: makeScriptedComplete(responses),
     vault: makeFakeVault(),

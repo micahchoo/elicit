@@ -62,7 +62,6 @@ function realQuestionDraft(): QueueDraft {
     license: 'test',
     question: 'What would you like to explore about the shed?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
   };
 }
@@ -101,14 +100,14 @@ describe('sounding park (012 T7)', () => {
 
   it('the ordinary draw never returns a parked sounding', () => {
     parkPointer(queue, parkedLadder({ endedBy: 'park' }));
-    expect(queue.draw({ minutes: 20, energy: 'high', target: 'self' })).toBe(null);
+    expect(queue.draw({ target: 'self' })).toBe(null);
   });
 
   it('a parked sounding does not shadow a real question', () => {
     parkPointer(queue, parkedLadder({ endedBy: 'park' }));
     queue.add(realQuestionDraft());
     expect(
-      queue.draw({ minutes: 20, energy: 'high', target: 'self' })?.source,
+      queue.draw({ target: 'self' })?.source,
     ).toBe('composed');
   });
 });

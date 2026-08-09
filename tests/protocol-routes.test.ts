@@ -18,9 +18,8 @@ import { loadProtocolDefinitions } from '../src/protocols/registry.js';
  *    (never a client-side hardcoded list), shaped
  *    [{ id, name, title, blurb?, rotation }] — title/blurb are the surface
  *    words, title falling back to the registry name for a def without one.
- *  - POST /api/session accepts an optional {protocol} validated against the
- *    registry; absent means deterministic rotation exactly as before; an
- *    unknown name is a 400.
+ *  - POST /api/session draws the protocol by deterministic rotation (canon
+ *    §10 — patterns are drawn, not chosen); body.protocol is gone.
  *  - yield.ts is deleted: per-archive measurement showed no stable ordering
  *    (see the ticket resolution), so the registry entry is gone too.
  */
@@ -82,43 +81,18 @@ describe('protocol choice (ticket 153)', () => {
   expect(protocols.find((p) => p.id === 'people-grid')!.rotation).toBe(false);
  });
 
- it('POST /api/session honors a valid explicit protocol', async () => {
-  const res = await post('/api/session', { mode: { minutes: 15, energy: 'low', target: 'self' }, protocol: 'cdm' });
-  expect(res.status).toBe(200);
-  const body = (await res.json()) as { protocol: string };
-  // A pick bypasses target filtering — the person asked for the instrument.
-  expect(body.protocol).toBe('cdm');
- });
+ // The rotation died with the protocol pick (canon §10 cut, 2026-08-09):
+ // 'domain rotation still cycles on session count' asserted the deleted
+ // mechanic — no test covers it now.
 
- it('POST /api/session accepts a rotation:false instrument as an explicit pick', async () => {
-  const res = await post('/api/session', { mode: { minutes: 15, energy: 'low', target: 'self' }, protocol: 'drm' });
-  expect(res.status).toBe(200);
-  const body = (await res.json()) as { protocol: string };
-  expect(body.protocol).toBe('drm');
- });
-
- it('POST /api/session 400s an unknown protocol', async () => {
-  const res = await post('/api/session', { mode: { minutes: 15, energy: 'low', target: 'self' }, protocol: 'no-such-protocol' });
-  expect(res.status).toBe(400);
-  const body = (await res.json()) as { error: string };
-  expect(body.error).toContain('no-such-protocol');
- });
-
- it('POST /api/session without protocol rotates exactly as before', async () => {
-  // Fresh vault: zero prior sessions, self target → the only rotation
-  // candidate for 'self' (reflective; people-grid and drm are rotation:false).
-  const res = await post('/api/session', { mode: { minutes: 15, energy: 'low', target: 'self' } });
+ it('POST /api/session without protocol runs reflective — the default, since the rotation is dead', async () => {
+  // The rotation is cut (canon §10 — patterns are drawn, not chosen; the
+  // pick and the rotation are gone), so a route-created sitting is
+  // reflective unless a machine supplies its own protocol.
+  const res = await post('/api/session', { mode: { target: 'self' } });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { protocol: string };
   expect(body.protocol).toBe('reflective');
- });
-
- it('domain rotation still cycles on session count when protocol is absent', async () => {
-  // Zero prior sessions → candidates[0] of [cdm, concept-sorting, laddered-grid].
-  const res = await post('/api/session', { mode: { minutes: 15, energy: 'low', target: 'domain' } });
-  expect(res.status).toBe(200);
-  const body = (await res.json()) as { protocol: string };
-  expect(body.protocol).toBe('cdm');
  });
 
  it('yield.ts is deleted and the registry entry is gone with it', () => {

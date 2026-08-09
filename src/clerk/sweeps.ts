@@ -9,6 +9,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ulid } from 'ulid';
 import type { Vault, QueueStore, Snippet, Complete } from '../types.js';
 import type { SittingContext } from './composed.js';
 import { composeOutcomeQuestion } from './composed.js';
@@ -17,6 +18,9 @@ import { citeSnippetId } from '../wiki/status.js';
 import { annotateReferent, annotateIntentionHorizon } from './annotate.js';
 import type { AnnotationStore, AnnotationRecord } from './annotation-store.js';
 import type { PieceLog } from './docket.js';
+import type { Entry, GapKind, PieceStore } from '../piece/contract.js';
+import { findGaps as findCompositionGaps, type FoundGap, type ArrangementLog } from './arrangements.js';
+import { THRESHOLDS, readNumber } from '../wiki/thresholds.js';
 
 // ── The referent annotation job (ticket 074) ──
 // At most one model call per candidate snippet: annotateReferent names what
@@ -168,7 +172,6 @@ export async function runIntentionHorizonAnnotations(deps: {
           question: result.datingQuestion,
           questionForm: 'deliberative',
           cites: [`${result.snippetId}@${result.version}`],
-          sharpness: 'weak',
           horizon: 'session',
         });
         deps.annotations.put({
@@ -441,4 +444,160 @@ export function rotate<T>(
   cursor.write(offset + n);
  }
  return candidates;
+}
+
+// ── The composition gap sweep (redesign-2026-08-09 §7, §10) ──
+// The second probation entry, shaped like runOutcomeQuestions: iterate open
+// compositions, cap per run with a rotation cursor, mint under a join key.
+// The model's real competence over a sequence is noticing that a seam does
+// not hold — the ordering is gone, the gap-finder survives (§9). One
+// findGaps call per open composition per run; a pass is capped at 3
+// findings, distinct kinds (piece.gapsPerPass — the renamed
+// gapsPerCandidate), and the sweep carries the belt over findGaps' own cap.
+//
+// The sweep STORES model-placed gaps (placedBy: 'model', pending question
+// text) — it never mints a queue entry: `ask this` mints at composition-gap
+// weight, and nothing is placed without the person's touch (Q-39). Dedupe
+// against what is on disk: a finding whose (preceding pin, kind) already
+// sits as a hole at the seam, or was durably dismissed (`not a gap`, §8),
+// is never re-stored — "one question per found gap" holds because a re-run
+// re-finds the seam with a fresh gap id and the stored entry stops it.
+//
+// Model-placed gaps expire faster — the queue's sittings-based expiry (3
+// sittings, §10) runs here every run, even when nothing is found: an
+// ignored finding is the model being wrong, not a nag.
+
+/** The most open compositions one run may ask the model about (§7: cap per run). */
+const COMPOSITION_GAP_RUN_CAP = 2;
+/** §10: "if you ignored it for three sittings, the model was wrong." */
+const COMPOSITION_GAP_EXPIRY_SITTINGS = 3;
+
+/**
+ * The gap-finder the sweep drives, structural so tests can stub it: the
+ * contract findGaps (src/clerk/arrangements.ts) implements — one model
+ * call, at most `gapsPerPass` findings, distinct kinds, each question
+ * verified to quote one of the two adjacent passages (Q-12).
+ */
+export type CompositionGapFinder = (
+ entries: Entry[],
+ snippets: Record<string, Snippet>,
+ complete: Complete,
+ thresholds: { gapsPerPass: number },
+ log?: ArrangementLog,
+ modelName?: string,
+) => Promise<{ gaps: FoundGap[]; dropped: { kind: string; reason: string }[] }>;
+
+export async function runCompositionGapSweep(deps: {
+ pieces: PieceStore;
+ snippets: () => Record<string, Snippet>;
+ queue: QueueStore;
+ complete: Complete;
+ modelName: string;
+ log: PieceLog;
+ /** The cap register value; defaults to piece.gapsPerPass. */
+ gapsPerPass?: number;
+ /** The gap-finder, injectable for tests; defaults to the real findGaps. */
+ findGaps?: CompositionGapFinder;
+ /** The rotation cursor over open compositions; defaults to in-memory. */
+ cursor?: { read: () => number; write: (offset: number) => void };
+}): Promise<{ found: number; placed: number; skipped: number; expired: number }> {
+ const ts = () => new Date().toISOString();
+ // The flood brake runs even when nothing is found: model-placed gaps the
+ // person ignored for three sittings expire here, every run. The optional
+ // call lets a store predating the field compile unchanged; production
+ // always wires the real store, which implements it.
+ const expired = deps.queue.expireModelGaps?.(COMPOSITION_GAP_EXPIRY_SITTINGS) ?? 0;
+ if (expired > 0) {
+  deps.log({ at: ts(), actor: 'clerk', kind: 'composition-gap-expired', detail: `expired=${expired} sittings=${COMPOSITION_GAP_EXPIRY_SITTINGS}` });
+ }
+ const findGaps = deps.findGaps ?? findCompositionGaps;
+ const gapsPerPass = deps.gapsPerPass ?? readNumber(THRESHOLDS['piece.gapsPerPass'], 3);
+ const snippets = deps.snippets();
+ // Open = the person has it off the shelf and has not discarded it: a
+ // set-down composition must not mint into a queue the person is not
+ // reading (dormancy's own reason, §3), and a discarded one is closed (Q-3).
+ const open = deps.pieces.list().filter(
+  (p) => p.discardedAt === undefined && p.setDownAt === undefined,
+ );
+ if (open.length === 0) return { found: 0, placed: 0, skipped: 0, expired };
+ const cursor = deps.cursor ?? { read: () => 0, write: () => {} };
+ const candidates = rotate(
+  { read: () => cursor.read() % open.length, write: (o) => cursor.write(o) },
+  open,
+  COMPOSITION_GAP_RUN_CAP,
+ );
+ let found = 0;
+ let placed = 0;
+ let skipped = 0;
+ for (const piece of candidates) {
+  try {
+   const result = await findGaps(
+    piece.entries,
+    snippets,
+    deps.complete,
+    { gapsPerPass },
+    undefined,
+    deps.modelName,
+   );
+   if (result.gaps.length === 0) continue;
+   // The belt over findGaps' own cap: at most `gapsPerPass` findings, and
+   // distinct kinds — otherwise the model returns twelve thins (§7).
+   const seenKinds = new Set<GapKind>();
+   const findings: FoundGap[] = [];
+   for (const g of result.gaps) {
+    found++;
+    if (seenKinds.has(g.kind) || seenKinds.size >= gapsPerPass) {
+     skipped++;
+     continue;
+    }
+    seenKinds.add(g.kind);
+    findings.push(g);
+   }
+   const dismissed = new Set(piece.dismissedGaps);
+   const entries = [...piece.entries];
+   let kept = 0;
+   for (const g of findings) {
+    const at = entries.findIndex((e) => e.kind === 'pin' && e.snippet === g.after);
+    if (at === -1) {
+     // The anchor is not in this composition — a finding with nowhere to sit.
+     skipped++;
+     continue;
+    }
+    const next = entries[at + 1];
+    // A hole already sits at this seam (a person's own gap owns it — one
+    // hole per seam); or the seam was durably dismissed (`not a gap` —
+    // never re-found, §8). A trailing seam (the anchor is the last entry)
+    // is a valid finding: `thin` asks for more about a subject the piece
+    // under-covers, and appends at the end.
+    if (next !== undefined && next.kind !== 'pin') {
+     skipped++;
+     continue;
+    }
+    if (dismissed.has(`${g.after}\u0000${g.kind}`)) {
+     skipped++;
+     continue;
+    }
+    entries.splice(at + 1, 0, { id: ulid(), placedBy: 'model', kind: g.kind, pending: g.question });
+    kept++;
+   }
+   if (kept === 0) continue;
+   deps.pieces.putEntries(piece.id, entries);
+   placed += kept;
+   const kinds = findings.slice(0, kept).map((g) => g.kind).join(',');
+   deps.log({
+    at: ts(),
+    actor: 'clerk',
+    kind: 'composition-gap-found',
+    detail: `piece=${piece.id} gaps=${kept} kinds=${kinds}`,
+   });
+  } catch (err) {
+   deps.log({ at: ts(), actor: 'clerk', kind: 'composition-gap-failed', detail: `piece=${piece.id} ${String(err)}` });
+  }
+ }
+ const heldBack = open.length - candidates.length;
+ deps.log({ at: ts(), actor: 'clerk', kind: 'composition-gap-swept', detail: `found=${found} placed=${placed} skipped=${skipped}` });
+ if (heldBack > 0) {
+  deps.log({ at: ts(), actor: 'clerk', kind: 'composition-gap-clipped', detail: `cap=${COMPOSITION_GAP_RUN_CAP} eligible=${open.length} clipped=${heldBack}` });
+ }
+ return { found, placed, skipped, expired };
 }

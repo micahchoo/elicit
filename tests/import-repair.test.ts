@@ -62,7 +62,6 @@ const seedLive = (n: number): void => {
    license: 'CC0',
    question: 'filler',
    questionForm: 'deliberative',
-   sharpness: 'sharp',
    horizon: 'now',
   });
  }

@@ -298,7 +298,6 @@ describe('runLineageMirrorSweep', () => {
       question: 'old mirror question?',
       questionForm: 'deliberative',
       horizon: 'now',
-      sharpness: 'weak',
       created: fortyDaysAgo,
       lineageMirror: {
         claimId: 'claim-1',

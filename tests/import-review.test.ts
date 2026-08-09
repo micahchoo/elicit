@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildReviewSurface,
+  makeStorageStub,
   clickExclude,
   confirmExclude,
   clickReject,
@@ -64,7 +65,7 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
 
   it('offers three verbs and never restate', async () => {
     const { surface } = await buildReviewSurface(item);
-    expect(verbLabels(surface)).toEqual(['approve', 'trim', 'discard']);
+    expect(verbLabels(surface)).toEqual(['keep', 'trim', 'leave out']);
     // Hidden until a cut is focused — the page is a document, not a control.
     expect(visibleVerbs(surface)).toEqual([]);
   });
@@ -117,7 +118,10 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
       path: `/api/import/${HASH}/decisions`,
       body: { decisions: [] },
     });
-    expect(nav).toContain('import');
+    // The receipt is the last screen — zero kept passages say so, and
+    // nothing navigates away (wave 3).
+    expect(surface.textContent).toContain('Nothing was kept.');
+    expect(nav).toEqual([]);
   });
 
   it('keeps save disabled until every cut has a decision, then sends one per cut', async () => {
@@ -126,8 +130,8 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
     expect(save.disabled).toBe(true);
 
     focusCut(surface, 0);
-    expect(visibleVerbs(surface)).toEqual(['approve', 'trim', 'discard']);
-    clickVerb(surface, 'approve');
+    expect(visibleVerbs(surface)).toEqual(['keep', 'trim', 'leave out']);
+    clickVerb(surface, 'keep');
     expect(save.disabled).toBe(true); // cuts 1 and 2 still undecided
 
     focusCut(surface, 1);
@@ -139,11 +143,11 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
     expect(save.disabled).toBe(true);
 
     focusCut(surface, 2);
-    clickVerb(surface, 'discard');
+    clickVerb(surface, 'leave out');
     expect(save.disabled).toBe(false);
 
     save.click();
-    await flush(); // the POST chain and navTo land on the microtask queue
+    await flush(); // the POST chain and the receipt land on the microtask queue
     const last = sent[sent.length - 1]!;
     expect(last.path).toBe(`/api/import/${HASH}/decisions`);
     expect(last.body).toEqual({
@@ -153,25 +157,31 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
         { cut: 2, action: 'discard' },
       ],
     });
-    expect(nav).toContain('import'); // same 2fd883a destination as exclude
+    // The receipt is the last screen — the verbatim kept passages, and
+    // only those; nothing navigates away (wave 3).
+    expect(surface.textContent).toContain('Kept, in your words:');
+    expect(surface.textContent).toContain(item.cuts[0]!.text);
+    expect(surface.textContent).toContain('I keep coming back to this piece');
+    expect(surface.textContent).not.toContain(item.cuts[2]!.text); // the discarded cut stays out
+    expect(nav).toEqual([]);
   });
 
   it('counts the undecided cuts beside save, and counts down as decisions land', async () => {
     const { surface } = await buildReviewSurface(item);
     const progress = surface.querySelector('.import-progress')!;
     expect(progress.textContent).toContain('3 of 3 underlined cuts still wait');
-    expect(progress.textContent).toContain('click one, then approve, trim or discard');
+    expect(progress.textContent).toContain('click one, then keep, trim or leave it out');
 
     focusCut(surface, 0);
-    clickVerb(surface, 'approve');
+    clickVerb(surface, 'keep');
     expect(progress.textContent).toContain('2 of 3');
 
     focusCut(surface, 1);
-    clickVerb(surface, 'discard');
+    clickVerb(surface, 'leave out');
     expect(progress.textContent).toContain('1 of 3 underlined cuts still waits');
 
     focusCut(surface, 2);
-    clickVerb(surface, 'discard');
+    clickVerb(surface, 'leave out');
     expect(progress.textContent).toBe('all 3 cuts are decided.');
   });
 
@@ -181,12 +191,12 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
 
     // One cut decided by hand first: the bulk verb must not overwrite it.
     focusCut(surface, 1);
-    clickVerb(surface, 'discard');
+    clickVerb(surface, 'leave out');
 
-    const allApprove = surface
+    const allKeep = surface
       .querySelectorAll('.import-decide-all-btn')
-      .find((b) => b.textContent.includes('approve'))!;
-    allApprove.click();
+      .find((b) => b.textContent.includes('keep'))!;
+    allKeep.click();
 
     expect(sent).toHaveLength(0); // preselection is not a commit
     expect(save.disabled).toBe(false);
@@ -263,6 +273,76 @@ describe('the review surface — the piece whole, cuts marked in place', () => {
     const { surface, nav } = await buildReviewSurface(null);
     expect(surface.textContent).toContain('no piece is ready');
     surface.querySelector('.import-back')!.click();
-    expect(nav).toContain('mode');
+    expect(nav).toContain('today');
+  });
+});
+
+describe('finish-later keeps drafts — decisions survive a re-render (§5.4)', () => {
+  const draftKey = `elicit.review-drafts.${HASH}`;
+
+  it('hydrates a saved draft on re-entry and clears it on save', async () => {
+    const storage = makeStorageStub();
+    const first = await buildReviewSurface(item, storage);
+
+    // Decide two of the three cuts, then leave mid-review.
+    focusCut(first.surface, 0);
+    clickVerb(first.surface, 'keep');
+    focusCut(first.surface, 1);
+    clickVerb(first.surface, 'leave out');
+    // The draft is on the record, keyed by the item id, in the stable form.
+    expect(JSON.parse(storage.getItem(draftKey) ?? 'null')).toEqual([
+      { index: 0, action: 'keep' },
+      { index: 1, action: 'leave out' },
+    ]);
+
+    // A fresh render of the same piece restores the decisions: the marks
+    // restate on the prose, the count sentence reflects them, and save
+    // waits only for the one cut still undecided.
+    const second = await buildReviewSurface(item, storage);
+    const save = second.surface.querySelector('.import-save')! as ShimElement;
+    expect(save.disabled).toBe(true); // the third cut still waits
+    expect(
+      second.surface.querySelectorAll('.import-cut.decided').map((sp) => sp.textContent),
+    ).toEqual([item.cuts[0]!.text, item.cuts[1]!.text]);
+    expect(second.surface.querySelector('.import-progress')!.textContent).toContain('1 of 3');
+
+    focusCut(second.surface, 2);
+    clickVerb(second.surface, 'keep');
+    expect(save.disabled).toBe(false);
+    save.click();
+    await flush();
+
+    // The receipt is the last screen, and the draft is gone: the piece is
+    // decided, not parked.
+    expect(second.surface.textContent).toContain('Kept, in your words:');
+    expect(storage.getItem(draftKey)).toBeNull();
+  });
+
+  it('keys the draft by the piece: another piece never inherits a draft', async () => {
+    const storage = makeStorageStub();
+    const first = await buildReviewSurface(item, storage);
+    focusCut(first.surface, 0);
+    clickVerb(first.surface, 'keep');
+    expect(storage.getItem(draftKey)).not.toBeNull();
+
+    const other: ImportReviewItem = {
+      ...item,
+      hash: 'f0e9d8c7b6a554433221100',
+      file: 'another-piece.md',
+    };
+    const second = await buildReviewSurface(other, storage);
+    const save = second.surface.querySelector('.import-save')! as ShimElement;
+    expect(save.disabled).toBe(true); // nothing hydrated across pieces
+    expect(second.surface.querySelectorAll('.import-cut.decided')).toHaveLength(0);
+    expect(storage.getItem(`elicit.review-drafts.${other.hash}`)).toBeNull();
+  });
+
+  it('drops a corrupt draft silently — a draft is a convenience, never a crash', async () => {
+    const storage = makeStorageStub();
+    storage.setItem(draftKey, '{not json');
+    const { surface } = await buildReviewSurface(item, storage);
+    const save = surface.querySelector('.import-save')! as ShimElement;
+    expect(save.disabled).toBe(true); // hydrated nothing
+    expect(surface.querySelectorAll('.import-cut.decided')).toHaveLength(0);
   });
 });

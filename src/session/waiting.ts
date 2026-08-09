@@ -1,6 +1,6 @@
 /**
- * The waiting-surface cluster (Wave D1 extraction): anniversary,
- * harvest-queue ×2, unprompted, sweep-backlog and the /api/events SSE feed
+ * The waiting-surface cluster (Wave D1 extraction): harvest-queue ×2,
+ * unprompted, sweep-backlog and the /api/events SSE feed
  * (with its payload projection), plus the sittingsFromLedger helper, moved
  * wholesale out of src/server.ts. Wire shapes, route paths, log kinds, and
  * error statuses are byte-identical to the pre-extraction server.
@@ -18,10 +18,8 @@ import { streamSSE } from 'hono/streaming';
 import { onAppend, type ActivityEvent } from '../log/activity.js';
 import { checkedChannel, requireText } from '../guards.js';
 import { readPendingHarvest, listPendingHarvests } from '../harvester/pending.js';
-import { anniversaryDraw } from '../randomizer/randomizer.js';
-import { datedSnippets, readSittingDates } from '../randomizer/strata.js';
-import { RANDOMIZER_THRESHOLDS } from '../randomizer/thresholds.js';
 import { readSweepDeferral, readSweepDeferrals } from '../wiki/store.js';
+import { readTranscriptBody } from '../vault/transcripts.js';
 import { startBackgroundHarvest, startUnpromptedSitting, type ServerEmitFn, type SessionCtx } from './routes.js';
 import type { CaptureChannel, Vault } from '../types.js';
 
@@ -33,7 +31,9 @@ import type { CaptureChannel, Vault } from '../types.js';
  * ledger read sits beside it in the sweep-backlog route).
  */
 interface WaitingDeps {
- /** The vault — the anniversary draw reads the index through it. */
+ /** The vault. Kept for the server's wiring shape (createApp passes it); the
+  * anniversary route that read it was cut with the zero-output sweeps
+  * (ruling 2026-08-09) — a structural leftover until server.ts drops it. */
  vault: Vault;
  vaultRoot: string;
  /** The server's activity-log seam. */
@@ -55,29 +55,7 @@ interface WaitingDeps {
  * table is unchanged entry-for-entry.
  */
 export function createWaitingRoutes(app: Hono, deps: WaitingDeps): void {
- const { vault, vaultRoot, serverEmit, sessionCtx, unpromptedSessions, unpromptedChannels, sweepWorkRemaining } = deps;
-
-// GET /api/anniversary — the on-this-day card for the Waiting Surface (ticket 107).
-// Returns a draw when a snippet's wroteAt month+day matches today; null otherwise.
-
-// An offer under Q-62: the surface requests it, the user declines with one tap.
-app.get('/api/anniversary', (c) => {
- const now = new Date();
- const snips = datedSnippets(
-  vault.rebuildIndex(),
-  readSittingDates(vaultRoot),
-  now,
-  RANDOMIZER_THRESHOLDS,
- );
- const result = anniversaryDraw(snips, Math.random, now);
- if (!result) {
-  serverEmit(vaultRoot, 'elicitor', 'anniversary-evaluated', 'candidates=0');
-  return c.json(null);
- }
- serverEmit(vaultRoot, 'elicitor', 'anniversary-drawn', `snippet=${result.ref}`);
- return c.json(result.draw);
-});
-
+ const { vaultRoot, serverEmit, sessionCtx, unpromptedSessions, unpromptedChannels, sweepWorkRemaining } = deps;
 
 // GET /api/harvest-queue → {pending} (ticket 084)
 // The review surface: every finished harvest awaiting a decision, newest
@@ -90,6 +68,12 @@ app.get('/api/harvest-queue', (c) => {
   protocol: r.protocol,
   origin: r.origin,
   proposalCount: r.proposals.length,
+  // Wave 2 S1: records written before the buds field existed read as
+  // absent — mapped to 0, never to a guessed count.
+  budCount: r.buds?.length ?? 0,
+  // Batch C2 (§12.1): how many proposals repeat an older passage — the
+  // review row's "keep both?" count. Absent reads as none.
+  repeatsCount: r.repeats?.length ?? 0,
  }));
  return c.json({ pending });
 });
@@ -104,7 +88,16 @@ app.get('/api/harvest-queue/:sessionId', (c) => {
  }
  const record = readPendingHarvest(vaultRoot, sessionId);
  if (!record) return c.json({ error: 'not found' }, 404);
- return c.json(record);
+ // The full record plus the mapped count — absent buds read as 0 (Wave 2 S1).
+ // transcriptBody carries the sitting's body text for the in-place review
+ // surface; '' when the transcript is missing or unparseable (Wave 3 S4).
+ return c.json({
+  ...record,
+  budCount: record.buds?.length ?? 0,
+  // Batch C2 (§12.1): the receipt's per-passage sentence reads this.
+  repeatsCount: record.repeats?.length ?? 0,
+  transcriptBody: readTranscriptBody(vaultRoot, sessionId),
+ });
 });
 
 // POST /api/unprompted {text} → harvesting (ticket 084)

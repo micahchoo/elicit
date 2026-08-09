@@ -213,7 +213,6 @@ function queueEntry(id: string, extra: Partial<QueueEntry> = {}): QueueEntry {
     license: 'CC0',
     question: 'You wrote: "x". What happened the last time?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'session',
     created: T0,
     ...extra,
@@ -703,7 +702,6 @@ describe('lint still-true questions', () => {
     questionForm: 'deliberative',
     cites: ['s1@1'],
     quotedFragment: 'estimates are for coordination',
-    sharpness: 'weak',
     horizon: 'days',
   };
 
@@ -818,7 +816,6 @@ describe('lint undiscriminated-range questions', () => {
     questionForm: 'deliberative',
     cites: ['s1@1', 's2@1'],
     quotedFragment: 'I am happiest around the bakery counter at dawn',
-    sharpness: 'weak',
     horizon: 'session',
   };
   const pair = (): HarnessOptions => ({
@@ -1178,7 +1175,6 @@ describe('re-measure minting', () => {
     questionForm: 'deliberative',
     cites: ['s1@1', 's2@1'],
     quotedFragment: 'estimates are for coordination',
-    sharpness: 'weak',
     horizon: 'session',
   };
 

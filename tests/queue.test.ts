@@ -26,7 +26,6 @@ function makeDraft(overrides?: Partial<QueueDraft>): QueueDraft {
   license: 'test-license',
   question: 'What do you think about X?',
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'now',
   ...overrides,
  };
@@ -34,8 +33,6 @@ function makeDraft(overrides?: Partial<QueueDraft>): QueueDraft {
 
 function makeMode(overrides?: Partial<Mode>): Mode {
  return {
-  minutes: 15,
-  energy: 'medium',
   ...overrides,
  };
 }
@@ -86,103 +83,11 @@ describe('QueueStore', () => {
   expect(ud[0]!.source).toBe('user-declared');
  });
 
- // ── draw: mode hard-filter ──
-
- it('draw excludes entries needing more minutes than mode provides', () => {
-  store.add(makeDraft({
-   modeNeeds: { minMinutes: 20 },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-  store.add(makeDraft({
-   modeNeeds: { minMinutes: 10 },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-
-  const mode = makeMode({ minutes: 15 });
-  const drawn = store.draw(mode);
-  expect(drawn).not.toBeNull();
-  // The drawn entry should have modeNeeds.minMinutes <= 15
-  expect(drawn!.modeNeeds?.minMinutes).toBeLessThanOrEqual(15);
-  expect(drawn!.modeNeeds?.minMinutes).toBe(10);
- });
-
- it('draw respects energy hard-filter (entry needs high, mode is low → excluded)', () => {
-  store.add(makeDraft({
-   modeNeeds: { energy: 'high' },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-  store.add(makeDraft({
-   modeNeeds: { energy: 'low' },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-
-  const mode = makeMode({ energy: 'low' });
-  const drawn = store.draw(mode);
-  expect(drawn).not.toBeNull();
-  expect(drawn!.modeNeeds?.energy).toBe('low');
- });
-
- it('draw with mode energy=high satisfies entry needing medium', () => {
-  store.add(makeDraft({
-   modeNeeds: { energy: 'medium' },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-
-  const mode = makeMode({ energy: 'high' });
-  const drawn = store.draw(mode);
-  expect(drawn).not.toBeNull();
- });
-
- it('draw returns null when no entry matches mode constraints', () => {
-  store.add(makeDraft({
-   modeNeeds: { minMinutes: 60 },
-   sharpness: 'weak',
-   horizon: 'now',
-  }));
-
-  const mode = makeMode({ minutes: 5 });
-  const drawn = store.draw(mode);
-  expect(drawn).toBeNull();
- });
-
- // ── draw: never returns sharp ──
-
- it('opening draw excludes sharp entries', () => {
-  store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
-  store.add(makeDraft({ sharpness: 'weak', horizon: 'now' }));
-
-  const drawn = store.draw(makeMode());
-  expect(drawn).not.toBeNull();
-  expect(drawn!.sharpness).toBe('weak');
- });
-
- it('mid draw excludes sharp entries', () => {
-  store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
-  store.add(makeDraft({ sharpness: 'weak', horizon: 'now' }));
-
-  const drawn = store.draw(makeMode());
-  expect(drawn).not.toBeNull();
-  expect(drawn!.sharpness).toBe('weak');
- });
-
-
- it('opening draw returns null when only sharp entries exist', () => {
-  store.add(makeDraft({ sharpness: 'sharp', horizon: 'now' }));
-
-  const drawn = store.draw(makeMode());
-  expect(drawn).toBeNull();
- });
-
  // ── draw: days-horizon never drawn ──
 
  it('days-horizon entries are never drawn into exchange', () => {
-  store.add(makeDraft({ horizon: 'days', sharpness: 'weak' }));
-  store.add(makeDraft({ horizon: 'session', sharpness: 'weak' }));
+  store.add(makeDraft({ horizon: 'days' }));
+  store.add(makeDraft({ horizon: 'session' }));
 
   const drawn = store.draw(makeMode());
   expect(drawn).not.toBeNull();
@@ -190,7 +95,7 @@ describe('QueueStore', () => {
  });
 
  it('draw returns null when all pending entries are days-horizon', () => {
-  store.add(makeDraft({ horizon: 'days', sharpness: 'weak' }));
+  store.add(makeDraft({ horizon: 'days' }));
 
   const drawn = store.draw(makeMode());
   expect(drawn).toBeNull();
@@ -355,7 +260,6 @@ describe('QueueStore', () => {
     license: 'test',
     question: 'Q?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
     created: recentDate,
     ...overrides,
@@ -406,7 +310,6 @@ describe('QueueStore', () => {
    license: 'test',
    question: 'I want to revisit this',
    questionForm: 'deliberative',
-   sharpness: 'weak',
    horizon: 'now',
    created: oldDate,
   };
@@ -463,7 +366,6 @@ function writeDatedEntry(created: string, overrides: Partial<QueueEntry> = {}) {
   license: 'test',
   question: 'Q?',
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'days',
   created,
   ...overrides,
@@ -631,24 +533,21 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
 
  // ── optional fields roundtrip ──
 
- it('optional fields (cites, quotedFragment, modeNeeds, direction) roundtrip', () => {
+ it('optional fields (cites, quotedFragment, direction) roundtrip', () => {
   const draft: QueueDraft = {
    source: 'composed',
    license: 'test',
    question: 'What about the thing?',
    questionForm: 'why',
-   sharpness: 'weak',
    horizon: 'session',
    ...({ cites: ['abc@1', 'def@2'] } as Partial<QueueDraft>),
    ...({ quotedFragment: 'the thing' } as Partial<QueueDraft>),
-   ...({ modeNeeds: { minMinutes: 10, energy: 'medium' } } as Partial<QueueDraft>),
    ...({ direction: 'forward' } as Partial<QueueDraft>),
   };
 
   const entry = store.add(draft);
   expect(entry.cites).toEqual(['abc@1', 'def@2']);
   expect(entry.quotedFragment).toBe('the thing');
-  expect(entry.modeNeeds).toEqual({ minMinutes: 10, energy: 'medium' });
   expect(entry.direction).toBe('forward');
 
   // Verify roundtrip through a fresh instance
@@ -656,7 +555,6 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   const reloaded = store2.list()[0]!;
   expect(reloaded.cites).toEqual(['abc@1', 'def@2']);
   expect(reloaded.quotedFragment).toBe('the thing');
-  expect(reloaded.modeNeeds).toEqual({ minMinutes: 10, energy: 'medium' });
   expect(reloaded.direction).toBe('forward');
  });
 
@@ -739,7 +637,6 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
      license: 'test',
      question: 'Older than the field',
      questionForm: 'deliberative',
-     sharpness: 'weak',
      horizon: 'now',
      created: new Date().toISOString(),
     }),
@@ -752,15 +649,9 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
   });
 
   it('the other filters still apply inside the target pool', () => {
-   store.add(makeDraft({ question: 'sharp', target: 'domain', sharpness: 'sharp' }));
    store.add(makeDraft({ question: 'days', target: 'domain', horizon: 'days' }));
-   store.add(makeDraft({
-    question: 'too long',
-    target: 'domain',
-    modeNeeds: { minMinutes: 60 },
-   }));
 
-   const mode = makeMode({ target: 'domain', minutes: 15 });
+   const mode = makeMode({ target: 'domain' });
    expect(store.draw(mode)).toBeNull();
 
    store.add(makeDraft({ question: 'eligible', target: 'domain' }));
@@ -1097,120 +988,16 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    vi.restoreAllMocks();
   });
 
-  // ── rung 2: the person's declaration outranks the system's judgement ──
-
-  it('re-admits a user-declared entry the sharpness filter excluded', () => {
-   const ud = store.add(
-    makeDraft({ source: 'user-declared', question: 'the bookmark', sharpness: 'sharp' }),
-   );
-
-   const drawn = store.draw(makeMode());
-
-   expect(drawn).not.toBeNull();
-   expect(drawn!.id).toBe(ud.id);
-   // Drawn is drawn: the rung does not skip the normal bookkeeping.
-   expect(store.list().find((e) => e.id === ud.id)!.status).toBe('asked');
-
-   expect(rungs()).toHaveLength(1);
-   expect(rungs()[0]!.detail).toContain('rung=2');
-   expect(rungs()[0]!.detail).toContain('relaxed=sharpness');
-   expect(rungs()[0]!.detail).toContain('before=0');
-   expect(rungs()[0]!.detail).toContain('after=1');
-   expect(floors()).toHaveLength(0);
-  });
-
-  it('re-admits a user-declared entry modeNeeds excluded', () => {
-   const ud = store.add(
-    makeDraft({
-     source: 'user-declared',
-     question: 'the long one',
-     modeNeeds: { minMinutes: 60, energy: 'high' },
-    }),
-   );
-
-   const drawn = store.draw(makeMode({ minutes: 15, energy: 'low' }));
-
-   expect(drawn!.id).toBe(ud.id);
-   expect(rungs()).toHaveLength(1);
-   expect(rungs()[0]!.detail).toContain('relaxed=modeNeeds');
-  });
-
-  it('names both constraints when both had to yield', () => {
-   store.add(
-    makeDraft({
-     source: 'user-declared',
-     sharpness: 'sharp',
-     modeNeeds: { minMinutes: 60 },
-    }),
-   );
-
-   expect(store.draw(makeMode({ minutes: 15 }))).not.toBeNull();
-   const detail = rungs()[0]!.detail;
-   expect(detail).toContain('modeNeeds');
-   expect(detail).toContain('sharpness');
-  });
-
-  it('chance still runs inside the rung-2 pool — the pick is not argmax', () => {
-   // Four sharp user-declared entries: the opening pool is empty, rung 2
-   // admits all four, and top-k=3 plus a roll decides which one is asked.
-   vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
-   store.add(makeDraft({ source: 'user-declared', question: 'U1', sharpness: 'sharp' }));
-   vi.setSystemTime(new Date('2026-06-01T12:00:01Z'));
-   store.add(makeDraft({ source: 'user-declared', question: 'U2', sharpness: 'sharp' }));
-   vi.setSystemTime(new Date('2026-06-01T12:00:02Z'));
-   store.add(makeDraft({ source: 'user-declared', question: 'U3', sharpness: 'sharp' }));
-   vi.setSystemTime(new Date('2026-06-01T12:00:03Z'));
-   store.add(makeDraft({ source: 'user-declared', question: 'U4', sharpness: 'sharp' }));
-   vi.useRealTimers();
-
-   vi.spyOn(Math, 'random').mockReturnValue(0);
-   const first = store.draw(makeMode())!;
-   vi.spyOn(Math, 'random').mockReturnValue(0.99);
-   const last = store.draw(makeMode())!;
-
-   expect(first.id).not.toBe(last.id);
-   // Newest first: the roll of 0 takes U4, and the roll of 0.99 reaches the
-   // far end of what is left. The rung constrains, chance chooses.
-   expect([first.question, last.question].sort()).toEqual(['U1', 'U4']);
-  });
-
-  it('re-admits a gap-declared entry the sharpness filter excluded', () => {
-   const gd = store.add(
-    makeDraft({ source: 'gap-declared', question: 'the gap bookmark', sharpness: 'sharp' }),
-   );
-
-   const drawn = store.draw(makeMode());
-
-   expect(drawn).not.toBeNull();
-   expect(drawn!.id).toBe(gd.id);
-   expect(store.list().find((e) => e.id === gd.id)!.status).toBe('asked');
-
-   expect(rungs()).toHaveLength(1);
-   expect(rungs()[0]!.detail).toContain('rung=2');
-   expect(rungs()[0]!.detail).toContain('relaxed=sharpness');
-   expect(floors()).toHaveLength(0);
-  });
-
-  it('never re-admits a gap-fill entry the sharpness filter excluded', () => {
-   store.add(makeDraft({ source: 'gap-fill', question: 'model-marked gap', sharpness: 'sharp' }));
-
-   expect(store.draw(makeMode())).toBeNull();
-
-   expect(rungs()).toHaveLength(0);
-   expect(floors()).toHaveLength(1);
-   expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
-  });
-
   // ── never relaxed: status, Target, horizon ──
 
   it('an agent-minted pool draws nothing and the floor names the emptying filter', () => {
-   store.add(makeDraft({ source: 'composed', sharpness: 'sharp' }));
+   store.add(makeDraft({ source: 'composed', horizon: 'days' }));
 
    expect(store.draw(makeMode())).toBeNull();
 
    expect(rungs()).toHaveLength(0);
    expect(floors()).toHaveLength(1);
-   expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
+   expect(floors()[0]!.detail).toContain('emptiedBy=horizon');
   });
 
   it('a user-declared entry excluded by Target is not re-admitted', () => {
@@ -1223,7 +1010,7 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
 
   it('an answered entry is never drawn at any rung', () => {
    const ud = store.add(
-    makeDraft({ source: 'user-declared', question: 'done', sharpness: 'sharp' }),
+    makeDraft({ source: 'user-declared', question: 'done' }),
    );
    store.markAnswered(ud.id);
 
@@ -1232,12 +1019,12 @@ it('markExpired sets one entry to expired and writes it back; unknown id is a no
    expect(floors()[0]!.detail).toContain('emptiedBy=status');
   });
 
-  it('a user-declared days-horizon entry is not re-admitted', () => {
-   store.add(makeDraft({ source: 'user-declared', horizon: 'days', sharpness: 'sharp' }));
+  it('a user-declared days-horizon entry is never drawn', () => {
+   store.add(makeDraft({ source: 'user-declared', horizon: 'days' }));
 
    expect(store.draw(makeMode())).toBeNull();
    expect(rungs()).toHaveLength(0);
-   expect(floors()[0]!.detail).toContain('emptiedBy=sharpness');
+   expect(floors()[0]!.detail).toContain('emptiedBy=horizon');
   });
 
   it('an empty queue reaches the floor without blaming a filter', () => {

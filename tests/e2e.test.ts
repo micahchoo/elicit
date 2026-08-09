@@ -1,5 +1,5 @@
 import { runDocket } from '../src/clerk/docket.js';
-import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
+import { composeOpener } from '../src/clerk/composed.js';
 import { appendEvent, readEvents, type ActivityEvent } from '../src/log/activity.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
@@ -19,7 +19,7 @@ import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import type { Complete, CutProposal, Vault } from '../src/types.js';
 import { statSync } from 'node:fs';
-import { createClaimStore } from '../src/wiki/store.js';
+import { createClaimStore, readPassageReads } from '../src/wiki/store.js';
 import type { QueueStore } from '../src/types.js';
 import type { ClaimStore } from '../src/wiki/contract.js';
 import {
@@ -269,12 +269,12 @@ const scriptedResponses = [
  'What does "my answer here" mean for what you value?',
  JSON.stringify({ cuts: [] }),
  // Padding: post-harvest docket composeOpener calls (may retry = 2 per snippet)
- 'padding',
- 'padding',
- 'padding',
- 'padding',
- 'padding',
- 'padding',
+ 'What changed about your mornings?',
+ 'Where does that leave the plan?',
+ 'Which small thing would you try first?',
+ 'How would a friend describe the difference?',
+ 'What would you do with a free afternoon?',
+ 'Who else would notice the change?',
 ];
 
 // ── Tests ──
@@ -312,7 +312,7 @@ describe('HTTP API e2e', () => {
   const sessionRes = await fetch(`${baseUrl}/api/session`, {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ mode: { minutes: 30, energy: 'medium' } }),
+   body: JSON.stringify({ mode: { target: 'self' } }),
   });
   expect(sessionRes.status).toBe(200);
   const { sessionId, question } = (await sessionRes.json()) as {
@@ -461,13 +461,10 @@ describe('HTTP API e2e', () => {
   expect(transcriptContent).toContain(userText2);
   expect(transcriptContent).toContain('## agent');
 
-  // Transcript frontmatter carries mode
+  // Transcript frontmatter carries mode — target only (canon §5.2: minutes
+  // and energy are no longer declarations)
   const transcriptParsed = matter.read(transcriptFile);
-  expect(transcriptParsed.data.mode).toEqual({
-   minutes: 30,
-   energy: 'medium',
-   target: 'self',
-  });
+  expect(transcriptParsed.data.mode).toEqual({ target: 'self' });
   expect(transcriptParsed.data.protocol).toBe('reflective');
 
   // ── Step 6: GET /api/snippets lists them ──
@@ -486,7 +483,7 @@ describe('HTTP API e2e', () => {
   const s1 = await fetch(`${baseUrl}/api/session`, {
    method: 'POST',
    headers: { 'content-type': 'application/json' },
-   body: JSON.stringify({ mode: { minutes: 25, energy: 'medium' } }),
+   body: JSON.stringify({ mode: { target: 'self' } }),
   });
   expect(s1.status).toBe(200);
   const { sessionId, question } = (await s1.json()) as {
@@ -550,7 +547,7 @@ describe('HTTP API e2e', () => {
   const s1 = await fetch(`${baseUrl}/api/session`, {
    method: 'POST',
    headers: { 'content-type': 'application/json' },
-   body: JSON.stringify({ mode: { minutes: 15, energy: 'medium' } }),
+   body: JSON.stringify({ mode: { target: 'self' } }),
   });
   expect(s1.status).toBe(200);
   const { sessionId } = (await s1.json()) as { sessionId: string };
@@ -606,27 +603,28 @@ const fullUserSequential = [
 /**
  * Scripted responses for the full-flow test.
  * Order: docket composeOpener, then 7 turns (each: redLights + probe/juxtaposition),
- * then propose. Closing door + bookmark are fixed text (no complete calls).
+ * then propose. The closing door is fixed text, and the door answer saturates (no complete calls).
  */
 const fullFlowScripted = [
  // 0: docket composeOpener — raw question text
  'You wrote about "my career direction." Has anything shifted since then?',
- // Turn 1: juxtaposition (resonance on shared phrase) — succeeds, no redLights/probe after
+ // 1: the boot docket's context-line job (§11) composes a line for the seed
+ // passage before the session opens.
+ 'a plain context line about the seed passage',
+ // Turn 1: juxtaposition (resonance on shared phrase) — succeeds; the
+ // machine's ways-in '{}' (parse-fail, falls through) is not consumed on
+ // this turn because juxtaposition served.
  'You said "I\'ve been thinking about my career direction" before. Now you say "my career direction." Do you see it differently now?',
- // Turn 2: redLights + probe
+ // Turns 2-7: the machine's ways-in '{}' (falls through) then the generic
+ // probe (the red-light channel is cut — canon §10).
  '{}', 'What specifically about helping people feels meaningful?',
- // Turn 3: redLights + probe
- '{}', 'Tell me about one specific moment at the shelter that stands out.',
- // Turn 4: redLights + probe
+ '{}', 'Tell me about one specific moment at the shelter that stands out?',
  '{}', 'What was the hardest part of shifting from money to meaning?',
- // Turn 5: redLights + probe
  '{}', 'What does "connection" mean to you — can you give me an example?',
- // Turn 6: redLights + probe
  '{}', 'Has your mother\'s advice ever led you somewhere unexpected?',
- // Turn 7: redLights + probe — after this, questionCount hits 8, turn 8 close triggers (no complete)
  '{}', 'What would you say to someone facing the same choice today?',
- // End: propose — one call per user turn (ticket 034). Ten user turns: the
- // opener answer, six sequential answers, then the door and bookmark answers.
+ // End: propose — one call per user turn (ticket 034). Nine user turns: the
+ // greeting, the opener answer, six sequential answers, then the door answer.
  JSON.stringify({
   cuts: [
    { text: fullUserAnswer1, sourceTurn: 0, facet: 'intention', stance: 'avowal', reading: 'Career direction is an active concern', standalone: true },
@@ -637,12 +635,15 @@ const fullFlowScripted = [
    { text: fullUserSequential[0], sourceTurn: 0, facet: 'value', stance: 'commitment', reading: 'Values helping people directly', standalone: true },
   ],
  }),
- ...Array.from({ length: 8 }, () => JSON.stringify({ cuts: [] })),
- // Padding: post-harvest docket composeOpener calls
+ ...Array.from({ length: 7 }, () => JSON.stringify({ cuts: [] })),
+ // Padding: post-harvest docket composeOpener + context-line calls. The
+ // harvest's extraction consumes the next entries, then each post-harvest
+ // docket run composes lines for the newly kept passages.
  'padding a',
  'padding b',
  'padding c',
  'padding d',
+ ...Array.from({ length: 24 }, (_, i) => `a plain context line about the passage ${i}`),
 ];
 
 describe('full session with docket and juxtaposition', () => {
@@ -675,7 +676,6 @@ describe('full session with docket and juxtaposition', () => {
    complete,
    buildIndex: (snippets) => buildIndex(snippets),
    composeOpener,
-   composeStillTrue,
    listSessions: () => [{ session: 'prior-session', started: '2026-07-15T10:00:00.000Z', turnCount: 3, chars: 150 }],
    log: (e) => appendEvent(vaultDir, e as ActivityEvent),
    vaultRoot: vaultDir,
@@ -702,12 +702,12 @@ describe('full session with docket and juxtaposition', () => {
   rmSync(vaultDir, { recursive: true, force: true });
  });
 
- it('opens with composed opener, triggers juxtaposition, closes on budget, harvests, and queues bookmark', async () => {
+ it('opens with composed opener, triggers juxtaposition, closes on budget, harvests', async () => {
   // ── Step 1: Create session ──
   const sessionRes = await fetch(`${baseUrl}/api/session`, {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ mode: { minutes: 10, energy: 'medium' } }),
+   body: JSON.stringify({ mode: { target: 'self' } }),
   });
   expect(sessionRes.status).toBe(200);
   const { sessionId, question } = (await sessionRes.json()) as {
@@ -773,28 +773,17 @@ describe('full session with docket and juxtaposition', () => {
    }
   }
 
-  // ── Step 4: Answer close-door question ──
+  // ── Step 4: Answer close-door question → saturated ──
   const cdRes = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
    body: JSON.stringify({ text: 'This opens a path toward more intentional work.' }),
   });
   expect(cdRes.status).toBe(200);
-  const cdData = (await cdRes.json()) as { kind: string; phase?: { id: string; label: string; step: number; of: number } };
-  expect(cdData.kind).toBe('probe');
-  expect(cdData.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
+  const cdData = (await cdRes.json()) as { kind: string };
+  expect(cdData.kind).toBe('saturated');
 
-  // ── Step 5: Answer bookmark question → saturated ──
-  const bmRes = await fetch(`${baseUrl}/api/session/${sessionId}/turn`, {
-   method: 'POST',
-   headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ text: 'I want to explore how to align my daily work with my values.' }),
-  });
-  expect(bmRes.status).toBe(200);
-  const bmData = (await bmRes.json()) as { kind: string };
-  expect(bmData.kind).toBe('saturated');
-
-  // ── Step 6: End → harvest ──
+  // ── Step 5: End → harvest ──
   const endRes = await fetch(`${baseUrl}/api/session/${sessionId}/end`, {
    method: 'POST',
   });
@@ -820,16 +809,6 @@ describe('full session with docket and juxtaposition', () => {
   expect(snippets.length).toBe(2);
   await barrier.waitFor(settledBefore + 1);
 
-  // ── Step 7: GET /api/queue — should have user-declared entry from bookmark ──
-  const qRes = await fetch(`${baseUrl}/api/queue`);
-  expect(qRes.status).toBe(200);
-  const queueData = (await qRes.json()) as {
-   pending: Array<{ question: string; source: string }>;
-   open: Array<{ question: string; source: string; horizon: string }>;
-  };
-  const userDeclared = queueData.pending.find((e) => e.source === 'user-declared');
-  expect(userDeclared).toBeDefined();
-  expect(userDeclared!.question).toBe('I want to explore how to align my daily work with my values.');
  });
 });
 
@@ -1191,7 +1170,7 @@ const oneCut = JSON.stringify({
 /** A composed opener that quotes the snippet and sets the quote off, so it passes the gate. */
 const openerQuestion = 'You wrote about "my career direction." Has anything shifted since then?';
 
-const someMode = { minutes: 10, energy: 'medium', target: 'self' };
+const someMode = { target: 'self' };
 
 describe('docket off the response path', () => {
  let vaultDir: string;
@@ -1282,7 +1261,10 @@ describe('docket off the response path', () => {
    },
   };
 
-  const gate = gatedComplete([oneCut]);
+  // The boot docket's opener or context-line job consumes the first response
+  // (the context-lines job composes a line for the seeded passage — §11);
+  // the unprompted's harvest propose then needs the cuts JSON.
+  const gate = gatedComplete(['a context line for the career passage', oneCut, 'padding', 'padding']);
   const barrier = docketBarrier();
   const app = await createApp({
    vault,
@@ -1328,7 +1310,7 @@ describe('docket off the response path', () => {
   const vault = createVault(vaultDir);
   const at = new Date().toISOString();
   vault.startTranscript('prior-session', {
-   mode: { minutes: 10, energy: 'medium', target: 'self' },
+   mode: { target: 'self' },
    protocol: 'reflective',
    started: at,
   });
@@ -1622,24 +1604,30 @@ describe('clerk slice: harvest to claim to contradiction', () => {
  it('serves the whole wiki behind the route, and records a read', async () => {
   const res = await call(second.app, '/api/wiki');
   expect(res.status).toBe(200);
+  // The contextualizer shape (§11): passages grouped into neighborhoods —
+  // the claim apparatus receded, the passages are the kept snippets.
   const body = (await res.json()) as {
-   facets: Array<{ facet: string; heading: string; claims: Array<{ id: string; body: string }> }>;
+   neighborhoods: Array<{ name: string; passages: Array<{ id: string; prose: string }> }>;
    contradictions: unknown[];
-   lint: unknown[];
    lintedAt: string | null;
   };
-  const shown = body.facets.flatMap((f) => f.claims);
-  expect(shown.map((c) => c.body).sort()).toEqual([BODY_ONE, BODY_TWO].sort());
+  const shown = body.neighborhoods.flatMap((n) => n.passages);
+  const prose = shown.map((p) => p.prose);
+  expect(prose).toContain(PROSE_ONE);
+  expect(prose).toContain(PROSE_TWO);
   expect(body.contradictions.length).toBe(1);
   // "Looked and found nothing" must not render as "never looked".
   expect(body.lintedAt).not.toBeNull();
 
-  const claimId = shown[0]!.id;
-  const readRes = await call(second.app, `/api/wiki/claim/${claimId}/read`, { surface: 'wiki' });
+  // The dwell watch's read lands on the passage ledger (the claim routes are
+  // retained but the essay no longer renders claims — §11).
+  const passageId = shown[0]!.id;
+  const readRes = await call(second.app, `/api/wiki/passage/${passageId}/read`, { surface: 'wiki' });
   expect(readRes.status).toBe(200);
-  const onDisk = second.store.readClaim(claimId)!;
-  expect(onDisk.readLog.length).toBe(1);
-  expect(onDisk.readLog[0]!.surface).toBe('wiki');
+  const reads = readPassageReads(vaultDir);
+  expect(reads).toHaveLength(1);
+  expect(reads[0]!.passageId).toBe(passageId);
+  expect(reads[0]!.surface).toBe('wiki');
  });
 
  it('writes the wiki jobs’ events into the Activity Log file (ticket 063)', () => {
@@ -2005,10 +1993,12 @@ describe('clerk slice: the embedding channel sees claims minted this run (067)',
   const claims = store.loadSlice().claims;
   expect(claims.length).toBe(2);
 
-  // The pre-run prime saw an empty wiki. Everything embedded was embedded by
-  // job 1.5, after the sweep, and only what the sweep touched.
-  expect(embedded.length).toBe(1);
+  // The pre-run prime saw an empty wiki. Job 1.5 embeds what the sweep
+  // touched (the two claims); the coverage job (§12, job 10a) then embeds
+  // the full corpus — the same two passages — as its coverage pass.
+  expect(embedded.length).toBe(2);
   expect(embedded[0]!.length).toBe(2);
+  expect(embedded[1]!.length).toBe(2);
 
   // Ticket 118: graduated live — no shadow records from this channel.
   const shadow = readEvents(vaultDir).filter(

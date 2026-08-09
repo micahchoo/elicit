@@ -82,8 +82,8 @@ const SAY_INTENTS: readonly SayIntent[] = [
 
 const SCOPES: readonly Scope[] = [
  'queue', 'wiki', 'wiki-all', 'snippets', 'pieces', 'piece', 'piece-export',
- 'harvest-queue', 'harvest', 'import-next', 'import-survey', 'reach',
- 'coach-waiting', 'coach', 'cadence', 'anniversary', 'activity', 'auth-status',
+ 'harvest-queue', 'harvest', 'import-next', 'import-survey',
+ 'coach-waiting', 'coach', 'cadence', 'activity', 'auth-status',
  'stt-status',
 ];
 
@@ -95,15 +95,15 @@ const VERBS_BY_KIND: Record<ReKind, readonly VerbName[]> = {
  parked: [],
  drm: ['drm-start', 'drm-episode', 'drm-enumerate-done', 'drm-gate'],
  harvest: ['approve', 'trim', 'discard', 'commit'],
- import: ['scan', 'survey', 'declare-region', 'decline-reach'],
+ import: ['scan', 'survey', 'declare-region'],
  'import-piece': ['import-approve', 'import-trim', 'import-discard', 'import-commit'],
- piece: ['reorder', 'choose', 'arrangements', 'gap', 'gap-accept', 'remove', 'set-down', 'pick-up', 'compose'],
+ piece: ['reorder', 'gap', 'gap-accept', 'remove', 'set-down', 'pick-up', 'compose'],
  wiki: [],
  claim: ['read', 'attest', 'challenge'],
  coach: ['coach', 'uncoach', 'decline-offer', 'adopt', 'decline-option', 'coach-read'],
  quest: ['retire'],
  queue: [],
- waiting: ['decline-reach'],
+ waiting: [],
 };
 
 /** The say intents each context accepts, in the order the spec lists them. */
@@ -473,9 +473,10 @@ export function createV2App(deps: V2Deps): Hono {
      // envelope says what may be done to it and nothing it cannot know.
      return c.json(envelope(re, { view: { verbs }, notices: ['the sitting is open — answer with say'] }));
     }
+    // The server defaults an absent mode to target 'self' (canon §5.2) — no
+    // mode is required to open a sitting, and minutes/energy are not declared.
     const mode = request.mode;
-    if (mode === undefined) throw new Fault('bad-request', 'mode is required to open a sitting');
-    const opened = await bodyOf(await hit(c, 'POST', '/api/session', { body: { mode } }));
+    const opened = await bodyOf(await hit(c, 'POST', '/api/session', { body: mode === undefined ? {} : { mode } }));
     const id = need(str(opened.sessionId), 'the minted sitting id');
     const pulsePrompt = str(opened.pulsePrompt);
     if (pulsePrompt !== undefined) pulsePrompts.set(id, pulsePrompt);
@@ -494,9 +495,10 @@ export function createV2App(deps: V2Deps): Hono {
     // addresses a parked descent by its queue entry alone. So opening one
     // opens the sitting first: the envelope echoes the sitting, because that
     // is what every following say and act addresses.
+    // Same default as the sitting case: the server supplies target 'self'
+    // when no mode is given.
     const mode = request.mode;
-    if (mode === undefined) throw new Fault('bad-request', 'mode is required — a parked descent resumes inside a sitting');
-    const opened = await bodyOf(await hit(c, 'POST', '/api/session', { body: { mode } }));
+    const opened = await bodyOf(await hit(c, 'POST', '/api/session', { body: mode === undefined ? {} : { mode } }));
     const id = need(str(opened.sessionId), 'the minted sitting id');
     const body = { queueEntryId: re.queueEntryId };
     const sounding = await hit(c, 'POST', `/api/session/${encodeURIComponent(id)}/sounding/resume`, { body });
@@ -539,16 +541,16 @@ export function createV2App(deps: V2Deps): Hono {
     return c.json(envelope(re, { view: withVerbs(await bodyOf(res)) }));
    }
    case 'claim': {
-    // No read-one-claim route exists; the page is the surface, so the claim
-    // is found in it. `?all=1` so an archived or superseded claim still opens.
-    const page = await bodyOf(await hit(c, 'GET', '/api/wiki?all=1', { pure: true }));
-    const facets = Array.isArray(page.facets) ? (page.facets as Record<string, unknown>[]) : [];
-    for (const facet of facets) {
-     const claims = Array.isArray(facet.claims) ? (facet.claims as Record<string, unknown>[]) : [];
-     const found = claims.find((cl) => str(cl.id) === re.id);
-     if (found !== undefined) return c.json(envelope(re, { view: { verbs, claim: found } }));
-    }
-    throw new Fault('not-found', 'unknown claim');
+    // Batch B (§11): the contextualizer page carries no claims, so the
+    // read-one route is the seam the page used to be. `?all=1` mattered
+    // because the page hid archived claims; a read-one route serves the
+    // vault directly, archived included.
+    const res = await hit(c, 'GET', `/api/wiki/claim/${encodeURIComponent(re.id)}`, { pure: true });
+    if (!res.ok) throw faultFor(res.status, await res.json().catch(() => null), false);
+    const body = await bodyOf(res);
+    const found = obj(body.claim);
+    if (found === undefined) throw new Fault('not-found', 'unknown claim');
+    return c.json(envelope(re, { view: { verbs, claim: found } }));
    }
    case 'coach': {
     if (re.slug === undefined) {
@@ -562,15 +564,14 @@ export function createV2App(deps: V2Deps): Hono {
     return c.json(envelope(re, { view: withVerbs(await bodyOf(res)) }));
    }
    case 'waiting': {
-    // The waiting surface is four reads the SPA renders as one page. Every
+    // Two reads the SPA renders as one page (the reach and anniversary
+    // offers died with the zero-output sweeps, ruling 2026-08-09). Every
     // one of them is dispatched pure — opening this page evaluates nothing.
-    const [coach, reach, cadence, anniversary] = await Promise.all([
+    const [coach, cadence] = await Promise.all([
      bodyOf(await hit(c, 'GET', '/api/coach/waiting', { pure: true })),
-     bodyOf(await hit(c, 'GET', '/api/reach', { pure: true })),
      bodyOf(await hit(c, 'GET', '/api/cadence', { pure: true })),
-     bodyOf(await hit(c, 'GET', '/api/anniversary', { pure: true })),
     ]);
-    return c.json(envelope(re, { view: { verbs, coach, reach, cadence, anniversary } }));
+    return c.json(envelope(re, { view: { verbs, coach, cadence } }));
    }
    case 'quest':
    case 'unprompted':
@@ -675,9 +676,8 @@ export function createV2App(deps: V2Deps): Hono {
    }
    case 'prose': {
     const id = need(re.kind === 'piece' ? re.id : undefined, 'the piece id');
-    const arrangement = need(str(meta.arrangement), 'meta.arrangement');
     const after = str(meta.after);
-    const body = { arrangement, text, ...(after !== undefined ? { after } : {}) };
+    const body = { text, ...(after !== undefined ? { after } : {}) };
     return answer(await step(c, 'POST', `/api/piece/${encodeURIComponent(id)}/prose`, { body }));
    }
   }
@@ -808,24 +808,20 @@ export function createV2App(deps: V2Deps): Hono {
    }
    case 'reorder':
     return post(`/api/piece/${encodeURIComponent(piece())}/reorder`, {
-     arrangement: verb.arrangement,
      entries: verb.entries,
     });
    case 'remove':
     return post(`/api/piece/${encodeURIComponent(piece())}/remove`, {
-     arrangement: verb.arrangement,
      entry: verb.entry,
     });
    case 'gap':
     return post(`/api/piece/${encodeURIComponent(piece())}/gap`, {
-     arrangement: verb.arrangement,
      gap: verb.gap,
      ...(verb.question !== undefined ? { question: verb.question } : {}),
      ...(verb.after !== undefined ? { after: verb.after } : {}),
     });
    case 'gap-accept':
     return post(`/api/piece/${encodeURIComponent(piece())}/gap/accept`, {
-     arrangement: verb.arrangement,
      gap: verb.gap,
      snippet: verb.snippet,
      version: verb.version,
@@ -834,10 +830,6 @@ export function createV2App(deps: V2Deps): Hono {
     return post(`/api/piece/${encodeURIComponent(piece())}/set-down`);
    case 'pick-up':
     return post(`/api/piece/${encodeURIComponent(piece())}/pick-up`);
-   case 'arrangements':
-    return post(`/api/piece/${encodeURIComponent(piece())}/arrangements`);
-   case 'choose':
-    return post(`/api/piece/${encodeURIComponent(piece())}/choose`, { arrangement: verb.arrangement });
 
    // ── import ──
    case 'scan':
@@ -909,9 +901,6 @@ export function createV2App(deps: V2Deps): Hono {
    case 'retire':
     return post(`/api/coach/quest/${encodeURIComponent(re.kind === 'quest' ? re.id : '')}/retire`);
 
-   // ── reach ──
-   case 'decline-reach':
-    return post('/api/reach/decline', { path: verb.path });
   }
  });
 
@@ -956,11 +945,9 @@ export function createV2App(deps: V2Deps): Hono {
      return `/api/import/next${region !== undefined ? `?region=${encodeURIComponent(region)}` : ''}`;
     }
     case 'import-survey': return `/api/import/survey?folder=${encodeURIComponent(need(q('folder'), 'folder'))}`;
-    case 'reach': return '/api/reach';
     case 'coach-waiting': return '/api/coach/waiting';
     case 'coach': return `/api/coach/${encodeURIComponent(need(q('slug'), 'slug'))}`;
     case 'cadence': return '/api/cadence';
-    case 'anniversary': return '/api/anniversary';
     case 'auth-status': return '/api/auth/status';
     default: return '/api/stt/status';
    }

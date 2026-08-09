@@ -2,9 +2,9 @@
  * The entry license (soundings slice, Task 2).
  *
  * A Sounding is offered, never auto-entered, and the offer itself must pass
- * four mechanical checks — late enough in the sitting, an energetic mode,
- * three user turns on one thread, no offer already made this sitting.
- * Nothing here involves a model.
+ * three mechanical checks — late enough in the sitting, three user turns on
+ * one thread, no offer already made this sitting. Nothing here involves a
+ * model.
  */
 
 import { describe, expect, test } from 'vitest';
@@ -21,13 +21,11 @@ import { makeScriptedComplete } from './fakes.js';
  */
 function sitting(opts: {
   questionCount: number;
-  minutes: number;
-  energy: 'low' | 'medium' | 'high';
   userTurns: string[];
   soundingOffer?: 'offered' | 'declined' | 'entered';
-  phase?: 'open' | 'mid' | 'closing-door' | 'closing-bookmark';
+  phase?: 'open' | 'mid' | 'closing-door';
 }): SessionState {
-  const { questionCount, minutes, energy, userTurns, soundingOffer, phase = 'mid' } = opts;
+  const { questionCount, userTurns, soundingOffer, phase = 'mid' } = opts;
   const turns: Turn[] = [];
   userTurns.forEach((text, i) => {
     turns.push({
@@ -39,7 +37,7 @@ function sitting(opts: {
   });
   return {
     id: `sitting-${questionCount}`,
-    mode: { minutes, energy },
+    mode: { target: 'self' },
     protocol: 'cdm',
     deps: {
       complete: makeScriptedComplete([]),
@@ -65,53 +63,46 @@ function threeOnOneThread(): string[] {
 
 describe('the entry license', () => {
   test('an early sitting is not licensed, however good the thread', () => {
-    const s = sitting({ questionCount: 2, minutes: 20, energy: 'high', userTurns: threeOnOneThread() });
+    const s = sitting({ questionCount: 2, userTurns: threeOnOneThread() });
     expect(licenseSounding(s).licensed).toBe(false);
     expect(licenseSounding(s).reasons.late).toBe(false);
   });
 
   test('a sitting at questionCount 6 is late — re-derived 2026-08-05 (gate-repair)', () => {
-    const s = sitting({ questionCount: 6, minutes: 20, energy: 'high', userTurns: threeOnOneThread() });
+    const s = sitting({ questionCount: 6, userTurns: threeOnOneThread() });
     const v = licenseSounding(s);
     expect(v.reasons.late).toBe(true);
-    expect(v.licensed).toBe(true); // late + energy + sustained + unoffered
+    expect(v.licensed).toBe(true); // late + sustained + unoffered
   });
   test('a sitting already in its close is not licensed either', () => {
-    // Phase guard: closing-door and closing-bookmark are excluded from late.
-    const s = sitting({ questionCount: 18, minutes: 20, energy: 'high', userTurns: threeOnOneThread(), phase: 'closing-door' });
+    // Phase guard: the closing-door phase is excluded from late.
+    const s = sitting({ questionCount: 18, userTurns: threeOnOneThread(), phase: 'closing-door' });
     expect(licenseSounding(s).reasons.late).toBe(false);
-  });
-
-  test('a low-energy mode is not licensed', () => {
-    const s = sitting({ questionCount: 12, minutes: 20, energy: 'low', userTurns: threeOnOneThread() });
-    expect(licenseSounding(s).reasons.energy).toBe(false);
   });
 
   test('three turns that share no vocabulary are not a sustained thread', () => {
     const s = sitting({
       questionCount: 12,
-      minutes: 20,
-      energy: 'high',
       userTurns: ['I cycle to work', 'My sister called', 'Rain again'],
     });
     expect(licenseSounding(s).reasons.sustained).toBe(false);
   });
 
-  test('late, energetic, three turns on one thread, never offered — licensed', () => {
-    const s = sitting({ questionCount: 12, minutes: 20, energy: 'high', userTurns: threeOnOneThread() });
+  test('late, three turns on one thread, never offered — licensed', () => {
+    const s = sitting({ questionCount: 12, userTurns: threeOnOneThread() });
     const v = licenseSounding(s);
     expect(v.licensed).toBe(true);
     expect(v.construct).toBeTruthy();
   });
 
   test('a decline is never re-licensed in the same sitting', () => {
-    const s = sitting({ questionCount: 12, minutes: 20, energy: 'high', userTurns: threeOnOneThread(), soundingOffer: 'declined' });
+    const s = sitting({ questionCount: 12, userTurns: threeOnOneThread(), soundingOffer: 'declined' });
     expect(licenseSounding(s).licensed).toBe(false);
     expect(licenseSounding(s).reasons.unoffered).toBe(false);
   });
 
   test('an accepted offer is not re-licensed either', () => {
-    const s = sitting({ questionCount: 12, minutes: 20, energy: 'high', userTurns: threeOnOneThread(), soundingOffer: 'entered' });
+    const s = sitting({ questionCount: 12, userTurns: threeOnOneThread(), soundingOffer: 'entered' });
     expect(licenseSounding(s).licensed).toBe(false);
   });
 });

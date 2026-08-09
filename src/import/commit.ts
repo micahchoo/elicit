@@ -241,7 +241,7 @@ export function commitImport(
   const started = `${record.date}T00:00:00.000Z`;
 
   deps.vault.startTranscript(sessionId, {
-    mode: { minutes: 0, energy: 'medium' },
+    mode: { target: 'self' },
     protocol: 'import',
     started,
   });

@@ -139,15 +139,8 @@ async function post<T>(app: Hono, path: string, body?: unknown): Promise<T> {
  return (await res.json()) as T;
 }
 
-async function newSession(
- app: Hono,
- extra?: { protocol?: string },
-): Promise<string> {
- const body: { mode: { minutes: number; energy: string; topic: string }; protocol?: string } = {
-  mode: { minutes: 20, energy: 'medium', topic: 'the orchard' },
- };
- if (extra?.protocol !== undefined) body.protocol = extra.protocol;
- const res = await post<SessionResponse>(app, '/api/session', body);
+async function newSession(app: Hono): Promise<string> {
+ const res = await post<SessionResponse>(app, '/api/session', {});
  expect(res.sessionId).toBeTruthy();
  return res.sessionId;
 }
@@ -171,7 +164,7 @@ async function probeEpisode(app: Hono, id: string, answers: string[]): Promise<D
 describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
  it('walks start → blocks → enumerate-done → probes → gate → close, shapes intact', async () => {
   const { app, root } = await makeApp([]);
-  const id = await newSession(app, { protocol: 'drm' });
+  const id = await newSession(app);
 
   // start: the machine begins at the day-map phase
   const start = await post<DrmStartResponse>(app, `/api/session/${id}/drm/start`);
@@ -244,7 +237,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
  it('guards the flow: start twice, empty day, wrong phase, bad words', async () => {
   const { app } = await makeApp([]);
-  const id = await newSession(app, { protocol: 'drm' });
+  const id = await newSession(app);
 
   const first = await post<DrmStartResponse>(app, `/api/session/${id}/drm/start`);
   expect(first.kind).toBe('drm-enumerate');
@@ -252,7 +245,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
   expect(again.error).toBe('DRM already running');
 
   // a second sitting with no drm running: every route refuses
-  const other = await newSession(app, { protocol: 'reflective' });
+  const other = await newSession(app);
   expect((await post<{ error: string }>(app, `/api/session/${other}/drm/episode`, { name: 'x', startHour: 8 })).error).toBe('no DRM running');
   expect((await post<{ error: string }>(app, `/api/session/${other}/drm/probe`, { text: 'x' })).error).toBe('no DRM running');
   expect((await post<{ error: string }>(app, `/api/session/${other}/drm/gate`, { choice: 'continue' })).error).toBe('no DRM running');
@@ -260,12 +253,12 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
   // an empty day cannot move to probes (the route preserves the old
   // String(e) wire form)
-  const empty = await newSession(app, { protocol: 'drm' });
+  const empty = await newSession(app);
   await post<DrmStartResponse>(app, `/api/session/${empty}/drm/start`);
   expect((await post<{ error: string }>(app, `/api/session/${empty}/drm/enumerate-done`)).error).toBe('Error: Name at least one episode');
 
   // the machine's phase guards the routes after enumeration
-  const mid = await newSession(app, { protocol: 'drm' });
+  const mid = await newSession(app);
   await post<DrmStartResponse>(app, `/api/session/${mid}/drm/start`);
   await post<DrmEpisodeResponse>(app, `/api/session/${mid}/drm/episode`, { name: 'morning coffee', startHour: 7 });
   await post<DrmProbeResponse>(app, `/api/session/${mid}/drm/enumerate-done`);
@@ -278,9 +271,14 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
  it('carries the renderer on the turn-response phase meta during enumeration', async () => {
   // The /turn route's machine question for a drm sitting sits in the
-  // enumerate phase: the phase meta declares the day-map renderer.
-  const { app } = await makeApp(['What block of yesterday would you start with?']);
-  const id = await newSession(app, { protocol: 'drm' });
+  // enumerate phase: the phase meta declares the day-map renderer. The
+  // sitting opens with the rotated protocol (reflective); drm/start runs
+  // the drm machine. The machine serves at P3 (reflective sittings run
+  // P1/P2 first), so the script answers the red-light pass then the
+  // machine's enumerate question.
+  const { app } = await makeApp(['{}', 'What block of yesterday would you start with?']);
+  const id = await newSession(app);
+  await post<DrmStartResponse>(app, `/api/session/${id}/drm/start`);
 
   const turn = await post<TurnResponse>(app, `/api/session/${id}/turn`, { text: 'I remember the morning most clearly.' });
   expect(turn.kind).toBe('probe');
@@ -289,7 +287,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
  it('park writes the machine record; resume continues the exact phase and ui', async () => {
   const { app, root, queue } = await makeApp([]);
-  const parked = await newSession(app, { protocol: 'drm' });
+  const parked = await newSession(app);
   await post<DrmStartResponse>(app, `/api/session/${parked}/drm/start`);
   await post<DrmEpisodeResponse>(app, `/api/session/${parked}/drm/episode`, { name: 'morning coffee', startHour: 7 });
   await post<DrmEpisodeResponse>(app, `/api/session/${parked}/drm/episode`, { name: 'commute', startHour: 8 });
@@ -321,7 +319,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
   // Resume into a fresh (reflective) sitting: the exact phase and ui
   // continue — episode 2's place probe, not a restart.
-  const resumedSession = await newSession(app, { protocol: 'reflective' });
+  const resumedSession = await newSession(app);
   const resumed = await post<DrmProbeResponse>(app, `/api/session/${resumedSession}/drm/resume`, {
    queueEntryId: pointer.id,
   });
@@ -374,12 +372,11 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
    license: 'user',
    question: 'DRM: morning coffee',
    questionForm: 'deliberative',
-   sharpness: 'weak',
    horizon: 'session',
    drmId: legacy.id,
   });
 
-  const id = await newSession(app, { protocol: 'reflective' });
+  const id = await newSession(app);
   const resumed = await post<DrmProbeResponse>(app, `/api/session/${id}/drm/resume`, {
    queueEntryId: pointer.id,
   });
@@ -399,14 +396,14 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
   // phase. The drm resume advances that record to the probes — the day
   // was mapped as far as it went — instead of stranding the walk.
   const { app, queue } = await makeApp([]);
-  const parked = await newSession(app, { protocol: 'drm' });
+  const parked = await newSession(app);
   await post<DrmStartResponse>(app, `/api/session/${parked}/drm/start`);
   await post<DrmEpisodeResponse>(app, `/api/session/${parked}/drm/episode`, { name: 'morning coffee', startHour: 7 });
   const gate = await post<{ kind: string; phase: string }>(app, `/api/session/${parked}/gate`, { choice: 'park' });
   expect(gate.kind).toBe('door');
 
   const pointer = queue.list({ source: 'parked-machine' })[0]!;
-  const id = await newSession(app, { protocol: 'reflective' });
+  const id = await newSession(app);
   const resumed = await post<DrmProbeResponse>(app, `/api/session/${id}/drm/resume`, { queueEntryId: pointer.id });
   expect(resumed.kind).toBe('drm-probe');
   expect(resumed.episode).toBe(1);
@@ -422,7 +419,7 @@ describe('the five drm routes on the machine (ticket 159, slice 6)', () => {
 
  it('404s a resume that names no parked DRM', async () => {
   const { app } = await makeApp([]);
-  const id = await newSession(app, { protocol: 'drm' });
+  const id = await newSession(app);
   const res = await post<{ error: string }>(app, `/api/session/${id}/drm/resume`, { queueEntryId: 'no-such-entry' });
   expect(res.error).toBe('no parked DRM with that id');
  });

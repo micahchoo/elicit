@@ -48,7 +48,6 @@ function buildPatternDraft(
       return parts ? `${parts.snippetId}@${parts.version}` : ref;
     }),
     quotedFragment: longest.text,
-    sharpness: 'weak',
     horizon: 'session',
     patternId: pattern.id,
     derivedFrom,

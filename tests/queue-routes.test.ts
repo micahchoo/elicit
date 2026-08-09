@@ -54,7 +54,6 @@ function makeDraft(overrides?: Partial<QueueDraft>): QueueDraft {
   license: 'test-license',
   question: 'What do you think about X?',
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'now',
   ...overrides,
  };

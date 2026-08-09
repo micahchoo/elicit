@@ -103,7 +103,6 @@ describe('gazetteer frontier sweep', () => {
       license: 'test',
       question: 'Tell me about Alice',
       questionForm: 'deliberative',
-      sharpness: 'weak',
       horizon: 'session',
       subjects: ['person-alice'],
     });

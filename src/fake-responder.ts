@@ -30,7 +30,7 @@ export type RecordingFakeComplete = Complete & { calls: FakeCall[] };
  */
 export function makeFakeComplete(): RecordingFakeComplete {
  const probes = [
-  'Tell me more about that.',
+  'Tell me more about that?',
   'What else comes to mind?',
   'How does that feel, specifically?',
   'Can you give me a concrete example?',

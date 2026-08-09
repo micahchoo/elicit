@@ -94,7 +94,7 @@ describe('the usage stamp — a randomizer draw that was served', () => {
   // a curated card, not a claim or snippet, so it must leave no stamp.
   let saw = false;
   for (let i = 0; i < 24; i++) {
-   const res = await session(app, { mode: { minutes: 25, energy: 'medium' }, shuffle: true });
+   const res = await session(app, { mode: {}, shuffle: true });
    expect(res.status).toBe(200);
    const body = await res.json();
    if (body.source === 'resurfacing') {
@@ -113,7 +113,7 @@ describe('the usage stamp — a randomizer draw that was served', () => {
 });
 
 describe('the usage stamp — the wiki reading surface', () => {
- it('stamps each served claim with its cited snippets, and nothing it did not serve', async () => {
+ it('stamps each served passage, and nothing it did not serve', async () => {
   const root = mkdtempSync(join(tmpdir(), 'elicit-surfaced-wiki-'));
   roots.push(root);
   const vault = createVault(root);
@@ -151,28 +151,32 @@ describe('the usage stamp — the wiki reading surface', () => {
   });
   expect(res.status).toBe(200);
 
-  // The default reading serves one live claim: the archived one is not on
-  // the surface, so it is not usage.
+  // The contextualizer (Batch B): the page serves every passage, claims
+  // recede entirely, so the stamp is one line per passage — its id, never
+  // a claim id or cite. The archived claim is not on the surface at all,
+  // and neither is it usage.
   const stamped = readEvents(root).filter((e) => e.kind === 'surfaced');
-  expect(stamped).toHaveLength(1);
+  expect(stamped).toHaveLength(2);
   expect(stamped[0]!.actor).toBe('system');
   expect(stamped[0]!.detail).toBe('surface=wiki');
-  expect(stamped[0]!.refs).toEqual(['hub', `${snips[0]!.id}@1`, `${snips[1]!.id}@1`]);
+  const refs = stamped.map((e) => e.refs).sort();
+  expect(refs).toEqual([[snips[0]!.id], [snips[1]!.id]].sort());
 
-  // ?all=1 serves the whole record: the archived claim surfaces too.
+  // ?all=1 serves the same passages view — the whole record is on the page
+  // by construction, nothing extra to surface.
   const all = await app.fetch(new Request('http://127.0.0.1/api/wiki?all=1'), {
    remoteAddr: '127.0.0.1',
   });
   expect(all.status).toBe(200);
   const allStamped = readEvents(root).filter((e) => e.kind === 'surfaced');
-  expect(allStamped).toHaveLength(3);
-  // The served order is coreness then id, so assert the multiset of refs.
-  const refs = allStamped.map((e) => e.refs).sort();
-  expect(refs).toEqual([
-   ['gone', `${snips[0]!.id}@1`],
-   ['hub', `${snips[0]!.id}@1`, `${snips[1]!.id}@1`],
-   ['hub', `${snips[0]!.id}@1`, `${snips[1]!.id}@1`],
-  ]);
+  expect(allStamped).toHaveLength(4);
+  const allRefs = allStamped.map((e) => e.refs).sort();
+  expect(allRefs).toEqual([
+   [snips[0]!.id],
+   [snips[0]!.id],
+   [snips[1]!.id],
+   [snips[1]!.id],
+  ].sort());
  });
 });
 
@@ -197,7 +201,6 @@ describe('the usage stamp — a composed question that was served', () => {
    questionForm: 'deliberative',
    cites: [`${snip.id}@1`],
    quotedFragment: 'the ferry timetable changed in April',
-   sharpness: 'weak',
    horizon: 'session',
   });
   const app = await createApp({
@@ -209,7 +212,7 @@ describe('the usage stamp — a composed question that was served', () => {
    authStore: createFileAuth(join(root, '.auth.json')),
   });
 
-  const res = await session(app, { mode: { minutes: 25, energy: 'medium' } });
+  const res = await session(app, { mode: {} });
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(String(body.question)).toContain('still describe your spring');
@@ -243,7 +246,7 @@ describe('the usage stamp — a composed question that was served', () => {
 
   // The opening finds an empty queue, so the bank opener is served and
   // nothing stamps.
-  const opened = await session(app, { mode: { minutes: 25, energy: 'medium' } });
+  const opened = await session(app, { mode: {} });
   expect(opened.status).toBe(200);
   const { sessionId } = (await opened.json()) as { sessionId: string };
   expect(readEvents(root).filter((e) => e.kind === 'surfaced')).toHaveLength(0);
@@ -256,7 +259,6 @@ describe('the usage stamp — a composed question that was served', () => {
    questionForm: 'deliberative',
    cites: [`${snip.id}@1`],
    quotedFragment: 'honesty cost me something',
-   sharpness: 'weak',
    horizon: 'session',
   });
 

@@ -109,7 +109,6 @@ export function runGazetteerFrontier(deps: {
       license: 'frontier — entity mentioned often, never asked about',
       question,
       questionForm: 'deliberative',
-      sharpness: 'weak',
       horizon: 'session',
       subjects: [entity.id],
     };

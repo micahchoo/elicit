@@ -8,6 +8,14 @@
  --border: #e0e0dc;
  --accent: #555;
  --warn: #9a4b38;
+ /* wave-6 additions: the ink ladder's missing steps, the error red, and
+    --fg-dim, the dim foreground the focus/date rules already referenced
+    (it was undefined — two rules named it, no rule defined it). */
+ --warn-red: #c44;
+ --fg-dim: #6e6e6e;
+ --ink-stand: #3f3f3f;
+ --ink-aside: #8f8f8f;
+ --hairline: #c9c9c4;
  --font-serif: 'Charter', 'Georgia', serif;
  --font-mono: 'SF Mono', 'Consolas', monospace;
  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -15,6 +23,29 @@
  --max-w: 38rem;
  --pad: 1.25rem;
  --touch-min: 44px;
+}
+
+/* ── dark theme (wave 6): prefers-color-scheme remaps the TOKEN VALUES —
+   the token set is the design contract, so there are no class-level dark
+   overrides. The two-ink hierarchy inverts: full ink goes near-white
+   (--fg), the dim steps fall away from it in order (--ink-stand →
+   --fg-dim → --dim → --ink-aside), and the status hues lighten for
+   contrast on the dark paper (--accent, --warn, --warn-red). The borders
+   darken so a hairline still reads as a hairline on the dark ground. */
+@media (prefers-color-scheme: dark) {
+ :root {
+  --bg: #1e1d1a;
+  --fg: #e8e6e0;
+  --dim: #8a8a84;
+  --border: #3f3f3b;
+  --accent: #b8b6b0;
+  --warn: #c86b52;
+  --warn-red: #d97a66;
+  --fg-dim: #9c9a94;
+  --ink-stand: #c4c2bc;
+  --ink-aside: #75756f;
+  --hairline: #3a3a36;
+ }
 }
 
 *,
@@ -71,21 +102,14 @@ main {
  color: inherit;
 }
 
-.topnav .wordmark {
- color: var(--fg);
- text-decoration: none;
-}
-
 .topnav a.here {
  color: var(--fg);
  text-decoration: none;
 }
 
-.topnav-count {
- color: var(--warn);
- font-size: 0.7rem;
- vertical-align: super;
- margin-left: 0.25rem;
+/* The room: the way back into a sitting, right-anchored, lit while open. */
+.topnav .room-indicator {
+ margin-left: auto;
 }
 
 /* The session clock: the exchange's declared minutes, quiet in the shell. */
@@ -319,8 +343,6 @@ main {
  font-size: 0.75rem;
  font-weight: 500;
  color: var(--dim);
- text-transform: uppercase;
- letter-spacing: 0.08em;
  margin-bottom: 0.75rem;
 }
 
@@ -847,7 +869,7 @@ main {
 }
 
 .proposal-action.discard:hover {
- border-color: #c44;
+ border-color: var(--warn-red);
 }
 
 /* trim editor */
@@ -942,8 +964,6 @@ main {
  font-size: 0.75rem;
  font-weight: 500;
  color: var(--dim);
- text-transform: uppercase;
- letter-spacing: 0.08em;
  margin-bottom: 0.75rem;
 }
 
@@ -1172,8 +1192,9 @@ main {
  cursor: default;
 }
 
-.harvest-queue-date {
- color: var(--accent);
+.harvest-queue-headline {
+ font-size: 0.85rem;
+ font-weight: 600;
 }
 
 .harvest-queue-meta {
@@ -1287,7 +1308,7 @@ main {
 }
 
 .error-msg {
- color: #c44;
+ color: var(--warn-red);
  font-size: 0.85rem;
  font-family: var(--font-ui);
 }
@@ -1421,6 +1442,116 @@ main {
  .quiet-error {
   font-size: 0.8rem;
   line-height: 1.4;
+ }
+}
+
+/* ── phone pass, wave 6 (canon §7): the touch targets the Q-26 query
+   left out. Every interactive element below gets min-height/min-width
+   44px (--touch-min) or adequate padding. The .import-cut spans inside
+   the reading keep their inline hit area on purpose: expanding their box
+   would reflow every line of the reading on a phone — the verb cluster
+   they reveal is the 44px target. */
+@media (max-width: 600px) {
+
+ .harvest-queue-row {
+  min-height: var(--touch-min);
+ }
+
+ .protocol-option {
+  min-height: var(--touch-min);
+  align-items: center;
+ }
+
+ .triad-chip {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+ }
+
+ .import-verb,
+ .import-add-toggle,
+ .import-addition-remove,
+ .import-add-confirm,
+ .import-decide-all-btn,
+ .import-back,
+ .coach-word {
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.25rem;
+ }
+
+ .import-trim-confirm,
+ .import-restate-confirm,
+ .import-exclude-confirm {
+  min-height: var(--touch-min);
+  padding: 0.5rem 0.75rem;
+ }
+
+ .import-save {
+  min-height: var(--touch-min);
+  padding: 0.6rem 1.25rem;
+ }
+
+ .direction-door {
+  min-height: var(--touch-min);
+  align-items: center;
+ }
+
+ .piece-offer {
+  min-height: var(--touch-min);
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0;
+ }
+
+ .survey-node {
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+ }
+
+ .survey-author {
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+ }
+
+ .sweep-backlog-line.pressable {
+  min-height: var(--touch-min);
+  display: flex;
+  align-items: center;
+ }
+
+ .room-declaration {
+  min-height: var(--touch-min);
+  display: flex;
+  align-items: center;
+ }
+
+ .today-begin-btn {
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+ }
+
+ /* The mic's thumb reach: room.ts scrolls the textarea to viewport CENTER,
+    which parks the mic mid-screen — out of a one-handed thumb's arc.
+    Sticky bottom pins the composer row (textarea · mic · send — and the
+    blank page's mic row) just above the viewport bottom while the
+    transcript above is read, so the mic stays reachable. Least invasive:
+    one rule, no DOM change; the row still sits in flow at the end of the
+    page when scrolled fully down. The paper background keeps the pinned
+    bar from showing the transcript scrolling behind it. */
+ .room .answer-row,
+ .room .blank-page-controls {
+  position: sticky;
+  bottom: 0.75rem;
+  background: var(--bg);
+  z-index: 5;
  }
 }
 
@@ -1622,12 +1753,12 @@ main {
 
 [data-ink='opening'] .claim-sentence,
 [data-ink='opening'] .exhibit-pole {
- color: #6e6e6e;
+ color: var(--fg-dim);
 }
 
 [data-ink='standing'] .claim-sentence,
 [data-ink='standing'] .exhibit-pole {
- color: #3f3f3f;
+ color: var(--ink-stand);
 }
 
 /* Contested is not a demotion and not a warning. The sentence keeps its ink;
@@ -1635,12 +1766,12 @@ main {
    the exhibit further down is where the something is. No word, no colour. */
 [data-ink='facing'] .claim-sentence,
 [data-ink='facing'] .exhibit-pole {
- color: #3f3f3f;
+ color: var(--ink-stand);
 }
 
 .wiki-claim[data-ink='facing'],
 .wiki-exhibit[data-ink='facing'] {
- border-left: 1px solid #c9c9c4;
+ border-left: 1px solid var(--hairline);
  padding-left: 1rem;
  margin-left: -1rem;
 }
@@ -1654,7 +1785,7 @@ main {
 /* Set aside — kept, never deleted, and only visible under the wider reading. */
 [data-ink='aside'] .claim-sentence,
 [data-ink='aside'] .exhibit-pole {
- color: #8f8f8f;
+ color: var(--ink-aside);
  font-style: italic;
 }
 
@@ -2165,11 +2296,31 @@ main {
    The document rule, applied: two screens, both one column, no chrome.
    The material screen is a stack of dated paragraphs; the piece screen IS
    the arrangement. No card, no handle, no per-row control anywhere below.
+
+   The arrangement uses the HTML5 drag-and-drop API, which is mouse-only:
+   a touch device can read and edit the piece but cannot drag it into a
+   new order. Wave 6 records this as a known phone limitation — touch
+   reorder is out of scope (the paragraphs stay tappable, and the
+   margin words still work; only the drag itself is desktop-only).
 */
 
 .material-nav,
 .piece-toolbar {
  padding-bottom: 0.25rem;
+}
+
+/* the gathering criterion line (redesign §5): the person's words for what
+   the lit passages are about; carried into the composition, never exported */
+.library-subject {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ background: transparent;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ color: var(--fg);
+ outline: none;
+ padding: 0.2rem 0;
+ width: 16rem;
 }
 
 .piece-toolbar {
@@ -2205,6 +2356,20 @@ main {
 
 .material-piece-line {
  align-self: flex-start;
+}
+
+/* the shelf (bug 12.3): a set-down piece renders dimmed, with the
+   reversible word, never identical to a live piece (Q-41) */
+.material-piece-line.set-down {
+ opacity: 0.55;
+}
+
+/* The tabs hide nothing without this: .material-pieces and
+   .library-directions set display:flex, and an author rule beats the UA
+   [hidden] rule regardless of specificity (bug 12.1 — the offers region
+   below the piece walks into the identical trap). */
+[hidden] {
+ display: none !important;
 }
 
 /* the material: dated paragraphs, read as continuous prose */
@@ -2250,7 +2415,7 @@ main {
  color: var(--accent);
 }
 
-/* ── the library: two tabs over the material ── */
+/* ── the library: three tabs over the material ── */
 
 .library-tabs {
  display: flex;
@@ -2265,6 +2430,42 @@ main {
 .library-tabs .here {
  color: var(--fg);
  text-decoration: none;
+}
+
+/* --- directions tab (wave 5) --- */
+
+.library-directions {
+ display: flex;
+ flex-direction: column;
+ gap: 0.3rem;
+}
+
+/* one door row per coached direction: the name, then the open word at the
+   end — no stats, no aggregate (canon §5.6) */
+.direction-door {
+ display: flex;
+ align-items: baseline;
+ justify-content: space-between;
+ gap: 0.75rem;
+ width: 100%;
+ padding: 0.35rem 0;
+ border: none;
+ background: none;
+ font-family: var(--font-ui);
+ font-size: 0.95rem;
+ color: var(--fg);
+ text-align: left;
+ cursor: pointer;
+}
+
+.direction-door .direction-open {
+ color: var(--dim);
+ text-decoration: underline;
+ text-underline-offset: 2px;
+}
+
+.direction-door:hover .direction-open {
+ color: var(--accent);
 }
 
 .library-filter {
@@ -2369,14 +2570,6 @@ main {
  color: var(--dim);
 }
 
-/* a viewed candidate: one dimmed line before the entries, naming what the
-   word `keep this order` would do — the way the cadence line speaks (Q-38) */
-.piece-candidate-line {
- margin: 0 0 1.75rem;
- font-size: 0.9rem;
- opacity: 0.55;
-}
-
 /* the one line the rule opens into */
 .piece-gap-input {
  width: 100%;
@@ -2406,6 +2599,136 @@ main {
 
 .piece-offer:hover {
  color: var(--accent);
+}
+
+/* the passage verbs (redesign §8): a dimmed word row below the paragraph,
+   revealed on focus — `take out` and `ask here` live with the text, never
+   in the toolbar (the toolbar keeps only status verbs) */
+.piece-para-verbs {
+ display: flex;
+ gap: 0.5rem;
+ margin-top: 0.15rem;
+ opacity: 0;
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ transition: opacity 0.15s ease;
+}
+
+.piece-para:hover .piece-para-verbs,
+.piece-para:focus-within .piece-para-verbs {
+ opacity: 1;
+}
+
+/* the verbs on a model-found gap: `ask this` and `not a gap`, on the rule */
+.piece-gap-verbs {
+ margin-left: 0.75rem;
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+}
+
+.piece-gap-verbs .nav-link {
+ font-size: 0.7rem;
+}
+
+/* the `place it` word on an answered gap's offer */
+.piece-offer-verb {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ margin-left: 0.5rem;
+}
+
+.piece-offer:hover .piece-offer-verb {
+ color: var(--accent);
+}
+
+/* the search-and-place door (redesign §5): a thin filter below the
+   composer; hits carry the `place` word */
+.piece-search {
+ margin-top: 1rem;
+}
+
+.piece-search-input {
+ width: 100%;
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ background: transparent;
+ border: none;
+ border-bottom: 1px solid var(--border);
+ color: var(--fg);
+ outline: none;
+ padding: 0.2rem 0;
+}
+
+.piece-search-results {
+ margin-top: 0.4rem;
+ display: flex;
+ flex-direction: column;
+ gap: 0.4rem;
+}
+
+.piece-search-hit {
+ display: flex;
+ align-items: baseline;
+ gap: 0.75rem;
+}
+
+.piece-search-hit .material-prose {
+ margin: 0;
+ font-size: 0.9rem;
+ color: var(--dim);
+ flex: 1;
+}
+
+.piece-search-hit .nav-link {
+ font-size: 0.7rem;
+}
+
+/* the auto-gather region (redesign §5.3): passages a sitting produced that
+   may belong, below the piece — each row the prose and the two verbs. The
+   region hides whole when empty; [hidden] beats the display:flex rules
+   above it (bug 12.1's fix), so it cannot walk into that trap. */
+.piece-offers {
+ margin-top: 1rem;
+ padding-top: 0.75rem;
+ border-top: 1px solid var(--border);
+ display: flex;
+ flex-direction: column;
+ gap: 0.5rem;
+}
+
+.piece-offers-label {
+ margin: 0;
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ text-transform: uppercase;
+ letter-spacing: 0.04em;
+}
+
+.piece-offer-row {
+ display: flex;
+ align-items: baseline;
+ gap: 0.75rem;
+}
+
+.piece-offer-prose {
+ margin: 0;
+ flex: 1;
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ line-height: var(--line);
+ color: var(--dim);
+}
+
+.piece-offer-verbs {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ white-space: nowrap;
+}
+
+.piece-offer-verbs .nav-link {
+ font-size: 0.7rem;
 }
 
 /* marginalia: dimmed until hovered, as on the wiki */
@@ -2464,6 +2787,10 @@ main {
  .piece-para,
  .piece-gap {
   padding: 0.5rem 0;
+ }
+
+ .material-snippet {
+  min-height: var(--touch-min);
  }
 }
 
@@ -2595,7 +2922,7 @@ main {
 /* The sweep backlog line (ticket 139): the reach offer's idiom — one
    dimmed line, nothing at zero, and :empty hides it. */
 .sweep-backlog-line {
- color: #666;
+ color: var(--dim);
  font-size: 0.85rem;
  margin: 0.25rem 0 0.5rem;
 }
@@ -2688,8 +3015,6 @@ main {
  font-size: 0.8rem;
  font-weight: 500;
  color: var(--dim);
- text-transform: uppercase;
- letter-spacing: 0.08em;
  margin: 0 0 1rem;
 }
 
@@ -2906,3 +3231,471 @@ main {
   animation: none;
  }
 }
+
+/* --- today (wave 1) ---
+   The Today surface (docs/redesign-2026-08-08.md §5.2): a dated page in
+   sentences, one clean thing per viewport of the scroll. Each viewport
+   owns a viewport — min-height 100vh — so arriving shows one section and
+   scrolling reveals the next. The register is the waiting surface's:
+   serif prose, dimmed margin words, buttons as words in running text. */
+
+.today-surface {
+ gap: 0;
+}
+
+.today-viewport {
+ min-height: 100vh;
+ display: flex;
+ flex-direction: column;
+ justify-content: center;
+ gap: 1.25rem;
+ padding: var(--pad) 0;
+ border-bottom: 1px solid var(--border);
+}
+
+/* Viewport one — begin */
+
+.today-date {
+ font-family: var(--font-serif);
+ font-weight: 400;
+ font-size: 1.6rem;
+ color: var(--fg);
+ margin: 0;
+}
+
+.today-cadence {
+ color: var(--dim);
+ font-size: 0.95rem;
+}
+
+.today-cadence:empty {
+ display: none;
+}
+
+.today-begin-sentence {
+ font-size: 1.15rem;
+ line-height: 1.5;
+ margin: 0;
+}
+
+.today-begin-btn {
+ font: inherit;
+ color: var(--fg);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+ text-decoration: underline;
+ text-underline-offset: 3px;
+}
+
+.today-begin-btn:hover {
+ color: var(--accent);
+}
+
+.today-begin-btn:disabled {
+ opacity: 0.5;
+ cursor: default;
+}
+
+/* The dimmed protocol line: the whole pick reads as one sentence, the
+   active name in full ink. One tap cycles. */
+.today-protocol-line {
+ display: inline;
+ font: inherit;
+ font-size: 0.9rem;
+ color: var(--dim);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+ text-align: left;
+ line-height: 1.6;
+}
+
+.today-protocol-line:hover {
+ color: var(--accent);
+}
+
+.today-protocol-pick {
+ color: var(--fg);
+}
+
+.today-aside {
+ font-size: 0.95rem;
+ color: var(--dim);
+}
+
+.today-aside .nav-link {
+ font-size: 0.95rem;
+}
+
+/* The door — replaces begin while a sitting is open. */
+.today-door {
+ font-size: 1.15rem;
+ line-height: 1.5;
+}
+
+.today-door-sentence {
+ margin: 0;
+}
+
+.today-door .nav-link {
+ font-size: 1.05rem;
+}
+
+/* Viewport two — what waits */
+
+.today-heading {
+ font-family: var(--font-serif);
+ font-weight: 400;
+ font-size: 1.15rem;
+ color: var(--fg);
+ margin: 0 0 0.5rem;
+}
+
+.today-subheading {
+ font-family: var(--font-ui);
+ font-weight: 500;
+ font-size: 0.75rem;
+ color: var(--dim);
+ margin: 1.5rem 0 0.5rem;
+}
+
+.today-section {
+ display: flex;
+ flex-direction: column;
+ gap: 0.6rem;
+}
+
+.today-reviews-line,
+.today-import-line {
+ color: var(--fg);
+ line-height: 1.5;
+}
+
+.today-reviews-line .nav-link,
+.today-import-line .nav-link {
+ font-size: 0.95rem;
+}
+
+/* Parked things read as typed sentences: the kept question dims under the
+   sentence, never beside it. */
+.today-section .parked-entry .parked-question {
+ color: var(--fg);
+}
+
+.today-section .parked-entry .parked-question .nav-link {
+ font-size: 0.95rem;
+}
+
+.today-section .parked-entry .parked-meta {
+ font-family: var(--font-serif);
+ font-size: 0.85rem;
+ color: var(--dim);
+ text-transform: none;
+}
+
+/* Viewport three — activity: the stream is the section. */
+
+.today-activity .activity-list {
+ max-height: none;
+ overflow: visible;
+}
+
+/* The margin — dimmed, at the foot of the page */
+
+.today-margin {
+ margin-top: 2rem;
+ padding: 1.25rem 0 3rem;
+ color: var(--dim);
+ font-size: 0.9rem;
+ opacity: 0.8;
+}
+
+.today-margin-row {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 0.25rem 0;
+ align-items: baseline;
+}
+
+.today-margin-row .nav-link {
+ font-size: 0.9rem;
+}
+
+.today-margin-row .fresh-start-note {
+ color: var(--dim);
+ font-size: 0.9rem;
+}
+
+.today-margin-row:focus-within,
+.today-margin-row:hover {
+ opacity: 1;
+}
+
+/* --- the three contracts (delta A2) ---
+   The margin's fourth door: three plain lines expanded in place below the
+   margin — the person / the machine / the vault. Dimmed like the margin
+   itself; the copy is fixed, no verdicts, no numbers. */
+.today-contracts {
+ display: flex;
+ flex-direction: column;
+ gap: 0.35rem;
+ margin-top: 0.75rem;
+ padding-left: 0.75rem;
+ border-left: 2px solid var(--border);
+ color: var(--dim);
+ font-size: 0.9rem;
+ line-height: 1.5;
+}
+
+.today-contract-line {
+ margin: 0;
+}
+
+.today-contracts .nav-link {
+ font-size: 0.75rem;
+ align-self: flex-start;
+}
+
+/* The one-time profile ask (mode.ts's port): the form register, quiet. */
+.today-profile-ask {
+ display: flex;
+ flex-direction: column;
+ gap: 0.4rem;
+ margin-top: 1rem;
+ padding: 0.75rem;
+ border: 1px solid var(--border);
+}
+
+.today-profile-ask-question {
+ color: var(--dim);
+ font-size: 0.9rem;
+ margin: 0;
+}
+
+.today-profile-ask-row {
+ display: flex;
+ gap: 0.75rem;
+ align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+ .today-viewport {
+  scroll-snap-type: none;
+ }
+}
+
+/* --- review grammar (wave 3) ---
+   The unified review surface (web/review-grammar.ts): the receipt,
+   the fragments that couldn't stand alone, the say-it-again editor,
+   a cut the transcript does not contain, the prose-selection trim
+   gesture, and the save-failure sentence. Everything else reuses the
+   .import-* rules above. */
+
+/* The receipt — Review's last screen: only what was just approved. */
+.review-receipt {
+ max-width: var(--max-w);
+ margin: 0 auto;
+ padding: var(--pad) 0;
+}
+
+.review-receipt-heading {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ margin: 0 0 1.25rem;
+}
+
+.review-receipt-passage {
+ font-family: var(--font-serif);
+ font-size: 1rem;
+ line-height: var(--line);
+ white-space: pre-wrap;
+ margin: 0 0 1rem;
+}
+
+/* The dedupe sentence under a kept passage (Batch C2, §12.1) —
+   marginalia-class: the agent's line, never the passage's own words. */
+.review-receipt-repeat {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ font-style: italic;
+ margin: -0.5rem 0 1rem;
+}
+
+/* A save that kept nothing never shows an empty receipt (copy rule 5). */
+.review-receipt-zero {
+ font-family: var(--font-serif);
+ color: var(--dim);
+ font-style: italic;
+ margin: 0;
+}
+
+/* The review row's "keep both?" line (Batch C2, §12.1). */
+.harvest-queue-repeat {
+ font-family: var(--font-ui);
+ font-size: 0.8rem;
+ color: var(--dim);
+ font-style: italic;
+ display: block;
+}
+
+/* Fragments that couldn't stand alone, dimmed, with their reasons. */
+.review-buds {
+ display: flex;
+ flex-direction: column;
+ gap: 0.4rem;
+ margin-top: 1.5rem;
+ padding-top: 1rem;
+ border-top: 1px solid var(--border);
+}
+
+.review-buds-heading {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--dim);
+ margin: 0;
+}
+
+.review-bud {
+ display: flex;
+ gap: 0.5rem;
+ align-items: baseline;
+}
+
+.review-bud-text {
+ font-family: var(--font-serif);
+ font-size: 0.85rem;
+ color: var(--dim);
+}
+
+.review-bud-reason {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--border);
+}
+
+/* Say it again — the person's own words, not a substring rule. */
+.import-restate-editor-wrap {
+ display: flex;
+ flex-direction: column;
+ gap: 0.3rem;
+ margin-top: 0.4rem;
+}
+
+.import-restate-editor {
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ line-height: 1.5;
+ padding: 0.3rem 0.4rem;
+ background: none;
+ border: 1px solid var(--border);
+ color: var(--fg);
+}
+
+.import-restate-confirm {
+ font-family: var(--font-ui);
+ font-size: 0.7rem;
+ color: var(--accent);
+ background: none;
+ border: none;
+ padding: 0;
+ cursor: pointer;
+ align-self: flex-start;
+}
+
+/* A cut the transcript body does not contain: honest, degraded. */
+.review-standalone-note {
+ font-family: var(--font-ui);
+ font-size: 0.65rem;
+ color: var(--dim);
+}
+
+/* The select-your-span trim: the prose selection reads as the kept span. */
+.import-piece ::selection {
+ background: var(--accent);
+ color: var(--fg);
+}
+
+/* A save that fails is a sentence, never a silence. */
+.import-failure {
+ font-family: var(--font-serif);
+ font-style: italic;
+ color: var(--dim);
+ margin: 0;
+}
+
+/* ── the room (wave 4) — the true void ── */
+
+/* The void (owner decision 2): the transcript is NOT resident — hidden
+   until summoned by a scroll-up gesture over the room (wheel up, or a
+   finger dragging down — the content scrolls up), then shown; every
+   render starts hidden again. */
+.room .transcript {
+ display: none;
+}
+.room .transcript.summoned {
+ display: flex;
+}
+
+/* The first-moments lines (owner decisions 5 + 6): the first-launch
+   promise line and the declaration line float above the first question,
+   one dimmed serif line each; both fade on the first words. */
+.room-promise,
+.room-declaration {
+ font-family: var(--font-serif);
+ font-style: italic;
+ font-size: 0.85rem;
+ color: var(--dim);
+ transition: opacity 0.5s ease;
+}
+.room-declaration {
+ cursor: pointer;
+}
+.room-promise.faded,
+.room-declaration.faded {
+ opacity: 0;
+ pointer-events: none;
+}
+
+/* Touching the declaration line opens a small input (owner decision 5). */
+.room-declare-input {
+ font-family: var(--font-serif);
+ font-size: 0.9rem;
+ padding: 0.3rem 0.4rem;
+ border: 1px solid var(--border);
+ border-radius: 4px;
+ background: transparent;
+ color: var(--fg);
+ width: min(24rem, 100%);
+}
+
+/* --- the lens (wave 5) --- */
+
+/* Receded: everything the since-you-last-read lens does not mark as
+   changed. The blocks stay in the DOM — still present, still clickable,
+   correcting mode still works on them — dimmed to a whisper so the
+   changed page reads first. */
+.wiki-claim.receded,
+.wiki-exhibit.receded {
+ opacity: 0.4;
+}
+
+.wiki-exhibit {
+ transition: opacity 150ms ease;
+}
+
+/* The freshness line: where the person stands with the page, before the
+   essay itself. One dimmed ui line in the same voice as the foot word. */
+.wiki-freshness {
+ font-family: var(--font-ui);
+ font-size: 0.75rem;
+ color: var(--dim);
+ margin: 0 0 1.5rem;
+}
+
+/* The foot word's two states (the whole essay / back to what changed)
+   reuse .wiki-lens — only the copy swaps, no class changes. */

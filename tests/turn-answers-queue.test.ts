@@ -44,7 +44,6 @@ function weakDraft(question: string, overrides?: Partial<QueueDraft>): QueueDraf
     license: 'machine',
     question,
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
     ...overrides,
   };
@@ -67,7 +66,7 @@ const RICH_ANSWER =
 
 function openSession(deps: { complete: ReturnType<typeof makeScriptedComplete> }) {
   return startSession(
-    { minutes: 30, energy: 'medium' },
+    {},
     { complete: deps.complete, vault, queue, index: buildIndex([]), bank: BANK },
   );
 }
@@ -137,9 +136,9 @@ describe('a user turn answers the queue entry that opened it', () => {
   });
 
   it('leaves every entry untouched when the opener came from the bank', async () => {
-    // Sharp entries are not served at 'opening' or 'mid', so this one is never
-    // drawn: the session opens on the bank and the queue must stay pending.
-    const seeded = queue.add(weakDraft('A sharp one', { sharpness: 'sharp' }));
+    // Days-horizon entries are never drawn into an exchange, so this one is
+    // never served: the session opens on the bank and the queue stays pending.
+    const seeded = queue.add(weakDraft('A future one', { horizon: 'days' }));
 
     const session = openSession({
       complete: makeScriptedComplete(richTurnResponses('What made the decision for you?')),

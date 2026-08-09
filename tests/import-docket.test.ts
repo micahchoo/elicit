@@ -135,7 +135,7 @@ describe('the import extraction inside a docket run', () => {
  const opener = {
   source: 'composed' as const, license: 'CC0',
   question: 'What about sn1?', questionForm: 'deliberative' as const,
-  sharpness: 'weak' as const, horizon: 'now' as const,
+  horizon: 'now' as const,
   cites: ['sn1@1'], quotedFragment: 'sn1 prose.',
  } satisfies QueueDraft;
 

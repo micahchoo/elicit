@@ -86,7 +86,7 @@ function writeSitting(session: string, started: string): void {
     join(dir, `${session}.md`),
     matter.stringify('', {
       session,
-      mode: { minutes: 10, energy: 'low' },
+      mode: {},
       protocol: 'import',
       started,
     }),
@@ -123,7 +123,6 @@ function entry(o: Partial<QueueEntry>): QueueEntry {
     license: 'test',
     question: 'q?',
     questionForm: 'deliberative',
-    sharpness: 'weak',
     horizon: 'now',
     created: daysAgo(400),
     ...o,
@@ -812,7 +811,7 @@ describe('the draw reaches a sitting', () => {
     targetFacet: 'construct',
   };
 
-  const mode = { minutes: 10, energy: 'low' as const, target: 'self' as const };
+  const mode = { target: 'self' as const };
   const complete = async () => '';
   const index = {} as LexicalIndex;
 

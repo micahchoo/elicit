@@ -126,7 +126,7 @@ async function post(app: Hono, path: string, body: unknown): Promise<{ status: n
 /** One full turn: create a sitting, answer with `text`, read the response. */
 async function turn(app: Hono, text: string): Promise<{ status: number; body: unknown }> {
  const session = await post(app, '/api/session', {
-  mode: { minutes: 30, energy: 'medium', target: 'self' },
+  mode: { target: 'self' },
  });
  if (typeof session.body !== 'object' || session.body === null || !('sessionId' in session.body)) {
   throw new Error(`session response carried no sessionId: ${JSON.stringify(session.body)}`);
@@ -225,7 +225,7 @@ describe('the elicitor priority-1 juxtaposition quotes the snippet (068 ruling)'
    const phrase = quotablePhrase(PAIRS[1]!.stored);
    const composed = `Back then you wrote "${phrase}" — how is that different now?`;
    const session = startSession(
-    { minutes: 30, energy: 'medium' },
+    {},
     {
      complete: makeScriptedComplete([composed]),
      vault,

@@ -188,9 +188,9 @@ describe('defer verb', () => {
   rmSync(vaultDir, { recursive: true, force: true });
  });
 
- it('re-queues the question with declared needs, returns the next one, and spends no budget', async () => {
+ it('re-queues the question, returns the next one, and spends no budget', async () => {
   const sessionRes = await post(app, '/api/session', {
-   mode: { minutes: 10, energy: 'low' },
+   mode: {},
   });
   expect(sessionRes.status).toBe(200);
   const { sessionId, question } = (await sessionRes.json()) as {
@@ -198,52 +198,29 @@ describe('defer verb', () => {
    question: string;
   };
 
-  // ── "when I have more energy" ──
-  const energyRes = await post(app, `/api/session/${sessionId}/defer`, { need: 'energy' });
-  expect(energyRes.status).toBe(200);
-  const energyNext = (await energyRes.json()) as { kind: string; text?: string };
-  expect(energyNext.kind).toBe('question');
-  expect(energyNext.text).toBeTruthy();
-  expect(energyNext.text).not.toBe(question);
+  const firstRes = await post(app, `/api/session/${sessionId}/defer`);
+  expect(firstRes.status).toBe(200);
+  const firstNext = (await firstRes.json()) as { kind: string; text?: string };
+  expect(firstNext.kind).toBe('question');
+  expect(firstNext.text).toBeTruthy();
+  expect(firstNext.text).not.toBe(question);
 
-  const energyEntry = queue.list().find((e) => e.question === question);
-  expect(energyEntry).toBeDefined();
-  expect(energyEntry!.source).toBe('user-declared');
-  expect(energyEntry!.status).toBe('pending');
-  expect(energyEntry!.sharpness).toBe('weak');
+  const entry = queue.list().find((e) => e.question === question);
+  expect(entry).toBeDefined();
+  expect(entry!.source).toBe('user-declared');
+  expect(entry!.status).toBe('pending');
   // 'session' keeps it drawable and visible on the waiting surface; 'days' is never drawn
-  expect(energyEntry!.horizon).toBe('session');
-  // Declared low energy — the question waits for the next level up
-  expect(energyEntry!.modeNeeds).toEqual({ energy: 'medium' });
+  expect(entry!.horizon).toBe('session');
 
-  // ── "when I have more time" — next sitting length above 10 minutes ──
-  const timeRes = await post(app, `/api/session/${sessionId}/defer`, { need: 'time' });
-  expect(timeRes.status).toBe(200);
-  const timeNext = (await timeRes.json()) as { kind: string; text?: string };
-  expect(timeNext.kind).toBe('question');
-
-  const timeEntry = queue.list().find((e) => e.question === energyNext.text);
-  expect(timeEntry).toBeDefined();
-  expect(timeEntry!.modeNeeds).toEqual({ minMinutes: 25 });
-
-  // ── Deferred with no declared need — no Mode needs recorded ──
-  const plainRes = await post(app, `/api/session/${sessionId}/defer`);
-  expect(plainRes.status).toBe(200);
-  const plainNext = (await plainRes.json()) as { kind: string; text?: string };
-  expect(plainNext.kind).toBe('question');
-
-  const plainEntry = queue.list().find((e) => e.question === timeNext.text);
-  expect(plainEntry).toBeDefined();
-  expect(plainEntry!.modeNeeds).toBeUndefined();
-
-  // ── Budget: 10 minutes closes at the 8th question. Four more defers
-  // (seven in all) would exhaust it if deferring counted — it must not. ──
+  // ── Budget: SESSION_BUDGET = 10 closes at the 8th question. Four more
+  // defers (five in all) would exhaust it if deferring counted — it must
+  // not: a deferral spends no budget. ──
   for (let i = 0; i < 4; i++) {
    const res = await post(app, `/api/session/${sessionId}/defer`);
    expect(res.status).toBe(200);
    expect(((await res.json()) as { kind: string }).kind).toBe('question');
   }
-  expect(queue.list().filter((e: QueueEntry) => e.status === 'pending').length).toBe(7);
+  expect(queue.list().filter((e: QueueEntry) => e.status === 'pending').length).toBe(5);
 
   const turnRes = await post(app, `/api/session/${sessionId}/turn`, { text: deferAnswer });
   expect(turnRes.status).toBe(200);
@@ -256,23 +233,11 @@ describe('defer verb', () => {
   expect(turn.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
  });
 
- it('logs deferral distinctly from skip, with the declared need', async () => {
+ it('logs deferral distinctly from skip', async () => {
   const events = readEvents(vaultDir);
   const deferrals = events.filter((e) => e.kind === 'question-deferred');
-  expect(deferrals.length).toBe(7);
-  expect(deferrals[0]!.detail).toContain('needs=energy');
-  expect(deferrals[1]!.detail).toContain('needs=time');
-  expect(deferrals[2]!.detail).toContain('needs=none');
+  expect(deferrals.length).toBe(5);
   expect(events.some((e) => (e.kind as string) === 'question-skipped')).toBe(false);
- });
-
- it('rejects a need it does not know', async () => {
-  const sessionRes = await post(app, '/api/session', {
-   mode: { minutes: 25, energy: 'medium' },
-  });
-  const { sessionId } = (await sessionRes.json()) as { sessionId: string };
-  const res = await post(app, `/api/session/${sessionId}/defer`, { need: 'patience' });
-  expect(res.status).toBe(400);
  });
 
  it('404s an unknown session', async () => {

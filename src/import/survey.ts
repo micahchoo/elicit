@@ -12,7 +12,7 @@
  * a bug in the import rather than in the map (seeding Task 4).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import matter from 'gray-matter';
 
@@ -117,9 +117,5 @@ export function writeSurvey(vaultRoot: string, survey: Survey): void {
   });
 }
 
-/** Read the snapshot back; null means the vault was never surveyed. */
-export function readSurvey(vaultRoot: string): Survey | null {
-  const path = join(vaultRoot, 'imports', 'survey.json');
-  if (!existsSync(path)) return null;
-  return JSON.parse(readFileSync(path, 'utf-8')) as Survey;
-}
+// readSurvey died with the reach pipeline (canon §10 cut, 2026-08-09): GET
+// /api/reach was its only caller, and the reach sweep is gone.

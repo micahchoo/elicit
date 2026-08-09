@@ -34,10 +34,9 @@ function mintGapEntry(queue: QueueStore, gapId: string) {
  return queue.add({
   source: 'gap-declared',
   gap: gapId,
-  license: 'arrangement-gap',
+  license: `composition piece gap ${gapId}`,
   question: 'Why does that arrangement keep working for you?',
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'session',
  });
 }
@@ -74,7 +73,7 @@ describe('the gap link end to end', () => {
   // the gap. The opener is canned material, so no model call happens here;
   // the scripted complete is what the answering turn below will consume.
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    {
     complete: makeScriptedComplete(['{}', 'What makes you say that?']),
     vault,
@@ -112,7 +111,7 @@ describe('the gap link end to end', () => {
   const entry = mintGapEntry(queue, gapId);
 
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    {
     complete: makeScriptedComplete(['{}', 'What makes you say that?']),
     vault,

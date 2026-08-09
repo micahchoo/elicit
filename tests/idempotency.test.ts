@@ -30,7 +30,7 @@ describe('idempotency for headless callers (145 remainder)', () => {
      'content-type': 'application/json',
      ...(key ? { 'idempotency-key': key } : {}),
     },
-    body: JSON.stringify({ mode: { minutes: 15, energy: 'low', target: 'self' } }),
+    body: JSON.stringify({ mode: { target: 'self' } }),
    }),
    ENV,
   );

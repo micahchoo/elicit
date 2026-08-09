@@ -38,8 +38,6 @@ function startSitting(session: string, mode: Mode): void {
 describe('readSitting', () => {
   it('reads the Target and topic a sitting declared', () => {
     startSitting('s-domain', {
-      minutes: 25,
-      energy: 'medium',
       target: 'domain',
       topic: 'sourdough bread baking',
     });
@@ -51,14 +49,14 @@ describe('readSitting', () => {
   });
 
   it('reads a self sitting as self', () => {
-    startSitting('s-self', { minutes: 10, energy: 'low', target: 'self' });
+    startSitting('s-self', { target: 'self' });
     expect(readSitting(root, 's-self')).toEqual({ target: 'self' });
   });
 
   // Absent is the load-bearing case: an entry with no Target claim stays
   // eligible for either sitting, so guessing here would silence half the queue.
   it('claims nothing when the sitting declared no Target', () => {
-    startSitting('s-bare', { minutes: 25, energy: 'medium' });
+    startSitting('s-bare', {});
     expect(readSitting(root, 's-bare')).toEqual({});
   });
 
@@ -162,8 +160,8 @@ describe('runDocket carries the sitting Target onto what it mints', () => {
   it('hands composeOpener the Target of the sitting the snippet came from', async () => {
     const { runDocket } = await import('../src/clerk/docket.js');
 
-    startSitting('s-domain', { minutes: 25, energy: 'medium', target: 'domain', topic: 'sourdough' });
-    startSitting('s-self', { minutes: 25, energy: 'medium', target: 'self' });
+    startSitting('s-domain', { target: 'domain', topic: 'sourdough' });
+    startSitting('s-self', { target: 'self' });
 
     const snDomain = makeSnippet('sn-d', 's-domain');
     const snSelf = makeSnippet('sn-s', 's-self');
@@ -179,7 +177,6 @@ describe('runDocket carries the sitting Target onto what it mints', () => {
           questionForm: 'deliberative',
           cites: [`${s.id}@1`],
           quotedFragment: s.prose,
-          sharpness: 'weak',
           horizon: 'session',
           ...(sitting?.target ? { target: sitting.target } : {}),
           ...(sitting?.topic ? { topic: sitting.topic } : {}),
@@ -194,7 +191,6 @@ describe('runDocket carries the sitting Target onto what it mints', () => {
       complete: vi.fn(),
       buildIndex: () => ({ _brand: 'LexicalIndex' } as unknown as LexicalIndex),
       composeOpener: composeOpener as never,
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       listSessions: () => [
         { session: 's-domain', started: '2026-08-01T10:00:00Z', turnCount: 4, chars: 100 },
         { session: 's-self', started: '2026-08-01T09:00:00Z', turnCount: 4, chars: 100 },
@@ -218,7 +214,7 @@ describe('runDocket carries the sitting Target onto what it mints', () => {
   it('leaves the Target absent when the sitting declared none', async () => {
     const { runDocket } = await import('../src/clerk/docket.js');
 
-    startSitting('s-bare', { minutes: 25, energy: 'medium' });
+    startSitting('s-bare', {});
     const sn = makeSnippet('sn-b', 's-bare');
 
     let handed: SittingContext | undefined = { target: 'self' };
@@ -233,7 +229,6 @@ describe('runDocket carries the sitting Target onto what it mints', () => {
       complete: vi.fn(),
       buildIndex: () => ({ _brand: 'LexicalIndex' } as unknown as LexicalIndex),
       composeOpener: composeOpener as never,
-      composeStillTrue: vi.fn().mockResolvedValue(null),
       listSessions: () => [{ session: 's-bare', started: '2026-08-01T10:00:00Z', turnCount: 4, chars: 100 }],
       log: () => {},
       vaultRoot: root,

@@ -12,6 +12,7 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createApp } from '../src/server.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { decide } from '../src/harvester/harvester.js';
+import { readEvents } from '../src/log/activity.js';
 import type { CaptureChannel, CutProposal, Provenance } from '../src/types.js';
 
 // ── Helpers ──
@@ -74,14 +75,14 @@ async function boot(scripted: string[]): Promise<{ app: Hono; vaultDir: string }
 }
 
 /** The one scripted probe a turn needs — clean against every probe guard. */
-const PROBE = 'Tell me more about that.';
+const PROBE = 'Tell me more about that?';
 const PROBE_TWO = 'What does that look like in practice?';
 
 /** Padding: post-harvest docket composeOpener calls (may retry). */
 const PADDING = Array.from({ length: 8 }, (_, i) => `padding ${i}`);
 
 /** A session over an empty vault, in the repo's default mode. */
-const MODE = { minutes: 10, energy: 'medium', target: 'self' } as const;
+const MODE = { target: 'self' } as const;
 
 /**
  * One cut of a full turn — the shortest path from a turn to a saved snippet.
@@ -378,6 +379,42 @@ describe('capture channel on the capture paths (ticket 048)', () => {
    // The unprompted path rejects the same way.
    const badEntry = await post(app, '/api/unprompted', { text: turnText, channel: 'loud' });
    expect(badEntry.status).toBe(400);
+  } finally {
+   rmSync(vaultDir, { recursive: true, force: true });
+  }
+ });
+
+ it('a second /end no-ops for an ended sitting (ghost harvest)', async () => {
+  const turnText = 'Ending a sitting twice should not harvest it twice.';
+  const { app, vaultDir } = await boot(['{}', PROBE, cutOf(turnText), ...PADDING]);
+  try {
+   const sessionRes = await post(app, '/api/session', { mode: MODE });
+   expect(sessionRes.status).toBe(200);
+   const { sessionId } = (await sessionRes.json()) as { sessionId: string };
+
+   const turnRes = await post(app, `/api/session/${sessionId}/turn`, { text: turnText });
+   expect(turnRes.status).toBe(200);
+
+   const endRes = await post(app, `/api/session/${sessionId}/end`);
+   expect(endRes.status).toBe(200);
+   expect(await endRes.json()).toEqual({ status: 'harvesting', sessionId });
+
+   // The dedupe is the assertion, not the record: a second /end returns
+   // already-ended and emits no second harvest-started for the session.
+   const endAgainRes = await post(app, `/api/session/${sessionId}/end`);
+   expect(endAgainRes.status).toBe(200);
+   expect(await endAgainRes.json()).toEqual({ status: 'already-ended', sessionId });
+
+   const started = readEvents(vaultDir).filter((e) => e.kind === 'harvest-started');
+   expect(started).toHaveLength(1);
+
+   // The today door no longer offers the ended sitting.
+   const openRes = await get(app, '/api/session/open');
+   const { sessionId: openId } = (await openRes.json()) as { sessionId: string | null };
+   expect(openId).not.toBe(sessionId);
+
+   // Let the first harvest settle before the vault dir goes away.
+   await waitForProposals((p) => get(app, p), sessionId);
   } finally {
    rmSync(vaultDir, { recursive: true, force: true });
   }

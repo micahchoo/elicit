@@ -7,7 +7,6 @@ import { appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/kinds.js';
 import { elideDisfluencies } from '../language/disfluency.js';
 import { EngagementLedger } from './engagement.js';
-import { ENERGY_LEVEL } from './mode-needs.js';
 import { contentWordsOf } from '../index/lexical.js';
 import {
  FACETS,
@@ -73,7 +72,6 @@ export function parkPointer(
   license: 'user',
   question: p.question,
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'session',
   ...p.idField,
   ...(p.extraFields ? p.extraFields : {}),
@@ -150,65 +148,36 @@ function threadKeyOf(entry: QueueEntry): string | undefined {
 }
 
 /** A hard filter, named as the ladder's log lines say it. */
-type FilterName = 'status' | 'sounding' | 'modeNeeds' | 'sharpness' | 'horizon' | 'target';
+type FilterName = 'status' | 'sounding' | 'horizon' | 'target';
 
 type DrawFilter = {
  name: FilterName;
  keep: (e: QueueEntry) => boolean;
- /**
-  * Rung 2 of the degradation ladder (Q-55) admits `user-declared` entries
-  * past exactly these, and past nothing else. `status` is incoherent to
-  * relax, `target` is the one thing the person said this sitting is FOR
-  * (Q-19/045), and `horizon` protects the sitting's budget.
-  */
- relaxable: boolean;
 };
 
 /**
  * The draw's hard filters as data rather than control flow, in the order they
  * apply. The order is a values statement (Q-55), so it is written once, read
- * by the normal path, by rung 2, and by the floor's "which filter emptied the
- * pool" — one list, no re-implementation.
+ * by the normal path and by the floor's "which filter emptied the pool" —
+ * one list, no re-implementation.
  */
 function drawFilters(mode: Mode, parkedPointerKinds: readonly string[]): DrawFilter[] {
- const modeEnergy = ENERGY_LEVEL[mode.energy];
  return [
   {
    name: 'status',
-   relaxable: false,
    keep: (e) => e.status === 'pending' || e.status === 'deferred',
   },
   // A parked ladder, parked machine or legacy parked DRM is a pointer, not
-  // a question. Rung 2 of the degradation ladder (Q-55) exists to admit the
-  // person's own declared questions past a preference, never a pointer as if
-  // it were a question — relaxable: false is the whole point. The kinds are
-  // the park modules' own consts, configured at construction (the default
-  // keeps legacy 'parked-drm' undrawable too).
+  // a question — never drawn as if it were one. The kinds are the park
+  // modules' own consts, configured at construction (the default keeps
+  // legacy 'parked-drm' undrawable too).
   {
    name: 'sounding',
-   relaxable: false,
    keep: (e) => !parkedPointerKinds.includes(e.source),
-  },
-  {
-   name: 'modeNeeds',
-   relaxable: true,
-   keep: (e) => {
-    if (e.modeNeeds?.minMinutes && e.modeNeeds.minMinutes > mode.minutes) return false;
-    if (e.modeNeeds?.energy) {
-     const needLevel = ENERGY_LEVEL[e.modeNeeds.energy] ?? 0;
-     if (needLevel > modeEnergy) return false;
-    }
-    return true;
-   },
-  },
-  {
-   name: 'sharpness',
-   relaxable: true,
-   keep: (e) => e.sharpness === 'weak',
   },
   // Never drawn into an exchange, at any rung: a days-horizon question is
   // not a question for now.
-  { name: 'horizon', relaxable: false, keep: (e) => e.horizon !== 'days' },
+  { name: 'horizon', keep: (e) => e.horizon !== 'days' },
   // The sitting's declared Target — a hard filter, not a preference (045).
   // A domain sitting drew self material because nothing here looked at the
   // Target at all; the cost was every declared domain sitting, since one
@@ -217,7 +186,6 @@ function drawFilters(mode: Mode, parkedPointerKinds: readonly string[]): DrawFil
   // not in the pool, so the caller falls through to its own opener.
   {
    name: 'target',
-   relaxable: false,
    keep: (e) =>
     mode.target === undefined || e.target === undefined || e.target === mode.target,
   },
@@ -235,43 +203,20 @@ type ChainRun = {
 };
 
 /**
- * Run the chain, recording where the pool died. `relaxUserDeclared` is rung 2:
- * an entry whose source is `user-declared` passes the relaxable filters
- * regardless of what they think of it. The person asked for that question by
- * name (Q-20), and the system's judgement that it is too sharp for an opening
- * is exactly the judgement that should yield to an explicit request.
+ * Run the chain, recording where the pool died.
  */
-function runChain(
- entries: QueueEntry[],
- filters: DrawFilter[],
- relaxUserDeclared: boolean,
-): ChainRun {
+function runChain(entries: QueueEntry[], filters: DrawFilter[]): ChainRun {
  let pool = entries;
  let emptiedBy: FilterName | null = null;
  for (const f of filters) {
   if (pool.length === 0) break;
-  pool = pool.filter(
-   (e) => f.keep(e) || (relaxUserDeclared && f.relaxable && isUserDeclaredWeight(e)),
-  );
+  pool = pool.filter((e) => f.keep(e));
   if (pool.length === 0) {
    emptiedBy = f.name;
    break;
   }
  }
  return { pool, emptiedBy };
-}
-
-/**
- * Which relaxations actually earned their keep: the filters that reject an
- * entry still standing in the pool. Nothing else is named, so `relaxed=` says
- * what happened rather than what was permitted.
- */
-function relaxedBy(pool: QueueEntry[], filters: DrawFilter[]): FilterName[] {
- const names = new Set<FilterName>();
- for (const e of pool) {
-  for (const f of filters) if (f.relaxable && !f.keep(e)) names.add(f.name);
- }
- return [...names];
 }
 
 /**
@@ -301,6 +246,14 @@ export const OPTIONAL_ENTRY_FIELDS = [
  // The Gap this entry was minted to fill. Read back because the gap link
  // has to survive a restart: the mint wrote it, the draw read it (Q-39).
  'gap',
+ // The composition a composition-gap entry belongs to (redesign-2026-08-09
+ // §7). Read back because the (composition, gap) dedupe keys on the pair
+ // across restarts.
+ 'composition',
+ // The sitting counter at mint time (redesign-2026-08-09 §10). Read back
+ // because the model-gap expiry is measured in sittings, and the ledger
+ // keeps no timestamp per sitting.
+ 'createdSitting',
  // The Bud and the recorded failure this gap-fill entry asks about.
  // Read back because the per-failure dedupe keys on the pair across
  // restarts (ticket 027).
@@ -320,7 +273,6 @@ export const OPTIONAL_ENTRY_FIELDS = [
  'target',
  'topic',
  'targetFacet',
- 'modeNeeds',
  'direction',
  // The other-minds expedition this entry carries (ticket 113): the errand
  // kind and the named person. Draft provenance persisted for restart
@@ -422,14 +374,16 @@ class QueueStoreImpl implements QueueStore {
    license: data.license as string,
    question: data.question as string,
    questionForm: data.questionForm as QueueEntry['questionForm'],
-   sharpness: data.sharpness as QueueEntry['sharpness'],
    horizon: data.horizon as QueueEntry['horizon'],
    created: data.created as string,
   };
   // The optional fields, driven by the same list #write emits — absent
-  // stays absent (a field never written is a field never read back).
+  // stays absent (a field never written is a field never read back). The
+  // guard keeps falsy-but-meaningful values (createdSitting: 0 — the
+  // engagement ledger starts at sitting 0) and drops only absent ones.
   for (const key of OPTIONAL_ENTRY_FIELDS) {
-   if (data[key]) out[key] = data[key];
+   const v = data[key];
+   if (v !== undefined && v !== null) out[key] = v;
   }
   return out as unknown as QueueEntry;
  }
@@ -442,17 +396,18 @@ class QueueStoreImpl implements QueueStore {
    license: entry.license,
    question: entry.question,
    questionForm: entry.questionForm,
-   sharpness: entry.sharpness,
    horizon: entry.horizon,
    created: entry.created,
   };
   // Every optional field is written under a guard, never as a present key
   // holding `undefined` — `matter.stringify` throws on that and the whole
-  // write is lost. The same list drives #parseEntry's read-back, so the
-  // two directions cannot drift apart.
+  // write is lost. Falsy-but-meaningful values are kept (createdSitting: 0
+  // is a real minting sitting, not an absent field); only `undefined` and
+  // `null` stay absent. The same list drives #parseEntry's read-back, so
+  // the two directions cannot drift apart.
   for (const key of OPTIONAL_ENTRY_FIELDS) {
    const v = entry[key];
-   if (v) fm[key] = v;
+   if (v !== undefined && v !== null) fm[key] = v;
   }
   const content = matter.stringify('', fm);
   writeFileSync(join(this.#dir(), `${entry.id}.md`), content, 'utf-8');
@@ -476,6 +431,14 @@ add(draft: QueueDraft): QueueEntry {
   created: new Date().toISOString(),
   ...draft,
  };
+ // The model-gap expiry is measured in sittings, not days (redesign
+ // 2026-08-09 §10): stamp the sitting counter at the ONE write gate every
+ // draft passes through, so the sweep's mint and the `ask this` route's
+ // mint record the identical provenance — and an entry whose source is not
+ // composition-gap carries nothing.
+ if (entry.source === 'composition-gap') {
+  entry.createdSitting = this.#engagement.read().sittingCounter;
+ }
  // QR-5: elide STT disfluencies from fragments quoted INTO questions at
  // the one write gate every draft passes through. The kept Snippet stays
  // verbatim (Q-12); only the quotation is elided, by the mechanical marked
@@ -519,13 +482,13 @@ add(draft: QueueDraft): QueueEntry {
   * it drops the person's declarations, and when it runs out of inferences to
   * drop it composes rather than compromises.
   *
-  * Step 1 runs the hard filters. If they leave nothing, rung 2 re-runs them
-  * admitting `user-declared` entries past sharpness and modeNeeds. If that
-  * leaves nothing too, the floor is `return null` — and the caller composing
-  * fresh with full context (Q-36) is the RIGHT outcome, not a failure, so the
-  * floor is logged rather than repaired. Rung 1 — dropping facet balance —
-  * lives at step 4, because line-order already guarantees the facet filter
-  * can never be what emptied the pool.
+  * The draw's filters are all hard now — the sharpness and modeNeeds
+  * relaxations died with the declarations they enforced (canon §9 wave 1) —
+  * so an empty pool floors straight to `return null`, and the caller
+  * composing fresh with full context (Q-36) is the RIGHT outcome, not a
+  * failure, so the floor is logged rather than repaired. Rung 1 — dropping
+  * facet balance — lives at step 3, because line-order already guarantees
+  * the facet filter can never be what emptied the pool.
   */
  draw(mode: Mode): QueueEntry | null {
   // Q-115: while the sitting-level pause holds, the queue offers nothing —
@@ -546,31 +509,23 @@ add(draft: QueueDraft): QueueEntry {
   const filters = drawFilters(mode, this.#parkedPointerKinds);
 
   // Step 1: the hard filters, in the order Q-55 fixes.
-  const normal = runChain(drawPool, filters, false);
-  let candidates = normal.pool;
+  const run = runChain(drawPool, filters);
+  let candidates = run.pool;
 
-  // Step 2: rung 2, and only when step 1 came back empty.
+  // The floor: no filter has a relaxable rung left (the sharpness and
+  // modeNeeds rungs died with the declarations), so an empty pool floors
+  // straight to the caller composing fresh (Q-36).
   if (candidates.length === 0) {
-   const relaxed = runChain(drawPool, filters, true);
-   if (relaxed.pool.length === 0) {
-    this.#logFloor(drawPool.length, normal.emptiedBy, mode);
-    return null;
-   }
-   this.#logRung(
-    2,
-    relaxedBy(relaxed.pool, filters).join(',') || 'none',
-    relaxed.pool.length,
-    relaxed.pool.map((e) => e.id),
-   );
-   candidates = relaxed.pool;
+   this.#logFloor(drawPool.length, run.emptiedBy, mode);
+   return null;
   }
 
-  // Step 3: sort — the person's own questions first, then recency (newest
+  // Step 2: sort — the person's own questions first, then recency (newest
   // first), through the one comparator the open pool's display and the QR-6
   // bound share (the weak-early invariant lives at one address).
   candidates.sort(compareOpenEntries);
 
-  // Step 4: facet balance — a second hard filter on the pool, applied BEFORE
+  // Step 3: facet balance — a second hard filter on the pool, applied BEFORE
   // the top-k pick so chance runs inside the constraints (Q-13), and running
   // in shadow until its log earns it the right to act (Q-35). It narrows
   // what the Target filter already left; the two compose, in that order.
@@ -586,7 +541,7 @@ add(draft: QueueDraft): QueueEntry {
    this.#logRung(1, 'facet-balance', candidates.length, []);
   }
 
-  // Step 5: top-k (k=3), uniform random pick — once for the open pool, once
+  // Step 4: top-k (k=3), uniform random pick — once for the open pool, once
   // for the balanced pool, so the shadow log can name the road not taken.
   const openPick = pickTopK(candidates);
   const balancedPick = fb.applied ? pickTopK(fb.kept) : null;
@@ -603,7 +558,7 @@ add(draft: QueueDraft): QueueEntry {
    balancedPick,
   });
 
-  // Step 6: markAsked immediately
+  // Step 5: markAsked immediately
   this.markAsked(picked.id);
 
   return picked;
@@ -616,7 +571,7 @@ add(draft: QueueDraft): QueueEntry {
   * filters emptied the pool" stays a hypothesis and Q-55's claim that a long
   * cascade is unnecessary has no evidence behind it either way.
   */
- #logRung(rung: 1 | 2, relaxed: string, after: number, refs: string[]): void {
+ #logRung(rung: 1, relaxed: string, after: number, refs: string[]): void {
   this.#append({
    kind: 'queue-rung',
    detail: `rung=${rung} relaxed=${relaxed} before=0 after=${after}`,
@@ -641,7 +596,6 @@ add(draft: QueueDraft): QueueEntry {
     `emptiedBy=${emptiedBy ?? 'none'}`,
     `pool=${poolSize}`,
     `target=${mode.target ?? 'none'}`,
-    `mode=${mode.minutes}m/${mode.energy}`,
    ].join(' '),
    refs: [],
   });
@@ -797,6 +751,34 @@ add(draft: QueueDraft): QueueEntry {
   if (!entry) return;
   entry.status = 'expired';
   this.#write(entry);
+ }
+
+ /**
+  * The composition gap sweep's expiry (redesign-2026-08-09 §10): a pending
+  * 'composition-gap' entry whose minted sitting is at least `sittings`
+  * sittings behind the current counter expires — "if you ignored it for
+  * three sittings, the model was wrong". The unit is the SITTING, the one
+  * the person actually ignores questions in, never a day guess. Answered
+  * entries are untouched (an answered gap's question is done, whatever the
+  * hole's fate); other sources are untouched (only model-found gaps carry
+  * the faster expiry — your own holes wait on the normal rule, Q-41); and
+  * an entry without a minted sitting (written before the field existed)
+  * falls through to the days-based rule instead of being expired blind.
+  */
+ expireModelGaps(sittings: number): number {
+  const current = this.#engagement.read().sittingCounter;
+  const all = this.#readAll();
+  let count = 0;
+  for (const entry of all) {
+   if (entry.status !== 'pending') continue;
+   if (entry.source !== 'composition-gap') continue;
+   if (entry.createdSitting === undefined) continue;
+   if (current - entry.createdSitting < sittings) continue;
+   entry.status = 'expired';
+   this.#write(entry);
+   count++;
+  }
+  return count;
  }
  
  markPending(id: string): void {

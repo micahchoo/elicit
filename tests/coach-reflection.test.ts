@@ -64,7 +64,6 @@ describe('mintReflections (090 T6)', () => {
    expect(e.quest).toBe(quest().id);
    expect(e.direction).toBe('cooking');
    expect(e.questionForm).toBe('theoretical');
-   expect(e.sharpness).toBe('sharp');
    expect(e.horizon).toBe('session');
    expect(e.license).toBe(`Q-75 quest return quest=${quest().id} session=s-1`);
    expect(e.target).toBeUndefined();

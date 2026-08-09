@@ -9,9 +9,7 @@
  */
 export type EventKind =
  'run-started' |
- 'anniversary-drawn' |
- 'anniversary-evaluated' |
- 'pulse-answered' |
+   'pulse-answered' |
  'index-rebuilt' |
  'docket-run' |
  'docket-run-failed' |
@@ -23,10 +21,7 @@ export type EventKind =
  'question-answered-direct' |
  'opener-minted' |
  'opener-failed' |
- 'still-true-minted' |
- 'still-true-failed' |
- 'still-true-undateable' |
- 'expedition-minted' |
+    'expedition-minted' |
  'expedition-failed' |
  'expired' |
  'queue-tail-expired' |
@@ -46,11 +41,7 @@ export type EventKind =
  'outcomes-failed' |
  'template-sweep-expired' |
  'template-sweep-failed' |
- 'gap-fill-minted' |
- 'gap-fill-clipped' |
- 'gap-fill-pole-skip' |
- 'gap-fill-failed' |
- 'territory-gap-fill' |
+     'territory-gap-fill' |
  'territory-gap-fill-failed' |
  'atlas-gap-fill-candidate' |
  'atlas-gap-fill-minted' |
@@ -92,6 +83,8 @@ export type EventKind =
  'coach-seed-evaluated' |
  'coach-seed-failed' |
  'coach-seeded-reoffer' |
+ 'neighborhoods-built' |
+ 'neighborhoods-failed' |
  'tripwire-failed' |
  'artifact-declared' |
  'queue-rung' |
@@ -125,6 +118,8 @@ export type EventKind =
  'clash-referent-clipped' |
  'clash-embedding-clipped' |
  'embedding-unavailable' |
+'embedding-coverage' |
+'coverage-embedding-failed' |
  'clash-checked' |
  'contradiction-opened' |
  'range-discriminated' |
@@ -146,10 +141,7 @@ export type EventKind =
  'import-run-failed' |
  'repair-budded' |
  'repair-question-capped' |
- 'reach-evaluated' |
- 'reach-offered' |
- 'reach-declined' |
- 'surfaced' |
+    'surfaced' |
  'piece-started' |
  'piece-prose-kept' |
  'gap-inserted' |
@@ -158,12 +150,27 @@ export type EventKind =
  'piece-exported' |
  'piece-set-down' |
  'piece-picked-up' |
+ 'piece-offer-accepted' |
+ 'piece-offer-declined' |
+ 'piece-gap-dismissed' |
+ 'piece-discarded' |
+ 'piece-placed' |
  'stale-pin-flagged' |
  'piece-set-down-auto' |
  'piece-jobs-failed' |
+ // The composition gap sweep (redesign-2026-08-09 §7, §10)
+ 'composition-gap-found' |
+ 'composition-gap-swept' |
+ 'composition-gap-clipped' |
+ 'composition-gap-expired' |
+ 'composition-gap-failed' |
+ 'piece-exported-questions' |
  'arrangements-proposed' |
  'arrangement-rejected' |
  'arrangement-chosen' |
+ 'auto-gather-offered' |
+ 'auto-gather-failed' |
+ 'auto-gather-skipped' |
  'sounding-license' |
  'sounding-offered' |
  'sounding-declined' |
@@ -191,4 +198,7 @@ export type EventKind =
  'pattern-decompose-rejection' |
  'repair' |
  'repair-expired' |
- 'thread-deferred';
+ 'thread-deferred' |
+'context-lines-composed' |
+'context-lines-failed' |
+'topic-declared';

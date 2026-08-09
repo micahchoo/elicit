@@ -52,11 +52,14 @@ import type {
   ClashEvidence,
   ClashOutcome,
   Contradiction,
+  PushDownResult,
   ReadLogEntry,
   Referent,
   SweepLine,
+  UnlinkResult,
   WikiSlice,
 } from './contract.js';
+import { USER_PUSH_DOWN_REASON } from './contract.js';
 import { asStringArray, filled } from './ops.js';
 
 export function createClaimStore(root: string): ClaimStore {
@@ -688,6 +691,67 @@ class ClaimStoreImpl implements ClaimStore {
     this.writeClaim(updated);
     return updated;
   }
+
+  /**
+   * The user's range-narrowing verb (the six margin verbs, ruling
+   * 2026-08-08): replace ONLY the claim's range and stamp `updated`, the
+   * `attest`/`edit` idiom. The body, cites and status are untouched —
+   * status is recomputed mechanically (Q-29). Read-modify-write through
+   * `readClaim`/`writeClaim`; an unknown id returns null.
+   */
+  narrow(id: string, range: string): Claim | null {
+    const claim = this.readClaim(id);
+    if (!claim) return null;
+    const updated = { ...claim, range, updated: new Date().toISOString() };
+    this.writeClaim(updated);
+    return updated;
+  }
+
+  /**
+   * The user's cite-detaching verb (the six margin verbs, ruling
+   * 2026-08-08): remove ONE "snippetId@version" cite and stamp `updated`.
+   * `no-cite` refuses a cite the claim does not carry; `single-cite`
+   * refuses to leave a claim citeless (Q-21 — the write below would throw,
+   * and the route must answer a refusal, not a 500). `status` is
+   * untouched — recomputed mechanically (Q-29), exactly as `attest`.
+   */
+  unlink(id: string, cite: string): UnlinkResult {
+    const claim = this.readClaim(id);
+    if (!claim) return { ok: false, reason: 'no-claim' };
+    if (!claim.cites.includes(cite)) return { ok: false, reason: 'no-cite' };
+    if (claim.cites.length === 1) return { ok: false, reason: 'single-cite' };
+    const updated = {
+      ...claim,
+      cites: claim.cites.filter((c) => c !== cite),
+      updated: new Date().toISOString(),
+    };
+    this.writeClaim(updated);
+    return { ok: true, claim: updated };
+  }
+
+  /**
+   * The user's push-down verb (the six margin verbs, ruling 2026-08-08):
+   * retire the claim as a past self — archived with the fixed reason
+   * `user-push-down`, the file kept as evidence (Q-29). A claim already
+   * retired (archived or superseded) cannot be pushed down again
+   * (`no-live`). `status` is untouched — recomputed mechanically
+   * (Q-29).
+   */
+  pushDown(id: string): PushDownResult {
+    const claim = this.readClaim(id);
+    if (!claim) return { ok: false, reason: 'no-claim' };
+    if (claim.archived === true || claim.supersededBy !== undefined) {
+      return { ok: false, reason: 'no-live' };
+    }
+    const updated = {
+      ...claim,
+      archived: true,
+      archiveReason: USER_PUSH_DOWN_REASON,
+      updated: new Date().toISOString(),
+    };
+    this.writeClaim(updated);
+    return { ok: true, claim: updated };
+  }
 }
 
 // ── The sweep deferral and still-true cursor (075) ──
@@ -775,4 +839,122 @@ export function readResumeMarker(root: string): ResumeMarker | null {
 export function clearResumeMarker(root: string): void {
   const path = join(root, 'wiki', RESUME_MARKER);
   try { unlinkSync(path); } catch { /* already gone — fine */ }
+}
+
+// ── Passage reads (Batch B, §11: the contextualizer's read-through) ──
+//
+// The since-last-read lens's read-through used to ride the claims' readLogs;
+// the contextualizer page shows passages, so reads are recorded per PASSAGE
+// (the dwell watch on the essay posts them). The ledger is append-only like
+// the claim readLog's own idiom (Q-21's instrument: a read is a record, never
+// an edit, and a missing or malformed line costs one read, never data).
+
+const PASSAGE_READS = 'passage-reads.jsonl';
+
+/** One passage read line: which passage, when, on which surface. */
+export type PassageRead = {
+  passageId: string;
+  at: string;
+  surface: string;
+};
+
+function passageReadOf(value: unknown): PassageRead | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const rec = value as Record<string, unknown>;
+  const passageId = filled(rec.passageId);
+  const at = filled(rec.at);
+  const surface = filled(rec.surface);
+  if (!passageId || !at || !surface) return null;
+  return { passageId, at, surface };
+}
+
+/** Record one passage read. Appends; creates the wiki dir on first write. */
+export function recordPassageRead(root: string, passageId: string, at: string, surface: string): void {
+  appendLine(root, join('wiki', PASSAGE_READS), JSON.stringify({ passageId, at, surface }));
+}
+
+/** Every fully-written passage read, oldest first; [] when absent or empty. */
+export function readPassageReads(root: string): PassageRead[] {
+  return readJsonl(root, join('wiki', PASSAGE_READS), passageReadOf);
+}
+// ── Context lines (Batch B2, §11 — the contextualizer's marginalia) ──
+//
+// The context-line store: one line per passage, composed by the clerk
+// (src/clerk/context-lines.ts), read by the wiki page. A single JSON ARRAY
+// file — every read is a whole-file parse and every write a whole-file
+// rewrite, so the page and the job can never disagree about what a line is.
+// The MERGE RULE lives here: a writer must read-then-upsert (replace the
+// records for the passages it touched, keep every other record), because the
+// page's fix-context and unlink-echo verbs mutate lines a later job must not
+// clobber. Missing or malformed reads as [] — the wiki's own rule (Q-3): a
+// lost store costs a re-composition, never data, and one bad record must not
+// hide the rest.
+
+const CONTEXT_LINES = 'context-lines.json';
+
+export type ContextLineRecord = {
+ /** The passage (snippet) id the line sits under. */
+ passageId: string;
+ /** Agent ink, marginalia-class, never quotable (§11). */
+ text: string;
+ /**
+  * The passage ids this line cites as its echo/clash evidence — the
+  * mechanical resonance hits the line rests on. Never a quotation: the
+  * person's words stay in the cited passages, and the page's unlink-echo
+  * verb trims a hit that is not a real echo.
+  */
+ echoes: string[];
+ /** When the line was composed (or last fixed by the page's verbs). */
+ at: string;
+ /**
+  * The Q-34 stamp: which model composed the line. Absent on lines the
+  * page's verbs have since fixed — a user-corrected line is no longer
+  * model-authored, and a false stamp is the one thing Q-34 forbids.
+  */
+ model?: string;
+};
+
+/** Every context line on disk, or [] when the file is missing or malformed. */
+export function readContextLines(root: string): ContextLineRecord[] {
+ const path = join(root, 'wiki', CONTEXT_LINES);
+ let raw: string;
+ try {
+  raw = readFileSync(path, 'utf-8');
+ } catch {
+  return [];
+ }
+ let value: unknown;
+ try {
+  value = JSON.parse(raw);
+ } catch {
+  return [];
+ }
+ if (!Array.isArray(value)) return [];
+ const out: ContextLineRecord[] = [];
+ for (const item of value) {
+  if (typeof item !== 'object' || item === null) continue;
+  const rec = item as Record<string, unknown>;
+  const passageId = filled(rec.passageId);
+  const text = filled(rec.text);
+  const at = filled(rec.at);
+  if (!passageId || !text || !at) continue;
+  const echoes = Array.isArray(rec.echoes)
+   ? rec.echoes.filter((e): e is string => typeof e === 'string')
+   : [];
+  out.push({
+   passageId,
+   text,
+   echoes,
+   at,
+   ...(typeof rec.model === 'string' ? { model: rec.model } : {}),
+  });
+ }
+ return out;
+}
+
+/** Rewrite the whole context-line store. Writers MUST read-then-upsert. */
+export function writeContextLines(root: string, records: ContextLineRecord[]): void {
+ const dir = join(root, 'wiki');
+ mkdirSync(dir, { recursive: true });
+ writeFileSync(join(dir, CONTEXT_LINES), JSON.stringify(records, null, 1) + '\n', 'utf-8');
 }

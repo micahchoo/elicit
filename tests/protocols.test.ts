@@ -85,35 +85,6 @@ describe('protocol registry', () => {
     expect(cs.prompt).toContain('concept-sorting');
   });
 
-  test('selectProtocolForTarget: self returns reflective', async () => {
-    registry = await import('../src/protocols/registry.js');
-    const defs = registry.loadProtocolDefinitions();
-    const p = registry.selectProtocolForTarget('self', 0, defs);
-    expect(p.name).toBe('reflective');
-    // self only has one protocol — always reflective regardless of index
-    const p2 = registry.selectProtocolForTarget('self', 99, defs);
-    expect(p2.name).toBe('reflective');
-  });
-
-  test('selectProtocolForTarget: domain rotates deterministically', async () => {
-    registry = await import('../src/protocols/registry.js');
-    const defs = registry.loadProtocolDefinitions();
-    const domainDefs = [...defs.values()].filter((d) => d.targets.includes('domain'));
-    expect(domainDefs.length).toBe(3);
-
-    // sessionIndex 0, 1, 2 should pick three distinct protocols
-    const seen = new Set<string>();
-    for (let i = 0; i < 3; i++) {
-      const p = registry.selectProtocolForTarget('domain', i, defs);
-      seen.add(p.name);
-    }
-    expect(seen.size).toBe(3);
-
-    // sessionIndex 3 wraps back to index 0
-    const p0 = registry.selectProtocolForTarget('domain', 0, defs);
-    const p3 = registry.selectProtocolForTarget('domain', 3, defs);
-    expect(p3.name).toBe(p0.name);
-  });
 
   test('getProtocol returns undefined for unknown name', async () => {
     registry = await import('../src/protocols/registry.js');

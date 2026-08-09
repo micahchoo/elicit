@@ -173,12 +173,34 @@ describe('the coached direction routes (090 T9)', () => {
   expect(readEvents(root).filter((e) => e.kind === 'coach-offer')).toHaveLength(2);
  });
 
+ it('GET /api/coach/directions lists only the coached doors, sorted by name (wave 5)', async () => {
+  // no doors yet — a quiet list, never an error
+  expect(await jsonOf<{ directions: { slug: string; name: string }[] }>(await get('/api/coach/directions')))
+   .toEqual({ directions: [] });
+
+  await post('/api/coach/direction', { name: 'Cooking' });
+  await post('/api/coach/direction', { name: 'Biking' });
+  await post('/api/coach/direction', { name: 'Gardening' });
+
+  // the door closes when the lens goes off (Q-73) — the record stays on disk
+  await post('/api/coach/direction/cooking/uncoach');
+
+  const r = await get('/api/coach/directions');
+  expect(r.status).toBe(200);
+  const body = await jsonOf<{ directions: { slug: string; name: string }[] }>(r);
+  expect(body.directions).toEqual([
+   { slug: 'biking', name: 'Biking' },
+   { slug: 'gardening', name: 'Gardening' },
+  ]);
+ });
+
  it('the coach routes are registered under the /api lock', () => {
   const paths = app.routes.map((r) => r.path);
   expect(paths).toContain('/api/coach/direction');
   expect(paths).toContain('/api/coach/direction/:slug/uncoach');
   expect(paths).toContain('/api/coach/direction/:slug/decline-offer');
   expect(paths).toContain('/api/coach/waiting');
+  expect(paths).toContain('/api/coach/directions');
  });
 });
 

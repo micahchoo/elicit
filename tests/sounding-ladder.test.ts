@@ -20,7 +20,7 @@ function entered(): SoundingState {
     session: 's',
     construct: 'the pull',
     licensingAnswer: LICENSING,
-    mode: { minutes: 20, energy: 'high' },
+    mode: {},
     questionCount: 8,
     at: NOW,
   });
@@ -71,28 +71,30 @@ describe('the ladder', () => {
   });
 
   test('the gate reports the rung and the total on every rung', () => {
+    // entered() at questionCount 8 on SESSION_BUDGET=10: remaining
+    // 10-2-8 = 0 → allowance floors at 8.
     const s = addRung(entered(), 'q1', 'the pull', 'the pull is strong in me', NOW);
-    expect(gateStateFor(s)).toEqual({ rung: 1, of: 10, checkpoint: false });
+    expect(gateStateFor(s)).toEqual({ rung: 1, of: 8, checkpoint: false });
   });
 
   test('the checkpoint fires on the halfway rung and on no other', () => {
-    let s = entered();   // allowance 10, checkpoint 5
+    let s = entered();   // allowance 8, checkpoint 4
     let prev = LICENSING;
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 8; i++) {
       const answer = `the pull again, take ${i}, said at some length`;
       s = addRung(s, `q${i}`, footholdFrom(prev), answer, NOW);
-      expect(gateStateFor(s).checkpoint).toBe(i === 5);
+      expect(gateStateFor(s).checkpoint).toBe(i === 4);
       prev = answer;
     }
   });
 
   test('continue ends the descent only when the structure says so', () => {
-    expect(applyGate(ladderWithRungs(10, 10), 'continue').end).toBe('cap');
-    expect(applyGate(ladderWithRungs(2, 10), 'continue').end).toBe(null);
+    expect(applyGate(ladderWithRungs(8, 8), 'continue').end).toBe('cap');
+    expect(applyGate(ladderWithRungs(2, 8), 'continue').end).toBe(null);
   });
 
   test('park and another-day end the descent whatever the counter says', () => {
-    const short = ladderWithRungs(2, 10);
+    const short = ladderWithRungs(2, 8);
     expect(applyGate(short, 'park').end).toBe('park');
     expect(applyGate(short, 'another-day').end).toBe('another-day');
   });

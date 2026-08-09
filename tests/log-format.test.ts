@@ -33,8 +33,6 @@ function ev(kind: string, detail: string, actor = 'clerk'): FormattableEvent {
  * and nothing enforced it, which is how four kinds drifted past it.
  */
 const EMITTED: { kind: string; detail: string; reads: string }[] = [
- { kind: 'anniversary-drawn', detail: `snippet=${ULID}`, reads: 'drew an anniversary card' },
- { kind: 'anniversary-evaluated', detail: 'candidates=0', reads: 'evaluated anniversaries — nothing written on this day' },
  { kind: 'run-started', detail: 'docket run started', reads: 'started a docket run' },
  { kind: 'index-rebuilt', detail: 'rebuilt index from 12 snippets', reads: 'rebuilt the index from 12 snippets' },
  { kind: 'docket-run', detail: 'minted 3, expired 1', reads: 'ran the docket: minted 3 questions, expired 1' },
@@ -48,9 +46,6 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'question-answered-direct', detail: `session=${ULID} chars=340`, reads: 'answered an open question in writing — the harvest reads it now' },
  { kind: 'opener-minted', detail: 'minted 2 openers', reads: 'minted 2 openers' },
  { kind: 'opener-failed', detail: `composeOpener for snippet ${ULID} failed: boom`, reads: 'could not mint an opener' },
- { kind: 'still-true-minted', detail: 'minted 1 still-true', reads: 'minted 1 still-true question' },
- { kind: 'still-true-failed', detail: `composeStillTrue for snippet ${ULID} failed: boom`, reads: 'could not mint a still-true question' },
- { kind: 'still-true-undateable', detail: 'count=1 snippets have no readable writing or filing time', reads: 'set aside 1 snippet whose writing time nothing says' },
  { kind: 'expedition-minted', detail: `minted expedition from snippet ${ULID}`, reads: 'minted an expedition from an earlier snippet' },
  { kind: 'expedition-failed', detail: 'Error: model returned nothing', reads: 'could not mint an expedition' },
  { kind: 'expired', detail: 'expired 4 entries', reads: 'expired 4 questions' },
@@ -71,10 +66,6 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'outcome-failed', detail: 'Error: model returned nothing', reads: 'could not mint an outcome question' },
  { kind: 'outcomes-failed', detail: 'Error: store unavailable', reads: 'could not run the outcome question job' },
  { kind: 'referent-annotations-failed', detail: 'boom', reads: 'could not run the referent annotation job' },
- { kind: 'gap-fill-minted', detail: 'minted=3 budQuestions=2 constructQuestions=1', reads: 'minted 3 gap-fill questions into the queue' },
- { kind: 'gap-fill-clipped', detail: 'cap=3 clipped=2', reads: 'enforced the gap-fill cap at 3 and clipped: 2' },
- { kind: 'gap-fill-pole-skip', detail: `snippet=${ULID}`, reads: 'skipped a half-Construct whose prose has no construct pole' },
- { kind: 'gap-fill-failed', detail: 'boom', reads: 'could not run the gap-fill sweep' },
 { kind: 'territory-gap-fill', detail: 'minted=2', reads: 'minted 2 territory questions from the KTG skeleton' },
 { kind: 'territory-gap-fill-failed', detail: 'boom', reads: 'could not run the territory gap-fill sweep' },
 { kind: 'atlas-gap-fill-candidate', detail: 'shadow candidate for atlas indexical-checklist region indexical-checklist.people', reads: 'evaluated an atlas region — shadow mode, candidate logged, nothing minted' },
@@ -84,6 +75,9 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'gazetteer-frontier-shadow', detail: 'frontierEntities=3', reads: 'gazetteer frontier would mint 3 questions — shadow mode, nothing minted' },
  { kind: 'gazetteer-frontier-minted', detail: 'minted=2', reads: 'minted 2 frontier questions from the gazetteer' },
  { kind: 'gazetteer-frontier-failed', detail: 'boom', reads: 'could not run the gazetteer frontier sweep' },
+// ── Context lines (Batch B2, §11) — the coverage line IS the §12 debt paid ──
+{ kind: 'context-lines-composed', detail: 'composed=7 skipped=3 cap=10', reads: 'wrote context lines for 7 passages this run — 3 passages skipped' },
+{ kind: 'context-lines-failed', detail: 'boom', reads: 'could not run the context-line job' },
  // ── Lineage mirror (Q-83, ticket 112) ──
  { kind: 'lineage-mirror-shadow', detail: '', reads: 'evaluated a mirror candidate — shadow mode, nothing minted' },
  { kind: 'lineage-mirror-minted', detail: '', reads: 'minted a mirror question from the record' },
@@ -97,10 +91,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
 { kind: 'repair', detail: `snippet=${ULID}@1`, reads: 'you unlinked a fragment you did not say' },
 // ── Thread-aware draw (ticket 148) ──
 { kind: 'thread-deferred', detail: `thread=${ULID} strikes=2`, reads: 'deferred a thread after two disengaged replies' },
+{ kind: 'topic-declared', detail: `session=${ULID} topic=the pull of the work`, reads: 'you named what this sitting is about: the pull of the work' },
 {
   kind: 'session-started',
-  detail: 'mode=25m/high target=self protocol=ladder',
-  reads: 'started a 25-minute sitting at high energy using the ladder protocol',
+  detail: 'target=self declared=false protocol=ladder shuffle=false',
+  reads: 'started a sitting using the ladder protocol',
  },
  { kind: 'close-phase-entered', detail: `session=${ULID}`, reads: 'entered the closing phase' },
  { kind: 'question-asked', detail: `session=${ULID} source=composed`, reads: 'asked a composed question' },
@@ -126,8 +121,8 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  },
  {
   kind: 'question-deferred',
-  detail: `session=${ULID} needs=energy`,
-  reads: 'deferred a question until you have more energy',
+  detail: `session=${ULID}`,
+  reads: 'deferred a question',
  },
  // The harvest line carries ticket 037's diagnostics as well as its
  // counts (ticket 066), and ticket 069's admissibility gate counters.
@@ -201,12 +196,12 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  // construction, so what the reader needs is what relaxing recovered.
  {
   kind: 'queue-rung',
-  detail: 'rung=2 relaxed=sharpness before=0 after=1',
-  reads: 'relaxed the sharpness this sitting allows and recovered 1 question',
+  detail: 'rung=1 relaxed=facet-balance before=0 after=1',
+  reads: 'relaxed the balance of facets and recovered 1 question',
  },
  {
   kind: 'queue-floor',
-  detail: 'emptiedBy=target pool=12 target=self mode=25m/high',
+  detail: 'emptiedBy=target pool=12 target=self',
   reads: 'composed a fresh question: none of the 12 in the queue got past what this sitting is for',
  },
 
@@ -622,6 +617,11 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'exported a piece with 3 paragraphs',
 },
 {
+  kind: 'piece-exported-questions',
+  detail: 'paragraphs=3',
+  reads: 'exported a piece with 3 paragraphs and its open questions',
+},
+{
   kind: 'piece-set-down',
   detail: `piece=${ULID}`,
   reads: 'set the piece down',
@@ -630,6 +630,31 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'piece-picked-up',
   detail: `piece=${ULID}`,
   reads: 'picked the piece up again',
+},
+{
+  kind: 'piece-offer-accepted',
+  detail: `piece=${ULID} snippet=${SECOND_ULID} version=1`,
+  reads: 'put an offered passage into the piece',
+},
+{
+  kind: 'piece-offer-declined',
+  detail: `piece=${ULID} snippet=${SECOND_ULID}`,
+  reads: 'set an offered passage aside for good',
+},
+{
+  kind: 'piece-gap-dismissed',
+  detail: `piece=${ULID} gap=${SECOND_ULID}`,
+  reads: 'dismissed a model-found gap — it was not a gap',
+},
+{
+  kind: 'piece-discarded',
+  detail: `piece=${ULID}`,
+  reads: 'discarded the piece — the file stays',
+},
+{
+  kind: 'piece-placed',
+  detail: `piece=${ULID} snippet=${SECOND_ULID} version=1`,
+  reads: 'placed a passage into the piece',
 },
 {
   kind: 'stale-pin-flagged',
@@ -647,33 +672,68 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   reads: 'could not finish the piece work this run — the rest of the docket work is already on disk',
 },
 
-// The candidate arrangements (T11): the one model call in the slice. A
-// rejection names the reason and the principle — the rejection rate is the
-// metric that says whether the model can do this job at all (T14 reads it);
-// the proposed line carries the surviving count, and zero is a valid,
-// non-exceptional outcome.
+// The composition gap sweep (redesign-2026-08-09 §7, §10): the second
+// probation entry. The per-composition line names the kinds, the summary
+// line the pass totals, the clip line the Q-56 record, and the expiry
+// line the faster model-gap brake — none of them accuses (Q-15).
 {
-  kind: 'arrangement-rejected',
-  detail: 'reason=pin-set principle=argument',
-  reads: 'set one proposed order aside (pin-set)',
+  kind: 'composition-gap-found',
+  detail: `piece=${ULID} gaps=2 kinds=leap,thin`,
+  reads: 'noted 2 gaps in a piece (leap,thin)',
 },
 {
-  kind: 'arrangements-proposed',
-  detail: 'count=2',
-  reads: 'offered 2 other orders of the same material',
+  kind: 'composition-gap-swept',
+  detail: 'found=3 placed=2 skipped=1',
+  reads: 'swept the pieces for gaps — found 3, kept 2 holes',
 },
 {
-  kind: 'arrangement-chosen',
-  detail: 'principle=argument',
-  reads: 'kept the argument order for the piece',
+  kind: 'composition-gap-clipped',
+  detail: 'cap=2 eligible=4 clipped=2',
+  reads: 'left 2 pieces unexamined this run — the pass cap',
 },
+{
+  kind: 'composition-gap-expired',
+  detail: 'expired=1 sittings=3',
+  reads: 'let 1 model-found gap question lapse after 3 sittings',
+},
+{
+  kind: 'composition-gap-failed',
+  detail: 'piece=not-a-ulid: boom',
+  reads: 'could not finish the gap sweep this run — the rest of the docket work is already on disk',
+},
+
+// Auto-gather (redesign-2026-08-09 §5.3): the first probation entry. One
+// summary line per sitting, plus a per-composition failure and the
+// store-refusal line — the durable-denial boundary.
+{
+  kind: 'auto-gather-offered',
+  detail: 'compositions=2 offered=1 skipped=1 failed=0',
+  reads: 'offered 1 passage to 2 open compositions from the sitting, skipping 1 passage already decided',
+},
+{
+  kind: 'auto-gather-failed',
+  detail: 'piece=not-a-ulid: boom',
+  reads: 'could not gather one composition this sitting',
+},
+{
+  kind: 'auto-gather-skipped',
+  detail: 'piece=not-a-ulid snippet=not-a-ulid: boom',
+  reads: 'refused to re-offer a passage the composition already decided',
+},
+
+// The ordering subsystem (T11) was deleted (§9 of the composition redesign):
+// its three kinds are HISTORY — nothing emits them anymore (the /arrangements
+// and /choose routes died, and the gap sweep replaced the model's half of
+// gap-finding). Their sentences stay in format.ts so lines already in the
+// JSONL still render, but there is no sample: a sample is a claim that a
+// rendering has been read on a REAL line, and no new line carries these kinds.
 // The sounding slice (plan Task 8): the offer, the gate, the park. These
 // lines report acts and counts — never how the descent went, and never an
 // identifier (the two T8 tests below sweep every sounding kind).
 {
   kind: 'sounding-license',
-  detail: 'late=true energy=true sustained=true sustainedValue=0.132 unoffered=true licensed=true',
-  reads: 'ran the entry license: late true, energy true, sustained true (jaccard 0.132), unoffered true — licensed',
+  detail: 'late=true sustained=true sustainedValue=0.132 unoffered=true licensed=true',
+  reads: 'ran the entry license: late true, sustained true (jaccard 0.132), unoffered true — licensed',
 },
 {
   kind: 'sounding-offered',
@@ -728,30 +788,6 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
   kind: 'soundings-summary-failed',
   detail: 'model returned nothing',
   reads: 'could not summarize a ladder',
-},
-// The reach licence (seeding Task 11): one offer per evaluation, and every
-// evaluation logged (Q-62). The evaluation carries the counts and the
-// winner; the offer names the region, its unread count and the terms that
-// earned it. The surface shows the region's own name, never the path.
-{
-  kind: 'reach-evaluated',
-  detail: 'nodes=3 candidates=1 best=journal/therapy-sessions offered=true overlap=2',
-  reads: 'weighed 3 regions against the live questions: 1 region cleared the name bar, and offered therapy-sessions (2 shared terms)',
-},
-{
-  kind: 'reach-evaluated',
-  detail: 'nodes=0 candidates=0 best=none offered=false overlap=0',
-  reads: 'weighed 0 regions against the live questions: 0 regions cleared the name bar, so nothing was offered',
-},
-{
-  kind: 'reach-offered',
-  detail: 'path=journal/therapy-sessions unread=1 terms=therapy,sessions',
-  reads: 'offered therapy-sessions (1 unread note), matched by therapy, sessions',
-},
-{
-  kind: 'reach-declined',
-  detail: 'path=journal/therapy-sessions',
-  reads: 'set therapy-sessions aside — it falls behind every region not declined more recently',
 },
 // QR-6 (ticket 114): the flood bound's tail expiry, one summary line per
 // call, and the one-time template sweep's per-entry journal. The sweep's
@@ -842,8 +878,18 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  { kind: 'coach-seed-failed', detail: 'directory missing', reads: 'coach seed sweep failed' },
  { kind: 'tripwire-failed', detail: 'boom', reads: 'the tripwire sweep failed' },
  { kind: 'coach-seeded-reoffer', detail: 'slug=rest parkedClaims=3 currentClaims=6', reads: 're-offered a parked seeded direction' },
+ // §12.3 neighborhoods (Batch C1) — the coverage sentence renders the debt.
+ { kind: 'neighborhoods-built', detail: 'source=embedding coverage=40/40 clustered=40 skipped=0 neighborhoods=6', reads: 'grouped 40 passages into 6 neighborhoods' },
+ { kind: 'neighborhoods-built', detail: 'source=lexical clustered=40 skipped=2 neighborhoods=6', reads: 'grouped 40 passages into 6 neighborhoods — 2 passages not yet grouped' },
+ { kind: 'neighborhoods-failed', detail: 'boom', reads: 'could not group your passages into themes' },
  // Q-110 door 2: user-declared direction from wiki claim
  { kind: 'direction-created', detail: 'slug=rest via=wiki-claim claim=01KZ...', reads: 'you made a direction from a wiki claim' },
+ // §12 (Batch C3) — the embedding coverage sentence names the gap, never silent.
+ { kind: 'embedding-coverage', detail: 'noun=passage covered=12 total=87 fresh=5 unembedded=75', reads: 'embedded 12 of 87 passages — 75 unembedded' },
+ { kind: 'embedding-coverage', detail: 'noun=claim covered=34 total=34 fresh=0 unembedded=0', reads: 'embedded 34 of 34 claims — 0 unembedded' },
+ { kind: 'coverage-embedding-failed', detail: 'boom', reads: 'could not finish the embedding coverage pass — the rest of the docket work is already on disk' },
+ // Batch C3 — the resonance staging verdict with its evidence (semantic > 0).
+ { kind: 'resonance-checked', detail: `session=${ULID} hits=3 lexical=1 semantic=2`, reads: 'looked for echoes of what was just said and found 3, 2 by meaning' },
  ];
  
  describe('formatEvent', () => {
@@ -983,7 +1029,7 @@ const EMITTED: { kind: string; detail: string; reads: string }[] = [
  /** One event per sounding kind, with the detail shapes the routes emit. */
  function everySoundingEvent(): FormattableEvent[] {
   return [
-   ev('sounding-license', 'late=true energy=true sustained=true sustainedValue=0.132 unoffered=true licensed=true', 'elicitor'),
+   ev('sounding-license', 'late=true sustained=true sustainedValue=0.132 unoffered=true licensed=true', 'elicitor'),
    ev('sounding-offered', `session=${ULID} rungs=9`, 'elicitor'),
    ev('sounding-declined', `session=${ULID}`, 'elicitor'),
    ev('sounding-entered', `session=${ULID} sounding=${SECOND_ULID} rungs=9`, 'elicitor'),
@@ -1019,6 +1065,7 @@ const FLOORS: Record<string, number> = {
  'src/queue/queue.ts': 3,
  'src/wiki/registry.ts': 3,
  'src/elicitor/elicitor.ts': 1,
+ 'src/wiki/neighborhoods.ts': 1,
 };
 
 /**

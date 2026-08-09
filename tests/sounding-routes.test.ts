@@ -116,9 +116,10 @@ function turnScript(phrase: string, question: string): string[] {
 
 /**
  * The whole script a session that reaches the cap consumes, in call order:
- * six pre-offer turns, the accept route's rung-0 composition, turns 1-5,
- * the gate continue past the checkpoint, turns 7-11. The checkpoint turn and
- * the cap turn compose nothing. (Allowance 12, checkpoint 6 — re-derived 2026-08-05 gate-repair.)
+ * six pre-offer turns, the accept route's rung-0 composition, turns 1-3,
+ * the gate continue past the checkpoint, turns 5-7. The checkpoint turn and
+ * the cap turn compose nothing. (Allowance 8, checkpoint 4 — the fixed
+ * SESSION_BUDGET 10 floors the allowance at 8, canon §5.3.)
  */
 function capScript(): string[] {
  const out: string[] = [];
@@ -126,7 +127,7 @@ function capScript(): string[] {
   out.push(...turnScript(THREAD_PHRASES[i % 3]!, followUp(THREAD_PHRASES[i % 3]!, PRE_TAILS[i]!)));
  }
  out.push(...turnScript(RUNG_PHRASES[0]!, followUp(RUNG_PHRASES[0]!, RUNG_TAILS[0]!)));
- for (const k of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+ for (const k of [1, 2, 3, 4, 5, 6, 7]) {
   out.push(...turnScript(RUNG_PHRASES[k]!, followUp(RUNG_PHRASES[k]!, RUNG_TAILS[k]!)));
  }
  return out;
@@ -180,8 +181,8 @@ describe('sounding routes', () => {
   return app.fetch(new Request(`http://localhost${path}`, init), { remoteAddr: '127.0.0.1' });
  }
 
- async function newSession(app: Hono, minutes = 20): Promise<string> {
-  const res = await post(app, '/api/session', { mode: { minutes, energy: 'medium' } });
+ async function newSession(app: Hono): Promise<string> {
+  const res = await post(app, '/api/session', {});
   expect(res.sessionId).toBeTruthy();
   return res.sessionId;
  }
@@ -202,7 +203,9 @@ describe('sounding routes', () => {
   for (let i = 1; i <= 12; i++) {
    const res = await post(app, `/api/session/${sessionId}/turn`, { text: aRichAnswer(i) });
    if (res.descentClosed) return res;
-   if (i === 6) {
+   // The checkpoint blocks until a gate word arrives — its position derives
+   // from the budget (checkpoint = allowance/2), so gate on the response.
+   if (res.kind === 'checkpoint') {
     const gate = await post(app, `/api/session/${sessionId}/sounding/gate`, { choice: 'continue' });
     expect(gate.kind).toBe('probe');
    }
@@ -273,17 +276,17 @@ describe('sounding routes', () => {
  });
 
  it('the checkpoint rung returns no question until a gate word arrives', async () => {
-  const { app } = await makeApp(capScript().slice(0, 30));
+  const { app } = await makeApp(capScript().slice(0, 22));
   const id = await newSession(app);
   await turnUntilLicensed(app, id);
   await post(app, `/api/session/${id}/sounding`, { accept: true });
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 3; i++) {
    await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(i) });
   }
-  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(6) });
+  const res = await post(app, `/api/session/${id}/turn`, { text: aRichAnswer(4) });
   expect(res.kind).toBe('checkpoint');
   expect(res.text).toBeUndefined();
-  expect(res.sounding).toEqual({ rung: 6, of: expect.any(Number), checkpoint: true });
+  expect(res.sounding).toEqual({ rung: 4, of: expect.any(Number), checkpoint: true });
   const gate = await post(app, `/api/session/${id}/sounding/gate`, { choice: 'continue' });
   expect(gate.kind).toBe('probe');
  });
@@ -297,7 +300,7 @@ describe('sounding routes', () => {
   const ladder = readLadder(root, res.soundingId);
   expect(ladder).not.toBeNull();
   expect(ladder!.endedBy).toBe('cap');
-  expect(ladder!.rungs.length).toBe(12);
+  expect(ladder!.rungs.length).toBe(8);
  });
 
  it('park writes the ladder, queues the pointer, and closes with the door question', async () => {
@@ -313,12 +316,11 @@ describe('sounding routes', () => {
   expect(ladder).not.toBeNull();
   expect(ladder!.rungs.length).toBeGreaterThan(0);
   expect(queue.list({ source: 'parked-sounding' })).toHaveLength(1);
-  // The door question was already asked, so the next turn moves to the bookmark.
+  // The door question was already asked, so the next turn saturates.
   const next = await post(app, `/api/session/${id}/turn`, { text: 'nothing else' });
-  // The turn response's phase field is now the machine shape (ticket 159,
-  // slice 4 — every sitting carries the machine); the session phase string
-  // still rides the gate routes and the session response.
-  expect(next.phase).toEqual({ id: 'ways-in', label: 'follow the thread', step: 1, of: 1 });
+  // Saturated closes the wire without a phase field (the machine shape rides
+  // only probe responses); the session phase string still rides the gate routes.
+  expect(next.kind).toBe('saturated');
  });
 
  it('an unknown gate word is a 400, not a guess', async () => {

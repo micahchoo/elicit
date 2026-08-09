@@ -28,8 +28,6 @@ import { createQueueStore } from '../src/queue/queue.js';
 import { buildIndex } from '../src/index/lexical.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { createImportStore, type ImportStore } from '../src/import/store.js';
-import { runDocket } from '../src/clerk/docket.js';
-import { composeOpener, composeStillTrue } from '../src/clerk/composed.js';
 import { readEvents } from '../src/log/activity.js';
 import { makeScriptedComplete } from './fakes.js';
 import { FIXTURE_ADMITTED, FIXTURE_DATES, SHARED_SENTENCE } from './fixtures/seeding-vault/manifest.js';
@@ -78,8 +76,6 @@ let store: ImportStore;
 let queue: QueueStore;
 let slug: string;
 let scanBody: { pending: number; refused: { file: string; reason: string }[] };
-let offerBody: { offer: unknown; root: string | null };
-let transcriptsAbsentAtOffer: boolean;
 let firstRemaining: number;
 let settled: number;
 const waiting: (() => void)[] = [];
@@ -170,10 +166,6 @@ beforeAll(async () => {
   store = createImportStore(root);
   await waitForSettles(1); // the boot docket, a no-op against the empty store
 
-  // The offer first, before any corpus exists: Reach evaluates, and nothing
-  // acts on it — the offer must never write a transcript.
-  offerBody = (await (await get('/api/reach')).json()) as { offer: unknown; root: string | null };
-  transcriptsAbsentAtOffer = !existsSync(join(root, 'transcripts'));
 
   // Declare → scan → docket extraction → review inside the region → commit.
   const declared = (await (await post('/api/import/region', { root: FIXTURE, dating: D, authorship: 'other' })).json()) as { slug: string };
@@ -204,10 +196,6 @@ describe('the seven jobs, one undated vault (014 T15)', () => {
     expect(readdirSync(join(root, 'imports'))).not.toContain('completeness.json');
   });
 
-  it('Reach — offers, never acts: no corpus exists after an offer is shown', () => {
-    expect(transcriptsAbsentAtOffer).toBe(true);
-    expect(offerBody).toBeDefined();
-  });
 
   it('Cut — the review queue never exceeds the chosen region', async () => {
     // Four extracted, one handed back: three remain INSIDE the region — the
@@ -274,38 +262,6 @@ describe('the seven jobs, one undated vault (014 T15)', () => {
     expect(started).toContain('2019-11-03');
   });
 
-  it('Confirm — a sitting imported today is a still-true candidate at once', async () => {
-    // The whole point of Task 5: prose written in 2019 but filed today is a
-    // still-true candidate immediately, and the real composer now accepts it
-    // (the empty-question fix). Drive the docket directly over the same
-    // vault with the REAL composers — the server's runDocketNow wraps the
-    // same runDocket call.
-    const report = await runDocket({
-      vault: createVault(root),
-      queue: createQueueStore(root),
-      complete: confirmComplete(),
-      buildIndex,
-      composeOpener,
-      composeStillTrue,
-      listSessions: (r) =>
-        readdirSync(join(r, 'transcripts'))
-          .map((f) => {
-            const data = matter.read(join(r, 'transcripts', f)).data as { started: string };
-            return { session: f.slice(0, -3), started: data.started, turnCount: 1, chars: 10 };
-          }),
-      log: () => {},
-      vaultRoot: root,
-      stillTrueCursor: { read: () => 0, write: () => {} },
-    });
-    const stillTrue = report.minted.filter((e) => e.source === 'still-true');
-    expect(stillTrue.length).toBeGreaterThan(0);
-    // The cited snippet is an IMPORTED one — its session is an import id.
-    const cited = stillTrue[0]!.cites?.[0] ?? '';
-    const [snippetId] = cited.split('@');
-    const snippet = snippetsOnDisk().find((s) => s.id === snippetId);
-    expect(snippet).toBeDefined();
-    expect(snippet!.provenance.session).toMatch(/^import-/);
-  });
 
   it('Confirm — nothing anywhere holds a weak prior or a fifth status', () => {
     // Q-21/Q-66: no weak prior, no provisional status — asserted by grep

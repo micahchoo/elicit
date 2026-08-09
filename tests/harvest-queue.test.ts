@@ -85,6 +85,34 @@ function oneCutPayload(): string {
  });
 }
 
+/**
+ * One valid cut AND one non-standalone fragment — both real substrings of
+ * the entry, so the harvest keeps the cut as a proposal and buds the rest
+ * (standalone:false → failures ['standalone'], never dropped).
+ */
+function oneCutOneBudPayload(): string {
+ return JSON.stringify({
+  cuts: [
+   {
+    text: entryCut,
+    sourceTurn: 0,
+    facet: 'construct',
+    stance: 'self-observation',
+    reading: 'Money is a stand-in for something else',
+    standalone: true,
+   },
+   {
+    text: 'I keep circling back to the same worry about money',
+    sourceTurn: 0,
+    facet: 'construct',
+    stance: 'self-observation',
+    reading: 'Money is a recurring worry',
+    standalone: false,
+   },
+  ],
+ });
+}
+
 /** A full app over a vault dir, the way the other suite tests build one. */
 async function makeApp(vaultDir: string, complete: Complete): Promise<Hono> {
  const vault = createVault(vaultDir);
@@ -128,16 +156,32 @@ describe('harvest review queue', () => {
    const listRes = await get(appB, '/api/harvest-queue');
    expect(listRes.status).toBe(200);
    const { pending } = (await listRes.json()) as {
-    pending: Array<{ sessionId: string; proposalCount: number }>;
+    pending: Array<{ sessionId: string; proposalCount: number; budCount: number }>;
    };
    expect(pending).toHaveLength(1);
    expect(pending[0]!.sessionId).toBe(sessionId);
    expect(pending[0]!.proposalCount).toBe(1);
+   // Wave 2 S1: a record with no buds field maps budCount to 0 — an old
+   // record and a new no-bud record read identically.
+   expect(pending[0]!.budCount).toBe(0);
+   // Wave 3 S4: the list stays light — transcriptBody rides only on the :id
+   // detail, never on the list projection.
+   expect(pending[0]!).not.toHaveProperty('transcriptBody');
 
    const detailRes = await get(appB, `/api/harvest-queue/${sessionId}`);
    expect(detailRes.status).toBe(200);
-   const detail = (await detailRes.json()) as { proposals: unknown[] };
+   const detail = (await detailRes.json()) as {
+    proposals: unknown[];
+    budCount: number;
+    transcriptBody: string;
+   };
    expect(detail.proposals).toHaveLength(1);
+   expect(detail.budCount).toBe(0);
+   // Wave 3 S4: the :id response carries the sitting's transcript body — the
+   // in-place review renders the entry with cuts underlined. The unprompted
+   // flow wrote the transcript on disk (startTranscript + appendTurn), so
+   // appB, a fresh process over the same vault, reads the same body.
+   expect(detail.transcriptBody).toContain(entryText);
 
    // Decide on B. The record must supply the origin AND the capture channel
    // (ticket 048) — the live maps B never had.
@@ -162,7 +206,50 @@ describe('harvest review queue', () => {
   }
  });
 
- it('logs a failed harvest distinctly from an empty one (034 rule)', async () => {
+it('persists the propose() buds in the record and maps budCount', async () => {
+ const vaultDir = mkdtempSync(join(tmpdir(), 'elicit-harvest-queue-buds-'));
+ try {
+  const app = await makeApp(vaultDir, keyedComplete(oneCutOneBudPayload()));
+  const entryRes = await post(app, '/api/unprompted', { text: entryText });
+  expect(entryRes.status).toBe(200);
+  const { sessionId } = (await entryRes.json()) as { sessionId: string };
+
+  const detail = await poll(async () => {
+   const res = await get(app, `/api/harvest-queue/${sessionId}`);
+   if (res.status !== 200) return null;
+   return (await res.json()) as {
+    proposals: unknown[];
+    budCount: number;
+    buds?: { text: string; reason: string }[];
+   };
+  });
+  expect(detail.proposals).toHaveLength(1);
+  expect(detail.budCount).toBe(1);
+  expect(detail.buds).toEqual([
+   { text: 'I keep circling back to the same worry about money', reason: 'standalone' },
+  ]);
+
+  const listRes = await get(app, '/api/harvest-queue');
+  const { pending } = (await listRes.json()) as {
+   pending: Array<{ proposalCount: number; budCount: number }>;
+  };
+  expect(pending).toHaveLength(1);
+  expect(pending[0]!.proposalCount).toBe(1);
+  expect(pending[0]!.budCount).toBe(1);
+
+  // The on-disk record carries the same buds — the wire is a projection.
+  const record = readPendingHarvest(vaultDir, sessionId);
+  expect(record).not.toBeNull();
+  expect(record!.proposals).toHaveLength(1);
+  expect(record!.buds).toEqual([
+   { text: 'I keep circling back to the same worry about money', reason: 'standalone' },
+  ]);
+ } finally {
+  rmSync(vaultDir, { recursive: true, force: true });
+ }
+});
+
+it('logs a failed harvest distinctly from an empty one (034 rule)', async () => {
   // (a) Every chunk failed: harvest-failed, no record, nothing to review.
   const failDir = mkdtempSync(join(tmpdir(), 'elicit-harvest-queue-fail-'));
   try {
@@ -247,6 +334,46 @@ describe('harvest review queue', () => {
    const pendingDir = join(vaultDir, 'harvest', 'pending');
    expect(readdirSync(pendingDir)).toHaveLength(0);
    expect(readPendingHarvest(vaultDir, sessionId)).toBeNull();
+  } finally {
+   rmSync(vaultDir, { recursive: true, force: true });
+  }
+ });
+
+ it('an empty harvest closes through the session harvest route', async () => {
+  const vaultDir = mkdtempSync(join(tmpdir(), 'elicit-harvest-queue-close-'));
+  try {
+   const app = await makeApp(vaultDir, keyedComplete(JSON.stringify({ cuts: [] })));
+   const entryRes = await post(app, '/api/unprompted', { text: entryText });
+   expect(entryRes.status).toBe(200);
+   const { sessionId } = (await entryRes.json()) as { sessionId: string };
+
+   // The zero-proposal record lands — ran-and-found-nothing is reviewable,
+   // and the close button's POST is the review that ends it.
+   await poll(async () => {
+    const res = await get(app, `/api/harvest-queue/${sessionId}`);
+    if (res.status !== 200) return null;
+    const r = (await res.json()) as { proposals: unknown[] };
+    return readEvents(vaultDir).some((e) => e.kind === 'harvest-proposed') ? r : null;
+   });
+
+   // Closing with zero decisions: the record leaves the queue and the disk,
+   // and the log says the sitting harvested nothing (kept=0).
+   const closeRes = await post(app, `/api/session/${sessionId}/harvest`, {
+    decisions: [],
+   });
+   expect(closeRes.status).toBe(200);
+   expect(await closeRes.json()).toEqual({ snippets: [], buds: [], repeats: [] });
+
+   expect(readPendingHarvest(vaultDir, sessionId)).toBeNull();
+
+   const listRes = await get(app, '/api/harvest-queue');
+   const { pending } = (await listRes.json()) as { pending: unknown[] };
+   expect(pending).toHaveLength(0);
+
+   const events = readEvents(vaultDir);
+   const harvested = events.filter((e) => e.kind === 'session-harvested');
+   expect(harvested).toHaveLength(1);
+   expect(harvested[0]!.detail).toContain('kept=0');
   } finally {
    rmSync(vaultDir, { recursive: true, force: true });
   }

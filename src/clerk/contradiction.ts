@@ -392,7 +392,6 @@ function buildRemeasureDraft(
   questionForm: 'deliberative',
   cites,
   quotedFragment,
-  sharpness: 'weak',
   horizon: 'session',
  };
 }

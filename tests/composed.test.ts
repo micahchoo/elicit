@@ -440,7 +440,6 @@ describe('composeOpener', () => {
     expect(result).not.toBeNull();
     const draft = result!;
     expect(draft.source).toBe('composed');
-    expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
     expect(draft.questionForm).toBe('deliberative');
     expect(draft.horizon).toBe('session');
@@ -524,7 +523,6 @@ describe('composeStillTrue', () => {
     expect(result).not.toBeNull();
     const draft = result!;
     expect(draft.source).toBe('still-true');
-    expect(draft.sharpness).toBe('weak');
     expect(draft.license).toBe('CC0');
     // No log fn passed → no shadow record → the form stays 'deliberative'.
     // A shadow decision that leaves no record may not act (Q-35, the Q-56

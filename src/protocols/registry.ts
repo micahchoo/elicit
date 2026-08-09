@@ -201,22 +201,11 @@ export function loadProtocolDefinitions(): Map<string, ProtocolDef> {
  return registry.load();
 }
 
-/**
- * Select a protocol for the given target using deterministic rotation.
- * `sessionIndex` is the count of prior sessions (0-based for the first).
- */
-export function selectProtocolForTarget(
- target: Target,
- sessionIndex: number,
- defs: Map<string, ProtocolDef>,
-): ProtocolDef {
- const candidates = [...defs.values()].filter((d) => d.targets.includes(target) && d.rotation !== false);
- if (candidates.length === 0) {
-  // No protocol for this target — fall back to reflective
-  return defs.get('reflective') ?? [...defs.values()][0]!;
- }
- return candidates[sessionIndex % candidates.length]!;
-}
+// ── Rotation cut (ruling 2026-08-09, redesign §10) ──
+// selectProtocolForTarget died with rotation: a sitting runs 'reflective'
+// unless a machine supplies its own protocol (deps.protocolName). The defs
+// still carry the `rotation` flag as data — people-grid and drm are
+// rotation:false instruments reached by machine, never by rotation.
 
 /**
  * Get a protocol definition by name.  Returns undefined if not found.

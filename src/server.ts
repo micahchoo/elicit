@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Server } from 'node:http';
 import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -40,7 +41,7 @@ import { makeFakeComplete } from './fake-responder.js';
 import { appendEvent, onAppend, readEvents, type ActivityEvent } from './log/activity.js';
 import type { EventKind } from './log/kinds.js';
 import { readTranscripts, readTranscriptBody } from './vault/transcripts.js';
-import { createSttClient, type SttClient } from './stt/client.js';
+import { createSttClient, type SttClient, type SttStream, type SttStreamPartial } from './stt/client.js';
 import { resolveModelDir } from './stt/model.js';
 import { createFileAuth, createSessionAuth, remoteAddrOf, requireLoopback, sessionResponse, type AuthStore } from './auth/auth.js';
 import { archiveFreshStart } from './reset/fresh-start.js';
@@ -128,6 +129,13 @@ export interface ServerDeps {
   * behavior, which the tests keep.
   */
  gazetteerStore?: GazetteerStore;
+ /**
+  * The machine protocol every route-created sitting runs (canon §10: the
+  * pick and the rotation are dead, so reflective is the production default).
+  * Tests inject 'cdm' etc. to drive the machine machinery through the
+  * routes; absent = reflective.
+  */
+ protocolName?: string;
 }
 
 // ── MIME map for static serving ──
@@ -620,6 +628,7 @@ const { maps: sessionMaps, ctx: sessionCtx } = createSessionState({
  startDocket: clerk.startDocket,
  listSessions,
  isCaptureChannel,
+ ...(deps.protocolName !== undefined ? { protocolName: deps.protocolName } : {}),
 });
 // The unprompted map references stay for the coach and waiting-surface
 // clusters (src/session/waiting.ts), which mutate the SAME maps — Wave C3 F14.
@@ -947,9 +956,132 @@ createWikiRoutes(app, {
  serverEmit(deps.vaultRoot, 'system', 'transcribed', `${duration}ms ${chars}chars`);
 
  return c.json({ text: result.text });
- });
+});
 
- createPieceRoutes(app, {
+// ── Streaming transcribe (redesign wave 4, R4) ──
+//
+// Shape: the plan's single-POST sketch (stream raw PCM in the request body
+// and answer SSE partials on the same response) needs a full-duplex
+// transport — the browser's fetch is half-duplex (the response cannot be
+// read until the request body is fully sent) and there is no WebSocket
+// server-side. So the stream rides sequential POSTs and the partials ride
+// a separate GET SSE feed:
+//   POST /api/transcribe/stream/open                          → {streamId}
+//   POST /api/transcribe/stream/:streamId/audio (raw Float32) → {ok:true}
+//   POST /api/transcribe/stream/:streamId/end                 → {text}
+//   GET  /api/transcribe/stream/:streamId/events (SSE) — 'partial' events
+//        (data {text}) as hypotheses change, then one 'final' event, then
+//        the feed closes.
+// The browser opens the SSE feed BEFORE pushing audio so no partial can be
+// missed (the feed drains a per-stream buffer the worker partials append
+// to). The worker's streams are pseudo-streaming over the offline
+// recognizer (src/stt/worker.ts — the Parakeet TDT is an offline
+// transducer, sherpa-onnx#2918). The end route deliberately does NOT set
+// pendingProsody: the stream wire carries text only, while ticket-108
+// prosody needs per-token durations only the one-shot result carries. The
+// 'transcribed' activity kind is reused — no new emit kind.
+const sttStreams = new Map<string, {
+ stream: SttStream;
+ partials: SttStreamPartial[];
+ error: string | null;
+}>();
+
+app.post('/api/transcribe/stream/open', async (c) => {
+ const client = getSttClient(deps);
+ if (!client?.openStream) {
+  return c.json({ error: 'STT model not available' }, 503);
+ }
+ let stream: SttStream;
+ try {
+  stream = await client.openStream();
+ } catch (err) {
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 503);
+ }
+ const session = { stream, partials: [] as SttStreamPartial[], error: null as string | null };
+ sttStreams.set(stream.streamId, session);
+ stream.onPartial((p) => {
+  const s = sttStreams.get(stream.streamId);
+  if (!s) return;
+  s.partials.push(p);
+ });
+ stream.onError((err) => {
+  // The worker-side stream died. The SSE feed notices the error flag and
+  // closes; the browser's stop path surfaces the failure.
+  session.error = err.message;
+ });
+ return c.json({ streamId: stream.streamId });
+});
+
+app.post('/api/transcribe/stream/:streamId/audio', async (c) => {
+ const session = sttStreams.get(c.req.param('streamId'));
+ if (!session) return c.json({ error: 'unknown stream' }, 404);
+ const rateStr = c.req.query('rate') ?? '16000';
+ const sampleRate = parseInt(rateStr, 10);
+ if (isNaN(sampleRate) || sampleRate < 8000 || sampleRate > 48000) {
+  return c.json({ error: 'invalid rate' }, 400);
+ }
+ const raw = await c.req.arrayBuffer();
+ if (raw.byteLength < 4 || raw.byteLength % 4 !== 0) {
+  return c.json({ error: 'empty or misaligned audio chunk' }, 400);
+ }
+ session.stream.pushAudio(new Float32Array(raw), sampleRate);
+ return c.json({ ok: true });
+});
+
+app.post('/api/transcribe/stream/:streamId/end', async (c) => {
+ const session = sttStreams.get(c.req.param('streamId'));
+ if (!session) return c.json({ error: 'unknown stream' }, 404);
+ try {
+  const result = await session.stream.end();
+  sttStreams.delete(c.req.param('streamId'));
+  const chars = result.text.length;
+  serverEmit(deps.vaultRoot, 'system', 'transcribed', `stream ${chars}chars`);
+  return c.json({ text: result.text });
+ } catch (err) {
+  sttStreams.delete(c.req.param('streamId'));
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+ }
+});
+
+app.get('/api/transcribe/stream/:streamId/events', (c) => {
+ const session = sttStreams.get(c.req.param('streamId'));
+ if (!session) return c.json({ error: 'unknown stream' }, 404);
+ return streamSSE(c, async (stream) => {
+  let open = true;
+  let idx = 0;
+  let finalDelivered = false;
+  stream.onAbort(() => { open = false; });
+  try {
+   while (open) {
+    while (idx < session.partials.length) {
+     const p = session.partials[idx++]!;
+     await stream.writeSSE({
+      event: p.final ? 'final' : 'partial',
+      data: JSON.stringify({ text: p.text }),
+     });
+     if (p.final) finalDelivered = true;
+     if (p.final || session.error) { open = false; break; }
+    }
+    if (!open) break;
+    if (session.error) { open = false; break; }
+    await stream.sleep(50);
+   }
+  } catch {
+   // writeSSE swallows its own errors; this is a safety net.
+  } finally {
+   if (sttStreams.get(c.req.param('streamId')) === session) {
+    sttStreams.delete(c.req.param('streamId'));
+    // The reader vanished (or errored) before any final was delivered:
+    // release the worker-side stream so it cannot leak.
+    if (!finalDelivered && !session.error) {
+     session.stream.end().catch(() => {});
+    }
+   }
+  }
+ });
+});
+
+createPieceRoutes(app, {
  pieces,
  vault: deps.vault,
  queue: deps.queue,

@@ -153,6 +153,21 @@ app.get('/api/coach/waiting', (c) => {
  });
 });
 
+// GET /api/coach/directions — the doors list (redesign wave 5): every
+// coached Direction as {slug, name}, sorted by name, for the directions
+// tab. Read-only like the page GET: no side effects, no log write.
+// Un-coached records are archived lenses (Q-73) — the doors are the lenses
+// that are ON. Registered BEFORE /api/coach/:slug so the literal path can
+// never be captured as a page slug.
+app.get('/api/coach/directions', (c) => {
+ const directions = coachStore()
+  .listDirections()
+  .filter((d) => d.coached)
+  .map((d) => ({ slug: d.slug, name: d.name }))
+  .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+ return c.json({ directions });
+});
+
 // The one fire-and-forget advice attempt, shared by /read, /return and
 // /artifact (T10): licenseState recomputed from disk, then the mint. The
 // mint failing is a log line, never a 5xx — the request already succeeded.

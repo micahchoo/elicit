@@ -27,7 +27,6 @@ import { buildIndex } from '../src/index/lexical.js';
 import { createFileAuth } from '../src/auth/auth.js';
 import { createImportStore, type ImportStore } from '../src/import/store.js';
 import { bodyHash } from '../src/import/scan.js';
-import { readSurvey } from '../src/import/survey.js';
 import { readEvents } from '../src/log/activity.js';
 import { makeFakeComplete } from '../src/fake-responder.js';
 import { makeScriptedComplete } from './fakes.js';
@@ -134,7 +133,6 @@ function seedReachingQuestion(): void {
   license: 'CC0',
   question: 'What changed about therapy sessions?',
   questionForm: 'deliberative',
-  sharpness: 'sharp',
   horizon: 'now',
  } satisfies QueueDraft);
 }
@@ -202,30 +200,7 @@ describe('the seeding routes (014 T12)', () => {
     expect(store.list('pending', slug)).toHaveLength(4);
   });
 
- it('survey writes the snapshot and reach reads it', async () => {
-  // A folder whose own names carry two LETTER terms Reach can match — the
-  // committed fixture's names cannot: termsOf splits on non-letters, so
-  // '2019' is a separator, and no node of the fixture reaches the 2-term
-  // bar. The folder content is irrelevant to the snapshot loop being tested.
-  const folder = join(root, 'therapy-folder');
-  mkdirSync(join(folder, 'therapy-sessions'), { recursive: true });
-  writeFileSync(join(folder, 'therapy-sessions', 'a.md'), 'Notes from a session.\n');
-  mkdirSync(join(folder, 'other-notes'), { recursive: true });
-  writeFileSync(join(folder, 'other-notes', 'b.md'), 'Other notes.\n');
-  seedReachingQuestion();
-  const res = await get('/api/import/survey?folder=' + encodeURIComponent(folder));
-  expect(res.status).toBe(200);
-  expect(readSurvey(root)).not.toBeNull();
-  const body = await jsonOf<{ offer: { path: string; unread: number; terms: string[] } | null }>(await get('/api/reach'));
-  expect(body.offer).not.toBeNull();
-  expect(body.offer!.path).toBe('therapy-sessions');
- });
 
-  it('reach answers null before any survey, and logs the evaluation', async () => {
-    const body = await jsonOf<{ offer: unknown }>(await get('/api/reach'));
-    expect(body.offer).toBeNull();
-    expect(activityKinds()).toContain('reach-evaluated');
-  });
 
   it('there is no route that harvests a region without a declaration', () => {
     expect(routePaths()).not.toContain('/api/import/harvest-region');

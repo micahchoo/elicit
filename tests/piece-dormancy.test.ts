@@ -12,8 +12,12 @@ function piece(overrides: Partial<Piece> = {}): Piece {
   return {
     id: 'p-1',
     created: new Date(NOW - 90 * DAY).toISOString(),
-    current: 'arr-1',
-    arrangements: [],
+    subject: 'the studio years',
+    entries: [],
+    offers: [],
+    declined: [],
+    dismissedGaps: [],
+    marginalia: [],
     ...overrides,
   };
 }

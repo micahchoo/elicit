@@ -22,26 +22,26 @@ describe('originWord — where a harvest came from', () => {
   expect(originWord('harvest')).toBe('sitting');
  });
 
- it('keeps unprompted writing unprompted', () => {
-  expect(originWord('unprompted')).toBe('unprompted');
+ it('names unprompted writing freely', () => {
+  expect(originWord('unprompted')).toBe('free writing');
  });
 });
 
 describe('descentCloseWord — how a descent ended on its own (012 T9)', () => {
- it('says the cap closed it', () => {
-  expect(descentCloseWord('cap')).toBe('the descent closed \u2014 the cap');
+ it('says the step limit ended it', () => {
+  expect(descentCloseWord('cap')).toBe('going deeper ended \u2014 it reached its limit');
  });
 
- it('says convergence closed it', () => {
-  expect(descentCloseWord('convergence')).toBe('the descent closed \u2014 convergence');
+ it('says the thread coming together ended it', () => {
+  expect(descentCloseWord('convergence')).toBe('going deeper ended \u2014 the thread came together');
  });
 
- it('says composition failed closed it', () => {
-  expect(descentCloseWord('composition-failed')).toBe('the descent closed \u2014 composition failed');
+ it('says a question that could not be written ended it', () => {
+  expect(descentCloseWord('composition-failed')).toBe('going deeper ended \u2014 the next question could not be written');
  });
 
  it('covers the gate words the person may press too', () => {
-  expect(descentCloseWord('park')).toBe('the descent closed \u2014 parked');
-  expect(descentCloseWord('another-day')).toBe('the descent closed \u2014 another day');
+  expect(descentCloseWord('park')).toBe('going deeper ended \u2014 your place is held');
+  expect(descentCloseWord('another-day')).toBe('going deeper ended \u2014 the rest waits for another day');
  });
 });

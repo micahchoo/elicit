@@ -6,8 +6,10 @@ import matter from 'gray-matter';
 import {
   appendSweepDeferral,
   createClaimStore,
+  readPassageReads,
   readSweepDeferral,
   readStillTrueCursor,
+  recordPassageRead,
   writeStillTrueCursor,
 } from '../src/wiki/store.js';
 import type {
@@ -17,6 +19,7 @@ import type {
   Referent,
   SweepLine,
 } from '../src/wiki/contract.js';
+import { USER_PUSH_DOWN_REASON } from '../src/wiki/contract.js';
 
 // A tmp root per test. Nothing here touches the real vault, and no test starts
 // a server — the store is filesystem-only by construction.
@@ -537,6 +540,109 @@ describe('ClaimStore — the read-log (Q-21)', () => {
   });
 });
 
+describe('ClaimStore — the six margin verbs: narrower, unlink, push down (Batch A, ruling 2026-08-08)', () => {
+  it('narrow replaces ONLY the range and stamps updated', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim());
+    const before = store.readClaim(CLAIM_ID)!;
+
+    const out = store.narrow(CLAIM_ID, 'only when the deadline is his own');
+    expect(out).not.toBeNull();
+    expect(out!.range).toBe('only when the deadline is his own');
+    expect(Date.parse(out!.updated)).not.toBeNaN();
+
+    // The whole claim, range and stamp normalized: nothing else moved.
+    const reloaded = createClaimStore(root).readClaim(CLAIM_ID)!;
+    expect(reloaded.range).toBe('only when the deadline is his own');
+    expect({ ...reloaded, range: before.range, updated: before.updated }).toEqual(before);
+  });
+
+  it('narrow returns null for a claim that is not there', () => {
+    expect(createClaimStore(root).narrow('01KNOPE', 'x')).toBeNull();
+  });
+
+  it('narrow refuses an empty range — the write guard still stands', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim());
+    expect(() => store.narrow(CLAIM_ID, '   ')).toThrow(/range/i);
+    expect(createClaimStore(root).readClaim(CLAIM_ID)!.range).toBe(makeClaim().range);
+  });
+
+  it('unlink detaches ONE cite and keeps the rest in order', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim({ cites: [SNIPPET_A, SNIPPET_B] }));
+    const before = store.readClaim(CLAIM_ID)!;
+
+    const out = store.unlink(CLAIM_ID, SNIPPET_A);
+    expect(out.ok).toBe(true);
+    expect(out.ok && out.claim.cites).toEqual([SNIPPET_B]);
+    expect(Date.parse(out.ok ? out.claim.updated : '')).not.toBeNaN();
+
+    const reloaded = createClaimStore(root).readClaim(CLAIM_ID)!;
+    expect(reloaded.cites).toEqual([SNIPPET_B]);
+    expect({ ...reloaded, cites: before.cites, updated: before.updated }).toEqual(before);
+  });
+
+  it('unlink refuses a cite the claim does not carry', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim({ cites: [SNIPPET_A, SNIPPET_B] }));
+    const out = store.unlink(CLAIM_ID, '01KNOSUCH@1');
+    expect(out).toEqual({ ok: false, reason: 'no-cite' });
+    expect(createClaimStore(root).readClaim(CLAIM_ID)!.cites).toEqual([SNIPPET_A, SNIPPET_B]);
+  });
+
+  it('unlink refuses to leave a claim citeless (Q-21)', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim({ cites: [SNIPPET_A] }));
+    const out = store.unlink(CLAIM_ID, SNIPPET_A);
+    expect(out).toEqual({ ok: false, reason: 'single-cite' });
+    expect(createClaimStore(root).readClaim(CLAIM_ID)!.cites).toEqual([SNIPPET_A]);
+  });
+
+  it('unlink answers no-claim for a claim that is not there', () => {
+    expect(createClaimStore(root).unlink('01KNOPE', SNIPPET_A)).toEqual({ ok: false, reason: 'no-claim' });
+  });
+
+  it('pushDown retires the claim as a past self, file kept (Q-29)', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim());
+    const before = store.readClaim(CLAIM_ID)!;
+    const path = join(root, 'wiki', 'claims', `${CLAIM_ID}.md`);
+
+    const out = store.pushDown(CLAIM_ID);
+    expect(out.ok).toBe(true);
+    const stored = out.ok ? out.claim : null;
+    expect(stored!.archived).toBe(true);
+    expect(stored!.archiveReason).toBe(USER_PUSH_DOWN_REASON);
+    expect(Date.parse(stored!.updated)).not.toBeNaN();
+
+    // The file stays; only the frontmatter changed (Q-29 — nothing deletes).
+    expect(existsSync(path)).toBe(true);
+    expect(matter(readFileSync(path, 'utf-8')).data['archived']).toBe(true);
+    expect(matter(readFileSync(path, 'utf-8')).data['archiveReason']).toBe(USER_PUSH_DOWN_REASON);
+    expect(matter(readFileSync(path, 'utf-8')).content.trim()).toBe(before.body);
+
+    const reloaded = createClaimStore(root).readClaim(CLAIM_ID)!;
+    expect(reloaded.archived).toBe(true);
+    expect(reloaded.body).toBe(before.body);
+    expect(reloaded.cites).toEqual(before.cites);
+    expect(reloaded.status).toBe(before.status);
+  });
+
+  it('pushDown answers no-claim for a claim that is not there', () => {
+    expect(createClaimStore(root).pushDown('01KNOPE')).toEqual({ ok: false, reason: 'no-claim' });
+  });
+
+  it('pushDown refuses a claim already retired — archived or superseded', () => {
+    const store = createClaimStore(root);
+    store.writeClaim(makeClaim({ archived: true, archiveReason: 'merged-into:01KOTHER' }));
+    expect(store.pushDown(CLAIM_ID)).toEqual({ ok: false, reason: 'no-live' });
+
+    store.writeClaim(makeClaim({ id: '01KSUP', supersededBy: '01KOTHER', supersedeReason: 'model-upgrade' }));
+    expect(store.pushDown('01KSUP')).toEqual({ ok: false, reason: 'no-live' });
+  });
+});
+
 describe('ClashCandidate.attempts survives the round trip (Q-53)', () => {
   it('a candidate written with attempts 2 reads back as 2, not 1', () => {
     // The bug this pins: `attempts` was absent from writeCandidate's
@@ -627,5 +733,37 @@ describe('Sweep deferral and still-true cursor (075)', () => {
 
     writeFileSync(join(root, 'wiki', 'still-true-cursor.json'), '{"offset": "seven"}', 'utf-8');
     expect(readStillTrueCursor(root)).toBe(0);
+  });
+});
+
+describe('ClaimStore — passage reads (Batch B, §11: the lens\'s read-through)', () => {
+  it('recordPassageRead appends one dated line; a fresh store reads it back', () => {
+    recordPassageRead(root, '01KPASSAAAAAAAAAAAAAAAAAA', '2026-08-09T01:00:00.000Z', 'wiki');
+    const reads = readPassageReads(root);
+    expect(reads).toEqual([
+      { passageId: '01KPASSAAAAAAAAAAAAAAAAAA', at: '2026-08-09T01:00:00.000Z', surface: 'wiki' },
+    ]);
+  });
+
+  it('records the second read too — the instrument counts, it does not deduplicate', () => {
+    recordPassageRead(root, '01KPASSAAAAAAAAAAAAAAAAAA', '2026-08-09T01:00:00.000Z', 'wiki');
+    recordPassageRead(root, '01KPASSAAAAAAAAAAAAAAAAAA', '2026-08-09T02:00:00.000Z', 'wiki');
+    expect(readPassageReads(root)).toHaveLength(2);
+  });
+
+  it('a missing ledger reads empty, never an error', () => {
+    expect(readPassageReads(root)).toEqual([]);
+  });
+
+  it('skips malformed lines and keeps the readable ones', () => {
+    mkdirSync(join(root, 'wiki'), { recursive: true });
+    writeFileSync(
+      join(root, 'wiki', 'passage-reads.jsonl'),
+      '{not json\n{"passageId": "01KPASSAAAAAAAAAAAAAAAAAA", "at": "2026-08-09T01:00:00.000Z", "surface": "wiki"}\n',
+      'utf-8'
+    );
+    expect(readPassageReads(root)).toEqual([
+      { passageId: '01KPASSAAAAAAAAAAAAAAAAAA', at: '2026-08-09T01:00:00.000Z', surface: 'wiki' },
+    ]);
   });
 });

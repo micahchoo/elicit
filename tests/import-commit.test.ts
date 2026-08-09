@@ -99,7 +99,7 @@ function mustCommit(r: CommitResult): { sessionId: string; snippets: number } {
 /** The transcript frontmatter of one sitting. */
 function sitting(sessionId: string) {
  return matter.read(join(root, 'transcripts', `${sessionId}.md`)).data as {
-  mode: { minutes: number; energy: string; target?: string };
+  mode: { target?: string };
   protocol: string;
   started: string;
  };
@@ -167,10 +167,11 @@ describe('import commit — one accepted piece becomes one dated sitting', () =>
   expect(fm.protocol).toBe('import');
  });
 
- it('offers no Target and stores none — Q-60', async () => {
+ it('stores the default self target — canon §5.2 (Q-60)', async () => {
   const { hash } = await preparedDatedEssay();
   const r = mustCommit(commitImport(commitDeps(), hash, [{ cut: 0, action: 'approve' }]));
-  expect(Object.keys(sitting(r.sessionId).mode)).toEqual(['minutes', 'energy']);
+  // commit.ts writes the same mode the begin route defaults: { target: 'self' }.
+  expect(sitting(r.sessionId).mode).toEqual({ target: 'self' });
  });
 
  it('asserts every snippet against the SOURCE FILE, not the transcript', async () => {

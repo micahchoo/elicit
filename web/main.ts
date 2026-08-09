@@ -5,29 +5,28 @@ import type {
 } from '../src/types.ts';
 import { type OpenerSource } from './provenance.js';
 import { renderImportEntry } from './import-entry.js';
+import { renderImportReview } from './import-review.js';
 import { renderCoachPage } from './coach.js';
 import { initPanelLine } from './panel-line.js';
-import { renderWaiting } from './waiting.js';
 import { renderWiki, releaseWiki } from './wiki.js';
 import { renderPiece, initMaterial, renderMaterial } from './piece.js';
-import { renderHarvest, type HarvestDeps } from './harvest.js';
-import { renderReviews } from './reviews.js';
-import type { NavOpts, QueueData, SessionState } from './deps.js';
+import { renderReviewGrammar, type ReviewGrammarDeps } from './review-grammar.js';
+import { renderReviews, sittingReviewItem, type SittingReviewRecord } from './reviews.js';
+import { renderToday, type TodayDeps } from './today.js';
+import { applySessionResponse, clearFirstLaunch, isDrmWalk, isFirstLaunch, setDrmWalk, setFirstLaunch } from './deps.js';
+import type { NavOpts, QueueData, SessionResponse, SessionState } from './deps.js';
 import { initTerritory } from './territory.js';
 import { initProtocolMeta } from './protocol-meta.js';
 import { type PhaseMetaLike } from './triad-surface.js';
 
-import { renderExchange, type ExchangeDeps } from './exchange.js';
 import { wireDictation, type DictationDeps } from './dictation.js';
-import { renderDRM, type DrmDeps } from './drm.js';
-import { renderMode, type ModeDeps } from './mode.js';
+import { renderRoom, type RoomDeps } from './room.js';
 
 import { initClient, api } from './client.js';
 import { initShell, renderShell, clear } from './shell.js';
 import { initWait, beginWait, showQuietError } from './wait.js';
 import { initLive, startLiveRefresh } from './live.js';
-import { initAuth, renderLogin, renderSetup, renderDone } from './auth.js';
-import { initUnprompted, renderUnprompted } from './unprompted.js';
+import { initAuth, renderLogin, renderSetup } from './auth.js';
 
 /* ─── DOM helpers ─── */
 
@@ -63,18 +62,23 @@ initPanelLine({ el, text: (s) => document.createTextNode(s) });
 // The HTTP layer and the waiting machinery wire the same way: api's
 // fetch/navTo/showError (web/client.ts — the one home of the 401/403
 // rule), and the wait verbs' el (web/wait.ts).
-initClient({ fetch, navTo: (s) => navTo(s as Screen), showError });
+initClient({ fetch: (p, i) => fetch(p, i), navTo: (s) => navTo(s as Screen), showError });
 initWait({ el });
-// The protocol titles (ticket 157) fetch through the same seam: the mode
+// The protocol titles (ticket 157) fetch through the same seam: the today
 // row, the exchange label and the DRM offer all render the once-cached map.
 initProtocolMeta({ api });
 
 /* ─── State ─── */
 
-export type Screen = 'mode' | 'home' | 'exchange' | 'harvest' | 'done' | 'waiting' | 'login' | 'setup' | 'unprompted' | 'wiki' | 'reviews' | 'inbox' | 'import' | 'material' | 'library' | 'piece' | 'coach' | 'drm';
+export type Screen = 'today' | 'review' | 'about-you' | 'your-words' | 'room' | 'harvest' | 'import' | 'import-review' | 'piece' | 'coach' | 'login' | 'setup';
 
 interface AppState {
  screen: Screen;
+ /** Whether a sitting has ever been recorded (canon §5.1): set from the
+ *  boot cadence fetch; the room's close paths recompute it when the first
+ *  sitting ends. False hides the today word and routes #/today to the
+ *  room — Today does not exist until the first sitting has earned it. */
+ hasSittings: boolean;
  sessionId: string | null;
  question: string | null;
  proposals: CutProposal[];
@@ -91,6 +95,8 @@ interface AppState {
  sessionDeadline: number | null;
  /** Session whose harvest is running behind the /end response (084). */
  pendingReviewSession: string | null;
+ /** The opened review record (wave 3): the sitting the unified grammar draws. */
+ reviewRecord: SittingReviewRecord | null;
  /** Live descent reading (012 T9): set on every rung, null when no descent is open. */
  sounding: GateReading | null;
  /** The one-shot offer (012 T9): set once, cleared by either word. */
@@ -103,8 +109,6 @@ interface AppState {
  coachSlug: string | null;
  /** The protocol this sitting runs — auto-rotated by server (ticket 140). */
  sessionProtocol: string | null;
- /** Buds from the last harvest, shown on the done screen (ticket 140). */
- pendingBuds: unknown[];
  /** Fragment currently quoted in the question (Q-104): set from session/turn responses. */
  quotedFragment: string | null;
  /** Snippet ref for the current question's quoted fragment (Q-109): rides with quotedFragment. */
@@ -115,9 +119,13 @@ interface AppState {
   * above the question block. Null on non-machine sittings.
   */
  phaseMeta: PhaseMetaLike | null;
+ /** The first-launch auto-open's failure sentence (canon §6 rule 5) —
+  *  shown once on the blank page, cleared when read. */
+ openFailure: string | null;
 }
 const state: AppState = {
- screen: 'mode',
+ screen: 'today',
+ hasSittings: false,
  sessionId: null,
  question: null,
  proposals: [],
@@ -130,16 +138,19 @@ const state: AppState = {
  turnHadSpeech: false,
  sessionDeadline: null,
  pendingReviewSession: null,
+ reviewRecord: null,
  sounding: null,
  soundingOffer: null,
  coachSlug: null,
  pulsePrompt: null,
  pendingQuestion: null,
  sessionProtocol: null,
- pendingBuds: [],
  quotedFragment: null,
  snippetRef: null,
  phaseMeta: null,
+ /** The first-launch auto-open's failure sentence (canon: silence is
+  *  never the error state) — shown once on the blank page, cleared. */
+ openFailure: null,
 };
 
 const main = $('main')!;
@@ -147,22 +158,16 @@ const main = $('main')!;
 const surface = el('div', { id: 'surface' });
 main.append(surface);
 
-/** The harvest seam object, built once: the harvest route renders through
- * it, and the reviews screen re-enters the harvest through the same object
- * (openEntry hands the screen over with the same deps). */
-const harvestDeps: HarvestDeps = {
- main: surface, el, api, beginWait,
+/** The unified review grammar's seam object, built once: the harvest route
+ * renders through it, and the review screen re-enters it with the same
+ * verbs — openEntry stashes the opened record and the grammar draws the
+ * sitting item built from it. */
+const grammarDeps: ReviewGrammarDeps = {
+ main: surface, el,
  navTo: (s: string) => navTo(s as Screen),
- renderShell, clear,
- setScreen: (s: string) => { state.screen = s as Screen; },
- sessionId: () => state.sessionId,
- proposals: () => state.proposals,
- decisions: () => state.decisions,
- setDecisions: (d: HarvestDecision[]) => { state.decisions = d; },
- setPendingBuds: (b: unknown[]) => { state.pendingBuds = b; },
- renderDone,
- document,
  text: (s: string) => document.createTextNode(s),
+ document,
+ storage: window.localStorage,
 };
 
 const dictationDeps: DictationDeps = {
@@ -173,13 +178,10 @@ const dictationDeps: DictationDeps = {
  window,
 };
 
-/** The session clock's interval, stopped when the screen it hangs on leaves. */
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-
 /** The writable session-state handle bound to the real AppState — every
  *  sitting field a surface reads has a getter, every field it mutates has
  *  a setter; the router and the other screens see every write. One
- *  factory for the two surfaces that hold the handle (exchange, mode). */
+ *  factory for the two surfaces that hold the handle (exchange, today). */
 function makeSessionHandle(state: AppState): SessionState {
  return {
   sessionId: () => state.sessionId,
@@ -220,10 +222,14 @@ function makeSessionHandle(state: AppState): SessionState {
  };
 }
 
-/** The exchange seam object, built once: renderExchange's deps, with the
- *  writable session-state handle bound to the real AppState — the router
- *  and the other screens see every write. */
-const exchangeDeps: ExchangeDeps = {
+/** The room seam object, built once: renderRoom's deps — the shell seam,
+ * the writable session-state handle bound to the real AppState, the
+ * shared dictation wiring, the quiet-error line, the two harvest-state
+ * clears the blank furniture makes, and the room flags (the day-walk
+ * discriminator, the first-launch promise, and the today-existence
+ * recompute). The router and the other screens see every write through
+ * the same handle. */
+const roomDeps: RoomDeps = {
  main: surface, el, api,
  navTo: (s: string) => navTo(s as Screen),
  beginWait,
@@ -232,87 +238,107 @@ const exchangeDeps: ExchangeDeps = {
  setScreen: (s: string) => { state.screen = s as Screen; },
  session: makeSessionHandle(state),
  text: (s: string) => document.createTextNode(s),
- sessionClock: () => clockTimer,
- setSessionClock: (t: ReturnType<typeof setInterval> | null) => { clockTimer = t; },
  document,
  wireDictation: (opts) => wireDictation(dictationDeps, opts),
-};
-
-/** The mode seam object, built once: renderMode's deps, with the writable
- *  session-state handle bound to the real AppState the way exchangeDeps is
- *  — the router and the other screens see every write — plus the hand-off
- *  into the exchange screen. */
-const modeDeps: ModeDeps = {
- main: surface, el, api,
- navTo: (s: string) => navTo(s as Screen),
- beginWait,
- renderShell, clear,
- setScreen: (s: string) => { state.screen = s as Screen; },
- session: makeSessionHandle(state),
- text: (s: string) => document.createTextNode(s),
- storage: {
-  get: (key: string) => localStorage.getItem(key),
-  set: (key: string, value: string) => { localStorage.setItem(key, value); },
+ setProposals: (p: CutProposal[]) => { state.proposals = p; },
+ setDecisions: (d: HarvestDecision[]) => { state.decisions = d; },
+ drmWalk: isDrmWalk,
+ setDrmWalk,
+ firstLaunch: isFirstLaunch,
+ clearFirstLaunch,
+ // canon §5.1: the today-existence flag tells the blank page whether a
+ // back word has anywhere to go (pre-first-sitting there is no today).
+ hasSittings: () => state.hasSittings,
+ // The first-launch auto-open's failure sentence, taken once.
+ takeOpenFailure: () => {
+  const message = state.openFailure;
+  state.openFailure = null;
+  return message;
  },
- document,
- showError,
- renderExchange: () => renderExchange(exchangeDeps),
+ // canon §5.1: the today-existence flag recomputes from the server's
+ // cadence when a sitting ends — the same close paths that clear
+ // firstLaunch. On failure the flag keeps its value (Today stays hidden
+ // rather than appearing unearned); the next boot's fetch corrects it.
+ // renderShell() makes the flip visible immediately: the shell rebuilds
+ // its nav with the today word even if the navigation after the close
+ // fails and no render follows.
+ recomputeHasSittings: async () => {
+  try {
+   const r = await api<{ cadence: { total: number } }>('/api/cadence');
+   state.hasSittings = r.cadence.total > 0;
+  } catch {
+   /* keep the current flag */
+  }
+  renderShell();
+ },
 };
 
-/** The DRM seam object, built once: renderDRM's deps on the flat verbs the
- *  screen needs — the session id, the harvest hand-off, and the dictation
- *  wiring bound to the shared dictationDeps — plus the core seam. */
-const drmDeps: DrmDeps = {
+/** The today seam object, built once: renderToday's deps, with the writable
+ *  session-state handle bound to the real AppState the way the room's is
+ *  — the router and the other screens see every write — plus the pending-
+ *  review hand-off into the review screen. */
+const todayDeps: TodayDeps = {
  main: surface, el, api,
  navTo: (s: string) => navTo(s as Screen),
+ text: (s: string) => document.createTextNode(s),
+ document,
  beginWait,
  renderShell, clear,
  setScreen: (s: string) => { state.screen = s as Screen; },
- sessionId: () => state.sessionId,
- setPendingReviewSession: (id: string | null) => { state.pendingReviewSession = id; },
- text: (s: string) => document.createTextNode(s),
- document,
- wireDictation: (opts) => wireDictation(dictationDeps, opts),
+ screen: () => state.screen,
+ session: makeSessionHandle(state),
+ pendingReview: () => state.pendingReviewSession,
+ setPendingReview: (v: string | null) => { state.pendingReviewSession = v; },
+ storage: window.localStorage,
+ fetch,
 };
 
 /* ─── The full-screen surfaces' wiring, once at boot ─── */
-// The shell, the live refresh, the auth screens and the material screen
+// The shell, the live refresh, the auth screens and the your-words screen
 // receive their deps through module-local init at boot (the territory
 // pattern): the router calls their exported render functions bare, and
 // the seam objects above hand the same verbs through WebDepsShell.
 initShell({
  main, el, api, surface, document,
  screen: () => state.screen,
+ hasSittings: () => state.hasSittings,
+ // A sitting is open exactly when the session state says so — the room's
+ // sessionless blank page must not light the indicator.
+ sittingOpen: () => state.sessionId !== null || isDrmWalk(),
  releaseWiki,
- sessionClock: () => clockTimer,
- setSessionClock: (t: ReturnType<typeof setInterval> | null) => { clockTimer = t; },
 });
 initLive({ navTo: (s) => navTo(s), screen: () => state.screen });
 initAuth({
  main, surface, el, api,
  navTo: (s: string) => navTo(s as Screen),
- beginWait, clear, renderShell,
+ beginWait, clear,
  setScreen: (s: string) => { state.screen = s as Screen; },
  startLiveRefresh,
- pendingBuds: () => state.pendingBuds,
-});
-initUnprompted({
- surface, el, api,
- navTo: (s: string) => navTo(s as Screen),
- beginWait, clear, renderShell,
- setScreen: (s: string) => { state.screen = s as Screen; },
- setSessionId: (id: string | null) => { state.sessionId = id; },
- setQuestion: (q: string | null) => { state.question = q; },
- setProposals: (p: CutProposal[]) => { state.proposals = p; },
- setDecisions: (d: HarvestDecision[]) => { state.decisions = d; },
- setPendingReviewSession: (id: string | null) => { state.pendingReviewSession = id; },
- turnHadSpeech: () => state.turnHadSpeech,
- setTurnHadSpeech: (spoken: boolean) => { state.turnHadSpeech = spoken; },
- wireDictation: (opts) => wireDictation(dictationDeps, opts),
+ // canon §5.1: after setup, the app auto-opens a sitting and lands on the
+ // room with the promise line — no lobby. A failed open still lands on the
+ // room (the room owns the sessionless state — the blank page), and the
+ // flag is set either way so the promise line waits for the first question.
+ onSetupDone: () => {
+  setFirstLaunch(true);
+  startLiveRefresh();
+  void (async () => {
+   try {
+    const res = await api<SessionResponse>('/api/session', {});
+    applySessionResponse(roomDeps.session, res);
+   } catch {
+    // The blank page holds; the promise line is set either way — and the
+    // failure is a sentence (canon §6 rule 5), never a silence.
+    state.openFailure = 'couldn\u2019t open a sitting just now — try again';
+   }
+   navTo('room');
+  })();
+ },
 });
 initMaterial({
  surface, el, api,
- navTo: (s: string) => navTo(s as Screen),
+ // The directions tab's doors open the coach page with { slug }; the opts
+ // seam is forwarded so the coach case below receives state.coachSlug.
+ navTo: (s: string, opts?: NavOpts) => navTo(s as Screen, opts),
  beginWait, clear, renderShell,
  setScreen: (s: string) => { state.screen = s as Screen; },
 });
@@ -325,32 +351,23 @@ function navTo(screen: Screen, opts?: NavOpts) {
  state.screen = screen;
  if (screen === 'coach' && opts?.slug !== undefined) state.coachSlug = opts.slug;
  switch (screen) {
-  case 'mode':
-  case 'home': renderMode(modeDeps); break;
-  case 'exchange':
-   // A sitting must be under way; a bare hash cannot fake one.
-   if (!state.sessionId) { navTo('home'); break; }
-   renderExchange(exchangeDeps); break;
+  case 'today':
+   // canon §5.1: Today does not exist until the first sitting has earned
+   // it — while the flag is false, #/today and the today screen land in
+   // the room (the first-launch home; the room owns the sessionless
+   // state). The room's close paths flip the flag when the first sitting
+   // ends; afterwards the today word appears and this renders normally.
+   if (!state.hasSittings) { navTo('room'); break; }
+   renderToday(todayDeps); break;
+  case 'room': renderRoom(roomDeps); break;
   case 'harvest':
-   // A harvest needs a session and its proposals; otherwise home.
-   if (!state.sessionId || state.proposals.length === 0) { navTo('home'); break; }
-   renderHarvest(harvestDeps); break;
-  case 'done': renderDone(); break;
-  case 'waiting': renderWaiting({
-   main: surface, el, api,
-   navTo: (s: string, opts?: NavOpts) => navTo(s as Screen, opts),
-   beginWait,
-   renderShell, clear,
-   setScreen: (s: string) => { state.screen = s as Screen; },
-   screen: () => state.screen,
-   sessionId: () => state.sessionId,
-   setQuestion: (q: string) => { state.question = q; },
-   text: (s: string) => document.createTextNode(s),
-   document,
-   fetch,
-  }); break;
-  case 'reviews':
-  case 'inbox': renderReviews({
+   // A sitting needs its record; a bare hash cannot fake one.
+   if (!state.sessionId || !state.reviewRecord) { navTo('review'); break; }
+   clear();
+   renderShell();
+   renderReviewGrammar(grammarDeps, sittingReviewItem(state.reviewRecord, api));
+   break;
+  case 'review': renderReviews({
    main: surface, el, api,
    navTo: (s: string) => navTo(s as Screen),
    beginWait,
@@ -358,12 +375,12 @@ function navTo(screen: Screen, opts?: NavOpts) {
    setScreen: (s: string) => { state.screen = s as Screen; },
    screen: () => state.screen,
    setSessionId: (id: string) => { state.sessionId = id; },
-   setProposals: (p: CutProposal[]) => { state.proposals = p; },
+   setReviewRecord: (r: SittingReviewRecord) => { state.reviewRecord = r; },
    pendingReview: () => state.pendingReviewSession,
    setPendingReview: (v: string | null) => { state.pendingReviewSession = v; },
    text: (s: string) => document.createTextNode(s),
    document,
-   renderHarvest: () => renderHarvest(harvestDeps),
+   storage: window.localStorage,
   }); break;
   // The seam widens navTo: the entry module takes `(screen: string)`, this
   // app's screens are the Screen union, and the entry only ever asks for
@@ -372,18 +389,29 @@ function navTo(screen: Screen, opts?: NavOpts) {
   // the region it named, carrying the survey root it was relative to — the
   // parameters are optional, so every other call site is untouched, and they
   // are forwarded only where the map renders.
-  case 'import': renderShell(); renderImportEntry({
-    main: surface, el, api, beginWait,
-    navTo: (s: string) => navTo(s as Screen),
-    // exactOptionalPropertyTypes: absent means absent, never present-undefined.
-    ...(opts?.focus !== undefined ? { focus: opts.focus } : {}),
-    ...(opts?.folder !== undefined ? { folder: opts.folder } : {}),
-    ...(opts?.region !== undefined ? { region: opts.region } : {}),
-    text: (s: string) => document.createTextNode(s),
-    document,
-    selection: () => document.getSelection()?.toString() ?? '',
-   }); break;
-  case 'wiki': renderWiki({
+  case 'import': clear(); renderShell(); renderImportEntry({
+   main: surface, el, api, beginWait,
+   navTo: (s: string) => navTo(s as Screen),
+   // exactOptionalPropertyTypes: absent means absent, never present-undefined.
+   ...(opts?.focus !== undefined ? { focus: opts.focus } : {}),
+   ...(opts?.folder !== undefined ? { folder: opts.folder } : {}),
+   ...(opts?.region !== undefined ? { region: opts.region } : {}),
+   text: (s: string) => document.createTextNode(s),
+   document,
+   selection: () => document.getSelection()?.toString() ?? '',
+   storage: window.localStorage,
+  }); break;
+  case 'import-review': clear(); renderShell(); renderImportReview({
+   main: surface, el, api, beginWait,
+   navTo: (s: string) => navTo(s as Screen),
+   // exactOptionalPropertyTypes: absent means absent, never present-undefined.
+   ...(opts?.region !== undefined ? { region: opts.region } : {}),
+   text: (s: string) => document.createTextNode(s),
+   document,
+   selection: () => document.getSelection()?.toString() ?? '',
+   storage: window.localStorage,
+  }); break;
+  case 'about-you': renderWiki({
    main: surface, el, api, navTo: (s: string) => navTo(s as Screen),
    beginWait,
    renderShell, clear,
@@ -391,14 +419,13 @@ function navTo(screen: Screen, opts?: NavOpts) {
    text: (s: string) => document.createTextNode(s),
    document, window,
   }); break;
-  case 'unprompted': renderUnprompted(); break;
   case 'login': renderLogin(); break;
   case 'setup': renderSetup(); break;
-  case 'material':
-  case 'library': renderMaterial(); break;
+  case 'your-words': renderMaterial(); break;
   case 'coach':
    // The page needs a slug to fetch; a bare hash cannot fake one.
-   if (state.coachSlug === null) { navTo('waiting'); break; }
+   if (state.coachSlug === null) { navTo('today'); break; }
+   clear();
    renderShell();
    renderCoachPage({
     main: surface,
@@ -417,9 +444,6 @@ function navTo(screen: Screen, opts?: NavOpts) {
    document,
    wireDictation: (opts) => wireDictation(dictationDeps, opts),
   }); break;
-  case 'drm':
-   if (!state.sessionId) { navTo('home'); break; }
-   renderDRM(drmDeps); break;
  }
 }
 
@@ -427,34 +451,28 @@ function navTo(screen: Screen, opts?: NavOpts) {
  * Every routable name. The hash is honored only for these.
  */
 const SCREENS: readonly Screen[] = [
- 'mode', 'home', 'exchange', 'harvest', 'done', 'waiting', 'login',
- 'setup', 'unprompted', 'wiki', 'reviews', 'inbox', 'import',
- 'material', 'library', 'piece', 'coach', 'drm',
+ 'today', 'review', 'about-you', 'your-words', 'room',
+ 'harvest', 'import', 'import-review', 'piece', 'coach', 'login', 'setup',
 ];
 
-/** The screen a hash names, or null when it names nothing routable. */
+/** The screen a hash names, or null when it names nothing routable.
+ *  Wave 4 hash migration: #/exchange, #/drm and #/unprompted redirect to
+ *  #/room — kept as redirects, not deleted, so old bookmarks and the
+ *  shell indicator's former href land on the room (the room discriminates
+ *  internally); the unknown-hash fallback (today) stays for anything else. */
 function screenFromHash(): Screen | null {
  const name = location.hash.replace(/^#\/?/, '');
+ if (name === 'exchange' || name === 'drm' || name === 'unprompted') return 'room';
  return (SCREENS as readonly string[]).includes(name) ? (name as Screen) : null;
 }
 
-/** The canonical screen a hash name lands on; aliases collapse here. */
-function canonicalOf(screen: Screen): Screen {
- switch (screen) {
-  case 'home': return 'mode';
-  case 'library': return 'material';
-  case 'inbox': return 'reviews';
-  default: return screen;
- }
-}
-
 // Hash routing: navTo writes the hash, this listener reads it back. An
-// event for the current screen (our own write, or an alias of it) is
-// skipped so a navigation never re-renders twice.
+// event for the current screen (our own write) is skipped so a navigation
+// never re-renders twice. A hash naming nothing routable lands on today.
 window.addEventListener('hashchange', () => {
  const screen = screenFromHash();
- if (!screen) { navTo('home'); return; }
- if (canonicalOf(screen) === canonicalOf(state.screen)) return;
+ if (!screen) { navTo('today'); return; }
+ if (screen === state.screen) return;
  navTo(screen);
 });
 
@@ -481,22 +499,31 @@ function showError(msg: string) {
   } catch { /* server may return HTML on non-loopback */ }
 
   if (needsSetup) {
-   // A fresh install still honors a deep link; only the default differs —
-   // home carries the set-a-password hint until a password exists.
-   const fromHash = screenFromHash();
-   startLiveRefresh();
-   if (fromHash && fromHash !== 'mode' && fromHash !== 'home') navTo(fromHash);
-   else renderMode(modeDeps, true);
+   // canon §5.1: setup flows straight into the room — the setup screen
+   // first; its success handler (initAuth's onSetupDone) auto-opens a
+   // sitting and lands on #/room with the promise line.
+   renderSetup();
    return;
   }
 
   // Auth file exists — check if we have a valid session
   try {
-   await api<QueueData>('/api/queue');
+   // The auth probe and the today-existence fetch run together; the
+   // cadence total decides whether Today exists yet (canon §5.1). A
+   // cadence failure keeps the flag false — Today stays hidden until the
+   // first sitting ends, when the room's close recomputes it.
+   const [, cadence] = await Promise.all([
+    api<QueueData>('/api/queue'),
+    api<{ cadence: { total: number } }>('/api/cadence').catch(() => null),
+   ]);
+   state.hasSittings = cadence !== null && cadence.cadence.total > 0;
    startLiveRefresh();
-   // The hash names a screen; empty or unknown takes the default boot.
+   // The hash names a screen; empty or unknown takes the default boot —
+   // Today when it exists, otherwise the room (the pre-earned state).
    const fromHash = screenFromHash();
-   if (fromHash) navTo(fromHash); else renderMode(modeDeps, false);
+   if (fromHash) navTo(fromHash);
+   else if (state.hasSittings) renderToday(todayDeps);
+   else navTo('room');
   } catch {
    renderLogin();
   }

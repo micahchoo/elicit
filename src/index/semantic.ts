@@ -137,6 +137,7 @@ import {
  asRecord,
  cachedVector,
  cosine,
+ coverageQuota,
  embedBatches,
  pruneCache,
  vectorStoreFile,
@@ -212,11 +213,17 @@ export function quotablePhrase(snippetText: string): string {
 // ── The bounds (Q-56: a bound ships LIVE and owes a clip record) ──
 
 /**
- * The four bounds this channel acts under — `resonance.semanticFloor`,
- * `resonance.primeCap`, `resonance.primeBudgetMs`, `resonance.queryBudgetMs`
- * — are declared in `src/wiki/thresholds.ts` (Q-35/Q-56: one declaration
- * site, no threshold value read except through `THRESHOLDS`). This file only
- * reads them, through `shadowDecision`, exactly like every other wiki module.
+ * Three of the bounds this channel acts under — `resonance.semanticFloor`,
+ * `resonance.primeBudgetMs`, `resonance.queryBudgetMs` — are declared in
+ * `src/wiki/thresholds.ts` (Q-35/Q-56: one declaration site, no threshold
+ * value read except through `THRESHOLDS`). The prime CAP's default has been
+ * corpus-sized since Batch C3 (§12's debt: quotas sized to the real corpus):
+ * `coverageQuota(corpus.length)` from `src/wiki/embedding.ts` — a ratio over
+ * the corpus, never a fixed ceiling that starves a growing vault.
+ * `resonance.primeCap` remains the explicit-override seam
+ * (`SemanticDeps.primeCap`) and the record of the bound's liveness; a
+ * clipped explicit cap still emits threshold-clipped through
+ * `shadowDecision`, exactly like every other bound in this module.
  *
  * The prime cap is per-RUN, never a recency window: a window would make the
  * channel structurally unable to surface the 2017-2026 material Q-18
@@ -290,7 +297,6 @@ export interface SemanticIndex {
  */
 export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): SemanticIndex {
  const { embed, model, store, log } = deps;
- const cap = deps.primeCap ?? readNumber(THRESHOLDS['resonance.primeCap'], 0);
  const primeBudgetMs = deps.primeBudgetMs ?? readNumber(THRESHOLDS['resonance.primeBudgetMs'], 0);
  const queryBudgetMs = deps.queryBudgetMs ?? readNumber(THRESHOLDS['resonance.queryBudgetMs'], 0);
  const floor = deps.floor ?? THRESHOLDS['resonance.semanticFloor'];
@@ -317,6 +323,12 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
  }
  const byId = (a: Snippet, b: Snippet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+ // The per-run prime quota, sized to the real corpus (§12, Batch C3): the
+ // whole corpus by default (EMBED_COVERAGE_RATIO), or an explicit
+ // `primeCap` override. Placed after the corpus loop because the default is
+ // a function of the corpus.
+ const cap = deps.primeCap ?? coverageQuota(corpus.length);
+
  let cache: Map<string, EmbeddingRecord> | undefined;
  function loaded(): Map<string, EmbeddingRecord> {
   if (!cache) {
@@ -324,6 +336,13 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
    for (const record of store.load()) cache.set(record.claimId, record);
   }
   return cache;
+ }
+
+ /** How many corpus snippets currently hold a usable vector (observability). */
+ function countVectored(): number {
+  let n = 0;
+  for (const snippet of corpus) if (cachedVector(loaded(), model, snippet.id, snippet.prose) !== undefined) n++;
+  return n;
  }
 
  function unavailable(detail: string): void {
@@ -396,6 +415,12 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
     todo = todo.slice(0, cap);
    }
 
+   // The §12 coverage sentence (Batch C3): standing vector coverage of the
+   // passage keyspace after this prime, with the gap named — a starved run
+   // is a sentence on the activity log, never a silence.
+   const total = corpus.length;
+   const coveredBefore = countVectored();
+
    await embedBatches({
     items: todo.map((s) => ({ id: s.id, body: s.prose })),
     embed,
@@ -414,6 +439,14 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
       true,
      ),
     persistBatch: () => persist(seen, cached, store),
+   });
+
+   const covered = countVectored();
+   log({
+    at: new Date().toISOString(),
+    actor: 'clerk',
+    kind: 'embedding-coverage',
+    detail: `noun=passage covered=${covered} total=${total} fresh=${covered - coveredBefore} unembedded=${total - covered}`,
    });
   },
 
@@ -474,9 +507,7 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
   },
 
   vectored(): number {
-   let n = 0;
-   for (const snippet of corpus) if (cachedVector(loaded(), model, snippet.id, snippet.prose) !== undefined) n++;
-   return n;
+   return countVectored();
   },
  };
 }
@@ -495,6 +526,50 @@ function persist(
  store: EmbeddingIndexStore,
 ): void {
  pruneCache(cached, ids, store);
+}
+
+// ── The §12 full-corpus coverage job (Batch C3) ──
+
+/**
+ * Embed every passage missing a vector, as a docket job — §12's debt that
+ * full-corpus coverage is a scheduled thing, never the boot prime's
+ * one-time courtesy.
+ *
+ * The boot-built channel captures its corpus at boot; this job rebuilds the
+ * channel over the CURRENT corpus every run, so a snippet harvested since
+ * boot joins the coverage pass. The vectors persist in the store across
+ * runs (Q-3: derived and rebuildable — a deleted store costs one pass), and
+ * the prime itself emits the coverage sentence (`embedding-coverage`,
+ * noun=passage). The per-run quota is the corpus-sized default
+ * (`coverageQuota`), so a starved run means the budget or the embedder
+ * stopped it — and the sentence says how many passages are still
+ * unembedded. Zero chat-model calls: the only network path is the injected
+ * `embed`.
+ */
+export async function runCoverageEmbedding(deps: {
+ /** The CURRENT corpus, one entry per passage. */
+ corpus: Snippet[];
+ embed: Embed;
+ model: string;
+ store: EmbeddingIndexStore;
+ log: ThresholdLogFn;
+ /** Overrides `THRESHOLDS['resonance.primeBudgetMs']` for tests. */
+ budgetMs?: number;
+ /** Injectable clock, for the prime budget only. */
+ now?: () => number;
+}): Promise<{ covered: number; total: number; fresh: number }> {
+ const index = buildSemanticIndex(deps.corpus, {
+  embed: deps.embed,
+  model: deps.model,
+  store: deps.store,
+  log: deps.log,
+  ...(deps.budgetMs !== undefined ? { primeBudgetMs: deps.budgetMs } : {}),
+  ...(deps.now !== undefined ? { now: deps.now } : {}),
+ });
+ const before = index.vectored();
+ await index.prime();
+ const covered = index.vectored();
+ return { covered, total: deps.corpus.length, fresh: covered - before };
 }
 
 // ── The hybrid entry point (Q-17's staged hybrid, both stages) ──

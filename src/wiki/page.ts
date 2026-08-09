@@ -1,121 +1,189 @@
 /**
- * The wiki page render (Wave D1 extraction): the pure shaping behind
- * GET /api/wiki, moved out of src/server.ts. Nothing here reads disk or
- * writes a log — the route gathers the graph, the repair set and the
- * Clerk's last lint findings, calls this once, then stamps `surfaced`
- * over the rendered facets and answers. Wire shape is byte-identical to
- * the pre-extraction route.
+ * The contextualizer wiki page render (Batch B, §11): the pure shaping
+ * behind GET /api/wiki, moved out of src/server.ts. Nothing here reads
+ * disk or writes a log — the route gathers the passages, the neighborhoods,
+ * the context lines and the Clerk's last lint findings, calls this once,
+ * then stamps `surfaced` over the rendered passages.
+ *
+ * The page is YOUR WORDS, grouped into themes — no claim apparatus. The
+ * claim vault is not deleted (the trial may return it); it simply stops
+ * rendering. Passages arrive grouped into neighborhoods, each with a
+ * context line in agent ink (when it was said, what question drew it, what
+ * stood before it, what it echoes) — the claim status/range/verb machinery
+ * has no seat on this surface (ruling 5, 2026-08-08).
  *
  * The shaping happens HERE, not in the client. Two tickets stand behind
  * that rule: 038 closed because the activity stream leaked identifiers
  * onto a surface a person reads, and 063 found 26 event kinds arriving
  * as two context-free words. A route that hands over raw enums and
  * trusts the renderer is the same mistake with a network hop in the
- * middle. So facets arrive as headings, lint findings arrive as notes,
- * and the claims arrive in the order they are meant to be read.
+ * middle. So neighborhoods arrive as headings, context lines arrive as
+ * agent prose, and the passages arrive in the order they are meant to be
+ * read.
  */
-import { FACETS } from '../queue/facet-balance.js';
-import { facetHeading, lintNote } from '../queue/source-label.js';
-import { isLive } from './clash.js';
-import { coreness } from './status.js';
-import type { Facet } from '../types.js';
-import type { Claim, ClaimGraph, Contradiction, LintFinding } from './contract.js';
+import { clusterPassages, type Neighborhood } from './neighborhoods.js';
+import type { ContextLineRecord } from './store.js';
+import type { Contradiction } from './contract.js';
+import type { Snippet } from '../types.js';
 
-/** The GET /api/wiki payload: facets in `FACETS` order, open contradictions, lint notes. */
+/** The since-last-read lens's read-through facts (wave 5). The route computes
+ * them — the sitting census reads disk — and this function shapes them on. */
+export type Freshness = {
+ /** The latest read across every claim's readLog; null when nothing was ever read. */
+ readThrough: string | null;
+ /** Non-import sittings started after read-through; 0 when there is no read-through. */
+ sittingsBehind: number;
+ /** The latest non-import sitting start; null when there has never been one. */
+ lastSittingAt: string | null;
+};
+
+/**
+ * One passage on the contextualizer page — a snippet in the person's ink,
+ * with the mechanical facts the lens and the fallback context line need.
+ * `context` is the agent's composed line (B2's job); absent until that job
+ * runs, in which case the client renders the mechanical facts as a fallback
+ * line. The claim apparatus (status, range, cites) has no seat here.
+ */
+export type WikiPassage = {
+ /** The snippet id — never printed, the read-log's key. */
+ id: string;
+ /** The person's own words, verbatim. */
+ prose: string;
+ /** When it was said (ISO). */
+ captured: string;
+ /** The question that drew it; '' when nothing asked for these words. */
+ question: string;
+ /** Where it stood in the conversation — the transcript turn index, when the snippet has one. */
+ position: number | null;
+ /** The agent's context line — agent ink, marginalia-class, never quotable. */
+ context?: { text: string; echoes: string[]; at: string };
+};
+
+/** The GET /api/wiki payload: your passages grouped into neighborhoods. */
 export type WikiPage = {
- /** `FACETS` order, so two readings of one vault are the same page; an empty facet is omitted. */
- facets: { facet: Facet; heading: string; claims: Claim[] }[];
- /** Open contradictions only unless `all` (a dissolved one is not material any more). */
+ /** Neighborhoods in the clustering's own order; every passage is in exactly one. */
+ neighborhoods: { name: string; passages: WikiPassage[] }[];
+ /** Every contradiction, dissolved included — the lens decides visibility (wave 5). */
  contradictions: Contradiction[];
- /** Lint as notes — `kind` slug + `subject` id, never `detail` (tickets 038, 063). */
- lint: { kind: LintFinding['kind']; subject: string; note: string }[];
- /** Claim ids whose cites include a repaired snippet; omitted when empty, never null. */
- repairClaimIds?: string[];
+ /** The lens's read-through + sitting census (wave 5). */
+ freshness: Freshness;
  /** Null means the Clerk has not read the wiki yet in this process. */
  lintedAt: string | null;
  all: boolean;
 };
 
 /**
- * Render the wiki page the way the route always did. The graph, repair
- * set and lint findings are gathered by the caller; this function only
- * groups, scores and orders. The response object is what the route
- * `c.json`s — the caller stamps `surfaced` over `facets` first when the
- * read is not pure (129).
+ * Group passages into neighborhoods.
+ *
+ * The route hands over the clustering STORE when C1's docket job has run
+ * (or null when the store is missing or malformed). A null store is the
+ * fallback case: clusterPassages itself computes a deterministic lexical
+ * grouping (by provenance session) when no embedding vectors are supplied —
+ * one exported function owns both paths, so the fallback is never a second,
+ * drifting copy of the grouping logic.
+ *
+ * Two guarantees hold no matter which path ran:
+ *
+ *  - EVERY passage renders. A passage harvested after the last clustering
+ *    job is in no cluster; it is grouped through the same lexical fallback
+ *    and appended, so the page is always the whole corpus. A passage in a
+ *    cluster whose id no longer resolves (edited/deleted snippet) is
+ *    dropped from that cluster and re-grouped the same way.
+ *  - A present store with zero clusters is a FACT, not a gap (C1's
+ *    contract): the clustering job ran and found no themes. The page
+ *    renders that honestly — one neighborhood named "no themes yet" —
+ *    rather than silently re-grouping lexically as if the job had not run.
+ *  - Ordering is deterministic: clusters keep the store's order, passages
+ *    within a cluster keep the cluster's passageIds order, and the
+ *    fallback groups sort by id (clusterPassages' own determinism).
+ */
+function neighborhoodsOf(passages: Snippet[], store: Neighborhood[] | null): { name: string; passages: WikiPassage[] }[] {
+ const byId = new Map(passages.map((p) => [p.id, p]));
+ const place = (p: Snippet): WikiPassage => ({
+  id: p.id,
+  prose: p.prose,
+  captured: p.captured,
+  question: p.provenance.question,
+  position: p.provenance.span?.start ?? null,
+ });
+ // The store's presence — even with zero clusters — is meaningful (C1):
+ // null means "the job has not run" (fall back), [] means "it ran and
+ // found no themes" (say so). Both are derived stores, never source.
+ if (store !== null && store.length === 0) {
+  return [{ name: 'no themes yet', passages: passages.map(place) }];
+ }
+ const groups: { name: string; passageIds: string[] }[] = store ?? clusterPassages(
+  passages.map((p) => ({ id: p.id, prose: p.prose, captured: p.captured })),
+ );
+ const placed = new Set<string>();
+ const neighborhoods: { name: string; passages: WikiPassage[] }[] = [];
+ for (const g of groups) {
+  const members: WikiPassage[] = [];
+  for (const pid of g.passageIds) {
+   const p = byId.get(pid);
+   if (!p || placed.has(pid)) continue;
+   placed.add(pid);
+   members.push(place(p));
+  }
+  if (members.length > 0) neighborhoods.push({ name: g.name, passages: members });
+ }
+ const leftovers = passages.filter((p) => !placed.has(p.id));
+ if (leftovers.length > 0) {
+  for (const g of clusterPassages(leftovers.map((p) => ({ id: p.id, prose: p.prose, captured: p.captured })))) {
+   const members: WikiPassage[] = [];
+   for (const pid of g.passageIds) {
+    const p = byId.get(pid);
+    if (!p) continue;
+    placed.add(pid);
+    members.push(place(p));
+   }
+   if (members.length > 0) neighborhoods.push({ name: g.name, passages: members });
+  }
+ }
+ return neighborhoods;
+}
+
+/**
+ * Render the wiki page. The passages, neighborhoods store, context lines,
+ * contradictions, freshness and lint findings are gathered by the caller;
+ * this function only groups, orders and attaches context. The response
+ * object is what the route `c.json`s — the caller stamps `surfaced` over
+ * the passages first when the read is not pure (129).
  */
 export function renderWikiPage(inputs: {
  all: boolean;
- graph: ClaimGraph;
- /** The snippet ids under repair (ticket 137) — computed over the WHOLE graph by the caller. */
- repairedIds: Set<string>;
- /** The Clerk's last lint findings (live read by the caller). */
- lastLintFindings: LintFinding[];
+ /** The whole snippet corpus — the page is your words, nothing is hidden. */
+ passages: Snippet[];
+ /** C1's clustering store, or null when it has not run (the lexical fallback then). */
+ neighborhoods: Neighborhood[] | null;
+ /** The context-line store, keyed by passage id — B2's job's output. */
+ contextLines: Map<string, ContextLineRecord>;
+ /** Every contradiction, dissolved included — the lens decides visibility. */
+ contradictions: Contradiction[];
+ /** The lens's read-through + sitting census — computed by the caller. */
+ freshness: Freshness;
  /** The Clerk's last lint timestamp (live read by the caller). */
  lintedAt: string | null;
 }): WikiPage {
- const { all, graph, repairedIds, lastLintFindings, lintedAt } = inputs;
+ const { all, passages, neighborhoods, contextLines, contradictions, freshness, lintedAt } = inputs;
 
- // Repair consultation (ticket 137): the claim ids whose cites include a
- // repaired snippet, so the wiki surface can mark them. Computed over the
- // WHOLE graph — a repaired cite taints the claim whether or not the page
- // shows it. The empty set is omitted from the response, never null.
- const repairClaimIds = new Set<string>();
- if (repairedIds.size > 0) {
-  for (const claim of graph.claims) {
-   for (const cite of claim.cites) {
-    if (repairedIds.has(cite.split('@')[0]!)) {
-     repairClaimIds.add(claim.id);
-     break;
-    }
+ const neighborhoodsOut = neighborhoodsOf(passages, neighborhoods);
+ for (const n of neighborhoodsOut) {
+  for (const p of n.passages) {
+   const line = contextLines.get(p.id);
+   if (line) {
+    // The wire carries text + the echo citations + the stamp the lens keys
+    // on. The model stamp stays in the store — no model name reaches a
+    // reading surface (Q-34's stamp is store machinery, never chrome).
+    p.context = { text: line.text, echoes: line.echoes, at: line.at };
    }
   }
  }
 
- // Coreness over the WHOLE graph, archived claims included, and computed
- // once per claim rather than once per comparison. Scoring the whole graph
- // is also what keeps the order a reader sees from moving when `?all=1`
- // widens the page: a claim's neighbourhood does not shrink because the page
- // stopped showing part of it. The number is computed on demand and stored
- // nowhere (Q-21) — this route is its one caller.
- const score = new Map(graph.claims.map((cl) => [cl.id, coreness(cl.id, graph)]));
-
- const byFacet = new Map<Facet, Claim[]>();
- for (const cl of graph.claims) {
-  if (!all && !isLive(cl)) continue;
-  const group = byFacet.get(cl.facet);
-  if (group) group.push(cl);
-  else byFacet.set(cl.facet, [cl]);
- }
-
- // `FACETS` order, so two readings of one vault are the same page. An empty
- // facet is omitted: a heading over nothing is chrome, and the document rule
- // has no room for it. Ties break on id, because `coreness` is a
- // neighbourhood measure and a whole component scores alike.
- const facets = FACETS.filter((f) => byFacet.has(f)).map((f) => ({
-  facet: f,
-  heading: facetHeading(f),
-  claims: (byFacet.get(f) ?? []).sort(
-   (a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0) || (a.id < b.id ? -1 : 1),
-  ),
- }));
-
- // A dissolved Contradiction is not material any more, so it is not part of
- // the default reading either. It is still on disk, and `?all=1` shows it.
- const contradictions = graph.contradictions.filter((x) => all || x.status === 'open');
-
- // Lint arrives as a note and nothing else. `LintFinding.detail` names claim
- // ids and `snippetId@version` cites, and `kind` is a slug — the route drops
- // both rather than trusting a renderer not to print them (tickets 038, 063).
- const hidden = new Set(graph.claims.filter((cl) => !isLive(cl)).map((cl) => cl.id));
- const lintNotes = lastLintFindings
-  .filter((f) => all || !hidden.has(f.subject))
-  .map((f) => ({ kind: f.kind, subject: f.subject, note: lintNote(f.kind) }));
-
  return {
-  facets,
+  neighborhoods: neighborhoodsOut,
   contradictions,
-  lint: lintNotes,
-  ...(repairClaimIds.size > 0 ? { repairClaimIds: [...repairClaimIds] } : {}),
+  freshness,
   lintedAt,
   all,
  };

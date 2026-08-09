@@ -13,9 +13,8 @@ import type { Piece } from './contract.js';
  * Pure and memoryless: same inputs, same answer, on every call — no I/O, no
  * clock, no model. `lastTouched` is passed in, never read here; the caller
  * (the Docket's dormancy sweep) derives it as the newest of the Piece's
- * `created`, its current Arrangement's `created`, and the `captured` of any
- * snippet pinned in it. A set-down Piece is never auto-set-down again
- * (Q-41), so the log does not repeat.
+ * `created` and the `captured` of any snippet pinned in it. A set-down Piece
+ * is never auto-set-down again (Q-41), so the log does not repeat.
  */
 export function isDormant(p: Piece, lastTouched: string, now: number, days: number): boolean {
   if (p.setDownAt !== undefined) return false;

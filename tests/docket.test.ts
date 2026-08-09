@@ -40,7 +40,6 @@ type DocketDeps = {
  complete: Complete;
  buildIndex: (snippets: Snippet[]) => LexicalIndex;
  composeOpener: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
- composeStillTrue: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
  composeExpedition?: (s: Snippet, c: Complete) => Promise<QueueDraft | null>;
  log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
  nextConsolidation?: (sessions: SessionRef[], summaries: RangeSummary[]) => string[] | null;
@@ -55,8 +54,6 @@ type DocketDeps = {
  stalePinSweep?: () => Promise<number>;
  dormancySweep?: () => Promise<number>;
  referentAnnotations?: () => Promise<{ annotated: number; silent: number; failed: number }>;
- gapFillSweep?: () => Promise<{ minted: number; budQuestions: number; constructQuestions: number }>;
- stillTrueCursor?: { read: () => number; write: (offset: number) => void };
  shouldStop?: () => boolean;
 };
 
@@ -196,7 +193,7 @@ describe('runDocket', () => {
   const existingQe: QueueEntry = {
    id: 'existing', status: 'pending', source: 'composed',
    license: 'CC0', question: 'Existing?', questionForm: 'deliberative',
-   sharpness: 'weak', horizon: 'now', created: newDate, cites: ['sn3@1'],
+    horizon: 'now', created: newDate, cites: ['sn3@1'],
   };
   const q = makeFakeQueue([existingQe]);
 
@@ -205,7 +202,7 @@ describe('runDocket', () => {
    .mockResolvedValueOnce({
     source: 'composed' as const, license: 'CC0',
     question: 'What about sn5?', questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const, horizon: 'now' as const,
+    horizon: 'now' as const,
     cites: ['sn5@1'], quotedFragment: 'sn5 prose.',
    } satisfies QueueDraft);
 
@@ -223,7 +220,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex,
    composeOpener,
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    listSessions,
    vaultRoot: '/tmp/fake',
@@ -248,7 +244,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener,
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
@@ -263,7 +258,6 @@ describe('runDocket', () => {
  it('a stopped run skips every job and says so once', async () => {
   const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
   const composeOpener = vi.fn();
-  const composeStillTrue = vi.fn();
   const runImportJobs = vi.fn();
   const runWikiJobs = vi.fn();
   const log = vi.fn();
@@ -273,7 +267,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener,
-   composeStillTrue,
    log,
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
@@ -285,7 +278,6 @@ describe('runDocket', () => {
   });
 
   expect(composeOpener).not.toHaveBeenCalled();
-  expect(composeStillTrue).not.toHaveBeenCalled();
   expect(runWikiJobs).not.toHaveBeenCalled();
   expect(runImportJobs).not.toHaveBeenCalled();
   // The index still rebuilt — that is read-only bookkeeping, not a job.
@@ -293,152 +285,6 @@ describe('runDocket', () => {
   const kinds = log.mock.calls.map((c: unknown[]) => (c[0] as { kind: string }).kind);
   expect(kinds).toContain('docket-cut-short');
   expect(kinds).not.toContain('expired');
- });
-
- // ── 2: still-true > 90d, quota 2 ──
- it('mints still-true only for snippets captured > 90 days ago, max 2', async () => {
-  const old1 = makeSnippet('old1', { captured: daysAgo(100), provenance: { session: 's-old' } });
-  const old2 = makeSnippet('old2', { captured: daysAgo(95), provenance: { session: 's-old' } });
-  const old3 = makeSnippet('old3', { captured: daysAgo(91), provenance: { session: 's-old' } });
-  const recent = makeSnippet('recent', { captured: daysAgo(10), provenance: { session: 's-new' } });
-
-  const composeStillTrue = vi.fn()
-   .mockResolvedValueOnce({
-    source: 'still-true' as const, license: 'CC0',
-    question: 'Still true for old1?', questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const, horizon: 'now' as const,
-    cites: ['old1@1'], quotedFragment: 'old1',
-   } satisfies QueueDraft)
-   .mockResolvedValueOnce(null)
-   .mockResolvedValue({
-    source: 'still-true' as const, license: 'CC0',
-    question: 'SHOULD NOT APPEAR', questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const, horizon: 'now' as const,
-   } satisfies QueueDraft);
-
-  const report = await runDocket({
-   vault: fakeVault([old1, old2, old3, recent]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue,
-   log: vi.fn(),
-   listSessions: vi.fn().mockReturnValue([
-    { session: 's-new', started: daysAgo(10), turnCount: 2, chars: 50 },
-    { session: 's-old', started: daysAgo(100), turnCount: 5, chars: 200 },
-   ]),
-   vaultRoot: '/tmp/fake',
-  });
-
-  expect(composeStillTrue).toHaveBeenCalledTimes(2);
-  expect(report.minted).toHaveLength(1);
-  expect(report.minted[0]!.question).toBe('Still true for old1?');
- });
-
- // ── 2b: still-true ages by WRITTEN-when, never filed-when (seeding Task 5) ──
- // `captured` is filing time; `started` is writing time. An imported note
- // written in 2017 and filed today must be a candidate at once — the whole
- // point of the still-true channel for seeded material.
- it('offers a snippet whose prose is nine years old but was filed today', async () => {
-  const snippet = {
-   id: 'a', version: 1, captured: new Date().toISOString(),
-   provenance: { kind: 'unprompted' as const, session: 'import-abc', question: '', questionForm: 'deliberative' as const },
-   prose: 'Kept from a 2017 note.',
-  };
-  const spy = vi.fn().mockResolvedValue(null);
-  const events: { kind: string }[] = [];
-  await runDocket({
-   vault: fakeVault([snippet]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: spy,
-   log: (e: { kind: string }) => events.push(e),
-   listSessions: () => [{ session: 'import-abc', started: '2017-04-11T00:00:00.000Z', turnCount: 1, chars: 10 }],
-   vaultRoot: '/tmp/fake',
-  });
-  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), expect.anything(), expect.anything());
- });
-
- it('does not offer a snippet written today and filed today', async () => {
-  const snippet = {
-   id: 'a', version: 1, captured: new Date().toISOString(),
-   provenance: { kind: 'unprompted' as const, session: 'import-abc', question: '', questionForm: 'deliberative' as const },
-   prose: 'Written today.',
-  };
-  const spy = vi.fn().mockResolvedValue(null);
-  await runDocket({
-   vault: fakeVault([snippet]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: spy,
-   log: vi.fn(),
-   listSessions: () => [{ session: 'import-abc', started: new Date().toISOString(), turnCount: 1, chars: 10 }],
-   vaultRoot: '/tmp/fake',
-  });
-  expect(spy).not.toHaveBeenCalled();
- });
-
- it('falls back to captured when the session is unknown', async () => {
-  const snippet = makeSnippet('a', { captured: daysAgo(200), provenance: { session: 'unknown-session' } });
-  const spy = vi.fn().mockResolvedValue(null);
-  await runDocket({
-   vault: fakeVault([snippet]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: spy,
-   log: vi.fn(),
-   listSessions: () => [],
-   vaultRoot: '/tmp/fake',
-  });
-  expect(spy).toHaveBeenCalled();
- });
-
- it('falls back to captured when started is the EMPTY STRING listSessions writes', async () => {
-  // The real shape: src/server.ts listSessions writes `started: data.started ?? ''`.
-  // This is the test a `??` implementation fails — `'' ?? captured` is `''`,
-  // `new Date('').getTime()` is NaN, and NaN < ninetyDaysMs is false.
-  const snippet = makeSnippet('a', { captured: daysAgo(200), provenance: { session: 'import-abc' } });
-  const spy = vi.fn().mockResolvedValue(null);
-  await runDocket({
-   vault: fakeVault([snippet]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: spy,
-   log: vi.fn(),
-   listSessions: () => [{ session: 'import-abc', started: '', turnCount: 1, chars: 10 }],
-   vaultRoot: '/tmp/fake',
-  });
-  expect(spy).toHaveBeenCalled();
- });
-
- it('excludes and logs a snippet whose dates are both unparseable', async () => {
-  // started '' + captured 'not a date': neither direction — never treated as
-  // ancient (a flood from the path that knows least) and never as fresh.
-  const snippet = makeSnippet('a', { captured: 'not a date', provenance: { session: 'import-abc' } });
-  const spy = vi.fn().mockResolvedValue(null);
-  const events: { kind: string }[] = [];
-  await runDocket({
-   vault: fakeVault([snippet]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: spy,
-   log: (e: { kind: string }) => events.push(e),
-   listSessions: () => [{ session: 'import-abc', started: '', turnCount: 1, chars: 10 }],
-   vaultRoot: '/tmp/fake',
-  });
-  expect(spy).not.toHaveBeenCalled();
-  expect(events.filter((e) => e.kind === 'still-true-undateable')).toHaveLength(1);
  });
 
  // ── 3: expire(30) once ──
@@ -450,7 +296,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
   });
@@ -475,7 +320,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
    nextConsolidation,
@@ -506,7 +350,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
    nextConsolidation,
@@ -529,7 +372,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
    nextConsolidation,
@@ -553,7 +395,7 @@ describe('runDocket', () => {
   const composeOpener = vi.fn().mockResolvedValue({
    source: 'composed' as const, license: 'CC0',
    question: 'Opener q?', questionForm: 'deliberative' as const,
-   sharpness: 'weak' as const, horizon: 'now' as const,
+   horizon: 'now' as const,
    cites: ['sn1@1'], quotedFragment: 'sn1 prose.',
   } satisfies QueueDraft);
 
@@ -563,7 +405,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener,
-   composeStillTrue: vi.fn(),
    log,
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
@@ -605,7 +446,6 @@ describe('runDocket', () => {
     complete: vi.fn() as unknown as Complete,
     buildIndex: vi.fn().mockReturnValue(IDX),
     composeOpener,
-    composeStillTrue: vi.fn(),
     log: vi.fn(),
     listSessions: vi.fn().mockReturnValue([
      { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
@@ -624,7 +464,7 @@ describe('runDocket', () => {
   resolveOpener({
    source: 'composed' as const, license: 'CC0',
    question: 'Opener q?', questionForm: 'deliberative' as const,
-   sharpness: 'weak' as const, horizon: 'now' as const,
+   horizon: 'now' as const,
    cites: ['sn1@1'], quotedFragment: 'sn1 prose.',
   } satisfies QueueDraft);
 
@@ -645,18 +485,11 @@ describe('runDocket', () => {
    .mockResolvedValueOnce({
     source: 'composed' as const, license: 'CC0',
     question: 'Opener 1?', questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const, horizon: 'now' as const,
+    horizon: 'now' as const,
     cites: ['sn1@1'], quotedFragment: 'sn1',
    } satisfies QueueDraft)
    .mockResolvedValueOnce(null);
 
-  const composeStillTrue = vi.fn()
-   .mockResolvedValueOnce({
-    source: 'still-true' as const, license: 'CC0',
-    question: 'Still true?', questionForm: 'deliberative' as const,
-    sharpness: 'weak' as const, horizon: 'now' as const,
-    cites: ['oldSn@1'], quotedFragment: 'oldSn',
-   } satisfies QueueDraft);
 
   const report = await runDocket({
    vault: fakeVault([sn1, sn2, oldSn]),
@@ -664,7 +497,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener,
-   composeStillTrue,
    log: vi.fn(),
    listSessions: vi.fn().mockReturnValue([
     { session: 's2', started: daysAgo(1), turnCount: 1, chars: 10 },
@@ -675,7 +507,7 @@ describe('runDocket', () => {
   });
 
   expect(report.reindexed).toBe(3);
-  expect(report.minted).toHaveLength(2);
+  expect(report.minted).toHaveLength(1);
   expect(report.expired).toBe(5);
  });
 
@@ -689,7 +521,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex,
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
   });
@@ -705,7 +536,6 @@ describe('runDocket', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
   });
@@ -717,148 +547,23 @@ describe('runDocket', () => {
  });
 
  // ── Edge: no listSessions → skip openers ──
- it('skips opener phase when listSessions is absent but runs still-true and expire', async () => {
-  const oldSn = makeSnippet('old', { captured: daysAgo(100) });
-  const composeStillTrue = vi.fn().mockResolvedValue({
-   source: 'still-true' as const, license: 'CC0',
-   question: 'Still?', questionForm: 'deliberative' as const,
-   sharpness: 'weak' as const, horizon: 'now' as const,
-  } satisfies QueueDraft);
+ it('skips opener phase when listSessions is absent', async () => {
   const composeOpener = vi.fn();
 
   const report = await runDocket({
-   vault: fakeVault([oldSn]),
+   vault: fakeVault([]),
    queue: makeFakeQueue(),
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener,
-   composeStillTrue,
    log: vi.fn(),
    vaultRoot: '/tmp/fake',
   });
 
   expect(composeOpener).not.toHaveBeenCalled();
-  expect(composeStillTrue).toHaveBeenCalledTimes(1);
-  expect(report.reindexed).toBe(1);
-  expect(report.minted).toHaveLength(1);
+  expect(report.reindexed).toBe(0);
  });
 
- // ── Edge: still-true exactly 2 ──
- it('mints still-true for exactly 2 old snippets', async () => {
-  const old1 = makeSnippet('old1', { captured: daysAgo(100) });
-  const old2 = makeSnippet('old2', { captured: daysAgo(95) });
-  const composeStillTrue = vi.fn()
-   .mockResolvedValueOnce({
-    source: 'still-true' as const, license: 'CC0', question: 'Q1?',
-    questionForm: 'deliberative' as const, sharpness: 'weak' as const,
-    horizon: 'now' as const,
-   } satisfies QueueDraft)
-   .mockResolvedValueOnce({
-    source: 'still-true' as const, license: 'CC0', question: 'Q2?',
-    questionForm: 'deliberative' as const, sharpness: 'weak' as const,
-    horizon: 'now' as const,
-   } satisfies QueueDraft);
-
-  const report = await runDocket({
-   vault: fakeVault([old1, old2]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn(),
-   composeStillTrue,
-   log: vi.fn(),
-   vaultRoot: '/tmp/fake',
-  });
-
-  expect(composeStillTrue).toHaveBeenCalledTimes(2);
-  expect(report.minted).toHaveLength(2);
- });
-
- // ── 075: still-true rotation with a shared cursor ──
- it('rotates still-true candidates across runs with a shared cursor', async () => {
-  const old1 = makeSnippet('old1', { captured: daysAgo(100) });
-  const old2 = makeSnippet('old2', { captured: daysAgo(99) });
-  const old3 = makeSnippet('old3', { captured: daysAgo(98) });
-  const old4 = makeSnippet('old4', { captured: daysAgo(97) });
-
-  let offset = 0;
-  const cursor = {
-   read: () => offset,
-   write: (o: number) => { offset = o; },
-  };
-
-  const composeStillTrue = vi.fn<(s: Snippet, c: Complete) => Promise<QueueDraft | null>>()
-   .mockResolvedValue(null);
-  const dir = mkdtempSync(join(tmpdir(), 'docket-075-rotation-'));
-  const deps = {
-   vault: fakeVault([old1, old2, old3, old4]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue,
-   log: vi.fn(),
-   vaultRoot: dir,
-   stillTrueCursor: cursor,
-  };
-  try {
-   await runDocket(deps);
-   expect(composeStillTrue.mock.calls.map(c => c[0].id)).toEqual(['old1', 'old2']);
-   composeStillTrue.mockClear();
-   await runDocket(deps);
-   expect(composeStillTrue.mock.calls.map(c => c[0].id)).toEqual(['old3', 'old4']);
-   composeStillTrue.mockClear();
-   await runDocket(deps);
-   expect(composeStillTrue.mock.calls.map(c => c[0].id)).toEqual(['old1', 'old2']);
-   // The cursor advanced past every candidate OFFERED — nulls included.
-   expect(offset).toBe(6);
-  } finally {
-   rmSync(dir, { recursive: true, force: true });
-  }
- });
-
- // ── 075: still-true cursor persisted across a simulated restart ──
- it('persists the still-true cursor to disk across restarts', async () => {
-  const old1 = makeSnippet('old1', { captured: daysAgo(100) });
-  const old2 = makeSnippet('old2', { captured: daysAgo(99) });
-  const old3 = makeSnippet('old3', { captured: daysAgo(98) });
-  const old4 = makeSnippet('old4', { captured: daysAgo(97) });
-
-  const dir = mkdtempSync(join(tmpdir(), 'docket-075-persist-'));
-  const makeDeps = (composeStillTrue: (s: Snippet, c: Complete) => Promise<QueueDraft | null>) => ({
-   vault: fakeVault([old1, old2, old3, old4]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue,
-   log: vi.fn(),
-   vaultRoot: dir,
-   stillTrueCursor: {
-    read: () => readStillTrueCursor(dir),
-    write: (o: number) => writeStillTrueCursor(dir, o),
-   },
-  });
-  try {
-   const composeStillTrue1 = vi.fn<(s: Snippet, c: Complete) => Promise<QueueDraft | null>>()
-    .mockResolvedValue(null);
-   await runDocket(makeDeps(composeStillTrue1));
-   expect(composeStillTrue1.mock.calls.map(c => c[0].id)).toEqual(['old1', 'old2']);
-   expect(readStillTrueCursor(dir)).toBe(2);
-   expect(existsSync(join(dir, 'wiki', 'still-true-cursor.json'))).toBe(true);
-
-   // Simulate a restart: fresh module registry, fresh cursor object, same file.
-   vi.resetModules();
-   const mod = await import('../src/clerk/docket.js');
-   const composeStillTrue2 = vi.fn<(s: Snippet, c: Complete) => Promise<QueueDraft | null>>()
-    .mockResolvedValue(null);
-   await mod.runDocket(makeDeps(composeStillTrue2));
-   expect(composeStillTrue2.mock.calls.map(c => c[0].id)).toEqual(['old3', 'old4']);
-   expect(readStillTrueCursor(dir)).toBe(4);
-  } finally {
-   rmSync(dir, { recursive: true, force: true });
-  }
- });
 });
 
 // ===========================================================================
@@ -880,7 +585,6 @@ describe('consolidation', () => {
    complete: complete as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: vi.fn(),
    log,
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(2), turnCount: 3, chars: 100 },
@@ -916,7 +620,6 @@ describe('consolidation', () => {
    complete: vi.fn().mockRejectedValue(new Error('model down')) as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn().mockResolvedValue(null),
-   composeStillTrue: vi.fn(),
    log,
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(2), turnCount: 3, chars: 100 },
@@ -947,7 +650,7 @@ describe('the wiki jobs inside a docket run', () => {
  const opener = {
   source: 'composed' as const, license: 'CC0',
   question: 'What about sn1?', questionForm: 'deliberative' as const,
-  sharpness: 'weak' as const, horizon: 'now' as const,
+  horizon: 'now' as const,
   cites: ['sn1@1'], quotedFragment: 'sn1 prose.',
  } satisfies QueueDraft;
 
@@ -958,7 +661,6 @@ describe('the wiki jobs inside a docket run', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn().mockResolvedValue(opener),
-   composeStillTrue: vi.fn().mockResolvedValue(null),
    log: vi.fn(),
    listSessions: vi.fn().mockReturnValue([
     { session: 's1', started: daysAgo(0), turnCount: 1, chars: 10 },
@@ -1286,9 +988,10 @@ it('writes the embedding channel into the live clash record (graduated, ticket 1
 // ===========================================================================
 // The piece jobs (Task 10 — the stale-pin sweep and auto-set-down)
 // ===========================================================================
-// The REAL job functions over a REAL vault directory, because the sweep
-// writes through putArrangement, which validates pins against the store's
-// own disk read of snippets — so the snippet files must exist on disk.
+// The REAL job functions over a REAL vault directory, because the sweeps
+// write through putMarginalia / setDown, which validate pins against the
+// store's own disk read of snippets — so the snippet files must exist on
+// disk.
 
 describe('the piece jobs on a real vault (010 T10)', () => {
  let dir: string;
@@ -1315,15 +1018,12 @@ describe('the piece jobs on a real vault (010 T10)', () => {
   writeFileSync(join(dir, 'snippets', snip.id, 'v1.md'), matter.stringify(v1.content, v1.data), 'utf-8');
 
   const store = createPieceStore(dir);
-  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
-  // The piece and its arrangement were created just now; age them too, so
-  // every candidate for lastTouched is 60 days old.
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }], '');
+  // The piece was created just now; age it too, so every candidate for
+  // lastTouched is 60 days old.
   const pm = matter.read(join(dir, 'pieces', piece.id, 'piece.md'));
   pm.data.created = daysAgo(60);
   writeFileSync(join(dir, 'pieces', piece.id, 'piece.md'), matter.stringify(pm.content, pm.data), 'utf-8');
-  const am = matter.read(join(dir, 'pieces', piece.id, 'arrangements', piece.current + '.md'));
-  am.data.created = daysAgo(60);
-  writeFileSync(join(dir, 'pieces', piece.id, 'arrangements', piece.current + '.md'), matter.stringify(am.content, am.data), 'utf-8');
 
   const emitted: string[] = [];
   const log = (e: { kind: string }) => { emitted.push(e.kind); };
@@ -1360,7 +1060,7 @@ describe('the piece jobs on a real vault (010 T10)', () => {
    questionForm: 'deliberative',
   });
   const store = createPieceStore(dir);
-  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }], '');
   // The snippet moves on — v2 exists on disk; the pin still names v1.
   vault.saveVersion(snip.id, 'v2 prose');
 
@@ -1372,10 +1072,10 @@ describe('the piece jobs on a real vault (010 T10)', () => {
    log,
   });
   expect(first).toBe(1);
-  const current = store.get(piece.id)!.arrangements.find((a) => a.id === piece.current)!;
+  const current = store.get(piece.id)!;
   const flags = current.marginalia.filter((m) => m.note === 'stale-pin');
   expect(flags).toHaveLength(1);
-  expect(flags[0]!.on).toBe(piece.arrangements[0]!.entries[0]!.id);
+  expect(flags[0]!.on).toBe(current.entries[0]!.id);
   // The pin itself is untouched — still version 1 (Q-39).
   const pin = current.entries[0]!;
   expect(pin.kind).toBe('pin');
@@ -1389,10 +1089,10 @@ describe('the piece jobs on a real vault (010 T10)', () => {
    log,
   });
   expect(second).toBe(0);
-  const after = store.get(piece.id)!.arrangements.find((a) => a.id === piece.current)!;
+  const after = store.get(piece.id)!;
   expect(after.marginalia.filter((m) => m.note === 'stale-pin')).toHaveLength(1);
   expect(emitted.filter((k) => k === 'stale-pin-flagged')).toHaveLength(1);
- });
+});
 
  it('a docket run whose complete rejects still completes both piece jobs', async () => {
   const vault = createVault(dir);
@@ -1404,7 +1104,7 @@ describe('the piece jobs on a real vault (010 T10)', () => {
   });
   vault.saveVersion(snip.id, 'v2 prose');
   const store = createPieceStore(dir);
-  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+  const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }], '');
 
   const stalePinSweep = vi.fn().mockResolvedValue(1);
   const dormancySweep = vi.fn().mockResolvedValue(1);
@@ -1415,7 +1115,6 @@ describe('the piece jobs on a real vault (010 T10)', () => {
    complete: vi.fn().mockRejectedValue(new Error('boom')),
    buildIndex: (snippets) => realBuildIndex(snippets),
    composeOpener: async () => null,
-   composeStillTrue: async () => null,
    log,
    vaultRoot: dir,
    stalePinSweep,
@@ -1628,7 +1327,6 @@ describe('runReferentAnnotations', () => {
    complete: vi.fn() as unknown as Complete,
    buildIndex: vi.fn().mockReturnValue(IDX),
    composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
    log: vi.fn(),
    listSessions: vi.fn().mockReturnValue([]),
    referentAnnotations,
@@ -1638,47 +1336,6 @@ describe('runReferentAnnotations', () => {
   expect(report.annotations).toEqual({ annotated: 2, silent: 1, failed: 0 });
  });
 
- it('runDocket calls an injected gapFillSweep thunk and reports its counts', async () => {
-  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
-  const gapFillSweep = vi.fn().mockResolvedValue({ minted: 3, budQuestions: 2, constructQuestions: 1 });
-  const report = await runDocket({
-   vault: fakeVault([sn]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
-   log: vi.fn(),
-   listSessions: vi.fn().mockReturnValue([]),
-   gapFillSweep,
-   vaultRoot: '/tmp/fake',
-  });
-  expect(gapFillSweep).toHaveBeenCalledTimes(1);
-  expect(report.gapFill).toEqual({ minted: 3, budQuestions: 2, constructQuestions: 1 });
- });
-
- it('a throwing gapFillSweep thunk logs gap-fill-failed and does not fail the run', async () => {
-  const sn = makeSnippet('sn1', { provenance: { session: 's1' } });
-  const log = vi.fn();
-  const report = await runDocket({
-   vault: fakeVault([sn]),
-   queue: makeFakeQueue(),
-   complete: vi.fn() as unknown as Complete,
-   buildIndex: vi.fn().mockReturnValue(IDX),
-   composeOpener: vi.fn(),
-   composeStillTrue: vi.fn(),
-   log,
-   listSessions: vi.fn().mockReturnValue([]),
-   gapFillSweep: vi.fn().mockRejectedValue(new Error('boom')),
-   vaultRoot: '/tmp/fake',
-  });
-  const events = log.mock.calls.map((call) => call[0] as { kind: string; detail: string });
-  const failed = events.find((e) => e.kind === 'gap-fill-failed');
-  expect(failed).toBeTruthy();
-  if (failed !== undefined) expect(failed.detail).toContain('boom');
-  expect(report).toBeTruthy();
-  expect(report.gapFill).toBeUndefined();
- });
 });
 
 // ===========================================================================
@@ -1700,7 +1357,6 @@ describe('the one-time template sweep (QR-6)', () => {
    license: 'CC0',
    question: 'What matters to you?',
    questionForm: 'deliberative',
-   sharpness: 'weak',
    horizon: 'now',
    ...overrides,
   });
@@ -1797,7 +1453,7 @@ describe('the one-time template sweep (QR-6)', () => {
    const q = createQueueStore(dir);
    const first = q.add({
     source: 'still-true', license: 'CC0', question: 'Is that still true for you?',
-    questionForm: 'deliberative', sharpness: 'weak', horizon: 'now',
+    questionForm: 'deliberative',  horizon: 'now',
    });
 
    const deps = {
@@ -1806,7 +1462,6 @@ describe('the one-time template sweep (QR-6)', () => {
     complete: makeFakeComplete(),
     buildIndex: vi.fn().mockReturnValue(IDX),
     composeOpener: vi.fn(),
-    composeStillTrue: vi.fn(),
     log: vi.fn(),
     vaultRoot: dir,
    };
@@ -1819,7 +1474,7 @@ describe('the one-time template sweep (QR-6)', () => {
    // seeded after the flag was written survives untouched.
    const second = q.add({
     source: 'gap-fill', license: 'CC0', question: 'What is the opposite of that for you?',
-    questionForm: 'deliberative', sharpness: 'weak', horizon: 'now', snippet: 'sn-9',
+    questionForm: 'deliberative',  horizon: 'now', snippet: 'sn-9',
    });
    await runDocket(deps);
 

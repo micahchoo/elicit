@@ -1,12 +1,14 @@
 /**
- * The eleven piece routes (T6), driven through the REAL app.
+ * The piece routes (T6), driven through the REAL app.
  *
  * Every assertion goes through `createApp` and `app.fetch` — never a
  * hand-built handler — because the failure this suite exists to catch is
  * the seam that compiles, tests green, and reaches nothing. This suite
  * closes T6 Step 1: sitting order, composition provenance, the Q-39 mint
  * (exactly one queue entry per gap), the pinned-version resolver, Q-41
- * set-down, the gap offer and its clearing, and the export surface.
+ * set-down, the gap offer and its clearing, the export surface, and the
+ * Composition reshape (redesign-2026-08-09): one entry list, a subject, the
+ * take-out verb wired, and setDownAt crossing the wire to the board.
  *
  * Snippets are seeded with REAL sittings: every provenance names a session
  * whose transcript frontmatter carries `started`, because chronological()
@@ -43,6 +45,7 @@ import type { QueueStore, Snippet, Vault } from '../src/types.js';
 
 // ── The response shapes this suite asserts (the cross-slice contract) ──
 
+type GapKind = 'leap' | 'unsupported' | 'thin' | 'unclosed';
 type EnrichedPin = {
   id: string;
   kind: 'pin';
@@ -53,27 +56,25 @@ type EnrichedPin = {
 };
 type EnrichedGap = {
   id: string;
-  kind: 'gap';
+  kind: GapKind | null;
+  placedBy: 'person' | 'model';
   question: string | null;
   pending: string | null;
   offers: Snippet[];
 };
 type EnrichedEntry = EnrichedPin | EnrichedGap;
-type EnrichedArrangement = {
-  id: string;
-  principle: string;
-  created: string;
-  model: string | null;
-  entries: EnrichedEntry[];
-  marginalia: { id: string; on: string | null; note: string; text: string; at: string; model: string | null }[];
-};
 type EnrichedPiece = {
   id: string;
   created: string;
-  current: string;
+  subject: string;
   setDownAt: string | null;
   setDownBy: string | null;
-  arrangements: EnrichedArrangement[];
+  discardedAt: string | null;
+  entries: EnrichedEntry[];
+  offers: unknown[];
+  declined: string[];
+  dismissedGaps: string[];
+  marginalia: { id: string; on: string | null; note: string; text: string; at: string; model: string | null }[];
 };
 
 // ── Harness ──
@@ -144,9 +145,9 @@ function seedSnippet(prose: string, session: string, extra?: Partial<Snippet['pr
   });
 }
 
-/** The enriched entries of the piece's CURRENT arrangement. */
+/** The enriched entries of the piece — one list, no arrangements. */
 function entriesOf(p: EnrichedPiece): EnrichedEntry[] {
-  return (p.arrangements.find((a) => a.id === p.current) ?? p.arrangements[0]!).entries;
+  return p.entries;
 }
 
 /** One line per entry, so ordering reads as a plain array. */
@@ -184,16 +185,22 @@ describe('the piece routes (T6)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('POST /api/piece returns the chosen snippets in sitting order', async () => {
+  it('POST /api/piece returns the chosen snippets in sitting order under the subject', async () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     seedTranscript('s-2020', '2020-03-15T00:00:00.000Z');
     seedTranscript('s-2022', '2022-11-02T00:00:00.000Z');
     const late = seedSnippet('written in 2022', 's-2022');
     const early = seedSnippet('written in 2018', 's-2018');
     const middle = seedSnippet('written in 2020', 's-2020');
-    const res = await post('/api/piece', { snippets: [late.id, middle.id, early.id] });
+    const res = await post('/api/piece', {
+      snippets: [late.id, middle.id, early.id],
+      subject: 'the clock, and what it costs',
+    });
     expect(res.status).toBe(200);
     const p = (await res.json()) as EnrichedPiece;
+    // The subject is the gathering criterion — carried on the wire, never
+    // in the export (Q-1).
+    expect(p.subject).toBe('the clock, and what it costs');
     // Chosen out of order; the sitting dates decide (Q-59).
     expect(renderEntries(p)).toEqual(['pin:written in 2018', 'pin:written in 2020', 'pin:written in 2022']);
     // The pins' sitting dates ride the enriched entries.
@@ -212,22 +219,31 @@ describe('the piece routes (T6)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('GET /api/pieces lists every piece with its enriched current arrangement', async () => {
+  it('GET /api/pieces lists every piece with its enriched entries, and the shelf carries setDownAt (bug 12.3)', async () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     const s = seedSnippet('a paragraph', 's-2018');
-    const created = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
+    const created = (await (await post('/api/piece', { snippets: [s.id], subject: 'the clock' })).json()) as EnrichedPiece;
     const res = await get('/api/pieces');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      pieces: { id: string; current: string; arrangement: EnrichedArrangement }[];
+      pieces: { id: string; subject: string; setDownAt: string | null; entries: EnrichedEntry[] }[];
     };
     expect(body.pieces).toHaveLength(1);
     expect(body.pieces[0]!.id).toBe(created.id);
-    expect(body.pieces[0]!.current).toBe(created.current);
-    const pin = body.pieces[0]!.arrangement.entries[0]! as EnrichedPin;
+    expect(body.pieces[0]!.subject).toBe('the clock');
+    expect(body.pieces[0]!.setDownAt).toBeNull();
+    const pin = body.pieces[0]!.entries[0]! as EnrichedPin;
     expect(pin.kind).toBe('pin');
     expect(pin.prose).toBe('a paragraph');
     expect(pin.sittingDate).toBe('2018-09-01T00:00:00.000Z');
+
+    // The board needs the set-down fact: the wire carries it after set-down.
+    await post(`/api/piece/${created.id}/set-down`);
+    const again = (await (await get('/api/pieces')).json()) as {
+      pieces: { id: string; setDownAt: string | null; setDownBy: string | null }[];
+    };
+    expect(again.pieces[0]!.setDownAt).not.toBeNull();
+    expect(again.pieces[0]!.setDownBy).toBe('user');
   });
 
   it('GET /api/piece/:id answers 404 for an unknown piece', async () => {
@@ -239,7 +255,7 @@ describe('the piece routes (T6)', () => {
     const s = seedSnippet('an earlier paragraph', 's-2018');
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const text = 'A paragraph written straight into the piece.';
-    const res = await post(`/api/piece/${piece.id}/prose`, { arrangement: piece.current, text });
+    const res = await post(`/api/piece/${piece.id}/prose`, { text });
     expect(res.status).toBe(200);
     const p = (await res.json()) as EnrichedPiece;
     const pin = entriesOf(p)[1]! as EnrichedPin;
@@ -280,14 +296,10 @@ describe('the piece routes (T6)', () => {
       await post('/api/piece', { snippets: [first.id, second.id] })
     ).json()) as EnrichedPiece;
 
-    const empty = await post(`/api/piece/${piece.id}/prose`, {
-      arrangement: piece.current,
-      text: '   ',
-    });
+    const empty = await post(`/api/piece/${piece.id}/prose`, { text: '   ' });
     expect(empty.status).toBe(400);
 
     const res = await post(`/api/piece/${piece.id}/prose`, {
-      arrangement: piece.current,
       text: 'inserted between them',
       after: entriesOf(piece)[0]!.id,
     });
@@ -335,28 +347,30 @@ describe('the piece routes (T6)', () => {
     expect(pin2.prose).toBe('a current paragraph');
   });
 
-  it('POST /gap mints exactly one queue entry per gap id, idempotently', async () => {
+  it('POST /gap mints exactly one queue entry per gap id, idempotently, under the composition license', async () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     const s = seedSnippet('a paragraph', 's-2018');
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const gapId = ulid();
     const question = 'what made you change your mind about that?';
-    const body = { arrangement: piece.current, gap: gapId, question };
+    const body = { gap: gapId, question };
 
     const r1 = await post(`/api/piece/${piece.id}/gap`, body);
     expect(r1.status).toBe(200);
     const p1 = (await r1.json()) as EnrichedPiece;
     const gap1 = entriesOf(p1)[1]! as EnrichedGap;
-    expect(gap1.kind).toBe('gap');
+    expect(gap1.placedBy).toBe('person');
+    expect(gap1.kind).toBeNull();
     let entries = queue.list({ source: 'gap-declared' });
     expect(entries).toHaveLength(1);
     expect(gap1.question).toBe(entries[0]!.id);
-    // The draft, exactly as the plan's Q-39 path declares it.
+    // The draft, exactly as the Q-39 path declares it — the license names
+    // the composition and the gap, the dedupe key the composition-gap
+    // source also reads (redesign §7).
     expect(entries[0]!.source).toBe('gap-declared');
-    expect(entries[0]!.license).toBe('arrangement-gap');
+    expect(entries[0]!.license).toBe(`composition ${piece.id} gap ${gapId}`);
     expect(entries[0]!.question).toBe(question);
     expect(entries[0]!.questionForm).toBe('deliberative');
-    expect(entries[0]!.sharpness).toBe('weak');
     expect(entries[0]!.horizon).toBe('session');
     expect(entries[0]!.gap).toBe(gapId);
     expect(entries[0]!.status).toBe('pending');
@@ -369,18 +383,17 @@ describe('the piece routes (T6)', () => {
     const r2 = await post(`/api/piece/${piece.id}/gap`, body);
     expect(r2.status).toBe(200);
     const p2 = (await r2.json()) as EnrichedPiece;
-    expect(entriesOf(p2).filter((e) => e.kind === 'gap')).toHaveLength(1);
+    expect(entriesOf(p2).filter((e) => e.kind !== 'pin')).toHaveLength(1);
     expect(queue.list({ source: 'gap-declared' })).toHaveLength(1);
 
     // A different gap id: two of each.
     const r3 = await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: ulid(),
       question: 'a second question?',
     });
     expect(r3.status).toBe(200);
     const p3 = (await r3.json()) as EnrichedPiece;
-    expect(entriesOf(p3).filter((e) => e.kind === 'gap')).toHaveLength(2);
+    expect(entriesOf(p3).filter((e) => e.kind !== 'pin')).toHaveLength(2);
     expect(queue.list({ source: 'gap-declared' })).toHaveLength(2);
   });
 
@@ -389,7 +402,6 @@ describe('the piece routes (T6)', () => {
     const s = seedSnippet('a paragraph', 's-2018');
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const res = await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: ulid(),
       question: '   ',
     });
@@ -410,14 +422,13 @@ describe('the piece routes (T6)', () => {
 
     const gapId = ulid();
     const r = await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'should there be a question?',
     });
     expect(r.status).toBe(200);
     const p = (await r.json()) as EnrichedPiece;
     const gap = entriesOf(p)[1]! as EnrichedGap;
-    expect(gap.kind).toBe('gap');
+    expect(gap.placedBy).toBe('person');
     expect(gap.question).toBeNull();
     // Q-41's exact wording, tested: setting down stops minting.
     expect(queue.list({ source: 'gap-declared' })).toHaveLength(0);
@@ -427,7 +438,6 @@ describe('the piece routes (T6)', () => {
     expect(((await pu.json()) as EnrichedPiece).setDownAt).toBeNull();
 
     const r2 = await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: ulid(),
       question: 'now it can mint?',
     });
@@ -437,18 +447,17 @@ describe('the piece routes (T6)', () => {
     expect(queue.list({ source: 'gap-declared' })).toHaveLength(1);
   });
 
-  it('POST /remove on a gap leaves its queue entry present and pending', async () => {
+  it('POST /remove — `take out` — drops the entry and leaves its queue entry present and pending', async () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     const s = seedSnippet('a paragraph', 's-2018');
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const gapId = ulid();
     await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'a question the gap asked',
     });
 
-    const res = await post(`/api/piece/${piece.id}/remove`, { arrangement: piece.current, entry: gapId });
+    const res = await post(`/api/piece/${piece.id}/remove`, { entry: gapId });
     expect(res.status).toBe(200);
     const p = (await res.json()) as EnrichedPiece;
     expect(entriesOf(p).map((e) => e.id)).not.toContain(gapId);
@@ -459,6 +468,12 @@ describe('the piece routes (T6)', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.status).toBe('pending');
     expect(entries[0]!.gap).toBe(gapId);
+
+    // An unknown entry is refused, and taking out a pin is the same verb.
+    expect((await post(`/api/piece/${piece.id}/remove`, { entry: ulid() })).status).toBe(400);
+    const pinId = entriesOf(p)[0]!.id;
+    const afterPin = (await (await post(`/api/piece/${piece.id}/remove`, { entry: pinId })).json()) as EnrichedPiece;
+    expect(entriesOf(afterPin)).toHaveLength(0);
   });
 
   it('POST /reorder accepts a permutation and refuses an add or a drop', async () => {
@@ -470,7 +485,6 @@ describe('the piece routes (T6)', () => {
     const ids = entriesOf(piece).map((e) => e.id);
 
     const ok = await post(`/api/piece/${piece.id}/reorder`, {
-      arrangement: piece.current,
       entries: [ids[1]!, ids[0]!],
     });
     expect(ok.status).toBe(200);
@@ -479,13 +493,11 @@ describe('the piece routes (T6)', () => {
 
     // Dropping an entry is not a reorder.
     const drop = await post(`/api/piece/${piece.id}/reorder`, {
-      arrangement: piece.current,
       entries: [ids[0]!],
     });
     expect(drop.status).toBe(400);
     // Neither is adding one.
     const add = await post(`/api/piece/${piece.id}/reorder`, {
-      arrangement: piece.current,
       entries: [...ids, ulid()],
     });
     expect(add.status).toBe(400);
@@ -497,7 +509,6 @@ describe('the piece routes (T6)', () => {
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const gapId = ulid();
     await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'what does the gap ask?',
     });
@@ -510,7 +521,7 @@ describe('the piece routes (T6)', () => {
 
     const p = (await (await get(`/api/piece/${piece.id}`)).json()) as EnrichedPiece;
     const gap = entriesOf(p)[1]! as EnrichedGap;
-    expect(gap.kind).toBe('gap');
+    expect(gap.placedBy).toBe('person');
     expect(gap.offers.map((o) => o.id)).toEqual([answer.id]);
     expect(gap.offers[0]!.prose).toBe('the answer to the gap');
   });
@@ -521,14 +532,12 @@ describe('the piece routes (T6)', () => {
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const gapId = ulid();
     await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'what does the gap ask?',
     });
     const answer = seedSnippet('the answer', 's-2018', { gap: gapId });
 
     const res = await post(`/api/piece/${piece.id}/gap/accept`, {
-      arrangement: piece.current,
       gap: gapId,
       snippet: answer.id,
       version: answer.version,
@@ -558,34 +567,31 @@ describe('the piece routes (T6)', () => {
     const piece = (await (await post('/api/piece', { snippets: [s.id] })).json()) as EnrichedPiece;
     const gapId = ulid();
     await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'what does the gap ask?',
     });
     const answer = seedSnippet('the real answer', 's-2018', { gap: gapId });
     // No gap in its provenance, however relevant it looks.
     const unrelated = seedSnippet('the real answer', 's-2018');
-    const arrFile = join(root, 'pieces', piece.id, 'arrangements', `${piece.current}.md`);
-    const before = readFileSync(arrFile, 'utf-8');
+    const pieceFile = join(root, 'pieces', piece.id, 'piece.md');
+    const before = readFileSync(pieceFile, 'utf-8');
 
     const refused = await post(`/api/piece/${piece.id}/gap/accept`, {
-      arrangement: piece.current,
       gap: gapId,
       snippet: unrelated.id,
       version: 1,
     });
     expect(refused.status).toBe(400);
-    expect(readFileSync(arrFile, 'utf-8')).toBe(before);
+    expect(readFileSync(pieceFile, 'utf-8')).toBe(before);
 
     // A version that does not resolve is refused too.
     const badVersion = await post(`/api/piece/${piece.id}/gap/accept`, {
-      arrangement: piece.current,
       gap: gapId,
       snippet: answer.id,
       version: 99,
     });
     expect(badVersion.status).toBe(400);
-    expect(readFileSync(arrFile, 'utf-8')).toBe(before);
+    expect(readFileSync(pieceFile, 'utf-8')).toBe(before);
   });
 
   it('accepting on a set-down piece succeeds and mints nothing', async () => {
@@ -595,14 +601,12 @@ describe('the piece routes (T6)', () => {
     await post(`/api/piece/${piece.id}/set-down`);
     const gapId = ulid();
     await post(`/api/piece/${piece.id}/gap`, {
-      arrangement: piece.current,
       gap: gapId,
       question: 'ignored while set down',
     });
     const answer = seedSnippet('the answer', 's-2018', { gap: gapId });
 
     const res = await post(`/api/piece/${piece.id}/gap/accept`, {
-      arrangement: piece.current,
       gap: gapId,
       snippet: answer.id,
       version: 1,
@@ -614,21 +618,23 @@ describe('the piece routes (T6)', () => {
     expect(queue.list({ source: 'gap-declared' })).toHaveLength(0);
   });
 
-  it('GET /export is text/markdown with every pinned paragraph and nothing else', async () => {
+  it('GET /export is text/markdown with every pinned paragraph and nothing else — no subject, no marginalia (Q-1)', async () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     seedTranscript('s-2020', '2020-03-15T00:00:00.000Z');
     const a = seedSnippet('first paragraph of the piece', 's-2018');
     const b = seedSnippet('second paragraph of the piece', 's-2020');
-    const piece = (await (await post('/api/piece', { snippets: [a.id, b.id] })).json()) as EnrichedPiece;
+    const piece = (await (
+      await post('/api/piece', { snippets: [a.id, b.id], subject: 'the clock' })
+    ).json()) as EnrichedPiece;
 
     // A Marginalium on disk: the export must not show it.
-    const arrFile = join(root, 'pieces', piece.id, 'arrangements', `${piece.current}.md`);
-    const parsed = matter.read(arrFile);
+    const pieceFile = join(root, 'pieces', piece.id, 'piece.md');
+    const parsed = matter.read(pieceFile);
     const data = parsed.data as { marginalia: unknown[] };
     data.marginalia = [
-      { id: ulid(), on: null, note: 'principle', text: 'ordered as it happened', at: new Date().toISOString() },
+      { id: ulid(), on: null, note: 'role', text: 'sets the scene', at: new Date().toISOString() },
     ];
-    writeFileSync(arrFile, matter.stringify(parsed.content, data), 'utf-8');
+    writeFileSync(pieceFile, matter.stringify(parsed.content, data), 'utf-8');
 
     const res = await get(`/api/piece/${piece.id}/export`);
     expect(res.status).toBe(200);
@@ -637,11 +643,44 @@ describe('the piece routes (T6)', () => {
     const body = await res.text();
     expect(body).toContain('first paragraph of the piece');
     expect(body).toContain('second paragraph of the piece');
-    // No heading, no separator, no Marginalia — the person's sentences and
-    // nothing else (Q-1).
+    // No heading, no separator, no Marginalia, no subject — the person's
+    // sentences and nothing else (Q-1: the subject describes the gathering,
+    // never the writing).
     expect(body).not.toContain('#');
     expect(body).not.toContain('---');
-    expect(body).not.toContain('ordered as it happened');
+    expect(body).not.toContain('sets the scene');
+    expect(body).not.toContain('the clock');
+  });
+
+  it('GET /export?ink=questions adds the open gaps as blockquotes — the working document (Output A, §6)', async () => {
+    seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
+    seedTranscript('s-2020', '2020-03-15T00:00:00.000Z');
+    const a = seedSnippet('first paragraph of the piece', 's-2018');
+    const b = seedSnippet('second paragraph of the piece', 's-2020');
+    const piece = (await (
+      await post('/api/piece', { snippets: [a.id, b.id], subject: 'the clock' })
+    ).json()) as EnrichedPiece;
+    const firstId = entriesOf(piece)[0]!.id;
+    // The person's own hole, minted at gap-declared weight.
+    await post('/api/piece/' + piece.id + '/gap', {
+      gap: ulid(),
+      after: firstId,
+      question: 'what goes between these?',
+    });
+
+    const res = await get(`/api/piece/${piece.id}/export/questions`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/markdown');
+    expect(res.headers.get('content-disposition')).toBe(`attachment; filename="piece-${piece.id}.questions.md"`);
+    const body = await res.text();
+    expect(body).toContain('first paragraph of the piece');
+    expect(body).toContain('> what goes between these?');
+    expect(body).toContain('second paragraph of the piece');
+    // The subject never exports (Q-1), in either ink.
+    expect(body).not.toContain('the clock');
+    // The clean ink omits the hole — the two exports are different documents.
+    const clean = await (await get(`/api/piece/${piece.id}/export`)).text();
+    expect(clean).not.toContain('what goes between these?');
   });
 
   it('every piece route refuses a missing session cookie', async () => {
@@ -652,20 +691,19 @@ describe('the piece routes (T6)', () => {
     expect((await anon('/api/pieces')).status).toBe(401);
     expect((await anon(`/api/piece/${piece.id}`)).status).toBe(401);
     expect(
-      (await anon(`/api/piece/${piece.id}/reorder`, 'POST', { arrangement: piece.current, entries: [] })).status,
+      (await anon(`/api/piece/${piece.id}/reorder`, 'POST', { entries: [] })).status,
     ).toBe(401);
     expect(
-      (await anon(`/api/piece/${piece.id}/remove`, 'POST', { arrangement: piece.current, entry: 'x' })).status,
+      (await anon(`/api/piece/${piece.id}/remove`, 'POST', { entry: 'x' })).status,
     ).toBe(401);
     expect(
-      (await anon(`/api/piece/${piece.id}/prose`, 'POST', { arrangement: piece.current, text: 'x' })).status,
+      (await anon(`/api/piece/${piece.id}/prose`, 'POST', { text: 'x' })).status,
     ).toBe(401);
     expect(
-      (await anon(`/api/piece/${piece.id}/gap`, 'POST', { arrangement: piece.current, gap: ulid() })).status,
+      (await anon(`/api/piece/${piece.id}/gap`, 'POST', { gap: ulid() })).status,
     ).toBe(401);
     expect(
       (await anon(`/api/piece/${piece.id}/gap/accept`, 'POST', {
-        arrangement: piece.current,
         gap: ulid(),
         snippet: 'x',
         version: 1,
@@ -705,11 +743,11 @@ describe('the piece jobs through createApp (010 T10)', () => {
     seedTranscript('s-2018', '2018-09-01T00:00:00.000Z');
     const snip = seedSnippet('a paragraph pinned long ago', 's-2018');
     const store = createPieceStore(root);
-    const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }]);
+    const piece = store.create([{ id: ulid(), kind: 'pin', snippet: snip.id, version: 1 }], '');
     pieceId = piece.id;
     // The snippet moves on: v2 exists on disk, the pin still names v1.
     vault.saveVersion(snip.id, 'newer prose');
-    // Age every captured/created the sweep reads to 60 days ago, bodies
+    // Age every captured/created the sweeps read to 60 days ago, bodies
     // preserved. The dormancy sweep reads the register's CURRENT version of
     // the pinned snippet, so v2's captured is the one that must be old.
     const v1 = matter.read(join(root, 'snippets', snip.id, 'v1.md'));
@@ -721,9 +759,6 @@ describe('the piece jobs through createApp (010 T10)', () => {
     const pm = matter.read(join(root, 'pieces', piece.id, 'piece.md'));
     pm.data.created = daysAgo(60);
     writeFileSync(join(root, 'pieces', piece.id, 'piece.md'), matter.stringify(pm.content, pm.data), 'utf-8');
-    const am = matter.read(join(root, 'pieces', piece.id, 'arrangements', piece.current + '.md'));
-    am.data.created = daysAgo(60);
-    writeFileSync(join(root, 'pieces', piece.id, 'arrangements', piece.current + '.md'), matter.stringify(am.content, am.data), 'utf-8');
 
     const authStore = createFileAuth(join(root, '.auth.json'));
     authStore.setup('a password');
@@ -751,7 +786,7 @@ describe('the piece jobs through createApp (010 T10)', () => {
   it('the boot run flags the stale pin and sets the dormant piece down, on disk', async () => {
     const pieces = createPieceStore(root).list();
     expect(pieces).toHaveLength(1);
-    const current = pieces[0]!.arrangements.find((a) => a.id === pieces[0]!.current)!;
+    const current = pieces[0]!;
     const flags = current.marginalia.filter((m) => m.note === 'stale-pin');
     // Exactly one stale-pin note, aimed at the pin's entry id.
     expect(flags).toHaveLength(1);

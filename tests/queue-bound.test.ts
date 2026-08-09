@@ -34,7 +34,6 @@ function openEntry(created: string, overrides: Partial<QueueEntry> = {}): QueueE
   license: 'CC0',
   question: `Open question from ${created}`,
   questionForm: 'deliberative',
-  sharpness: 'weak',
   horizon: 'days',
   created,
   ...overrides,
@@ -43,9 +42,9 @@ function openEntry(created: string, overrides: Partial<QueueEntry> = {}): QueueE
 
 /** Write an entry straight to disk with the created date it was built with. */
 function seedEntry(entry: QueueEntry): void {
- const { id, status, source, question, questionForm, sharpness, horizon, ...rest } = entry;
+ const { id, status, source, question, questionForm, horizon, ...rest } = entry;
  const fm: Record<string, unknown> = {
-  id, status, source, question, questionForm, sharpness, horizon, ...rest, created: entry.created,
+  id, status, source, question, questionForm, horizon, ...rest, created: entry.created,
  };
  mkdirSync(join(root, 'queue'), { recursive: true });
  writeFileSync(join(root, 'queue', `${entry.id}.md`), matter.stringify('', fm), 'utf-8');

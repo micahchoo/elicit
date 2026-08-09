@@ -42,14 +42,17 @@ import {
  runReferentAnnotations,
  runIntentionHorizonAnnotations,
  runOutcomeQuestions,
+ runCompositionGapSweep,
 } from './docket.js';
-import { runGapFillSweep } from './gap-fill.js';
 import { runLineageMirrorSweep } from './lineage-mirror.js';
+import { runContextLines } from './context-lines.js';
 import { runCoachSeedSweep } from './coach-seed.js';
 import { runGazetteerExtraction } from './gazetteer-extraction.js';
 import { runGazetteerFrontier } from './gazetteer-frontier.js';
 import { runLadderSummaries } from './sounding-summary.js';
 import { runWikiJobs, DEFAULT_CLERK_MODEL } from './wiki-jobs.js';
+import { fileSnippetVectorStore, runCoverageEmbedding } from '../index/semantic.js';
+import { runNeighborhoodsJob } from '../wiki/neighborhoods.js';
 import { runTerritoryGapFillSweep } from '../ktg/gap-fill.js';
 import { loadKtgSkeleton, loadAtlas } from '../ktg/loader.js';
 import { createCoverageStore, createAtlasCoverageStore } from '../ktg/coverage.js';
@@ -179,6 +182,18 @@ const outcomeCursor = {
   read: () => readOutcomeCursor(deps.vaultRoot),
   write: (offset: number) => writeOutcomeCursor(deps.vaultRoot, offset),
 };
+// The composition gap sweep's rotation cursor (redesign-2026-08-09 §7):
+// in-memory, so a restart forgets rotation — acceptable, because the
+// entries-dedupe (a stored gap blocks a re-find) prevents the advance-on-
+// null wedge the disk cursors exist for; the cursor only spreads the
+// sweep's model calls across compositions.
+let compositionCursorOffset = 0;
+const compositionCursor = {
+  read: () => compositionCursorOffset,
+  write: (offset: number) => {
+    compositionCursorOffset = offset;
+  },
+};
  const registry = createRegistry(claimStore, wikiModel, wikiLog);
 
  const embedding: EmbeddingChannel | null = deps.embed
@@ -291,6 +306,7 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   // (deps.annotations) does not keep its narrowing inside an arrow function.
   const annotations = deps.annotations;
   const gazetteerStore = deps.gazetteerStore;
+  const embed = deps.embed;
   try {
    const report = await runDocket({
     vault: deps.vault,
@@ -298,7 +314,6 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
     complete: clerkComplete,
     buildIndex: (snippets) => buildIndex(snippets),
     composeOpener,
-    composeStillTrue,
     composeExpedition,
     listSessions,
     nextConsolidation,
@@ -328,6 +343,23 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      pieces,
      snippets: () => deps.vault.rebuildIndex().snippets,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
+    // The composition gap sweep (redesign-2026-08-09 §7, §10): the second
+    // probation entry — the clerk notices seams that do not hold, capped at
+    // piece.gapsPerPass distinct kinds per composition per run, and the
+    // sweep stores model-placed gaps (pending text, never minted — `ask
+    // this` mints, Q-39). The floor is named: every gap placed by hand; a
+    // found gap that survives ask-this → answered → placed is the
+    // fingerprint that saves it. Model-placed gaps expire faster (3
+    // sittings) inside the sweep.
+    compositionGapSweep: () => runCompositionGapSweep({
+     pieces,
+     snippets: () => deps.vault.rebuildIndex().snippets,
+     queue: deps.queue,
+     complete: clerkComplete,
+     modelName: clerkModelName ?? DEFAULT_CLERK_MODEL,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+     cursor: compositionCursor,
     }),
     // Ticket 074: resolved-referent annotation, one model call per
     // candidate (the cap bounds model calls, not successes). Injected
@@ -373,13 +405,6 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       }),
      }
      : {}),
-    // Ticket 027: the gap-fill sweep — zero-LLM, the ONE production wiring
-    // point. Unconditional: the module is always available.
-    gapFillSweep: () => runGapFillSweep({
-     vault: deps.vault,
-     queue: deps.queue,
-     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
-    }),
     territoryGapFillSweep: () => {
      // Enumerate data/ktg/*.json like the atlas twin, so a new skeleton
      // added to the data dir feeds the sweep — the pre-Phase-8 thunk
@@ -472,6 +497,43 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
       frameWords: profileFrameWords(profile()),
       log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
     }),
+    // §12 (Batch C3): the full-corpus embedding coverage pass — rebuild the
+    // semantic channel over the CURRENT corpus and prime it to coverage, so
+    // every passage gets a vector and the run logs the coverage sentence.
+    // Runs before the neighborhoods job, which reads the store this grows.
+    // Wired only when an embedder exists; the cold state is no pass at all.
+    ...(embed
+     ? {
+      coverageEmbedding: () => runCoverageEmbedding({
+       corpus: Object.values(deps.vault.rebuildIndex().snippets),
+       embed: embed.embed,
+       model: embed.model,
+       store: fileSnippetVectorStore(deps.vaultRoot),
+       log: wikiLog,
+      }),
+     }
+     : {}),
+    // §12.3 neighborhoods (Batch C1): passages into themes, zero-LLM. Reads
+    // the whole corpus + the snippet-vector store (primed by the semantic
+    // channel, grown by C3's coverage job); the model name decides whether
+    // the embedding channel is even on — absent means lexical by construction.
+    neighborhoodsJob: () => runNeighborhoodsJob({
+      vaultRoot: deps.vaultRoot,
+      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+      snippets: Object.values(deps.vault.rebuildIndex().snippets),
+      ...(deps.embed ? { model: deps.embed.model } : {}),
+    }),
+    // Batch B2 (§11): one context line per passage without one. Model-
+    // calling, capped per run (contextLines.perRun, Q-56); every run logs
+    // its coverage (composed/skipped) — the §12 debt, paid as a sentence.
+    runContextLines: () => runContextLines({
+     vault: deps.vault,
+     vaultRoot: deps.vaultRoot,
+     complete: clerkComplete,
+     modelName: clerkModelName ?? DEFAULT_CLERK_MODEL,
+     readTranscript,
+     log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
+    }),
     gazetteerExtraction: () => {
       if (!gazetteerStore) return Promise.resolve({ extracted: 0, entities: 0, failed: 0 });
       // The sweep lives in src/clerk/gazetteer-extraction.ts; the wiring
@@ -495,7 +557,6 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      }));
     },
     runImportJobs: runImportJobsNow,
-    stillTrueCursor,
     vaultRoot: deps.vaultRoot,
    });
    setIndex(report.index, deps.vault.rebuildIndex().snippets);

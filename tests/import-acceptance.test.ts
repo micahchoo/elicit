@@ -294,18 +294,18 @@ describe('the review surface obeys the document rule', () => {
     const { surface } = await buildReviewSurface(item);
     expect(visibleVerbs(surface)).toEqual([]);
     focusCut(surface, 0);
-    expect(visibleVerbs(surface)).toEqual(['approve', 'trim', 'discard']);
+    expect(visibleVerbs(surface)).toEqual(['keep', 'trim', 'leave out']);
   });
 
   it('offers nothing that COMMITS without reading, and no Target', async () => {
     // Ruled 2026-08-04 (Micah), amending the original "no accept-all": the
-    // foot may carry `select all — approve/discard`, but it only PRESELECTS —
+    // foot may carry `select all — keep/leave out`, but it only PRESELECTS —
     // nothing reaches the server until `save this piece` is pressed.
     const { surface, sent } = await buildReviewSurface(item);
-    const allApprove = surface
+    const allKeep = surface
       .querySelectorAll('.import-decide-all-btn')
-      .find((b) => b.textContent.includes('approve'))!;
-    allApprove.click();
+      .find((b) => b.textContent.includes('keep'))!;
+    allKeep.click();
     expect(sent).toHaveLength(0); // preselection commits nothing
     expect(surface.querySelector('[name=target], .target-control')).toBeNull();
   });

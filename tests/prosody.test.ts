@@ -87,13 +87,12 @@ function makeFakeIndex(): LexicalIndex {
 
 /**
  * Build a scripted-complete response array for N userTurn calls.
- * Each turn consumes 2 complete calls: 1 for redLights ('{}' → empty lights),
+ * Each turn consumes 1 complete call: the generic probe (the red-light channel is cut, 2026-08-09).
  * 1 for the generic probe.
  */
 function turnResponses(probes: string[]): string[] {
  const out: string[] = [];
  for (const p of probes) {
-  out.push('{}'); // redLights — no lights
   out.push(p);    // generic probe
  }
  return out;
@@ -106,7 +105,7 @@ describe('prosody', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 
@@ -132,7 +131,7 @@ describe('prosody', () => {
   const q = makeFakeQueue();
   const idx = makeFakeIndex();
   const session = startSession(
-   { minutes: 30, energy: 'medium' },
+   {},
    { complete, vault, queue: q, index: idx },
   );
 

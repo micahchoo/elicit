@@ -1,6 +1,6 @@
 import { ulid } from 'ulid';
 import type { Snippet } from '../types.js';
-import type { Arrangement, Marginalia } from './contract.js';
+import type { Entry, Marginalia } from './contract.js';
 
 /**
  * `stale-pin` — one flag per pin that names an older version of its snippet
@@ -10,14 +10,14 @@ import type { Arrangement, Marginalia } from './contract.js';
  * module has no write path and takes no model handle: no model wrote the flag
  * (Q-34), and the Docket can run it on every pass without doing damage (Q-31).
  *
- * Pure and memoryless: the same arrangement and snippet map yield the same
+ * Pure and memoryless: the same entries and snippet map yield the same
  * findings, in entry order, on every call. Each finding repeats by design —
  * the caller (T10) dedupes by `(on, note)` before writing. `id` and `at` are
- * per-call envelopes; the input arrangement is never mutated.
+ * per-call envelopes; the input entries are never mutated.
  */
-export function stalePins(a: Arrangement, snippets: Record<string, Snippet>): Marginalia[] {
+export function stalePins(entries: Entry[], snippets: Record<string, Snippet>): Marginalia[] {
   const flags: Marginalia[] = [];
-  for (const entry of a.entries) {
+  for (const entry of entries) {
     if (entry.kind !== 'pin') continue;
     const current = snippets[entry.snippet];
     if (current === undefined) continue;

@@ -156,7 +156,6 @@ export function runImportRepair(deps: {
    questionForm: 'deliberative',
    cites: [`${line.snippetId}@${line.version}`],
    quotedFragment: bud.fragment,
-   sharpness: 'sharp',
    horizon: 'now',
   });
   reminted.push({ snippetId: line.snippetId, budId: line.budId, version: line.version });
@@ -177,7 +176,6 @@ export function runImportRepair(deps: {
    questionForm: 'deliberative',
    cites: [`${snippet.id}@${snippet.version}`],
    quotedFragment: snippet.prose,
-   sharpness: 'sharp',
    horizon: 'now',
   });
   mintedIds.add(snippet.id);
