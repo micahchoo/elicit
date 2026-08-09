@@ -4,24 +4,24 @@
  * stream is module state, so a surface re-paint or a navigation never strands
  * a live recording behind a stale closure.
  *
- * Injection, not import: `api`, `navTo`, `fetch`, `showQuietError` and the
- * STT-availability state are main.ts module-private (the import-review
- * pattern). The STT status read is the one JSON call; the transcribe POST
- * stays the raw binary fetch it always was (Float32Array buffer, never
- * JSON), 401 land-on-login included — the dedup is a later misc wave.
+ * Injection, not import: `api`, `showQuietError` and the STT-availability
+ * state are main.ts module-private (the import-review pattern). The STT
+ * status read is the one JSON call; the transcribe POST rides the shared
+ * api() with a rawBody (Float32Array buffer, never JSON-encoded), so the
+ * one 401 land-on-login rule has one home — web/client.ts (the F5 debt
+ * closure, wave C).
  */
 
+import { ApiError } from './deps.js';
 import type { WebDepsCore } from './deps.js';
 
 /** The dictation surface's deps: the STT status read, the raw transcribe
  *  POST, and the shared STT-availability state. */
 export interface DictationDeps {
+ /** The shared HTTP verb — the STT status read, and the raw transcribe
+  *  POST riding api()'s rawBody (Float32Array buffer, never JSON-encoded),
+  *  401 land-on-login included (web/client.ts, the one home of that rule). */
  api: WebDepsCore['api'];
- /** The 401 land-on-login from a failed transcribe (kept byte-identical;
-  *  the dedup is a later misc wave). */
- navTo: (screen: string) => void;
- /** The raw binary transcribe POST — Float32Array buffer, never JSON. */
- fetch: typeof fetch;
  showQuietError: (container: HTMLElement, message: string) => void;
  /** The STT-availability state, shared with the exchange surface. */
  sttAvailable: () => boolean;
@@ -114,17 +114,14 @@ export async function stopAndTranscribe(deps: DictationDeps): Promise<string> {
  }
  _samples = [];
 
- // POST raw Float32 to server
- const res = await deps.fetch('/api/transcribe?rate=16000', {
-  method: 'POST',
-  body: combined.buffer,
- });
- if (!res.ok) {
-  if (res.status === 401) { deps.navTo('login'); throw new Error('Unauthorized'); }
-  const errText = await res.text();
-  throw new Error(`transcribe failed: ${res.status} ${errText}`);
- }
- const data = await res.json() as { text: string };
+ // POST raw Float32 to server — through the shared api() (rawBody: sent
+// as-is, never JSON-encoded), so the one 401 land-on-login rule has one
+// home (web/client.ts) and a handled failure skips the quiet line.
+ const data = await deps.api<{ text: string }>(
+  '/api/transcribe?rate=16000',
+  undefined,
+  { method: 'POST', rawBody: combined.buffer },
+ );
  return data.text;
 }
 
@@ -193,7 +190,11 @@ export function wireDictation(deps: DictationDeps, opts: DictationOpts) {
     }
    } catch (e) {
     console.error(e);
-    deps.showQuietError(errorSlot, 'that did not come through — say it again');
+    // A handled failure (the 401 land-on-login) already navigated; leave
+    // without adding a quiet line to the page it replaced.
+    if (!(e instanceof ApiError && e.handled)) {
+     deps.showQuietError(errorSlot, 'that did not come through — say it again');
+    }
    }
    dictationBusy = false;
    micBtn.disabled = false;

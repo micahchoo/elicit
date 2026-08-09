@@ -269,6 +269,7 @@ function makeQueueStore(entries: QueueEntry[] = []): QueueStore & { _entries: Qu
       return entry;
     }),
     list: vi.fn(() => _entries),
+    get: (id: string) => _entries.find((e) => e.id === id),
     draw: vi.fn(),
     markAsked: vi.fn(),
     markAnswered: vi.fn(),

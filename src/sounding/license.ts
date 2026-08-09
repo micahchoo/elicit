@@ -18,8 +18,9 @@
  */
 
 import type { SessionState, Turn } from '../types.js';
-import { contentWordsOf, jaccard } from '../index/lexical.js';
+import { contentWordsOf, jaccard, wordsOf } from '../index/lexical.js';
 import { SOUNDING_THRESHOLDS } from './thresholds.js';
+import { readNumber } from '../wiki/thresholds.js';
 
 export type LicenseReasons = {
   late: boolean;
@@ -63,19 +64,15 @@ function meanAdjacentJaccard(turns: Turn[]): number {
 }
 
 /**
- * Mirrors src/index/lexical.ts's TOKEN_RE word form. The tokenizer is
- * private; this is the smallest adapter that can count a word's occurrences
- * in a text with exactly the token forms contentWordsOf sees.
+ * How often `word` occurs in `text` — the frequency that names the
+ * thread. Counts every token form `wordsOf` produces (no stopword
+ * filter): the exact stream the WORD_RE mirror produced, now single-homed
+ * on lexical.ts's TOKEN_RE (Wave D F8).
  */
-const WORD_RE = /[a-zA-Z0-9]+(?:[''-][a-zA-Z0-9]+)*/g;
-
 function frequencyIn(text: string, word: string): number {
   let count = 0;
-  const matches = text.toLowerCase().match(WORD_RE);
-  if (matches) {
-    for (const m of matches) {
-      if (m === word) count++;
-    }
+  for (const w of wordsOf(text)) {
+    if (w === word) count++;
   }
   return count;
 }
@@ -140,7 +137,7 @@ export function licenseSounding(
   const lateEntry = SOUNDING_THRESHOLDS['sounding.lateQuestionCount'];
   const late =
     lateEntry.live &&
-    s.questionCount >= (lateEntry.value as number) &&
+    s.questionCount >= readNumber(lateEntry, 6) &&
     s.phase !== 'closing-door' &&
     s.phase !== 'closing-bookmark';
   const energy = s.mode.energy !== 'low';
@@ -148,7 +145,7 @@ export function licenseSounding(
   const thread = lastThreeUserTurns(s);
   // A thread needs three turns to be sustained; fewer cannot clear the bar.
   const value = thread.length >= 3 ? meanAdjacentJaccard(thread) : 0;
-  const sustained = SUSTAINED.live && value >= (SUSTAINED.value as number);
+  const sustained = SUSTAINED.live && value >= readNumber(SUSTAINED, 0.10);
   const licensed = late && energy && sustained && unoffered;
   const construct = constructOf(thread);
   return {

@@ -58,6 +58,19 @@ export interface WaitingDeps extends WebDepsShell {
 /** The resume routes' reply, read for the one field the waiting surface uses. */
 type ResumeTurn = { kind: string; text?: string };
 
+/** A parked machine's resume reply (ticket 159, slices 5-6): a parked drm's
+ * composed probe — kind plus the probe fields the DRM screen takes — or
+ * another parked machine's plain probe. The drm fields are optional so one
+ * shape covers both routes. */
+type MachineResumeTurn = {
+ kind: string;
+ text?: string;
+ episode?: number;
+ of?: number;
+ step?: string;
+ gate?: { episode: number; of: number; label: string };
+};
+
 /**
  * One backlog entry's sentence (ticket 156): names the sitting the way the
  * library does — the weekday's sitting plus the human date — and the count.
@@ -421,31 +434,78 @@ function openQuestionRow(entry: QueueEntry): HTMLElement {
  return row;
 }
 
+/** One parked row — question, meta, verb — for every parked thing: a
+ * put-back question, a parked descent, a parked machine. The DOM is the
+ * same three slots; the verb's action is the only difference. */
+function parkedRow(
+ deps: WaitingDeps,
+ entry: QueueEntry,
+ opts: { meta: string; verb: string; onPickUp: ParkedRowAction },
+): HTMLElement {
+ const row = deps.el('div', { class: 'parked-entry' });
+ const question = deps.el('span', { class: 'parked-question' }, entry.question);
+ const meta = deps.el('span', { class: 'parked-meta' }, opts.meta);
+ const verbWord = deps.el('button', { class: 'nav-link', type: 'button' }, opts.verb);
+ row.append(question, meta, verbWord);
+ verbWord.addEventListener('click', () => void opts.onPickUp({ row, verbWord }));
+ return row;
+}
+
+/** A parked row's verb action: the row and its verb word. Throwing
+ * re-enables the verb; the action owns its waiting affordance. */
+type ParkedRowAction = (c: { row: HTMLElement; verbWord: HTMLButtonElement }) => Promise<void>;
+
+/** The pick-up skeleton the parked descent and machine rows share: a
+ * sitting must be under way to resume into (else the mode screen starts
+ * one), the waiting affordance covers the resume call, and a probe reply
+ * hands off. The rows diverge only in the resume wire and the probe
+ * dispatch. */
+async function pickUpParked<T extends { kind: string }>(
+ deps: WaitingDeps,
+ c: { row: HTMLElement; verbWord: HTMLButtonElement },
+ resume: () => Promise<T>,
+ onProbe: (res: T) => void,
+): Promise<void> {
+ if (!deps.sessionId()) {
+  // A sitting must be under way to resume into (the plan's upstream
+  // contract); the mode screen is where one begins.
+  deps.navTo('mode');
+  return;
+ }
+ c.verbWord.disabled = true;
+ const wait = deps.beginWait(c.row, 'picking it up\u2026');
+ try {
+  const res = await resume();
+  wait.done();
+  onProbe(res);
+ } catch (e) {
+  c.verbWord.disabled = false;
+  wait.failed(e);
+ }
+}
+
 // A parked question rests here — no age, no colouring (Q-24) — until it
 // is put back among the open ones (the expiry clock restarts server-side).
 function parkedQuestionRow(entry: QueueEntry): HTMLElement {
- const row = deps.el('div', { class: 'parked-entry' });
- const question = deps.el('span', { class: 'parked-question' }, entry.question);
- const meta = deps.el('span', { class: 'parked-meta' }, 'a question you set aside');
- const putBack = deps.el('button', { class: 'nav-link', type: 'button' }, 'put it back');
- row.append(question, meta, putBack);
- putBack.addEventListener('click', () => {
-  putBack.disabled = true;
-  const wait = deps.beginWait(row, 'putting it back…');
-  void deps.api(`/api/queue/${entry.id}/unpark`, {})
-   .then(() => {
+ return parkedRow(deps, entry, {
+  meta: 'a question you set aside',
+  verb: 'put it back',
+  onPickUp: async ({ row, verbWord }) => {
+   verbWord.disabled = true;
+   const wait = deps.beginWait(row, 'putting it back…');
+   try {
+    await deps.api(`/api/queue/${entry.id}/unpark`, {});
     wait.done();
     row.remove();
     queueList.querySelector('.empty-msg')?.remove();
     queueList.append(openQuestionRow(entry));
     if (parkedList.querySelector('.parked-entry') === null) parkedSection.hidden = true;
-   })
-   .catch((cause: unknown) => {
-    putBack.disabled = false;
+   } catch (cause) {
+    verbWord.disabled = false;
     wait.failed(cause);
-   });
+   }
+  },
  });
- return row;
 }
 
 // Load the lists — one /api/queue read carries the open/expedition
@@ -490,36 +550,19 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
 
   if (parked.length > 0) {
    for (const entry of parked) {
-    const row = deps.el('div', { class: 'parked-entry' });
-    const question = deps.el('span', { class: 'parked-question' }, entry.question);
-    const meta = deps.el('span', { class: 'parked-meta' }, `${entry.rungsKept ?? 0} rungs kept`);
-    const pickUp = deps.el('button', { class: 'nav-link', type: 'button' }, 'pick it up');
-    row.append(question, meta, pickUp);
-    pickUp.addEventListener('click', async () => {
-     if (!deps.sessionId()) {
-      // A sitting must be under way to resume into (the plan's upstream
-      // contract); the mode screen is where one begins.
-      deps.navTo('mode');
-      return;
-     }
-     pickUp.disabled = true;
-     const wait = deps.beginWait(row, 'picking it up\u2026');
-     try {
-      const res = await deps.api<ResumeTurn>(
-       `/api/session/${deps.sessionId()}/sounding/resume`,
-       { queueEntryId: entry.id },
-      );
-      wait.done();
-      if (res.kind === 'probe') {
-       deps.setQuestion(res.text!);
-       deps.navTo('exchange');
-      }
-     } catch (e) {
-      pickUp.disabled = false;
-      wait.failed(e);
-     }
-    });
-    parkedList.append(row);
+    parkedList.append(parkedRow(deps, entry, {
+     meta: `${entry.rungsKept ?? 0} rungs kept`,
+     verb: 'pick it up',
+     onPickUp: (c) => pickUpParked(deps, c,
+      () => deps.api<ResumeTurn>(`/api/session/${deps.sessionId()}/sounding/resume`, { queueEntryId: entry.id }),
+      (res) => {
+       if (res.kind === 'probe') {
+        deps.setQuestion(res.text!);
+        deps.navTo('exchange');
+       }
+      },
+     ),
+    }));
    }
   }
 
@@ -529,58 +572,32 @@ function parkedQuestionRow(entry: QueueEntry): HTMLElement {
   // the exchange through the machine resume route.
   const parkedMachines = data.open.filter((e) => e.source === 'parked-machine');
   for (const entry of parkedMachines) {
-   const row = deps.el('div', { class: 'parked-entry' });
-   const question = deps.el('span', { class: 'parked-question' }, entry.question);
-   const meta = deps.el('span', { class: 'parked-meta' }, sourceLabel(entry.source));
-   const pickUp = deps.el('button', { class: 'nav-link', type: 'button' }, 'pick it up');
-   row.append(question, meta, pickUp);
-   pickUp.addEventListener('click', async () => {
-    if (!deps.sessionId()) {
-     // A sitting must be under way to resume into (the plan's upstream
-     // contract); the mode screen is where one begins.
-     deps.navTo('mode');
-     return;
-    }
-    pickUp.disabled = true;
-    const wait = deps.beginWait(row, 'picking it up\u2026');
-    try {
-     if (entry.machineProtocol === 'drm') {
-      const res = await deps.api<{
-       kind: string;
-       text?: string;
-       episode?: number;
-       of?: number;
-       step?: string;
-       gate?: { episode: number; of: number; label: string };
-      }>(`/api/session/${deps.sessionId()}/drm/resume`, { queueEntryId: entry.id });
-      wait.done();
-      if (res.kind === 'drm-probe') {
-       drmResumeProbe = {
-        text: res.text ?? '',
-        episode: res.episode ?? 1,
-        of: res.of ?? 1,
-        step: res.step ?? '',
-        gate: res.gate ?? { episode: 1, of: 1, label: '' },
-       };
-       deps.navTo('drm');
-      }
-     } else {
-      const res = await deps.api<ResumeTurn>(
-       `/api/session/${deps.sessionId()}/machine/resume`,
-       { queueEntryId: entry.id },
-      );
-      wait.done();
-      if (res.kind === 'probe') {
+   parkedList.append(parkedRow(deps, entry, {
+    meta: sourceLabel(entry.source),
+    verb: 'pick it up',
+    onPickUp: (c) => pickUpParked(deps, c,
+     () => entry.machineProtocol === 'drm'
+      ? deps.api<MachineResumeTurn>(`/api/session/${deps.sessionId()}/drm/resume`, { queueEntryId: entry.id })
+      : deps.api<MachineResumeTurn>(`/api/session/${deps.sessionId()}/machine/resume`, { queueEntryId: entry.id }),
+     (res) => {
+      if (entry.machineProtocol === 'drm') {
+       if (res.kind === 'drm-probe') {
+        drmResumeProbe = {
+         text: res.text ?? '',
+         episode: res.episode ?? 1,
+         of: res.of ?? 1,
+         step: res.step ?? '',
+         gate: res.gate ?? { episode: 1, of: 1, label: '' },
+        };
+        deps.navTo('drm');
+       }
+      } else if (res.kind === 'probe') {
        deps.setQuestion(res.text!);
        deps.navTo('exchange');
       }
-     }
-    } catch (e) {
-     pickUp.disabled = false;
-     wait.failed(e);
-    }
-   });
-   parkedList.append(row);
+     },
+    ),
+   }));
   }
 
   // Parked QUESTIONS (ruled 2026-08-04) share the section with the parked

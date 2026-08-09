@@ -50,7 +50,21 @@ export type NodeReading = {
 export type SittingResolver = (snippetId: string) => string | null;
 
 export type CoverageStore = {
-  /** Persist (or overwrite) the reading for its node. */
+  /**
+   * Persist (or overwrite) the reading for its node.
+   *
+   * WRITE-SIDE ASYMMETRY (Wave D F2/F12 — documented, deliberately not
+   * fixed): this method has NO production caller, so the store is always
+   * empty in a real run and every node reads back 'unprobed'. That one
+   * empty store feeds two gap-fill jobs in the same docket run: the
+   * territory sweep (ktg/gap-fill.ts territoryCandidates) needs at least
+   * one 'evidenced' node to fire any of its three passes and is therefore
+   * INERT, while the atlas sweep (ktg/atlas-gap-fill.ts) mints on
+   * 'unprobed' directly — one run runs one inert job and one minting job
+   * off the same always-empty store. Pinned by
+   * tests/coverage-asymmetry.test.ts; wiring a writer flips that test
+   * and the registry reason (createCoverageStore) together.
+   */
   writeReading(reading: NodeReading): void;
   /** The stored reading for a node, or null when none exists. */
   readReading(nodeId: string): NodeReading | null;

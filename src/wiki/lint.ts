@@ -40,8 +40,9 @@ import type { Claim, ClaimGraph, LintFinding, LogFn } from './contract.js';
 import { shadowDecision } from './thresholds.js';
 import type { ThresholdRegister } from './thresholds.js';
 import { isLive } from './clash.js';
+import { isFunctionWord } from '../index/lexical.js';
 import { candidatePairs, nameSimilarity, nameTokens } from './registry.js';
-import { resolveCite } from './status.js';
+import { citeSnippetId, resolveCite } from './status.js';
 
 export function lint(
   graph: ClaimGraph,
@@ -405,9 +406,7 @@ function weakEvidenceFindings(
 
     const cite = c.cites[0];
     if (cite === undefined) continue;
-    const at = cite.lastIndexOf('@');
-    if (at <= 0) continue;
-    if (!DANGLER_SNIPPET_IDS.has(cite.slice(0, at))) continue;
+    if (!DANGLER_SNIPPET_IDS.has(citeSnippetId(cite))) continue;
 
     const would = `note weak-evidence on claim=${c.id} cite=${cite}`;
     if (!shadowDecision(t, would, log)) continue;
@@ -423,143 +422,59 @@ function weakEvidenceFindings(
 }
 
 /**
- * Closed-class words that never name an occasion: prepositions,
- * determiners, conjunctions, auxiliaries, pronouns, and the
- * subordinators that introduce one ("when", "while"). A range like
- * "when working with cheap devices" names its occasion through the
- * content words that survive this list; a range that survives with no
- * content word at all names nothing.
+ * Closed-class words BEYOND the shared stopword list (isFunctionWord in
+ * src/index/lexical.ts) that never name an occasion: prepositions,
+ * conjunctions, auxiliaries, pronouns, and the subordinators that
+ * introduce one. namesOccasion composes the two — a token is a function
+ * word when EITHER list holds it — so this set is only lint's extra
+ * words, never a second copy of the shared list, and the composed
+ * predicate is a strict superset of both.
  */
-const FUNCTION_WORDS: Record<string, true> = {
-  'about': true,
-  'above': true,
-  'across': true,
-  'after': true,
-  'against': true,
-  'along': true,
-  'among': true,
-  'around': true,
-  'as': true,
-  'at': true,
-  'before': true,
-  'behind': true,
-  'below': true,
-  'beneath': true,
-  'beside': true,
-  'between': true,
-  'beyond': true,
-  'by': true,
-  'despite': true,
-  'down': true,
-  'during': true,
-  'except': true,
-  'for': true,
-  'from': true,
-  'in': true,
-  'inside': true,
-  'into': true,
-  'near': true,
-  'of': true,
-  'off': true,
-  'on': true,
-  'onto': true,
-  'out': true,
-  'outside': true,
-  'over': true,
-  'past': true,
-  'per': true,
-  'since': true,
-  'through': true,
-  'throughout': true,
-  'till': true,
-  'to': true,
-  'toward': true,
-  'towards': true,
-  'under': true,
-  'underneath': true,
-  'until': true,
-  'unto': true,
-  'up': true,
-  'upon': true,
-  'via': true,
-  'with': true,
-  'within': true,
-  'without': true,
-  'regarding': true,
-  'concerning': true,
-  'and': true,
-  'or': true,
-  'but': true,
-  'nor': true,
-  'so': true,
-  'yet': true,
-  'is': true,
-  'are': true,
-  'was': true,
-  'were': true,
-  'be': true,
-  'been': true,
-  'being': true,
-  'am': true,
-  'has': true,
-  'have': true,
-  'had': true,
-  'do': true,
-  'does': true,
-  'did': true,
-  'will': true,
-  'would': true,
-  'shall': true,
-  'should': true,
-  'can': true,
-  'could': true,
-  'may': true,
-  'might': true,
-  'must': true,
-  'need': true,
-  'ought': true,
-  'used': true,
-  'i': true,
-  'me': true,
-  'my': true,
-  'mine': true,
-  'we': true,
-  'us': true,
-  'our': true,
-  'ours': true,
-  'you': true,
-  'your': true,
-  'yours': true,
-  'he': true,
-  'him': true,
-  'his': true,
-  'she': true,
-  'her': true,
-  'hers': true,
-  'it': true,
-  'its': true,
-  'they': true,
-  'them': true,
-  'their': true,
-  'theirs': true,
-  'who': true,
-  'whom': true,
-  'whose': true,
-  'which': true,
-  'what': true,
-  'when': true,
-  'where': true,
-  'why': true,
-  'how': true,
-  'whether': true,
-  'if': true,
-  'that': true,
-  'because': true,
-  'though': true,
-  'although': true,
-  'unless': true,
-  'whereas': true,
-};
+const EXTRA_WORDS: ReadonlySet<string> = new Set([
+  'across',
+  'against',
+  'along',
+  'among',
+  'around',
+  'behind',
+  'below',
+  'beneath',
+  'beside',
+  'beyond',
+  'despite',
+  'down',
+  'except',
+  'inside',
+  'near',
+  'outside',
+  'past',
+  'per',
+  'throughout',
+  'till',
+  'toward',
+  'towards',
+  'underneath',
+  'unto',
+  'upon',
+  'via',
+  'within',
+  'regarding',
+  'concerning',
+  'need',
+  'ought',
+  'used',
+  'mine',
+  'us',
+  'ours',
+  'yours',
+  'him',
+  'hers',
+  'them',
+  'theirs',
+  'whether',
+  'unless',
+  'whereas',
+]);
 
 /**
  * Content words that still name no occasion: time adverbs without an
@@ -632,7 +547,7 @@ const OCCASIONLESS_WORDS: Record<string, true> = {
  */
 function namesOccasion(range: string): boolean {
   for (const token of nameTokens(range)) {
-    if (!(token in FUNCTION_WORDS) && !(token in OCCASIONLESS_WORDS)) return true;
+    if (!isFunctionWord(token) && !EXTRA_WORDS.has(token) && !(token in OCCASIONLESS_WORDS)) return true;
   }
   return false;
 }

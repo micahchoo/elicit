@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { ParkedLadder, QueueEntry, QueueStore, Rung, Target } from '../types.js';
+import { parkPointer as queueParkPointer } from '../queue/queue.js';
 
 /**
  * The pointer-source kind a parked sounding mints. Owned here, not by the
@@ -78,14 +79,10 @@ export function readLadder(root: string, id: string): ParkedLadder | null {
  */
 export function parkPointer(queue: QueueStore, l: ParkedLadder, target?: Target): QueueEntry {
   const last = l.rungs[l.rungs.length - 1]!;
-  return queue.add({
-    source: PARKED_SOURCE,
-    license: 'user',
+  return queueParkPointer(queue, {
+    kind: PARKED_SOURCE,
     question: last.question,
-    questionForm: 'deliberative',
-    sharpness: 'weak',
-    horizon: 'session',
-    soundingId: l.id,
+    idField: { soundingId: l.id },
     ...(target ? { target } : {}),
   });
 }

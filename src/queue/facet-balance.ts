@@ -203,3 +203,41 @@ export function formatDistribution(dist: FacetDistribution): string {
 export function facetBalanceIsLive(env: Record<string, string | undefined>): boolean {
   return env.ELICIT_FACET_BALANCE === 'live';
 }
+
+/**
+ * The composition the draw sites share. Both the Queue's draw and the
+ * Randomizer's deck draw ran readVaultFacetDistribution → underRepresented
+ * → applyFacetBalance → facetBalanceIsLive by hand; the four calls now
+ * live at one address so the composition order and the shadow gate cannot
+ * drift apart between sites.
+ *
+ * `pool` is what the caller's pick draws from: `kept` when the filter is
+ * live AND applied, else `candidates` unchanged. `kept` is the raw
+ * balanced result — the Queue's draw reads it for its shadow `would=` pick
+ * even while the filter stands down (Q-35 records what would have
+ * happened).
+ */
+export function facetBalancedPool<T extends { targetFacet?: Facet }>(
+  candidates: T[],
+  opts: { root: string; env: Record<string, string | undefined> },
+): {
+  pool: T[];
+  kept: T[];
+  dist: FacetDistribution;
+  wanted: Set<Facet>;
+  applied: boolean;
+  live: boolean;
+} {
+  const dist = readVaultFacetDistribution(opts.root);
+  const wanted = underRepresented(dist);
+  const balanced = applyFacetBalance(candidates, wanted);
+  const live = facetBalanceIsLive(opts.env);
+  return {
+    pool: live && balanced.applied ? balanced.kept : candidates,
+    kept: balanced.kept,
+    dist,
+    wanted,
+    applied: balanced.applied,
+    live,
+  };
+}

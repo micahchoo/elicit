@@ -14,9 +14,8 @@
  * the live let-bindings in server.ts, never a snapshot).
  */
 
-import type { Hono } from 'hono';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import type { Context, Hono } from 'hono';
+import { readFileSync } from 'node:fs';
 import type { ActivityEvent } from '../log/activity.js';
 import type { EventKind } from '../log/kinds.js';
 import type {
@@ -67,6 +66,7 @@ import { guardComposed } from '../language/emit-form.js';
 import { repairedSnippetIds } from '../repair/consult.js';
 import { readAllRepairs, writeRepair } from '../repair/store.js';
 import { decide, propose, HARVEST_ACTIONS, type HarvestDiagnostics } from '../harvester/harvester.js';
+import { validateDecisions } from '../guards.js';
 import { readPendingHarvest, removePendingHarvest, writePendingHarvest } from '../harvester/pending.js';
 import { isMode, moreEnergyThan, moreMinutesThan, UNPROMPTED_MODE } from '../queue/mode-needs.js';
 import { openQuestionEntry } from '../queue/open-question.js';
@@ -76,7 +76,7 @@ import { licenseSounding } from '../sounding/license.js';
 import { parkPointer, writeLadder } from '../sounding/park.js';
 import { resumeSounding } from '../sounding/resume.js';
 import { surfaced } from '../log/surfaced.js';
-import { appendClosing, readTranscript as readVaultTranscript } from '../vault/transcripts.js';
+import { appendClosing, mostRecentlyModifiedTranscript, readTranscript as readVaultTranscript } from '../vault/transcripts.js';
 
 // ── SessionCtx ──
 
@@ -146,6 +146,48 @@ export interface SessionCtx {
  listSessions: (root: string) => { session: string; started: string; turnCount: number; chars: number }[];
  /** Narrowing guard for a capture channel value sent by the client. */
  isCaptureChannel: (v: unknown) => v is CaptureChannel;
+}
+
+// ── The session maps + ctx factory (Wave C3 F14) ──
+
+/**
+ * The five live session maps as one object — the per-createApp state the
+ * session-flow handlers mutate. createSessionState builds them and the
+ * SessionCtx that carries them, so src/server.ts owns no map literal; the
+ * routes here and the unprompted-family routes there mutate the SAME maps.
+ */
+export type SessionMaps = {
+ /** Live sittings, keyed by session id. */
+ sessions: Map<string, SessionState>;
+ /** The sounding offer in flight per sitting (plan Task 8). */
+ soundingOffers: Map<string, { text: string; construct: string }>;
+ /** Proposed harvest cuts awaiting a decision (ticket 084 fallback). */
+ sessionProposals: Map<string, CutProposal[]>;
+ /** Sessions whose material arrived unprompted — kept snippets carry that origin. */
+ unpromptedSessions: Set<string>;
+ /** The capture channel for each unprompted session (ticket 048). */
+ unpromptedChannels: Map<string, CaptureChannel | undefined>;
+};
+
+/**
+ * The per-createApp session state: the five maps plus the SessionCtx that
+ * names them. The extras are the createApp bindings the ctx carries that
+ * are NOT the maps (the stores, the model Completes, the read-handles,
+ * the emit seam, the docket handle); the maps stay this module's own so
+ * the lifetime is one-per-app, never module-scope (Wave C3 F14).
+ */
+export function createSessionState(
+ extras: Omit<SessionCtx, keyof SessionMaps>,
+): { maps: SessionMaps; ctx: SessionCtx } {
+ const maps: SessionMaps = {
+  sessions: new Map<string, SessionState>(),
+  soundingOffers: new Map<string, { text: string; construct: string }>(),
+  sessionProposals: new Map<string, CutProposal[]>(),
+  unpromptedSessions: new Set<string>(),
+  unpromptedChannels: new Map<string, CaptureChannel | undefined>(),
+ };
+ const ctx: SessionCtx = { ...maps, ...extras };
+ return { maps, ctx };
 }
 
 // ── The opening pulse (ticket 105) ──
@@ -347,6 +389,30 @@ export function createSessionRoutes(app: Hono, ctx: SessionCtx): void {
   isCaptureChannel,
  } = ctx;
 
+// ── Route guards (Wave C3 F6/F14) ──
+// The session-not-found and DRM-state guards every /api/session/:id route
+// shares, folded from the 17 inline copies. Module-private: they close
+// over the same `sessions` map the handlers mutate, and each returns the
+// 400/404 Response the inline copies did — messages byte-identical.
+function sessionOf(c: Context, sessionId: string): SessionState | Response {
+ const state = sessions.get(sessionId);
+ if (!state) return c.json({ error: 'session not found' }, 404);
+ return state;
+}
+
+/** The DRM-running guard: 400 when no DRM machine is running. */
+function drmRunningOf(c: Context, state: SessionState): { machine: MachineState; ui: DrmUi } | Response {
+ const running = drmMachineOf(state);
+ if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ return running;
+}
+
+/** The DRM-not-started guard: 400 when a machine IS already running (drm/start, drm/resume). */
+function drmStartedOf(c: Context, state: SessionState): Response | null {
+ if (drmMachineOf(state) !== null) return c.json({ error: 'DRM already running' }, 400);
+ return null;
+}
+
 // POST /api/session {mode, shuffle?, protocol?} → {sessionId, question, target, source?}
  app.post('/api/session', async (c) => {
   const body = await c.req.json<{ mode: Mode; shuffle?: boolean; protocol?: string }>();
@@ -401,24 +467,12 @@ export function createSessionRoutes(app: Hono, ctx: SessionCtx): void {
   // ── Close abandoned sittings on vault contact (ticket 135) ──
   (() => {
    try {
-    const transDir = join(deps.vaultRoot, 'transcripts');
-    if (!existsSync(transDir)) return;
-    const files = readdirSync(transDir)
-     .filter(f => f.endsWith('.md'))
-     .map(f => join(transDir, f))
-     .filter(p => statSync(p).isFile());
-    if (files.length === 0) return;
-    let recent = files[0]!;
-    let recentMtime = statSync(recent).mtimeMs;
-    for (let i = 1; i < files.length; i++) {
-     const mt = statSync(files[i]!).mtimeMs;
-     if (mt > recentMtime) { recent = files[i]!; recentMtime = mt; }
-    }
-    const tail = readFileSync(recent, 'utf8').slice(-500);
+    const recent = mostRecentlyModifiedTranscript(deps.vaultRoot);
+    if (recent === null) return;
+    const tail = readFileSync(recent.path, 'utf8').slice(-500);
     const sections = tail.match(/^## (\w+)/gm);
     if (sections && sections.length > 0 && sections[sections.length - 1] === '## agent') {
-     const sessionId = basename(recent).replace(/\.md$/, '');
-     appendClosing(deps.vaultRoot, sessionId, CLOSING_ACKNOWLEDGMENT);
+     appendClosing(deps.vaultRoot, recent.session, CLOSING_ACKNOWLEDGMENT);
     }
    } catch { /* best-effort */ }
   })();
@@ -489,8 +543,8 @@ export function createSessionRoutes(app: Hono, ctx: SessionCtx): void {
  // The pulse route records the greeting answer and appends the opener.
  app.post('/api/session/:id/pulse', async (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
   const body = await c.req.json<{ text: string; prompt: string }>();
   const text = (body.text ?? '').trim();
   const now = new Date().toISOString();
@@ -567,8 +621,8 @@ return (question: string) =>
  // POST /api/session/:id/turn {text} → probe | saturated
  app.post('/api/session/:id/turn', async (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
 
   const body = await c.req.json<{ text: string; spoken?: boolean; channel?: CaptureChannel; pair?: unknown }>();
   if (!body.text || typeof body.text !== 'string') {
@@ -766,8 +820,8 @@ return (question: string) =>
  // skipped turn for audit.
  app.post('/api/session/:id/skip', (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
 
   // ── Pending opener path (ticket 135): replace before it fires ──
   if (state.pendingOpener) {
@@ -811,8 +865,8 @@ return (question: string) =>
  // from skip in the log; like skip, it does not consume budget.
  app.post('/api/session/:id/defer', async (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
 
   let need: unknown;
   try {
@@ -875,8 +929,8 @@ return (question: string) =>
 // declining is recorded and never re-asked (Q-43).
 app.post('/api/session/:id/sounding', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
 
  let accept: unknown;
  try {
@@ -962,8 +1016,8 @@ app.post('/api/session/:id/sounding', async (c) => {
 // the request.
 app.post('/api/session/:id/sounding/gate', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
 
  let choice: unknown;
  try {
@@ -1045,8 +1099,8 @@ app.post('/api/session/:id/sounding/gate', async (c) => {
 // asymmetry note: do not unify with mid-descent convergence).
 app.post('/api/session/:id/sounding/resume', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
 
  const body = await c.req.json<{ queueEntryId?: unknown }>().catch(() => null);
  const queueEntryId = body?.queueEntryId;
@@ -1103,8 +1157,8 @@ app.post('/api/session/:id/sounding/resume', async (c) => {
 // the pointer stays live for another try (the sounding asymmetry note).
 app.post('/api/session/:id/machine/resume', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
 
  const body = await c.req.json<{ queueEntryId?: unknown }>().catch(() => null);
  const queueEntryId = body?.queueEntryId;
@@ -1185,8 +1239,8 @@ app.post('/api/session/:id/machine/resume', async (c) => {
 // and returns a fresh non-callback question (Q-105).
 app.post('/api/session/:id/repair', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
 
  const body = await c.req.json<{ snippetRef?: unknown; quotedFragment?: unknown }>();
  if (!body.snippetRef || typeof body.snippetRef !== 'string') {
@@ -1348,9 +1402,10 @@ function machineFromDrmState(drm: DRMState): MachineState {
 // already at the day-map.
 app.post('/api/session/:id/drm/start', (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- if (drmMachineOf(state) !== null) return c.json({ error: 'DRM already running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const blocked = drmStartedOf(c, state);
+ if (blocked) return blocked;
 
  const def = getProtocol('drm');
  if (def === undefined) return c.json({ error: 'DRM is not a known protocol' }, 500);
@@ -1371,10 +1426,10 @@ app.post('/api/session/:id/drm/start', (c) => {
 // POST /api/session/:id/drm/episode {name, startHour} — add an episode
 app.post('/api/session/:id/drm/episode', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- const running = drmMachineOf(state);
- if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const running = drmRunningOf(c, state);
+ if (running instanceof Response) return running;
  if (running.machine.phaseIndex !== 0) return c.json({ error: 'Not enumerating' }, 400);
 
  const body = await c.req.json<{ name: string; startHour: number }>();
@@ -1405,10 +1460,10 @@ app.post('/api/session/:id/drm/episode', async (c) => {
 // durability register — a crash never loses a phase already walked).
 app.post('/api/session/:id/drm/enumerate-done', (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- const running = drmMachineOf(state);
- if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const running = drmRunningOf(c, state);
+ if (running instanceof Response) return running;
  if (running.machine.phaseIndex !== 0) return c.json({ error: 'Not enumerating' }, 400);
 
  let nextUi: DrmUi;
@@ -1446,10 +1501,10 @@ state.turns.push(agentTurn);
 // POST /api/session/:id/drm/probe {text} — answer current probe
 app.post('/api/session/:id/drm/probe', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- const running = drmMachineOf(state);
- if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const running = drmRunningOf(c, state);
+ if (running instanceof Response) return running;
  if (running.machine.phaseIndex !== 1) return c.json({ error: 'Not in probe phase' }, 400);
 
  const body = await c.req.json<{ text: string }>();
@@ -1513,10 +1568,10 @@ state.turns.push(agentTurn);
 // stamp stays on the session for the record of how the walk ended.
 app.post('/api/session/:id/drm/gate', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- const running = drmMachineOf(state);
- if (running === null) return c.json({ error: 'no DRM running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const running = drmRunningOf(c, state);
+ if (running instanceof Response) return running;
  if (running.machine.phaseIndex !== 1) return c.json({ error: 'Not at a gate' }, 400);
 
  const body = await c.req.json<{ choice: 'continue' | 'park' | 'another-day' }>();
@@ -1612,9 +1667,10 @@ state.turns.push(agentTurn);
 // so a person who parked before the migration still picks the walk back up.
 app.post('/api/session/:id/drm/resume', async (c) => {
  const sessionId = c.req.param('id');
- const state = sessions.get(sessionId);
- if (!state) return c.json({ error: 'session not found' }, 404);
- if (drmMachineOf(state) !== null) return c.json({ error: 'DRM already running' }, 400);
+ const state = sessionOf(c, sessionId);
+ if (state instanceof Response) return state;
+ const blocked = drmStartedOf(c, state);
+ if (blocked) return blocked;
 
  const body = await c.req.json<{ queueEntryId: string }>();
  const queueEntryId = body.queueEntryId;
@@ -1754,8 +1810,8 @@ state.turns.push(agentTurn);
  // pending queue for the review surface.
  app.post('/api/session/:id/end', (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
   return c.json(endSessionHarvest(state, sessionId));
  });
 
@@ -1770,8 +1826,8 @@ state.turns.push(agentTurn);
  // route refuses, so the two can never disagree about who closes what.
  app.post('/api/session/:id/gate', async (c) => {
   const sessionId = c.req.param('id');
-  const state = sessions.get(sessionId);
-  if (!state) return c.json({ error: 'session not found' }, 404);
+  const state = sessionOf(c, sessionId);
+  if (state instanceof Response) return state;
 
   let choice: unknown;
   try {
@@ -1852,27 +1908,13 @@ state.turns.push(agentTurn);
    return c.json({ error: 'decisions must be an array' }, 400);
   }
 
-  // Validate decisions (ticket 024)
-  for (const d of body.decisions) {
-   if (!(HARVEST_ACTIONS as readonly string[]).includes(d.action)) {
-    return c.json(
-     { error: `invalid action "${String(d.action)}" in decision`, entry: d },
-     400,
-    );
-   }
-   if (typeof d.proposal !== 'number' || d.proposal < 0 || d.proposal >= proposals.length) {
-    return c.json(
-     { error: `invalid proposal index ${d.proposal} (have ${proposals.length} proposals)`, entry: d },
-     400,
-    );
-   }
-   if (d.channel !== undefined && !isCaptureChannel(d.channel)) {
-    return c.json(
-     { error: `invalid channel "${String(d.channel)}" in decision`, entry: d },
-     400,
-    );
-   }
-  }
+  // Validate decisions (ticket 024) — the shared guard (Wave C3 F3)
+  const invalid = validateDecisions(HARVEST_ACTIONS, body.decisions, {
+   indexField: 'proposal',
+   count: proposals.length,
+   checkChannel: true,
+  });
+  if (invalid) return c.json(invalid, 400);
 
   const state = sessions.get(sessionId);
   const channelOf = record

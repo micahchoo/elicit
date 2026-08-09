@@ -12,7 +12,7 @@
 
 import type { QueueEntry, QueueStore } from '../types.js';
 import type { Quest } from './contract.js';
-import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import { THRESHOLDS, readNumber, shadowDecision } from '../wiki/thresholds.js'
 import type { ThresholdLogFn } from '../domain/thresholds.js';
 
 /** The two reflection questions, in order (016: what broke, what surprised). */
@@ -62,7 +62,7 @@ export function mintReflections(input: {
  const minted: QueueEntry[] = [];
  let clipped = 0;
  for (const template of TEMPLATES) {
-  if (minted.length >= (cap.value as number)) {
+  if (minted.length >= readNumber(cap, 2)) {
    // A clip is the only shadowDecision call that logs (repo convention): a
    // live cap that clipped nothing would bury the record it exists to keep.
    shadowDecision(

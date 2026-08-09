@@ -313,6 +313,7 @@ function makeQueueStore(entries: QueueEntry[] = []): import('../src/types.js').Q
       return entry;
     }),
     list: vi.fn(() => _entries),
+    get: (id: string) => _entries.find((e) => e.id === id),
     draw: vi.fn(),
     markAsked: vi.fn(),
     markAnswered: vi.fn(),

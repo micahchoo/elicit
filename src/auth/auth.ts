@@ -92,6 +92,42 @@ export function isLoopback(remoteAddr: string | undefined): boolean {
  );
 }
 
+// ── Route guard factories (Wave C3 F10) ──
+
+/** The remote address the Node adapter injects into the Hono env. */
+export function remoteAddrOf(env: unknown): string | undefined {
+ if (env && typeof env === 'object' && 'remoteAddr' in env) {
+  const v = (env as Record<string, unknown>).remoteAddr;
+  return typeof v === 'string' ? v : undefined;
+ }
+ return undefined;
+}
+
+/**
+ * The loopback-only guard: whether the caller is on the host machine.
+ * Homes the address extraction + isLoopback pair the three loopback-only
+ * server sites used to re-implement inline; the failure response stays the
+ * site's (the three sites say three different things, and the setup gate
+ * answers with a page rather than a 403).
+ */
+export function requireLoopback(c: Context): boolean {
+ return isLoopback(remoteAddrOf(c.env));
+}
+
+/**
+ * The {ok: true} + session-cookie response both password routes return —
+ * one shape instead of the two identical inline Response objects.
+ */
+export function sessionResponse(cookie: string): Response {
+ return new Response(JSON.stringify({ ok: true }), {
+  status: 200,
+  headers: {
+   'Content-Type': 'application/json',
+   'Set-Cookie': cookie,
+  },
+ });
+}
+
 // ── Session tokens (the other half of auth, Wave E S14) ──
 
 export interface SessionAuthConfig {

@@ -11,6 +11,7 @@ import type { ClaimStore } from '../wiki/contract.js';
 import type { EventKind } from '../log/kinds.js';
 import type { CoachStore } from '../coach/store.js';
 import { clusterClaimsByTheme } from '../coach/license.js';
+import { isLive } from '../wiki/clash.js';
 
 /** The docket log sink, narrowed to what this sweep emits. */
 export type CoachSeedLog = (e: {
@@ -31,7 +32,7 @@ export async function runCoachSeedSweep(deps: {
   log: CoachSeedLog;
 }): Promise<{ clustered: number; minted: number }> {
   const slice = deps.claimStore.loadSlice();
-  const claims = slice.claims.filter((c) => !c.archived && !c.supersededBy);
+  const claims = slice.claims.filter(isLive);
   const themes = clusterClaimsByTheme(
     claims.map((c) => ({ id: c.id, body: c.body })),
     deps.frameWords,

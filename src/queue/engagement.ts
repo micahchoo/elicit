@@ -15,8 +15,7 @@
  * keyed by snippet thread — and stays in the queue store beside the draw
  * it serves.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { jsonCursorFile } from '../jsonl.js';
 
 /** The sitting-level engagement state, persisted beside the queue. */
 export type EngagementState = {
@@ -35,6 +34,16 @@ export const FRESH_ENGAGEMENT: EngagementState = {
   pausedUntilSitting: 0,
 };
 
+/** The engagement file's parse: the fresh state overlaid with whatever the file holds. A file that will not parse reads as the fresh state below. */
+function engagementOf(value: unknown): EngagementState {
+  return { ...FRESH_ENGAGEMENT, ...(value as Partial<EngagementState>) };
+}
+
+/** The engagement file's wire format: pretty-printed, newline-terminated — the ledger's format since Q-115. */
+function engagementLine(s: EngagementState): string {
+  return JSON.stringify(s, null, 1) + '\n';
+}
+
 /**
  * The ledger: read/write the state, and record that a sitting started.
  * The write is best-effort — a bookkeeping failure must never break a
@@ -48,22 +57,13 @@ export class EngagementLedger {
     this.#root = root;
   }
 
-  #path(): string {
-    return join(this.#root, 'queue-engagement.json');
-  }
-
   read(): EngagementState {
-    try {
-      const parsed = JSON.parse(readFileSync(this.#path(), 'utf8')) as Partial<EngagementState>;
-      return { ...FRESH_ENGAGEMENT, ...parsed };
-    } catch {
-      return { ...FRESH_ENGAGEMENT };
-    }
+    return jsonCursorFile(this.#root, 'queue-engagement.json', engagementOf, engagementLine).read() ?? { ...FRESH_ENGAGEMENT };
   }
 
   write(s: EngagementState): void {
     try {
-      writeFileSync(this.#path(), JSON.stringify(s, null, 1) + '\n');
+      jsonCursorFile(this.#root, 'queue-engagement.json', engagementOf, engagementLine).write(s);
     } catch {
       // Never let bookkeeping break a sitting.
     }

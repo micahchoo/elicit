@@ -41,7 +41,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
-import { appendLine, readLines } from '../jsonl.js';
+import { appendLine, jsonCursorFile, readJsonl } from '../jsonl.js';
 import type { Facet } from '../types.js';
 import type {
   Claim,
@@ -57,6 +57,7 @@ import type {
   SweepLine,
   WikiSlice,
 } from './contract.js';
+import { asStringArray, filled } from './ops.js';
 
 export function createClaimStore(root: string): ClaimStore {
   return new ClaimStoreImpl(root);
@@ -85,18 +86,9 @@ const STILL_TRUE_CURSOR = 'still-true-cursor.json';
 // from the one in `contract.ts`, and every writer of these files is code, not a
 // model — T9 validates the vocabulary where the model output actually arrives.
 
-function str(v: unknown): string | null {
-  return typeof v === 'string' && v.trim() !== '' ? v : null;
-}
-
-function strArray(v: unknown): string[] | null {
-  if (!Array.isArray(v)) return null;
-  return v.every((x) => typeof x === 'string') ? (v as string[]) : null;
-}
-
 /** Exactly two ids. `Contradiction.claims` and `ClashCandidate.pair` are tuples because "between A and B" is the definition. */
 function pair(v: unknown): [string, string] | null {
-  const items = strArray(v);
+  const items = asStringArray(v);
   if (!items || items.length !== 2) return null;
   return [items[0]!, items[1]!];
 }
@@ -107,8 +99,8 @@ function readLog(v: unknown): ReadLogEntry[] {
   for (const raw of v) {
     if (typeof raw !== 'object' || raw === null) continue;
     const e = raw as Record<string, unknown>;
-    const at = str(e.at);
-    const surface = str(e.surface);
+    const at = filled(e.at);
+    const surface = filled(e.surface);
     // Q-21's flag is only usable if the entry is dated: an undated read cannot
     // be compared against a snippet's capture time, so it carries no evidence.
     if (at && surface) entries.push({ at, surface });
@@ -119,9 +111,9 @@ function readLog(v: unknown): ReadLogEntry[] {
 function evidence(v: unknown): ClashEvidence | null {
   if (typeof v !== 'object' || v === null) return null;
   const e = v as Record<string, unknown>;
-  const snippetRef = str(e.snippetRef);
-  const quote = str(e.quote);
-  const side = str(e.side);
+  const snippetRef = filled(e.snippetRef);
+  const quote = filled(e.quote);
+  const side = filled(e.side);
   if (!snippetRef || !quote || !side) return null;
   return { snippetRef, quote, side: side as ClashEvidence['side'] };
 }
@@ -144,6 +136,66 @@ function safeName(v: string): string | null {
 
 function warnSkip(path: string, why: string): void {
   console.warn(`ClaimStore: skipping malformed file ${path} — ${why}`);
+}
+
+/**
+ * The validate-and-skip skeleton every frontmatter reader shares: every
+ * required scalar must be a non-empty string (`filled`), and a file that
+ * fails one is dropped with the standard warning. Returns the validated,
+ * already-trimmed scalars by key, or null. What each type requires BEYOND
+ * these — its tuples, evidence, cites and defaults — stays in the tail
+ * each reader keeps after this returns.
+ */
+function requireScalars<K extends string>(
+  d: Record<string, unknown>,
+  path: string,
+  keys: readonly K[],
+): { [P in K]: string } | null {
+  const out = {} as { [P in K]: string };
+  for (const key of keys) {
+    const value = filled(d[key]);
+    if (!value) {
+      warnSkip(path, 'a required field is missing');
+      return null;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** A sweep-log line, or null — the ledger's own grammar, where `readJsonl` is only the skip mechanic. */
+function sweepLineOf(value: unknown): SweepLine | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const rec = value as Record<string, unknown>;
+  const readingId = filled(rec.readingId);
+  const op = filled(rec.op);
+  if (!readingId || !op) return null;
+  return value as SweepLine;
+}
+
+/** A deferral line, or null. */
+function deferralOf(value: unknown): { at: string; remaining: number } | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const rec = value as Record<string, unknown>;
+  const at = filled(rec.at);
+  const remaining = rec.remaining;
+  if (!at || typeof remaining !== 'number') return null;
+  return { at, remaining };
+}
+
+/** A cursor file's offset, or null — the parse both offset cursors share. */
+function cursorOffset(value: unknown): number | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const offset = (value as Record<string, unknown>).offset;
+  return typeof offset === 'number' ? offset : null;
+}
+
+/** A resume marker, or null when the file does not hold one. */
+function resumeMarkerOf(value: unknown): ResumeMarker | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const rec = value as Record<string, unknown>;
+  if (typeof rec.at !== 'string' || typeof rec.pendingReadings !== 'number') return null;
+  return { at: rec.at, pendingReadings: rec.pendingReadings };
 }
 
 /**
@@ -185,19 +237,19 @@ function optionalClaimTail(d: Record<string, unknown>): Partial<Claim> {
   for (const key of CLAIM_FIELDS) {
     switch (key) {
       case 'supersededBy':
-        if (str(d.supersededBy)) out.supersededBy = d.supersededBy as string;
+        if (filled(d.supersededBy)) out.supersededBy = d.supersededBy as string;
         break;
       case 'supersedeReason':
-        if (str(d.supersedeReason)) out.supersedeReason = d.supersedeReason as string;
+        if (filled(d.supersedeReason)) out.supersedeReason = d.supersedeReason as string;
         break;
       case 'archived':
         if (d.archived === true) out.archived = true;
         break;
       case 'archiveReason':
-        if (str(d.archiveReason)) out.archiveReason = d.archiveReason as string;
+        if (filled(d.archiveReason)) out.archiveReason = d.archiveReason as string;
         break;
       case 'fusion':
-        if (strArray(d.fusion)) out.fusion = d.fusion as string[];
+        if (asStringArray(d.fusion)) out.fusion = d.fusion as string[];
         break;
       default:
         break;
@@ -285,38 +337,28 @@ class ClaimStoreImpl implements ClaimStore {
   }
 
   #toClaim(d: Record<string, unknown>, path: string): Claim | null {
-    const id = str(d.id);
-    const range = str(d.range);
-    const cites = strArray(d.cites);
-    const facet = str(d.facet);
-    const status = str(d.status);
-    const model = str(d.model);
-    const modelAt = str(d.modelAt);
-    const created = str(d.created);
-    const updated = str(d.updated);
-    if (!id || !range || !facet || !status || !model || !modelAt || !created || !updated) {
-      warnSkip(path, 'a required field is missing');
-      return null;
-    }
+    const s = requireScalars(d, path, ['id', 'range', 'facet', 'status', 'model', 'modelAt', 'created', 'updated']);
+    if (!s) return null;
+    const cites = asStringArray(d.cites);
     if (!cites || cites.length === 0) {
       warnSkip(path, 'cites is missing or empty (Q-21)');
       return null;
     }
     return {
-      id,
+      id: s.id,
       body: typeof d.__content === 'string' ? d.__content : '',
-      range,
-      status: status as ClaimStatus,
+      range: s.range,
+      status: s.status as ClaimStatus,
       cites,
-      facet: facet as Facet,
-      referents: strArray(d.referents) ?? [],
-      fromReadings: strArray(d.fromReadings) ?? [],
+      facet: s.facet as Facet,
+      referents: asStringArray(d.referents) ?? [],
+      fromReadings: asStringArray(d.fromReadings) ?? [],
       attested: d.attested === true,
       readLog: readLog(d.readLog),
-      model,
-      modelAt,
-      created,
-      updated,
+      model: s.model,
+      modelAt: s.modelAt,
+      created: s.created,
+      updated: s.updated,
       // The optional tail — read back through the same CLAIM_FIELDS the writer
       // iterates, with the reader's own lenient rules (a hand-edited
       // `archived: false` must not manufacture an `archived` key).
@@ -384,21 +426,10 @@ class ClaimStoreImpl implements ClaimStore {
       const d = this.#parse(dir, file);
       if (!d) continue;
       const path = join(dir, file);
-      const id = str(d.id);
-      const type = str(d.type);
+      const s = requireScalars(d, path, ['id', 'type', 'candidate', 'remeasureQueueId', 'status', 'model', 'modelAt', 'opened', 'updated']);
+      if (!s) continue;
       const claims = pair(d.claims);
-      const candidate = str(d.candidate);
-      const remeasureQueueId = str(d.remeasureQueueId);
       const ev = evidence(d.evidence);
-      const status = str(d.status);
-      const model = str(d.model);
-      const modelAt = str(d.modelAt);
-      const opened = str(d.opened);
-      const updated = str(d.updated);
-      if (!id || !type || !candidate || !remeasureQueueId || !status || !model || !modelAt || !opened || !updated) {
-        warnSkip(path, 'a required field is missing');
-        continue;
-      }
       // The tuple narrowing is where a hand-edited file most plausibly goes
       // wrong, and a one-sided Contradiction is not a Contradiction.
       if (!claims) {
@@ -410,18 +441,18 @@ class ClaimStoreImpl implements ClaimStore {
         continue;
       }
       out.push({
-        id,
-        type: type as Contradiction['type'],
+        id: s.id,
+        type: s.type as Contradiction['type'],
         claims,
-        candidate,
-        remeasureQueueId,
+        candidate: s.candidate,
+        remeasureQueueId: s.remeasureQueueId,
         evidence: ev,
-        status: status as Contradiction['status'],
-        ...(str(d.dissolveReason) ? { dissolveReason: d.dissolveReason as string } : {}),
-        model,
-        modelAt,
-        opened,
-        updated,
+        status: s.status as Contradiction['status'],
+        ...(filled(d.dissolveReason) ? { dissolveReason: d.dissolveReason as string } : {}),
+        model: s.model,
+        modelAt: s.modelAt,
+        opened: s.opened,
+        updated: s.updated,
         body: typeof d.__content === 'string' ? d.__content : '',
       });
     }
@@ -464,37 +495,29 @@ class ClaimStoreImpl implements ClaimStore {
       const d = this.#parse(dir, file);
       if (!d) continue;
       const path = join(dir, file);
-      const id = str(d.id);
+      const s = requireScalars(d, path, ['id', 'channel', 'status', 'model', 'modelAt', 'created']);
+      if (!s) continue;
       const claimPair = pair(d.pair);
-      const channel = str(d.channel);
-      const status = str(d.status);
-      const model = str(d.model);
-      const modelAt = str(d.modelAt);
-      const created = str(d.created);
-      if (!id || !channel || !status || !model || !modelAt || !created) {
-        warnSkip(path, 'a required field is missing');
-        continue;
-      }
       if (!claimPair) {
         warnSkip(path, 'pair is not a pair of claim ids');
         continue;
       }
       out.push({
-        id,
+        id: s.id,
         pair: claimPair,
-        channel: channel as ClashChannelName,
-        status: status as ClashCandidate['status'],
-        ...(str(d.outcome) ? { outcome: d.outcome as ClashOutcome } : {}),
-        ...(str(d.remeasureQueueId) ? { remeasureQueueId: d.remeasureQueueId as string } : {}),
-        ...(str(d.remeasureAskedAt) ? { remeasureAskedAt: d.remeasureAskedAt as string } : {}),
+        channel: s.channel as ClashChannelName,
+        status: s.status as ClashCandidate['status'],
+        ...(filled(d.outcome) ? { outcome: d.outcome as ClashOutcome } : {}),
+        ...(filled(d.remeasureQueueId) ? { remeasureQueueId: d.remeasureQueueId as string } : {}),
+        ...(filled(d.remeasureAskedAt) ? { remeasureAskedAt: d.remeasureAskedAt as string } : {}),
         // Defaulted rather than required, unlike every other scalar here: a
         // candidate file written before Q-53 has had exactly one re-measure,
         // so 1 is what an absent key already means. Nothing is fabricated.
         attempts: typeof d.attempts === 'number' && d.attempts > 0 ? d.attempts : 1,
         ...(typeof d.joinsTwoSittings === 'boolean' ? { joinsTwoSittings: d.joinsTwoSittings as boolean } : {}),
-        model,
-        modelAt,
-        created,
+        model: s.model,
+        modelAt: s.modelAt,
+        created: s.created,
       });
     }
     return out;
@@ -530,27 +553,18 @@ class ClaimStoreImpl implements ClaimStore {
       const d = this.#parse(dir, file);
       if (!d) continue;
       const path = join(dir, file);
-      const slug = str(d.slug);
-      const canonical = str(d.canonical);
-      const kind = str(d.kind);
-      const model = str(d.model);
-      const modelAt = str(d.modelAt);
-      const created = str(d.created);
-      const updated = str(d.updated);
-      if (!slug || !canonical || !kind || !model || !modelAt || !created || !updated) {
-        warnSkip(path, 'a required field is missing');
-        continue;
-      }
+      const s = requireScalars(d, path, ['slug', 'canonical', 'kind', 'model', 'modelAt', 'created', 'updated']);
+      if (!s) continue;
       const note = typeof d.__content === 'string' ? d.__content.trim() : '';
       out.push({
-        slug,
-        canonical,
-        kind: kind as Referent['kind'],
-        aliases: strArray(d.aliases) ?? [],
-        model,
-        modelAt,
-        created,
-        updated,
+        slug: s.slug,
+        canonical: s.canonical,
+        kind: s.kind as Referent['kind'],
+        aliases: asStringArray(d.aliases) ?? [],
+        model: s.model,
+        modelAt: s.modelAt,
+        created: s.created,
+        updated: s.updated,
         ...(note !== '' ? { note } : {}),
       });
     }
@@ -570,23 +584,7 @@ class ClaimStoreImpl implements ClaimStore {
    * final line must not hide the hundred good ones above it.
    */
   #sweepLines(): SweepLine[] {
-    const lines: SweepLine[] = [];
-    for (const line of readLines(this.#root, join('wiki', SWEEP_LOG))) {
-      const trimmed = line.trim();
-      if (trimmed === '') continue;
-      try {
-        const parsed: unknown = JSON.parse(trimmed);
-        if (typeof parsed !== 'object' || parsed === null) continue;
-        const rec = parsed as Record<string, unknown>;
-        const readingId = str(rec.readingId);
-        const op = str(rec.op);
-        if (!readingId || !op) continue;
-        lines.push(parsed as SweepLine);
-      } catch {
-        // Malformed line — skip, exactly as the Activity Log does.
-      }
-    }
-    return lines;
+    return readJsonl(this.#root, join('wiki', SWEEP_LOG), sweepLineOf);
   }
 
   /**
@@ -716,23 +714,7 @@ export function appendSweepDeferral(root: string, remaining: number): void {
  * log — a half-written final line must not hide the real backlog above it.
  */
 export function readSweepDeferrals(root: string): { at: string; remaining: number }[] {
-  const lines: { at: string; remaining: number }[] = [];
-  for (const line of readLines(root, join('wiki', SWEEP_DEFERRAL))) {
-    const trimmed = line.trim();
-    if (trimmed === '') continue;
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (typeof parsed !== 'object' || parsed === null) continue;
-      const rec = parsed as Record<string, unknown>;
-      const at = str(rec.at);
-      const remaining = rec.remaining;
-      if (!at || typeof remaining !== 'number') continue;
-      lines.push({ at, remaining });
-    } catch {
-      // Malformed line — skip, exactly as the sweep log does.
-    }
-  }
-  return lines;
+  return readJsonl(root, join('wiki', SWEEP_DEFERRAL), deferralOf);
 }
 
 /**
@@ -745,23 +727,12 @@ export function readSweepDeferral(root: string): { at: string; remaining: number
 }
 
 export function writeStillTrueCursor(root: string, offset: number): void {
-  const dir = join(root, 'wiki');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, STILL_TRUE_CURSOR), JSON.stringify({ offset }), 'utf-8');
+  jsonCursorFile(root, join('wiki', STILL_TRUE_CURSOR), cursorOffset, (n) => JSON.stringify({ offset: n })).write(offset);
 }
 
 /** The persisted still-true offset; 0 when the file is missing or unparseable. */
 export function readStillTrueCursor(root: string): number {
-  const path = join(root, 'wiki', STILL_TRUE_CURSOR);
-  if (!existsSync(path)) return 0;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-    if (typeof parsed !== 'object' || parsed === null) return 0;
-    const offset = (parsed as Record<string, unknown>).offset;
-    return typeof offset === 'number' ? offset : 0;
-  } catch {
-    return 0;
-  }
+  return jsonCursorFile(root, join('wiki', STILL_TRUE_CURSOR), cursorOffset).read() ?? 0;
 }
 
 // ── Outcome question cursor (ticket 106) ──
@@ -769,23 +740,12 @@ export function readStillTrueCursor(root: string): number {
 const OUTCOME_CURSOR = 'outcome-cursor.json';
 
 export function writeOutcomeCursor(root: string, offset: number): void {
-  const dir = join(root, 'wiki');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, OUTCOME_CURSOR), JSON.stringify({ offset }), 'utf-8');
+  jsonCursorFile(root, join('wiki', OUTCOME_CURSOR), cursorOffset, (n) => JSON.stringify({ offset: n })).write(offset);
 }
 
 /** The persisted outcome-question offset; 0 when the file is missing or unparseable. */
 export function readOutcomeCursor(root: string): number {
-  const path = join(root, 'wiki', OUTCOME_CURSOR);
-  if (!existsSync(path)) return 0;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-    if (typeof parsed !== 'object' || parsed === null) return 0;
-    const offset = (parsed as Record<string, unknown>).offset;
-    return typeof offset === 'number' ? offset : 0;
-  } catch {
-    return 0;
-  }
+  return jsonCursorFile(root, join('wiki', OUTCOME_CURSOR), cursorOffset).read() ?? 0;
 }
 // ── The docket resume marker (ticket 139) ──
 //
@@ -803,24 +763,12 @@ export type ResumeMarker = {
 };
 
 export function writeResumeMarker(root: string, marker: ResumeMarker): void {
-  const dir = join(root, 'wiki');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, RESUME_MARKER), JSON.stringify(marker), 'utf-8');
+  jsonCursorFile(root, join('wiki', RESUME_MARKER), resumeMarkerOf).write(marker);
 }
 
 /** The last resume marker, or null when missing or unparseable. */
 export function readResumeMarker(root: string): ResumeMarker | null {
-  const path = join(root, 'wiki', RESUME_MARKER);
-  if (!existsSync(path)) return null;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const rec = parsed as Record<string, unknown>;
-    if (typeof rec.at !== 'string' || typeof rec.pendingReadings !== 'number') return null;
-    return { at: rec.at, pendingReadings: rec.pendingReadings };
-  } catch {
-    return null;
-  }
+  return jsonCursorFile(root, join('wiki', RESUME_MARKER), resumeMarkerOf).read();
 }
 
 /** Remove the resume marker after a drain run has picked it up. */

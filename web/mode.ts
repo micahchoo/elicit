@@ -9,8 +9,9 @@
  * module-private (the import-review pattern). The handle mutates the REAL
  * AppState object, so the router and the other screens see every write;
  * the sitting hands off to the exchange through the bound renderExchange
- * callback. The one browser-storage read (profile-asked) stays direct, the
- * way main.ts used it — no split surface has a storage seam to match.
+ * callback. The join-word text nodes and the one browser-storage read
+ * (profile-asked) go through the seam too (F3): the text verb the core
+ * already carried, and the storage verbs main.ts wires.
  */
 
 import type { Mode, Target } from '../src/types.ts';
@@ -18,19 +19,22 @@ import { MINUTE_LADDER } from '../src/queue/mode-needs.js';
 import { type OpenerSource } from './provenance.js';
 import { protocolOptionRows } from './protocol-options.js';
 import { ensureProtocolMeta, protocolRows } from './protocol-meta.js';
-import type { SessionState, WebDepsWithWait } from './deps.js';
+import type { SessionState, WebDepsShell } from './deps.js';
 
-/** The mode surface's deps: the shell verbs, the writable session-state
- *  handle (the Wave C2 handle, extended with the setters this surface's
- *  sitting-open writes), the dimmed error line, and the hand-off into the
- *  exchange screen. */
-export interface ModeDeps extends WebDepsWithWait {
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
+/** The mode surface's deps: the shell seam (web/deps.ts), the writable
+ *  session-state handle (the Wave C2 handle, extended with the setters
+ *  this surface's sitting-open writes), the dimmed error line, and the
+ *  hand-off into the exchange screen. */
+export interface ModeDeps extends WebDepsShell {
  session: SessionState;
  showError: (msg: string) => void;
  renderExchange: () => void;
+ /** The browser-storage verbs (the profile-asked flag) — the one storage
+ *  seam (F3), matching the localStorage calls they replace exactly. */
+ storage: {
+  get: (key: string) => string | null;
+  set: (key: string, value: string) => void;
+ };
 }
 
 interface SessionResponse {
@@ -203,7 +207,7 @@ export function renderMode(deps: ModeDeps, showSetupHint?: boolean): void {
  // what happens, sitting at the point of attention just under "begin".
  const shuffleRow = deps.el('div', { class: 'mode-aside' });
  const shuffleLink = deps.el('button', { class: 'nav-link' }, 'shuffle a deck');
- shuffleRow.append(document.createTextNode('or '), shuffleLink, document.createTextNode('.'));
+ shuffleRow.append(deps.text('or '), shuffleLink, deps.text('.'));
 
  submit.addEventListener('click', () => void begin(false));
  shuffleLink.addEventListener('click', () => void begin(true));
@@ -314,7 +318,7 @@ export function renderMode(deps: ModeDeps, showSetupHint?: boolean): void {
  // One-time ask on vaults set up before the profile existed: the wiki
  // writes about the person, and given a name it stops calling them "the
  // user". Skippable; skip is remembered in this browser.
- if (localStorage.getItem('profile-asked') === null) {
+ if (deps.storage.get('profile-asked') === null) {
   void (async () => {
    try {
     const existing = await deps.api<{ name?: string; pronouns?: string }>('/api/profile', undefined, { method: 'GET' });
@@ -329,12 +333,12 @@ export function renderMode(deps: ModeDeps, showSetupHint?: boolean): void {
     save.addEventListener('click', async () => {
      try {
       await deps.api('/api/profile', { name: nameInput.value.trim(), pronouns: pronounsInput.value.trim() });
-      localStorage.setItem('profile-asked', 'yes');
+      deps.storage.set('profile-asked', 'yes');
       box.remove();
      } catch { /* leave the box; the next click retries */ }
     });
     skip.addEventListener('click', () => {
-     localStorage.setItem('profile-asked', 'yes');
+     deps.storage.set('profile-asked', 'yes');
      box.remove();
     });
     row.append(save, skip);

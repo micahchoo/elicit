@@ -787,6 +787,7 @@ describe('the draw reaches a sitting', () => {
     const queue: QueueStore = {
       add: () => { throw new Error('unexpected'); },
       list: () => [],
+      get: () => undefined,
       draw: () => { drawCalls.push('queue'); return queueDraw; },
       markAsked: () => {},
       markAnswered: () => {},

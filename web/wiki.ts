@@ -30,7 +30,7 @@ import type { Claim, Contradiction } from '../src/wiki/contract.ts';
 import type { AnnotationRecord } from '../src/clerk/annotation-store.js';
 import type { Snippet } from '../src/types.ts';
 import { relativeTime } from '../src/log/format.js';
-import { panelLine, renderPanelLine } from './panel-line.js';
+import { backlogSentence, panelLine, renderPanelLine } from './panel-line.js';
 import { renderTerritory } from './territory.js';
 import type { TerritoryResponse } from '../src/territory.js';
 import { lineageBlock } from './lineage.js';
@@ -502,7 +502,7 @@ function paintWiki(deps: WikiDeps, page: HTMLElement, sidebar: HTMLElement, wiki
   const door = deps.el('p', { class: 'wiki-backlog-link' });
   const see = deps.el('button', { class: 'nav-link', type: 'button' }, 'see which');
   see.addEventListener('click', () => deps.navTo('waiting'));
-  door.append(deps.text(`the wiki is ${backlog.pendingReadings} readings behind \u2014 `), see, deps.text('.'));
+  door.append(deps.text(backlogSentence(backlog.pendingReadings) + ' \u2014 '), see, deps.text('.'));
   page.append(door);
  }
 

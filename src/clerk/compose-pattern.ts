@@ -16,6 +16,7 @@ import { decomposeDerived } from '../patterns/decompose.js';
 import type { LicensingContext, Pattern, Operator } from '../patterns/types.js';
 import { guardComposed } from '../language/emit-form.js';
 import { FRAMING_RULE, stripFences } from './compose-gate.js';
+import { citeParts } from '../wiki/status.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,8 +44,8 @@ function buildPatternDraft(
     question,
     questionForm: pattern.questionForm,
     cites: derivedFrom.map((ref) => {
-      const [id, v] = ref.split('@');
-      return id && v ? `${id}@${v}` : ref;
+      const parts = citeParts(ref);
+      return parts ? `${parts.snippetId}@${parts.version}` : ref;
     }),
     quotedFragment: longest.text,
     sharpness: 'weak',

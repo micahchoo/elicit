@@ -19,7 +19,7 @@ import type { CutProposal } from '../src/types.ts';
 import { relativeTime } from '../src/log/format.js';
 import { originWord } from './provenance.js';
 import { HARVEST_FAILED_SENTENCE, harvestFailedFor } from './harvest-failure.js';
-import type { ActivityEvent, HarvestQueueEntry, WebDepsCore } from './deps.js';
+import type { ActivityEvent, HarvestQueueEntry, WebDepsShell } from './deps.js';
 
 /** `GET /api/harvest-queue/:id` — the record an opened entry loads. */
 interface HarvestQueueRecord {
@@ -27,10 +27,7 @@ interface HarvestQueueRecord {
  proposals: CutProposal[];
 }
 
-export interface ReviewsDeps extends WebDepsCore {
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
+export interface ReviewsDeps extends WebDepsShell {
  screen: () => string;
  setSessionId: (sessionId: string) => void;
  setProposals: (proposals: CutProposal[]) => void;

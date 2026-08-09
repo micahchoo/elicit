@@ -63,13 +63,14 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 import { isLive, mostRecentlyUpdated, sameSitting, type ClashChannel } from './clash.js';
 import type { Claim, ClaimGraph, LogFn } from './contract.js';
-import { THRESHOLDS, shadowDecision } from './thresholds.js'
+import { THRESHOLDS, readNumber, shadowDecision } from './thresholds.js'
 import type { Threshold } from '../domain/thresholds.js';
+import { readJsonl } from '../jsonl.js';
 
 // ── The injected halves ──
 
@@ -96,7 +97,8 @@ export type EmbeddingRecord = {
 /**
  * Where the vectors sit between runs. An interface rather than a path, because
  * every test in `tests/wiki-embedding.test.ts` runs on an in-memory one and
- * `fileEmbeddingStore` is the only implementation that touches disk.
+ * `vectorStoreFile` is the only implementation that touches disk — the wiki
+ * store and the semantic store both delegate to it.
  *
  * `load` NEVER throws. A missing file, a truncated line, a line of the wrong
  * shape — each is a rebuild, and a rebuild is one embed pass. An index that can
@@ -276,40 +278,44 @@ function windowOf(graph: ClaimGraph, cap: number): { window: Claim[]; total: num
 
 // ── The cache file ──
 
-/** `vault/wiki/embeddings.jsonl` — one record per line, final newline. */
-export function fileEmbeddingStore(vaultRoot: string): EmbeddingIndexStore {
-  const path = join(vaultRoot, 'wiki', 'embeddings.jsonl');
+/**
+ * The file mechanics behind every vector-store file, one copy.
+ *
+ * One record per line, final newline; `save` creates the parent directory on
+ * demand. `load` NEVER throws: a missing file is the ordinary cold state
+ * (Q-3 — the index is derived, so its absence costs one embed pass and
+ * nothing else), a torn line costs one vector, and a line that parses to the
+ * wrong shape is dropped by `parse` — the ONE record parser, which both
+ * keyspaces share. The line loop itself (split, trim, parse, skip) is
+ * `readJsonl` in src/jsonl.ts, the same mechanic the sweep log and the
+ * deferral parse through.
+ *
+ * The keyspaces stay separate FILES — `fileEmbeddingStore` writes
+ * `vault/wiki/embeddings.jsonl`, the semantic channel writes
+ * `vault/index/snippet-embeddings.jsonl` — because each channel prunes the
+ * other's records (see the semantic module note). Only the mechanics are
+ * shared; the parse callback is the caller's, so nothing here knows which
+ * keyspace it serves.
+ */
+export function vectorStoreFile<T>(
+  path: string,
+  parse: (value: unknown) => T | null,
+): { load(): T[]; save(records: T[]): void } {
   return {
-    load(): EmbeddingRecord[] {
-      let text: string;
-      try {
-        text = readFileSync(path, 'utf-8');
-      } catch {
-        // No file is the ordinary cold state, not an error: Q-3 says the index
-        // is derived, so its absence costs one embed pass and nothing else.
-        return [];
-      }
-      const out: EmbeddingRecord[] = [];
-      for (const line of text.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          continue; // A torn line costs one vector, never the run.
-        }
-        const record = asRecord(parsed);
-        if (record) out.push(record);
-      }
-      return out;
+    load(): T[] {
+      return readJsonl(dirname(path), basename(path), parse);
     },
-    save(records: EmbeddingRecord[]): void {
+    save(records: T[]): void {
       mkdirSync(dirname(path), { recursive: true });
       const body = records.map((r) => JSON.stringify(r)).join('\n');
       writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
     },
   };
+}
+
+/** `vault/wiki/embeddings.jsonl` — one record per line, final newline. */
+export function fileEmbeddingStore(vaultRoot: string): EmbeddingIndexStore {
+  return vectorStoreFile(join(vaultRoot, 'wiki', 'embeddings.jsonl'), asRecord);
 }
 
 /**
@@ -440,7 +446,7 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
 
   // The register's entry is a number; a boolean one would be a misconfiguration
   // and must pool NOTHING rather than everything.
-  const cut = typeof threshold.value === 'number' ? threshold.value : Number.POSITIVE_INFINITY;
+  const cut = readNumber(threshold, Number.POSITIVE_INFINITY);
 
   /** Loaded once per instance, then kept in step with what `prime` writes. */
   let cache: Map<string, EmbeddingRecord> | undefined;
@@ -586,11 +592,31 @@ export function embeddingChannel(deps: EmbeddingDeps): EmbeddingChannel {
 }
 
 /**
+ * Shared cache pruning, one copy: delete every id the caller no longer keeps,
+ * then write the survivors back sorted by claim id.
+ *
+ * The sorted save is what makes two runs over the same corpus produce
+ * byte-identical files; the deletion is what keeps a vector file from growing
+ * without end. Which ids survive is the caller's call — live claims in the
+ * wiki channel, live snippets in the semantic channel — because that is the
+ * one thing that differs between the two keyspaces.
+ */
+export function pruneCache(
+  cached: Map<string, EmbeddingRecord>,
+  keepIds: Set<string>,
+  store: EmbeddingIndexStore,
+): void {
+  for (const id of [...cached.keys()]) if (!keepIds.has(id)) cached.delete(id);
+  store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
+}
+
+/**
  * Write the cache back, minus any claim the graph no longer asserts.
  *
  * Pruning is what keeps a file of 51 KB vectors from growing without end. It
  * prunes to LIVE claims: an archived claim is never paired, so its vector buys
- * nothing, and un-archiving costs one re-embed.
+ * nothing, and un-archiving costs one re-embed. The delete-and-save is shared
+ * `pruneCache`; the only channel-specific part is WHICH ids are kept.
  */
 function persist(
   graph: ClaimGraph,
@@ -598,8 +624,7 @@ function persist(
   store: EmbeddingIndexStore,
 ): void {
   const live = new Set(graph.claims.filter(isLive).map((c) => c.id));
-  for (const id of [...cached.keys()]) if (!live.has(id)) cached.delete(id);
-  store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
+  pruneCache(cached, live, store);
 }
 
 // ── The one path that touches the network (Q-2 / ADR-0001) ──

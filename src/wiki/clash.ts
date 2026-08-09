@@ -65,7 +65,7 @@ import type {
  LogFn,
  Registry,
 } from './contract.js';
-import { shadowDecision } from './thresholds.js'
+import { readNumber, shadowDecision } from './thresholds.js'
 import { sittingsOfCites } from './status.js';
 import type { Threshold } from '../domain/thresholds.js';
 
@@ -544,7 +544,7 @@ export function poolCandidates(
  // caller actually receives (the number `WikiReport.pool.size` reports) and
  // the clip below is the only place the cut is visible. 0 is the safe
  // direction for a cap, mirroring `bound()` in wiki-jobs.
- const n = typeof quota.value === 'number' ? quota.value : 0;
+ const n = readNumber(quota, 0);
  if (pairs.length > n) {
   shadowDecision(
    quota,

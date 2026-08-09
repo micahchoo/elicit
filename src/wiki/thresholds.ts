@@ -323,6 +323,19 @@ export function isLive(t: Threshold): boolean {
 }
 
 /**
+ * The one numeric read of a threshold VALUE — every caller outside this file
+ * goes through here, so a value is never read as a bare literal (the module
+ * header's invariant). The register admits booleans because two entries are
+ * switches; a boolean value in a numeric entry is a misconfiguration, and
+ * `fallback` is the caller's own safe direction, deliberately NOT shared
+ * here — sites genuinely differ (0 for caps and quotas that must do less
+ * work, ±Infinity for floors that must admit or drop nothing).
+ */
+export function readNumber(t: Threshold, fallback: number): number {
+ return typeof t.value === 'number' ? t.value : fallback;
+}
+
+/**
  * The one door every threshold decision passes through. Returns whether the
  * threshold is live and undemoted: true means the caller is licensed to act,
  * false means it must not.

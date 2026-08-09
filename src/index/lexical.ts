@@ -42,12 +42,13 @@ function tokenize(text: string): Token[] {
  return tokens;
 }
 
-function isStopword(word: string): boolean {
+/** Is this lowercase token a closed-class word? The shared predicate lint composes. */
+export function isFunctionWord(word: string): boolean {
  return STOPWORDS.has(word);
 }
 
 function isAllStopwords(words: string[]): boolean {
- return words.every(isStopword);
+ return words.every(isFunctionWord);
 }
 
 // ── Content-word extraction for diversity ────────────────────────────────
@@ -55,7 +56,7 @@ function isAllStopwords(words: string[]): boolean {
 function extractContentWords(tokens: Token[]): Set<string> {
  return new Set(
   tokens
-   .filter(t => !isStopword(t.word))
+   .filter(t => !isFunctionWord(t.word))
    .map(t => t.word),
  );
 }
@@ -65,10 +66,21 @@ export function contentWordsOf(text: string): Set<string> {
  return extractContentWords(tokenize(text));
 }
 
+/**
+ * Every word of a text, in order, lowercased — the RAW token stream with
+ * no stopword filter. The sounding license's frequency counting must see
+ * every token form the index does, so this is the token stream, not the
+ * content-word set; the tokenizer is single-homed on TOKEN_RE here
+ * (Wave D F8, replacing the license's WORD_RE mirror).
+ */
+export function wordsOf(text: string): string[] {
+ return tokenize(text).map((t) => t.word);
+}
+
 /** Content words of a text string, in order — for n-gram guards. */
 export function contentWordSequence(text: string): string[] {
  const tokens = tokenize(text);
- return tokens.filter(t => !isStopword(t.word)).map(t => t.word);
+ return tokens.filter(t => !isFunctionWord(t.word)).map(t => t.word);
 }
 
 /** Jaccard similarity: |A ∩ B| / |A ∪ B| */
@@ -183,15 +195,27 @@ function extractSharedPhrase(
  * The non-stopword trigrams of a text — the same keying buildIndex uses, so
  * an echo check and a resonance hit can never disagree about what counts.
  */
-function trigramKeys(text: string): Set<string> {
- const toks = tokenize(text);
- const keys = new Set<string>();
+/**
+ * The non-stopword trigrams of a token stream, as `{ key, start }` — the
+ * ONE keying buildIndex, resonate and the echo check share, so they can
+ * never disagree about what counts. All-stopword trigrams are skipped.
+ */
+function trigramsOf(toks: Token[]): { key: string; start: number }[] {
+ const out: { key: string; start: number }[] = [];
  for (let i = 0; i <= toks.length - 3; i++) {
   const words = [toks[i]!.word, toks[i + 1]!.word, toks[i + 2]!.word];
   if (isAllStopwords(words)) continue;
-  keys.add(words.join(' '));
+  out.push({ key: words.join(' '), start: i });
  }
- return keys;
+ return out;
+}
+
+/**
+ * The non-stopword trigrams of a text — the same keying buildIndex uses, so
+ * an echo check and a resonance hit can never disagree about what counts.
+ */
+function trigramKeys(text: string): Set<string> {
+ return new Set(trigramsOf(tokenize(text)).map((t) => t.key));
 }
 
 /**
@@ -223,13 +247,8 @@ export function buildIndex(snippets: Snippet[]): LexicalIndex {
   tokens.set(snip.id, toks);
   const cw = extractContentWords(toks);
 
-  // Extract all trigrams (3 consecutive words)
-  for (let i = 0; i <= toks.length - 3; i++) {
-   const trigramWords = [toks[i]!.word, toks[i + 1]!.word, toks[i + 2]!.word];
-   // Reject stopword-only trigrams
-   if (isAllStopwords(trigramWords)) continue;
-
-   const key = trigramWords.join(' ');
+  // Extract all trigrams (3 consecutive words), skipping stopword-only ones
+  for (const { key, start: i } of trigramsOf(toks)) {
    const hit: IndexHit = {
     snippetId: snip.id,
     version: snip.version,
@@ -281,15 +300,7 @@ export function resonate(
  const candidates: Candidate[] = [];
 
  // For each query trigram, find matching snippets
- for (let qPos = 0; qPos <= queryTokens.length - 3; qPos++) {
-  const qTrigramWords = [
-   queryTokens[qPos]!.word,
-   queryTokens[qPos + 1]!.word,
-   queryTokens[qPos + 2]!.word,
-  ];
-  if (isAllStopwords(qTrigramWords)) continue;
-
-  const key = qTrigramWords.join(' ');
+ for (const { key, start: qPos } of trigramsOf(queryTokens)) {
   const matches = idx.entries.get(key);
   if (!matches || matches.length === 0) continue;
 

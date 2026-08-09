@@ -1,6 +1,5 @@
 import type {
  Complete,
- Turn,
  RedLight,
  ResonanceHit,
  Snippet,
@@ -11,6 +10,7 @@ import type {
  Target,
 } from '../types.js';
 import type { Claim } from '../wiki/contract.js';
+import { userTurn } from '../wiki/contract.js';
 import type { ProtocolDef } from '../protocols/registry.js';
 import {
  isInterrogative,
@@ -19,7 +19,7 @@ import {
  setOffSpans,
 } from '../language/guards.js';
 import { contentWordSequence } from '../index/lexical.js';
-import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import { THRESHOLDS, readNumber, shadowDecision } from '../wiki/thresholds.js'
 import type { ThresholdLogFn } from '../domain/thresholds.js';
 import { guardComposed } from '../language/emit-form.js';
 import { readAllRepairs } from '../repair/store.js';
@@ -191,11 +191,6 @@ export function checkQuotesSource(question: string, source: string): QuoteResult
  const rejection = checkAfterQuote(question, fragment);
  if (rejection) return { ok: false, rejection };
  return { ok: true, fragment };
-}
-
-/** Wrap text as a single user turn for LLM calls that need a Turn[]. */
-function userTurn(text: string): Turn[] {
- return [{ role: 'user', text, at: '' }];
 }
 
 /**
@@ -500,7 +495,7 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
  return composeWithRetry(
   'opener',
   send,
@@ -509,7 +504,7 @@ Return only the question text. No markdown, no commentary.`;
    const check = checkQuotesSource(question, snippet.prose);
    if (check.ok) {
     const echoLine = summaryLines && summaryLines.length > 0
-     ? checkSummaryEcho(question, summaryLines, THRESHOLDS['opener.echoGuardMinSpanWords'].value as number)
+     ? checkSummaryEcho(question, summaryLines, readNumber(THRESHOLDS['opener.echoGuardMinSpanWords'], 3))
      : null;
     if (echoLine) {
      warnReject(`${phase === 'first' ? 'Composed: opener rejected' : 'Composed: opener retry also rejected'} (summary-echo) — shares span with: "${echoLine.slice(0, 80)}"`);
@@ -555,7 +550,7 @@ Return only the question text. No markdown, no commentary.`;
   ? (shadowDecision(THRESHOLDS['stillTrue.formSelection'], `use form=${ideal} instead of deliberative for still-true on snippet ${snippet.id}`, log) ? ideal : 'deliberative')
   : 'deliberative';
 
- const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
  return composeWithRetry(
   'still-true',
   send,
@@ -695,7 +690,7 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
  return composeWithRetry(
   'expedition',
   send,
@@ -767,7 +762,7 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from this snippet inside quotation marks: "${snippet.prose}".`;
 
- const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
  return composeWithRetry(
   'other-minds expedition',
   send,
@@ -859,7 +854,7 @@ Return only the question text. No markdown, no commentary.`;
 
  const quoteRule = `Your question MUST set off an exact phrase from passage 1 inside quotation marks AND an exact phrase from passage 2 inside its own quotation marks: passage 1 "${prose.a}", passage 2 "${prose.b}".`;
 
- const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+ const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
  return composeWithRetry(
   'discriminating',
   send,
@@ -935,13 +930,13 @@ Return ONLY a JSON object: {"rangeA": "<the narrowed context where claim 1 holds
  };
 
  // Attempt 1
- const raw = await complete('', [{ role: 'user', text: prompt, at: '' }], { temperature: 0.4 });
+ const raw = await complete('', userTurn(prompt), { temperature: 0.4 });
  const first = attempt(raw);
  if (first) return first;
 
  // One retry
  const retryPrompt = `${prompt}\n\nCRITICAL: Your previous response was rejected. Return ONLY a JSON object of the form {"rangeA": "...", "rangeB": "..."} where rangeA is the narrowed context where claim 1 holds and rangeB where claim 2 holds. Both must be non-empty, different from each other, and different from the claims' current ranges.`;
- const retryRaw = await complete('', [{ role: 'user', text: retryPrompt, at: '' }], { temperature: 0.4 });
+ const retryRaw = await complete('', userTurn(retryPrompt), { temperature: 0.4 });
  const second = attempt(retryRaw);
  if (second) return second;
 
@@ -984,7 +979,7 @@ Return only the question text. No markdown, no commentary.`;
 
   const quoteRule = `Your question MUST set off an exact phrase from this intention inside quotation marks: "${snippet.prose}", and MUST NOT repeat the original question: "${snippet.provenance.question}".`;
 
-  const send = (p: string) => complete('', [{ role: 'user', text: p, at: '' }], { temperature: 0.4 });
+  const send = (p: string) => complete('', userTurn(p), { temperature: 0.4 });
   return composeWithRetry(
     'outcome question',
     send,

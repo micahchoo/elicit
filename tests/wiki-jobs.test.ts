@@ -189,6 +189,7 @@ function fakeQueue(seed: QueueEntry[] = []): FakeQueue {
           (filter?.source === undefined || e.source === filter.source),
       );
     },
+    get(id: string): QueueEntry | undefined { return entries.find((e) => e.id === id); },
     draw: () => null,
     markAsked: () => {},
     markAnswered: () => {},

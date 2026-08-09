@@ -5,7 +5,7 @@
  * a phantom route — client calls a path or method the server never
  * registers — can never ship again.
  *
- * The client's method is computed exactly as web/main.ts isReadPath does:
+ * The client's method is computed exactly as web/client.ts isReadPath does:
  * the GET prefix list is read OUT of the source (one source of truth), and
  * the exact-match rules are mirrored here. If isReadPath changes, this
  * mirror must change with it; the test's failures are loud.
@@ -66,17 +66,17 @@ type ClientCall = {
  line: number;
 };
 
-/** The read-route prefixes, extracted from web/main.ts itself — the client
+/** The read-route prefixes, extracted from web/client.ts itself — the client
  * and this test can never drift apart on the prefix list. */
 function getPrefixes(): string[] {
- const text = readFileSync(join(ROOT, 'web', 'main.ts'), 'utf-8');
+ const text = readFileSync(join(ROOT, 'web', 'client.ts'), 'utf-8');
  const m = text.match(/const GET_PREFIXES = \[([^\]]*)\]/);
- if (!m) throw new Error('could not find GET_PREFIXES in web/main.ts');
+ if (!m) throw new Error('could not find GET_PREFIXES in web/client.ts');
  return [...m[1]!.matchAll(/'([^']+)'/g)].map((x) => x[1]!);
 }
 
 /**
- * The exact-match rules from web/main.ts isReadPath, mirrored. Each is
+ * The exact-match rules from web/client.ts isReadPath, mirrored. Each is
  * deliberate there (a comment explains why prefix matching would misroute
  * a POST under the same path); the mirror keeps the test computing the
  * same method the client does.

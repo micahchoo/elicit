@@ -29,12 +29,7 @@
 
 import { readEvents, appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/kinds.js';
-import {
-  applyFacetBalance,
-  facetBalanceIsLive,
-  readVaultFacetDistribution,
-  underRepresented,
-} from '../queue/facet-balance.js';
+import { facetBalancedPool } from '../queue/facet-balance.js';
 import type {
   DeckEntry,
   DrawProvenance,
@@ -164,11 +159,8 @@ function deckDraw(
   // Q-13 in its usual order: constraints, then chance. The facet filter is the
   // same one the Queue's draw runs, on the same graduation switch — a deck
   // entry's `targetFacet` exists precisely so this can bite (ticket 042).
-  const live = facetBalanceIsLive(env);
-  const wanted = underRepresented(readVaultFacetDistribution(root));
-  const balanced = applyFacetBalance(entries, wanted);
-  const pool = live && balanced.applied ? balanced.kept : entries;
-  const card = pick(pool, r);
+  const fb = facetBalancedPool(entries, { root, env });
+  const card = pick(fb.pool, r);
   return {
     draw: {
       question: card.question,
@@ -178,7 +170,7 @@ function deckDraw(
       ...(card.targetFacet ? { targetFacet: card.targetFacet } : {}),
     },
     ref: deckCardRef(card),
-    facetFilter: `${live ? 'live' : 'shadow'}/${balanced.applied ? 'applied' : 'stood-down'}`,
+    facetFilter: `${fb.live ? 'live' : 'shadow'}/${fb.applied ? 'applied' : 'stood-down'}`,
   };
 }
 

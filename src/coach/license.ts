@@ -20,7 +20,7 @@ import {
 import type { SittingTag } from './store.js';
  import type { QueueEntry, Snippet } from '../types.js';
  import { contentWordsOf } from '../index/lexical.js';
- import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+ import { THRESHOLDS, readNumber, shadowDecision } from '../wiki/thresholds.js'
 import type { ThresholdLogFn } from '../domain/thresholds.js';
 
 /**
@@ -287,7 +287,7 @@ export function relevantClaims(
      if (excluded.has(cand.slug)) continue;
      const claims = relevantClaims(facts, cand).length;
      evaluated.push({ direction: cand.slug, claims });
-     if (gate && claims >= (minClaims.value as number)) qualified.push(cand.slug);
+     if (gate && claims >= readNumber(minClaims, 3)) qualified.push(cand.slug);
    }
    if (qualified.length === 0) return { evaluated, qualified, offered: null };
    const best = evaluated

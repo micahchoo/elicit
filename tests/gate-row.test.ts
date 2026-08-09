@@ -72,6 +72,7 @@ function makeFakeQueue(): QueueStore {
    };
   },
   list: () => [],
+  get: () => undefined,
   draw: () => null,
   markAsked: () => {},
   markAnswered: () => {},

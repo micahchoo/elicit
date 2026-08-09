@@ -12,19 +12,17 @@
  * waiting module — all three exist.
  */
 
-import { ensureProtocolMeta, protocolTitle } from './protocol-meta.js';
+import { protocolLabel } from './protocol-meta.js';
 import { takeDrmResumeProbe } from './waiting.js';
 import type { PhaseMetaLike } from './triad-surface.js';
 import type { DictationOpts } from './dictation.js';
-import type { WebDepsWithWait } from './deps.js';
+import { endAndGoToReviews } from './deps.js';
+import type { WebDepsShell } from './deps.js';
 
-/** The DRM surface's deps: the flat verbs beyond the core seam — the
+/** The DRM surface's deps: the flat verbs beyond the shell seam — the
  *  session id the drm routes hang on, the harvest hand-off, and the shared
  *  dictation wiring bound to main.ts's dictationDeps. */
-export interface DrmDeps extends WebDepsWithWait {
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
+export interface DrmDeps extends WebDepsShell {
  sessionId: () => string | null;
  setPendingReviewSession: (id: string | null) => void;
  wireDictation: (opts: DictationOpts) => void;
@@ -37,6 +35,20 @@ export interface DrmDeps extends WebDepsWithWait {
  *  older server. */
 type DrmPhaseMeta = PhaseMetaLike;
 
+/** The DRM turn routes' one wire shape (start, enumerate-done, probe,
+ *  gate): the response kind plus the phase fields — required after the
+ *  enumeration, optional on a probe/gate reply. */
+interface DrmTurnResponse {
+ kind: string;
+ text: string;
+ episode: number;
+ of: number;
+ step: string;
+ gate: { episode: number; of: number; label: string };
+ atEnd?: boolean;
+ machinePhase?: DrmPhaseMeta;
+}
+
 /** A parked DRM picked up from the waiting surface: its first probe, shown
  *  by renderDRM directly (the resume route already composed it). */
 export function renderDRM(deps: DrmDeps): void {
@@ -46,10 +58,8 @@ export function renderDRM(deps: DrmDeps): void {
 
   const div = deps.el('div', { class: 'screen active drm-screen' });
   // The screen reads as the def title (ticket 157), never the jargon.
-  const header = deps.el('h2', { class: 'exchange-heading' }, protocolTitle('drm'));
-  void ensureProtocolMeta().then(() => {
-   header.textContent = protocolTitle('drm');
-  });
+  const header = deps.el('h2', { class: 'exchange-heading' });
+  protocolLabel(header, 'drm');
   div.append(header);
 
   // ── Intro ──
@@ -89,10 +99,8 @@ export function renderDRM(deps: DrmDeps): void {
   // ── Probe area — the exchange grammar (ticket 157): dimmed protocol
   // title above the question, question block, dictation, send, beginWait.
   const probeBlock = deps.el('div', { class: 'drm-phase drm-probe' });
-  const protocolLabel = deps.el('div', { class: 'exchange-protocol' }, protocolTitle('drm'));
-  void ensureProtocolMeta().then(() => {
-   protocolLabel.textContent = protocolTitle('drm');
-  });
+  const probeLabel = deps.el('div', { class: 'exchange-protocol' });
+  protocolLabel(probeLabel, 'drm');
   const probeMeta = deps.el('div', { class: 'drm-probe-meta' });
   const probeQuestion = deps.el('div', { class: 'question-block' });
   const textarea = deps.el('textarea', {
@@ -105,7 +113,7 @@ export function renderDRM(deps: DrmDeps): void {
   const sendBtn = deps.el('button', { class: 'send-btn', type: 'button' }, 'send \u21b5');
   const answerRow = deps.el('div', { class: 'answer-row' });
   answerRow.append(textarea, micBtn, micStatus, sendBtn);
-  probeBlock.append(protocolLabel, probeMeta, probeQuestion, answerRow);
+  probeBlock.append(probeLabel, probeMeta, probeQuestion, answerRow);
 
   // ── Gate-row (Q-44: always visible, replicate Sounding pattern) ──
   const gateBlock = deps.el('div', { class: 'gate-row drm-gate' });
@@ -179,7 +187,7 @@ export function renderDRM(deps: DrmDeps): void {
    setBusy(true);
    const wait = deps.beginWait(introBlock, 'starting\u2026', 150);
    try {
-    const res = await deps.api<{ kind: string; machinePhase?: DrmPhaseMeta }>(`/api/session/${deps.sessionId()}/drm/start`);
+    const res = await deps.api<DrmTurnResponse>(`/api/session/${deps.sessionId()}/drm/start`);
     wait.done();
     showPhaseFor(res.machinePhase, res.kind);
     nameInput.focus();
@@ -234,15 +242,7 @@ export function renderDRM(deps: DrmDeps): void {
    setBusy(true);
    const wait = deps.beginWait(enumBlock, 'reading the day back\u2026', 150);
    try {
-    const res = await deps.api<{
-     kind: string;
-     text: string;
-     episode: number;
-     of: number;
-     step: string;
-     gate: { episode: number; of: number; label: string };
-     machinePhase?: DrmPhaseMeta;
-    }>(`/api/session/${deps.sessionId()}/drm/enumerate-done`);
+    const res = await deps.api<DrmTurnResponse>(`/api/session/${deps.sessionId()}/drm/enumerate-done`);
     wait.done();
     showPhaseFor(res.machinePhase, res.kind);
     probeQuestion.textContent = res.text;
@@ -264,15 +264,7 @@ export function renderDRM(deps: DrmDeps): void {
    setBusy(true);
    const wait = deps.beginWait(probeBlock, 'thinking\u2026', 150);
    try {
-    const res = await deps.api<{
-     kind: string;
-     text?: string;
-     episode?: number;
-     of?: number;
-     step?: string;
-     gate?: { episode: number; of: number; label: string };
-     atEnd?: boolean;
-    }>(`/api/session/${deps.sessionId()}/drm/probe`, { text });
+    const res = await deps.api<DrmTurnResponse>(`/api/session/${deps.sessionId()}/drm/probe`, { text });
 
     textarea.value = '';
 
@@ -323,29 +315,27 @@ export function renderDRM(deps: DrmDeps): void {
     choice === 'continue' ? 'continuing\u2026' : 'putting it away\u2026',
    );
    try {
-    const res = await deps.api<{
-     kind: string;
-     text?: string;
-     episode?: number;
-     of?: number;
-     step?: string;
-     gate?: { episode: number; of: number; label: string };
-    }>(`/api/session/${deps.sessionId()}/drm/gate`, { choice });
+    const res = await deps.api<DrmTurnResponse>(`/api/session/${deps.sessionId()}/drm/gate`, { choice });
 
     if (res.kind === 'drm-closed') {
      // DRM complete — end the session for harvest; the wait holds through
-     // the harvest call.
+     // the harvest call. The DRM screen parks the pending review only
+     // when the harvest actually runs, and goes to reviews either way —
+     // the sitting is over even if the end call fails.
      try {
-      const endRes = await deps.api<{ status: string }>(`/api/session/${deps.sessionId()}/end`);
+      await endAndGoToReviews(
+       deps.api,
+       deps.sessionId()!,
+       deps.setPendingReviewSession,
+       deps.navTo,
+       { gateOnHarvesting: true },
+      );
       wait.done();
-      if (endRes.status === 'harvesting') {
-       deps.setPendingReviewSession(deps.sessionId());
-      }
      } catch {
       // End may fail but session is over
       wait.done();
+      deps.navTo('reviews');
      }
-     deps.navTo('reviews');
      return;
     }
 
@@ -396,7 +386,4 @@ export function renderDRM(deps: DrmDeps): void {
    showPhase('probe');
    textarea.focus();
   }
-
-  // ── Re-trigger hash for the navigator ──
-  if (location.hash !== '#/drm') location.hash = '#/drm';
 }

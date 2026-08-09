@@ -131,19 +131,20 @@
  * Ollama endpoint and nowhere else (Q-2 / ADR-0001).
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import {
  asRecord,
  cachedVector,
  cosine,
  embedBatches,
+ pruneCache,
+ vectorStoreFile,
  type Embed,
  type EmbeddingIndexStore,
  type EmbeddingRecord,
 } from '../wiki/embedding.js';
-import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js'
+import { THRESHOLDS, readNumber, shadowDecision } from '../wiki/thresholds.js'
 import type { Threshold, ThresholdLogFn } from '../domain/thresholds.js';
 import type { LexicalIndex, ResonanceHit, Snippet } from '../types.js';
 import { resonate } from './lexical.js';
@@ -233,41 +234,14 @@ export const TOP_N = 5;
  * format, a second file for a second keyspace. See the module note for why one
  * file is impossible.
  *
- * `load` NEVER throws. A missing file is the ordinary cold state; a torn line
- * costs one vector. Q-3: the index is derived, so its absence costs one embed
- * pass and nothing else, and it can never be the reason a sitting fails.
+ * The file mechanics — one record per line, final newline, `load` NEVER
+ * throwing, a torn line costing one vector — are `vectorStoreFile` in
+ * `src/wiki/embedding.ts`, shared with the wiki channel. Q-3: the index is
+ * derived, so its absence costs one embed pass and nothing else, and it can
+ * never be the reason a sitting fails.
  */
 export function fileSnippetVectorStore(vaultRoot: string): EmbeddingIndexStore {
- const path = join(vaultRoot, 'index', 'snippet-embeddings.jsonl');
- return {
-  load(): EmbeddingRecord[] {
-   let text: string;
-   try {
-    text = readFileSync(path, 'utf-8');
-   } catch {
-    return [];
-   }
-   const out: EmbeddingRecord[] = [];
-   for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let parsed: unknown;
-    try {
-     parsed = JSON.parse(trimmed);
-    } catch {
-     continue;
-    }
-    const record = asRecord(parsed);
-    if (record) out.push(record);
-   }
-   return out;
-  },
-  save(records: EmbeddingRecord[]): void {
-   mkdirSync(dirname(path), { recursive: true });
-   const body = records.map((r) => JSON.stringify(r)).join('\n');
-   writeFileSync(path, records.length > 0 ? `${body}\n` : '', 'utf-8');
-  },
- };
+ return vectorStoreFile(join(vaultRoot, 'index', 'snippet-embeddings.jsonl'), asRecord);
 }
 
 // ── The channel ──
@@ -316,16 +290,16 @@ export interface SemanticIndex {
  */
 export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): SemanticIndex {
  const { embed, model, store, log } = deps;
- const cap = deps.primeCap ?? (typeof THRESHOLDS['resonance.primeCap'].value === 'number' ? THRESHOLDS['resonance.primeCap'].value : 0);
- const primeBudgetMs = deps.primeBudgetMs ?? (typeof THRESHOLDS['resonance.primeBudgetMs'].value === 'number' ? THRESHOLDS['resonance.primeBudgetMs'].value : 0);
- const queryBudgetMs = deps.queryBudgetMs ?? (typeof THRESHOLDS['resonance.queryBudgetMs'].value === 'number' ? THRESHOLDS['resonance.queryBudgetMs'].value : 0);
+ const cap = deps.primeCap ?? readNumber(THRESHOLDS['resonance.primeCap'], 0);
+ const primeBudgetMs = deps.primeBudgetMs ?? readNumber(THRESHOLDS['resonance.primeBudgetMs'], 0);
+ const queryBudgetMs = deps.queryBudgetMs ?? readNumber(THRESHOLDS['resonance.queryBudgetMs'], 0);
  const floor = deps.floor ?? THRESHOLDS['resonance.semanticFloor'];
  const clock = deps.now ?? (() => Date.now());
 
  // A boolean floor would be a misconfiguration. It must drop NOTHING rather
  // than everything: this channel's job is recall, and a silent total blackout
  // is the failure mode ticket 053 exists to end.
- const floorValue = typeof floor.value === 'number' ? floor.value : Number.NEGATIVE_INFINITY;
+ const floorValue = readNumber(floor, Number.NEGATIVE_INFINITY);
 
  /**
   * The corpus as given, first occurrence of an id wins. Deliberately NOT
@@ -512,14 +486,15 @@ export function buildSemanticIndex(snippets: Snippet[], deps: SemanticDeps): Sem
  *
  * Pruning is what keeps a file of 51 KB vectors from growing without end: a
  * deleted snippet's vector buys nothing, and re-adding one costs one re-embed.
+ * The delete-and-save is shared `pruneCache`; the only channel-specific part
+ * is WHICH ids are kept.
  */
 function persist(
  ids: Set<string>,
  cached: Map<string, EmbeddingRecord>,
  store: EmbeddingIndexStore,
 ): void {
- for (const id of [...cached.keys()]) if (!ids.has(id)) cached.delete(id);
- store.save([...cached.values()].sort((a, b) => (a.claimId < b.claimId ? -1 : 1)));
+ pruneCache(cached, ids, store);
 }
 
 // ── The hybrid entry point (Q-17's staged hybrid, both stages) ──

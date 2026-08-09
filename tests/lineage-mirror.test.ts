@@ -7,6 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { readLineage, licenseMirror, composeLineageMirror, runLineageMirrorSweep } from '../src/clerk/lineage-mirror.js';
 import type { MirrorClaim, MirrorLogFn } from '../src/clerk/lineage-mirror.js';
 import { makeScriptedComplete } from './fakes.js';
+import { createQueueStore } from '../src/queue/queue.js';
 import type { Complete, QueueDraft, QueueEntry, QueueStore, LineageRead, Mode } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,17 @@ function fakeQueue(entries: QueueEntry[] = []): QueueStore & { added: QueueDraft
           status: 'pending' as const,
         })),
       ];
+    },
+    get(id: string): QueueEntry | undefined {
+      return [
+        ...entries,
+        ...added.map((e, i) => ({
+          ...e,
+          id: `qe-${i + 1}`,
+          created: new Date().toISOString(),
+          status: 'pending' as const,
+        })),
+      ].find((e) => e.id === id);
     },
     draw(_mode: Mode): QueueEntry | null { return null; },
     markAsked(_id: string): void {},
@@ -372,5 +384,59 @@ describe('validateMirrorQuestion', () => {
     const result = await composeLineageMirror(claim, lineage, complete);
     expect(result).not.toBeNull();
     expect(result).not.toMatch(/why have you/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Restart survival: the Q-83 one-mirror-per-claim dedupe reads
+// `e.lineageMirror` back from DISK. Before Wave A1 the field was never
+// serialized (OPTIONAL_ENTRY_FIELDS omitted it), so a fresh store over the
+// same root saw no mirror and the sweep re-minted every run.
+// ---------------------------------------------------------------------------
+
+describe('runLineageMirrorSweep restart survival', () => {
+  test('a fresh store over the same root does not re-mint for a claim that already has a mirror', async () => {
+    const now = Date.now();
+    const fortyDaysAgo = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
+
+    const root = mkdtempSync(join(tmpdir(), 'elicit-lm-restart-'));
+    // Two real sittings — the lineage the license predicate needs.
+    writeTranscript(root, 'sess-1', '2026-06-01T12:00:00Z');
+    writeTranscript(root, 'sess-2', '2026-06-15T12:00:00Z');
+
+    const claim = {
+      id: 'claim-1',
+      body: 'I write every day.',
+      created: fortyDaysAgo,
+      updated: fortyDaysAgo,
+    };
+    const question = 'You wrote this claim forty days ago. Two sittings have followed. Still true?';
+
+    const sweepFor = (queue: QueueStore) => {
+      const { log } = collectorLog();
+      return runLineageMirrorSweep({
+        vaultRoot: root,
+        listClaims: () => [claim],
+        complete: makeScriptedComplete([question]),
+        queue,
+        log,
+      });
+    };
+
+    // Run one: minted into a REAL store, so the mirror field lands on disk.
+    const first = await sweepFor(createQueueStore(root))();
+    expect(first.minted).toBe(1);
+
+    // The lineageMirror actually persisted — this is what the dedupe keys on.
+    const persisted = createQueueStore(root).list();
+    expect(
+      persisted.some((e) => e.source === 'lineage-mirror' && e.lineageMirror?.claimId === claim.id),
+    ).toBe(true);
+
+    // Run two: a FRESH store instance over the same root (a restart). The
+    // dedupe must read the persisted lineageMirror and block the re-mint.
+    const second = await sweepFor(createQueueStore(root))();
+    expect(second.evaluated).toBe(0);
+    expect(second.minted).toBe(0);
   });
 });

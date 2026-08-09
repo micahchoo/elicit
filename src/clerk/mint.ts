@@ -27,6 +27,7 @@
 
 import type { Complete, Facet, Reading, Snippet, Turn } from '../types.js';
 import { FACETS } from '../queue/facet-balance.js';
+import { citeParts } from '../wiki/status.js';
 import { stripFences } from './compose-gate.js';
 import {
   assertUserTurn,
@@ -203,7 +204,7 @@ function citedSnippets(r: Reading, snippets: Record<string, Snippet>): Snippet[]
   const out: Snippet[] = [];
   const seen = new Set<string>();
   for (const cite of r.cites) {
-    const id = splitCite(cite)?.id;
+    const id = citeParts(cite)?.snippetId;
     if (id === undefined || seen.has(id)) continue;
     seen.add(id);
     const s = snippets[id];
@@ -223,16 +224,6 @@ function citedSnippets(r: Reading, snippets: Record<string, Snippet>): Snippet[]
 // Cites
 // ---------------------------------------------------------------------------
 
-/** `snippetId@version`. The id may hold anything but the final `@`. */
-function splitCite(cite: string): { id: string; version: number } | null {
-  const at = cite.lastIndexOf('@');
-  if (at <= 0 || at === cite.length - 1) return null;
-  const id = cite.slice(0, at);
-  const raw = cite.slice(at + 1);
-  if (!/^\d+$/.test(raw)) return null;
-  return { id, version: Number(raw) };
-}
-
 /**
  * Does this cite name a version that was actually written?
  *
@@ -245,9 +236,9 @@ function splitCite(cite: string): { id: string; version: number } | null {
  * world this module can see. T9 re-checks the survivors against the disk.
  */
 function citeResolves(cite: string, snippets: Record<string, Snippet>): boolean {
-  const parsed = splitCite(cite);
+  const parsed = citeParts(cite);
   if (!parsed) return false;
-  const s = snippets[parsed.id];
+  const s = snippets[parsed.snippetId];
   if (!s) return false;
   return parsed.version >= 1 && parsed.version <= s.version;
 }

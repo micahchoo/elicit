@@ -48,7 +48,7 @@ import { clean, dropCitedParagraphs, toTurns } from './body.js';
 import { ORPHAN_QUOTES } from './prior-ingest.js';
 import type { ImportCut, ImportRecord, RegionRecord } from './contract.js';
 import type { ImportStore } from './store.js';
-import { propose, SYSTEM_PROMPT } from '../harvester/harvester.js';
+import { propose, SYSTEM_PROMPT, coerceAuthorshipStance } from '../harvester/harvester.js';
 import { isQuotedFromSource, quotedSpans } from '../harvester/admissibility.js';
 import type { Complete } from '../types.js';
 import type { LogFn } from '../wiki/contract.js';
@@ -170,12 +170,15 @@ export async function runImportExtraction(deps: ExtractionDeps): Promise<Extract
       // 6. The authorship guard (seeding Task 7). The prompt clause shapes;
       // this enforces, whatever the model returned: a region declared not
       // the person's may not carry `stance: 'avowal'` — the words were KEPT,
-      // not held, and an avowal asserts the person holds the claim.
+      // not held, and an avowal asserts the person holds the claim. The rule
+      // itself lives in the harvester, which owns the STANCES vocabulary
+      // (coerceAuthorshipStance, Wave D F14); here it is applied to every cut.
       let coerced = 0;
-      if (region !== null && region.authorship !== 'authored') {
+      if (region !== null) {
         for (const c of cuts) {
-          if (c.stance === 'avowal') {
-            c.stance = 'report-of-fact';
+          const next = coerceAuthorshipStance(c.stance, region.authorship);
+          if (next !== c.stance) {
+            c.stance = next;
             coerced++;
           }
         }

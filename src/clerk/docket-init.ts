@@ -63,9 +63,9 @@ import {
  writeOutcomeCursor,
  readOutcomeCursor,
 } from '../wiki/store.js';
-import { THRESHOLDS } from '../wiki/thresholds.js';
+import { THRESHOLDS, readNumber } from '../wiki/thresholds.js';
 import { createRegistry } from '../wiki/registry.js';
-import { lexicalChannel, referentChannel, poolCandidates, type ClashChannel } from '../wiki/clash.js';
+import { isLive, lexicalChannel, referentChannel, poolCandidates, type ClashChannel } from '../wiki/clash.js';
 import {
  embeddingChannel,
  fileEmbeddingStore,
@@ -452,11 +452,11 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
      return Promise.resolve({ candidateCount: totalCandidates, scanned: totalScanned, minted: totalMinted });
     },
     // Ticket 112: the lineage mirror sweep (Q-83) — reads claims against
-    // lineage, shadow-first. Superseded claims are excluded: a claim no
-    // longer current has no divergence to probe.
+    // lineage, shadow-first. Archived and superseded claims are excluded: a
+    // claim no longer current has no divergence to probe.
     lineageMirrorSweep: runLineageMirrorSweep({
      vaultRoot: deps.vaultRoot,
-     listClaims: () => claimStore.loadSlice().claims.filter((c) => !c.supersededBy),
+     listClaims: () => claimStore.loadSlice().claims.filter(isLive),
      complete: clerkComplete,
      queue: deps.queue,
      log: (e) => appendEvent(deps.vaultRoot, e as ActivityEvent),
@@ -613,12 +613,8 @@ async function runImportJobsNow(): Promise<{ extracted: number; remaining: numbe
   * whether one more run's quota could not take them all.
   */
  function sweepWorkRemaining(): { pending: number; fresh: number; clipped: boolean } {
-  const backoff = typeof THRESHOLDS['sweep.attemptsBeforeBackoff'].value === 'number'
-   ? THRESHOLDS['sweep.attemptsBeforeBackoff'].value
-   : 0;
-  const quota = typeof THRESHOLDS['mint.callsPerRun'].value === 'number'
-   ? THRESHOLDS['mint.callsPerRun'].value
-   : 0;
+  const backoff = readNumber(THRESHOLDS['sweep.attemptsBeforeBackoff'], 0);
+  const quota = readNumber(THRESHOLDS['mint.callsPerRun'], 0);
   const swept = claimStore.sweptReadingIds();
   const attempts = claimStore.attemptCounts();
   const pending = Object.values(deps.vault.rebuildIndex().readings).filter((r) => !swept.has(r.id));

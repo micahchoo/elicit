@@ -100,6 +100,12 @@ function pickOpener(
  return bankDraw(bank);
 }
 
+/** A resolved opener: one of the three sources, in cascade order. */
+type ResolvedOpener =
+ | { kind: 'random'; draw: RandomizerDraw }
+ | { kind: 'queue'; draw: QueueEntry }
+ | { kind: 'bank'; opener: { text: string; questionForm: QuestionForm; source?: QuestionSource } };
+
 /**
  * The one opener cascade: requested shuffle first, then a queue draw (only
  * when the shuffle drew nothing), then a system randomizer offer (only when
@@ -114,13 +120,7 @@ function resolveOpener(
  },
  mode: Mode,
  bank: StarterQuestion[],
-):
- | { kind: 'random'; draw: RandomizerDraw }
- | { kind: 'queue'; draw: QueueEntry }
- | {
-  kind: 'bank';
-  opener: { text: string; questionForm: QuestionForm; source?: QuestionSource };
- } {
+): ResolvedOpener {
  const shuffled = deps.shuffleRequested ? (deps.randomizer?.('user') ?? null) : null;
  const queueDraw = shuffled ? null : deps.queue.draw(mode);
  const offered = shuffled || queueDraw ? null : (deps.randomizer?.('system') ?? null);
@@ -128,6 +128,50 @@ function resolveOpener(
  if (randomDraw) return { kind: 'random', draw: randomDraw };
  if (queueDraw) return { kind: 'queue', draw: queueDraw };
  return { kind: 'bank', opener: pickOpener(bank, mode.topic) };
+}
+
+/**
+ * The one resolved-opener → turn mapping: held as pendingOpener (greeting) or
+ * appended as the opening turn (pre-135), the random/queue/bank mapping with
+ * the deck questionSource and queue gap branches has a single home. Returns
+ * the full agent turn plus the queue entry id.
+ */
+function turnFromResolved(
+ resolved: ResolvedOpener,
+ started: string,
+): { turn: Turn & { questionForm: QuestionForm }; openQueueEntryId?: string } {
+ let openQueueEntryId: string | undefined;
+ let turn: Turn & { questionForm: QuestionForm };
+ if (resolved.kind === 'random') {
+  const draw = resolved.draw;
+  turn = {
+   role: 'agent',
+   text: draw.question,
+   at: started,
+   questionForm: draw.questionForm,
+   ...(draw.draw.kind === 'deck'
+    ? { questionSource: { channel: draw.draw.channel, blockId: draw.draw.blockId } }
+    : {}),
+  };
+ } else if (resolved.kind === 'queue') {
+  openQueueEntryId = resolved.draw.id;
+  turn = {
+   role: 'agent',
+   text: resolved.draw.question,
+   at: started,
+   questionForm: resolved.draw.questionForm,
+   ...(resolved.draw.gap ? { gap: resolved.draw.gap } : {}),
+  };
+ } else {
+  turn = {
+   role: 'agent',
+   text: resolved.opener.text,
+   at: started,
+   questionForm: resolved.opener.questionForm,
+   ...(resolved.opener.source ? { questionSource: resolved.opener.source } : {}),
+  };
+ }
+ return { turn, ...(openQueueEntryId ? { openQueueEntryId } : {}) };
 }
 
 export function startSession(
@@ -213,32 +257,13 @@ export function startSession(
 
   // Determine the opener but do NOT write it yet.
   const resolved = resolveOpener(deps, normalizedMode, bank);
-  let pendingOpener: SessionState['pendingOpener'];
-  let openQueueEntryId: string | undefined;
-
-  if (resolved.kind === 'random') {
-   const draw = resolved.draw;
-   pendingOpener = {
-    text: draw.question,
-    questionForm: draw.questionForm,
-    ...(draw.draw.kind === 'deck'
-     ? { questionSource: { channel: draw.draw.channel, blockId: draw.draw.blockId } }
-     : {}),
-   };
-  } else if (resolved.kind === 'queue') {
-   openQueueEntryId = resolved.draw.id;
-   pendingOpener = {
-    text: resolved.draw.question,
-    questionForm: resolved.draw.questionForm,
-    ...(resolved.draw.gap ? { gap: resolved.draw.gap } : {}),
-   };
-  } else {
-   pendingOpener = {
-    text: resolved.opener.text,
-    questionForm: resolved.opener.questionForm,
-    ...(resolved.opener.source ? { questionSource: resolved.opener.source } : {}),
-   };
-  }
+  const { turn, openQueueEntryId } = turnFromResolved(resolved, started);
+  const pendingOpener: SessionState['pendingOpener'] = {
+   text: turn.text,
+   questionForm: turn.questionForm,
+   ...(turn.questionSource ? { questionSource: turn.questionSource } : {}),
+   ...(turn.gap ? { gap: turn.gap } : {}),
+  };
 
   return {
    id,
@@ -264,43 +289,7 @@ export function startSession(
 
 // ── Pre-135 path: no greeting, opener fires first ──
 const resolved = resolveOpener(deps, normalizedMode, bank);
-let openerTurn: Turn;
-let openQueueEntryId: string | undefined;
-
-if (resolved.kind === 'random') {
- const draw = resolved.draw;
- openerTurn = {
-  role: 'agent',
-  text: draw.question,
-  at: started,
-  questionForm: draw.questionForm,
-  ...(draw.draw.kind === 'deck'
-   ? {
-    questionSource: {
-     channel: draw.draw.channel,
-     blockId: draw.draw.blockId,
-    },
-   }
-   : {}),
- };
-} else if (resolved.kind === 'queue') {
- openQueueEntryId = resolved.draw.id;
- openerTurn = {
-  role: 'agent',
-  text: resolved.draw.question,
-  at: started,
-  questionForm: resolved.draw.questionForm,
-  ...(resolved.draw.gap ? { gap: resolved.draw.gap } : {}),
- };
-} else {
- openerTurn = {
-  role: 'agent',
-  text: resolved.opener.text,
-  at: started,
-  questionForm: resolved.opener.questionForm,
-  ...(resolved.opener.source ? { questionSource: resolved.opener.source } : {}),
- };
-}
+const { turn: openerTurn, openQueueEntryId } = turnFromResolved(resolved, started);
 
 deps.vault.startTranscript(id, {
  mode: normalizedMode,
@@ -414,6 +403,11 @@ function closeDescent(s: SessionState, endedBy: SoundingEnd): Probe {
  return emitClosingDoor(s);
 }
 
+/** The question texts the agent has already asked this sitting — the guard reference set. */
+function askedTexts(s: SessionState): string[] {
+ return s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+}
+
 /**
  * The guard choke point. Every model-composed question passes here, whichever
  * priority produced it — juxtaposition and red-light follow-ups used to return
@@ -428,7 +422,7 @@ function guardQuestion(
  question: string,
  systemPrompt?: string,
 ): GuardVerdict {
- const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+ const asked = askedTexts(s);
  return checkQuestion(question, {
   asked,
   ...(systemPrompt !== undefined ? { systemPrompt } : {}),
@@ -558,7 +552,7 @@ export async function machineTurn(
   // by <verdict> guard — retrying'), so the helper logs nothing here.
   const verdict = guardComposed(
    q,
-   { asked: s.turns.filter((t) => t.role === 'agent').map((t) => t.text), systemPrompt: systemFor() },
+   { asked: askedTexts(s), systemPrompt: systemFor() },
    'Elicitor: machine question rejected by',
    () => {},
   ).verdict;
@@ -609,7 +603,7 @@ export async function machineTurn(
    return { kind: 'served', probe: emitProbe(s, out, def.questionForm, 'machine') };
   }
   if (retriesLeft <= 0) return { kind: 'fallthrough' };
-  const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+  const asked = askedTexts(s);
   const nextCorrection = verdict === 'emit-form'
    ? MACHINE_FORM_CORRECTION
    : guardCorrection(verdict, asked);
@@ -868,7 +862,7 @@ export async function userTurn(
  let verdict = guardQuestion(s, probeText, systemPrompt);
  if (verdict !== 'ok') {
   console.warn(`Elicitor: ${verdict} guard triggered — retrying`);
-  const asked = s.turns.filter((t) => t.role === 'agent').map((t) => t.text);
+  const asked = askedTexts(s);
   const guardedPrompt = `${systemPrompt}\n\n${guardCorrection(verdict, asked)}`;
   const retryResponse = await s.deps.complete(guardedPrompt, s.turns, {
    temperature: 0.8,
@@ -944,9 +938,9 @@ function drawFallback(s: SessionState): Probe | null {
 // Bank fallback. One shared bank draw (ticket 021): the weak-form filter
 // applies here too, and a weak question still beats no question — when the
 // filter empties the unused pool, the unfiltered pool serves.
-const unused = (s.bank ?? []).filter(
- (q) => !s.turns.some((t) => t.role === 'agent' && t.text === q.text),
-);
+const bank = s.bank ?? [];
+const used = usedStarters(s.turns, new Set(bank.map((q) => q.text)));
+const unused = pickUnusedBank(s, used);
 if (unused.length > 0) {
  const pick = bankDraw(unused);
  return emitProbe(s, pick.text, pick.questionForm, 'bank', {
@@ -955,6 +949,11 @@ if (unused.length > 0) {
 }
 
  return null;
+}
+
+/** The bank questions not yet asked or skipped this sitting — the shared unused pool for skip and fallback. */
+function pickUnusedBank(s: SessionState, used: Set<string>): StarterQuestion[] {
+ return (s.bank ?? []).filter((q) => !used.has(q.text));
 }
 
 /** Returns the set of bank question texts already used (asked or skipped) in this session. */
@@ -993,9 +992,8 @@ delete s.openQueueEntryId;
 delete s.machineLastServed;
 
  const bank = s.bank ?? [];
- const bankTexts = new Set(bank.map((q) => q.text));
- const used = usedStarters(s.turns, bankTexts);
- const available = bank.filter((st) => !used.has(st.text));
+ const used = usedStarters(s.turns, new Set(bank.map((q) => q.text)));
+ const available = pickUnusedBank(s, used);
 
  if (available.length === 0) return { kind: 'exhausted' };
 

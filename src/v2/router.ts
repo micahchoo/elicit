@@ -27,7 +27,7 @@
  */
 
 import { Hono, type Context } from 'hono';
-import type { CaptureChannel, HarvestDecision, QuestionForm } from '../types.js';
+import { CAPTURE_CHANNELS, type CaptureChannel, type HarvestDecision, type QuestionForm } from '../types.js';
 import type { ImportDecision } from '../import/contract.js';
 import type {
  ActRequest,
@@ -87,7 +87,6 @@ const SCOPES: readonly Scope[] = [
  'stt-status',
 ];
 
-const CHANNELS: readonly CaptureChannel[] = ['typed', 'spoken', 'pasted'];
 
 /** The verbs each context answers. `open` reports the list; `act` rejects anything off it. */
 const VERBS_BY_KIND: Record<ReKind, readonly VerbName[]> = {
@@ -388,7 +387,7 @@ export function createV2App(deps: V2Deps): Hono {
 
  function channelOf(raw: unknown): CaptureChannel | undefined {
   if (raw === undefined) return undefined;
-  if (typeof raw !== 'string' || !(CHANNELS as readonly string[]).includes(raw)) {
+  if (typeof raw !== 'string' || !(CAPTURE_CHANNELS as readonly string[]).includes(raw)) {
    throw new Fault('bad-request', `unknown channel "${String(raw)}"`);
   }
   return raw as CaptureChannel;

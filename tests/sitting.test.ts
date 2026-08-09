@@ -142,6 +142,7 @@ function fakeQueue(): QueueStore & { _entries: QueueEntry[] } {
       return entry;
     },
     list() { return [..._entries]; },
+    get(id: string): QueueEntry | undefined { return _entries.find((e) => e.id === id); },
     draw() { return null; },
     markAsked() {},
     markAnswered() {},

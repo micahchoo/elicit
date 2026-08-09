@@ -35,11 +35,11 @@
  */
 
 import { join } from 'node:path';
-import matter from 'gray-matter';
 
 import { appendLine, readLines } from '../jsonl.js';
 import type { QueueStore, Snippet, Vault } from '../types.js';
 import type { LogFn } from '../wiki/contract.js';
+import { readBud } from '../vault/buds.js';
 import { THRESHOLDS } from '../wiki/thresholds.js';
 
 /** The closed anaphor lexicon. The detector under-detects on purpose: a
@@ -240,17 +240,6 @@ function isDangler(s: Snippet): boolean {
  * naming the anaphor (Q-15: ordinary, never accusatory). No model call. */
 function questionFor(prose: string): string {
  return `"${prose}" — this opens by pointing at something; what was it pointing at?`;
-}
-
-/** The Bud a deferred dangler's question quotes. Null when it is gone —
- * the dangler stays deferred rather than guessed (Q-60). */
-function readBud(vaultRoot: string, budId: string): { fragment: string } | null {
- try {
-  const parsed = matter.read(join(vaultRoot, 'buds', `${budId}.md`));
-  return { fragment: parsed.content.trim() };
- } catch {
-  return null;
- }
 }
 
 function readRepairLedger(vaultRoot: string): LedgerLine[] {

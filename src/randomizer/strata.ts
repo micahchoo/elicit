@@ -38,9 +38,6 @@
  * material the day after they stop thinking about it.
  */
 
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import matter from 'gray-matter';
 import type { Index, Stratum } from '../types.js';
 import { readTranscripts } from '../vault/transcripts.js';
 import { daysBetween, type RandomizerThresholds } from './thresholds.js';

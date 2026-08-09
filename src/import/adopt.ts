@@ -36,6 +36,7 @@ import { isoDay } from './dating.js';
 import type { ImportStore } from './store.js';
 import { EXCLUDED, MANIFEST } from './prior-ingest.js';
 import type { LogFn } from '../wiki/contract.js';
+import { readTranscripts } from '../vault/transcripts.js';
 
 /** One refusal group from the one-off script: the name and why it stayed out. */
 export type ExcludedEntry = { slug: string; why: string };
@@ -165,24 +166,27 @@ function resolveExcluded(
 
 /** Adopt the kept `post-*` sittings: one accepted record per existing transcript. */
 function adoptAccepted(deps: AdoptDeps, unresolved: string[]): number {
-  const transcriptsDir = join(deps.vaultRoot, 'transcripts');
-  if (!existsSync(transcriptsDir)) return 0;
-  const names = readdirSync(transcriptsDir)
-    .filter((n) => n.startsWith('post-') && n.endsWith('.md'))
-    .sort();
+  // The vault read owner parses every transcript once (transcripts.ts): the
+  // protocol and started fields come from TranscriptMeta, not a second
+  // hand-rolled matter.read. The skip-reporting hook is the adopt seam for
+  // the adapter's tolerant skip — an unparseable post-* transcript used to
+  // throw out of the whole run (adopt's own matter() call was unwrapped);
+  // now it is REPORTED unresolved, never guessed, so the 'accepted +
+  // excluded' arithmetic cannot silently shrink by a file the adapter chose
+  // not to parse.
+  const transcripts = readTranscripts(deps.vaultRoot, (session) => {
+    if (session.startsWith('post-')) unresolved.push(session.slice('post-'.length));
+  }).filter((t) => t.session.startsWith('post-') && t.protocol === 'import');
 
   let accepted = 0;
-  for (const name of names) {
-    const parsed = matter(readFileSync(join(transcriptsDir, name), 'utf-8'));
-    if (parsed.data.protocol !== 'import') continue;
-
-    const slug = name.slice('post-'.length, -'.md'.length);
+  for (const t of transcripts) {
+    const slug = t.session.slice('post-'.length);
     const source = resolveSource(deps.folder, slug);
     if (source === null) {
       unresolved.push(slug); // logged, never guessed
       continue;
     }
-    const day = isoDay(parsed.data.started);
+    const day = isoDay(t.started);
     if (day === null) {
       unresolved.push(slug); // the sitting date is unreadable — never guessed
       continue;
@@ -196,7 +200,7 @@ function adoptAccepted(deps: AdoptDeps, unresolved: string[]): number {
       date: day,
       status: 'accepted',
       attempts: 0,
-      sessionId: name.slice(0, -'.md'.length),
+      sessionId: t.session,
     };
     deps.store.put(record);
     accepted++;

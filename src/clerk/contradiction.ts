@@ -42,9 +42,10 @@
  * endpoint that answered.
  */
 
-import type { Complete, QueueDraft, Reading, Snippet, Turn } from '../types.js';
+import type { Complete, QueueDraft, Reading, Snippet } from '../types.js';
 import type { Claim, ClashCandidate, ClashEvidence } from '../wiki/contract.js';
-import { assertUserTurn, capPrompt, fitPayload, readingTime } from '../wiki/contract.js';
+import { citeParts } from '../wiki/status.js';
+import { assertUserTurn, capPrompt, fitPayload, readingTime, userTurn } from '../wiki/contract.js';
 import {
  hasFirstPersonOutsideQuote,
  isInterrogative,
@@ -116,11 +117,6 @@ function clip(text: string, max: number): string {
  return text.length <= max ? text : text.slice(0, max);
 }
 
-/** One user turn, which is the only message shape a local endpoint answers. */
-function userTurn(text: string): Turn[] {
- return [{ role: 'user', text, at: '' }];
-}
-
 /**
  * Send one bounded prompt as a single user turn.
  *
@@ -152,16 +148,6 @@ function parseObject(raw: string): Record<string, unknown> | null {
 
 function asString(v: unknown): string | null {
  return typeof v === 'string' && v.length > 0 ? v : null;
-}
-
-/** Split `snippetId@version`. A ref that does not split names no snippet. */
-function parseRef(ref: string): { id: string; version: number } | null {
- const at = ref.lastIndexOf('@');
- if (at <= 0 || at === ref.length - 1) return null;
- const id = ref.slice(0, at);
- const version = Number(ref.slice(at + 1));
- if (!Number.isInteger(version)) return null;
- return { id, version };
 }
 
 // ---------------------------------------------------------------------------
@@ -520,8 +506,8 @@ export async function judgeConfirmation(
 function readingBlock(r: Reading, snippets: Record<string, Snippet>): string {
  const lines = [`ANSWER READING (${r.stance}): ${clip(r.reading, EXCERPT_CHARS)}`];
  for (const ref of r.cites) {
-  const parsedRef = parseRef(ref);
-  const snip = parsedRef ? snippets[parsedRef.id] : undefined;
+  const parsedRef = citeParts(ref);
+  const snip = parsedRef ? snippets[parsedRef.snippetId] : undefined;
   if (!snip) continue;
   lines.push(`  ${ref}: "${clip(snip.prose, EXCERPT_CHARS)}"`);
  }
@@ -576,8 +562,8 @@ function verifyEvidence(
  // 2. The quote is verbatim in the prose of the snippet the ref NAMES. A
  //    version we do not hold is a snippet we cannot check, and an unverifiable
  //    quote is the case this whole function exists for.
- const parsedRef = parseRef(snippetRef);
- const snip = parsedRef ? remeasure.snippets[parsedRef.id] : undefined;
+ const parsedRef = citeParts(snippetRef);
+ const snip = parsedRef ? remeasure.snippets[parsedRef.snippetId] : undefined;
  if (!parsedRef || !snip || snip.version !== parsedRef.version) {
   console.warn(`Contradiction: ${snippetRef} resolves to no supplied snippet — not confirmed`);
   return null;

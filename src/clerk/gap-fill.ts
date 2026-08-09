@@ -1,6 +1,7 @@
-import type { Vault, QueueStore, Bud, Reading, Snippet } from '../types.js';
+import type { Vault, QueueStore, Bud, Reading, Snippet, Index } from '../types.js';
 import { hasConstructPole } from './clause.js';
-import { distinctFieldKeys } from '../queue/queue.js';
+import { citeSnippetId } from '../wiki/status.js';
+import { runGapFillSweepCore, type GapFillCandidate } from '../ktg/sweep-core.js';
 
 // ── The gap-fill sweep (ticket 027) ──
 // Buds are a dead letter box: a capture the person never followed through
@@ -17,6 +18,11 @@ import { distinctFieldKeys } from '../queue/queue.js';
 // is a Q-56 bound like ANNOTATION_RUN_CAP in docket.ts — it bounds what one
 // run may MINT, combined across both sweeps, and Buds are processed first:
 // the dead-letter box comes first.
+//
+// The mechanics — the queue dedupe (any status blocks re-minting), the cap
+// loop and the backlog counting — live in src/ktg/sweep-core.ts: each sweep
+// delegates to runGapFillSweepCore with its join key, and this module owns
+// the candidates, the templates and the summary logs (Wave B).
 //
 // ZERO-LLM: this module never references or receives the model call. Every
 // question is a template that embeds the person's own words verbatim (Q-12).
@@ -46,118 +52,66 @@ export async function runGapFillSweep(deps: {
  log: GapFillLog;
 }): Promise<{ minted: number; budQuestions: number; constructQuestions: number }> {
  const index = deps.vault.rebuildIndex();
-
- let minted = 0;
- let budQuestions = 0;
- let constructQuestions = 0;
- let clipped = 0;
-
- // The queue is the single memory of what has been offered (Q-39), so it
- // is read ONCE and kept in memory as two dedupe sets, updated as this run
- // mints: an entry minted earlier in THIS run blocks a later candidate
- // exactly like one minted in a previous run, without re-reading the queue
- // directory per candidate.
- const held = deps.queue.list({ source: 'gap-fill' });
- const heldBuds = new Set(
-  held.filter((e) => e.bud !== undefined && e.failure !== undefined).map((e) => `${e.bud}\u0000${e.failure}`),
- );
- const heldSnippets = distinctFieldKeys(held, 'snippet');
+ const log = deps.log;
+ // One timestamp per run, shared by every log the sweep emits (the core's
+ // `now` and the pole gate's skip logs here in the generator).
+ const now = new Date().toISOString();
 
  // ── Sweep A — Buds, oldest captured first ──
- const buds = Object.values(index.buds).sort((a, b) => a.captured.localeCompare(b.captured));
- for (const bud of buds) {
-  for (const failure of bud.failures) {
-   // Ever-minted blocks, ANY status (pending/asked/deferred/expired/
-   // answered): an expired question is the person declining to develop the
-   // Bud — dormancy is signal (Q-24/Q-41/Q-72), so unlike lint's
-   // stale-citation re-mint, the sweep never re-offers; an answered
-   // question means the Bud matured.
-   if (heldBuds.has(`${bud.id}\u0000${failure}`)) {
-    continue;
-   }
-   if (minted >= GAPFILL_MINT_CAP_PER_RUN) {
-    // The cap bounds what this run mints (Q-56). The scan CONTINUES so the
-    // clip count is the true backlog the cap held back, not a flag.
-    clipped++;
-    continue;
-   }
-   deps.queue.add({
-    source: 'gap-fill',
-    license: 'CC0',
-    question: budQuestion(bud, failure),
-    questionForm: 'deliberative',
-    sharpness: 'weak',
-    horizon: 'session',
-    bud: bud.id,
-    failure,
-   });
-   heldBuds.add(`${bud.id}\u0000${failure}`);
-   minted++;
-   budQuestions++;
-  }
- }
+ // The core dedupes on the composite (bud, failure) join key and mints up
+ // to the run cap; countClipped keeps the scan running so the backlog the
+ // cap held back is counted, and sweep B takes what the cap left.
+ const budResult = runGapFillSweepCore(
+  {
+   nodeIds: [],
+   source: 'gap-fill',
+   pointerKeyFn: (entry) =>
+    entry.bud !== undefined && entry.failure !== undefined
+     ? `${entry.bud}\u0000${entry.failure}`
+     : undefined,
+   cap: GAPFILL_MINT_CAP_PER_RUN,
+   countClipped: true,
+   queue: deps.queue,
+   log,
+   now,
+  },
+  budCandidates(index),
+ );
 
  // ── Sweep B — half-Constructs, oldest readings first ──
- const constructReadings = Object.values(index.readings)
-  .filter((r) => r.facet === 'construct')
-  .sort((a, b) => {
-   const byAt = (a.at ?? '').localeCompare(b.at ?? '');
-   return byAt !== 0 ? byAt : firstCite(a).localeCompare(firstCite(b));
-  });
- for (const reading of constructReadings) {
-  // Resolve the reading's first cite ("snippetId@version") to the snippet
-  // by id — the CURRENT version from this rebuild.
-  const snippet = resolveFirstCite(reading, index.snippets);
-  if (snippet === null) continue;
-  // The pole gate (ticket 114, QR-1): 037 over-labels poetry, metaphor
-  // and observation as `construct`. A half-Construct needs a pole — a
-  // clause that can carry a contrast — or the opposite question mints on
-  // nothing. Shadow (Q-35): the skip log records the decision.
-  if (!hasConstructPole(snippet.prose)) {
-   deps.log({
-    at: new Date().toISOString(),
-    actor: 'clerk',
-    kind: 'gap-fill-pole-skip',
-    detail: `snippet=${snippet.id}`,
-    refs: [`${snippet.id}@${snippet.version}`],
-   });
-   continue;
-  }
-  // Dedupe on the snippet id, any status blocks: one contrast question per
-  // half-Construct, ever (ticket 027).
-  if (heldSnippets.has(snippet.id)) {
-   continue;
-  }
-  if (minted >= GAPFILL_MINT_CAP_PER_RUN) {
-   clipped++;
-   continue;
-  }
-  deps.queue.add({
+ // The core dedupes on the snippet id. The cap is what sweep A left: the
+ // run cap bounds BOTH sweeps together (Q-56), Buds first. The scan still
+ // runs at a zero cap so the pole-skip logs and the clip backlog stay true.
+ const constructResult = runGapFillSweepCore(
+  {
+   nodeIds: [],
    source: 'gap-fill',
-   license: 'CC0',
-   question: `"${snippet.prose}" — what is the opposite of this for you?`,
-   questionForm: 'deliberative',
-   sharpness: 'weak',
-   horizon: 'session',
-   snippet: snippet.id,
-   cites: [`${snippet.id}@${snippet.version}`],
-  });
-  heldSnippets.add(snippet.id);
-  minted++;
-  constructQuestions++;
- }
+   pointerKey: 'snippet',
+   cap: GAPFILL_MINT_CAP_PER_RUN - budResult.minted.length,
+   countClipped: true,
+   queue: deps.queue,
+   log,
+   now,
+  },
+  constructCandidates(index, log, now),
+ );
+
+ const minted = budResult.minted.length + constructResult.minted.length;
+ const budQuestions = budResult.minted.length;
+ const constructQuestions = constructResult.minted.length;
+ const clipped = budResult.clipped + constructResult.clipped;
 
  if (minted > 0) {
-  deps.log({
-   at: new Date().toISOString(),
+  log({
+   at: now,
    actor: 'clerk',
    kind: 'gap-fill-minted',
    detail: `minted=${minted} budQuestions=${budQuestions} constructQuestions=${constructQuestions}`,
   });
  }
  if (clipped > 0) {
-  deps.log({
-   at: new Date().toISOString(),
+  log({
+   at: now,
    actor: 'clerk',
    kind: 'gap-fill-clipped',
    detail: `cap=${GAPFILL_MINT_CAP_PER_RUN} clipped=${clipped}`,
@@ -165,6 +119,96 @@ export async function runGapFillSweep(deps: {
  }
 
  return { minted, budQuestions, constructQuestions };
+}
+
+/**
+ * Sweep A's candidate stream: one candidate per recorded Bud failure,
+ * oldest captured first. Every failure is eligible — a Bud is a dead
+ * letter box by construction; the core applies the join-key dedupe, the
+ * cap and the backlog counting.
+ */
+function budCandidates(
+ index: Index,
+): (status: ReadonlyMap<string, string>) => Generator<GapFillCandidate> {
+ return function* budCandidatesInner(
+  status: ReadonlyMap<string, string>,
+ ): Generator<GapFillCandidate> {
+  const buds = Object.values(index.buds).sort((a, b) => a.captured.localeCompare(b.captured));
+  for (const bud of buds) {
+   for (const failure of bud.failures) {
+    yield {
+     nodeId: `${bud.id}\u0000${failure}`,
+     draft: {
+      source: 'gap-fill',
+      license: 'CC0',
+      question: budQuestion(bud, failure),
+      questionForm: 'deliberative',
+      sharpness: 'weak',
+      horizon: 'session',
+      bud: bud.id,
+      failure,
+     },
+    };
+   }
+  }
+ };
+}
+
+/**
+ * Sweep B's candidate stream: one contrast candidate per half-Construct
+ * reading, oldest readings first. The QR-1 pole gate (ticket 114) is
+ * decided here — a half-Construct needs a pole, a clause that can carry a
+ * contrast, or the opposite question mints on nothing; the skip is
+ * shadow-logged (Q-35) and the reading is never offered.
+ */
+function constructCandidates(
+ index: Index,
+ log: GapFillLog,
+ now: string,
+): (status: ReadonlyMap<string, string>) => Generator<GapFillCandidate> {
+ return function* constructCandidatesInner(
+  status: ReadonlyMap<string, string>,
+ ): Generator<GapFillCandidate> {
+  const constructReadings = Object.values(index.readings)
+   .filter((r) => r.facet === 'construct')
+   .sort((a, b) => {
+    const byAt = (a.at ?? '').localeCompare(b.at ?? '');
+    return byAt !== 0 ? byAt : firstCite(a).localeCompare(firstCite(b));
+   });
+  for (const reading of constructReadings) {
+   // Resolve the reading's first cite ("snippetId@version") to the snippet
+   // by id — the CURRENT version from this rebuild.
+   const snippet = resolveFirstCite(reading, index.snippets);
+   if (snippet === null) continue;
+   // The pole gate (ticket 114, QR-1): 037 over-labels poetry, metaphor
+   // and observation as `construct`. A half-Construct needs a pole — a
+   // clause that can carry a contrast — or the opposite question mints on
+   // nothing. Shadow (Q-35): the skip log records the decision.
+   if (!hasConstructPole(snippet.prose)) {
+    log({
+     at: now,
+     actor: 'clerk',
+     kind: 'gap-fill-pole-skip',
+     detail: `snippet=${snippet.id}`,
+     refs: [`${snippet.id}@${snippet.version}`],
+    });
+    continue;
+   }
+   yield {
+    nodeId: snippet.id,
+    draft: {
+     source: 'gap-fill',
+     license: 'CC0',
+     question: `"${snippet.prose}" — what is the opposite of this for you?`,
+     questionForm: 'deliberative',
+     sharpness: 'weak',
+     horizon: 'session',
+     snippet: snippet.id,
+     cites: [`${snippet.id}@${snippet.version}`],
+    },
+   };
+  }
+ };
 }
 
 /**
@@ -197,7 +241,7 @@ function firstCite(r: Reading): string {
 function resolveFirstCite(r: Reading, snippets: Record<string, Snippet>): Snippet | null {
  const cite = firstCite(r);
  if (cite === '') return null;
- const snippetId = cite.split('@')[0] ?? '';
+ const snippetId = citeSnippetId(cite);
  const snippet = snippets[snippetId];
  return snippet ?? null;
 }

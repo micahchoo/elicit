@@ -17,17 +17,14 @@ import type { CaptureChannel, CutProposal, HarvestDecision } from '../src/types.
 import { lineageBlock } from './lineage.js';
 import { pasteTracker } from './paste-tracker.js';
 import { validTrim as validTrimRule } from './trim-validity.js';
-import type { WebDepsWithWait } from './deps.js';
+import type { WebDepsShell } from './deps.js';
 
 /** `POST /api/session/:id/harvest` — the buds the done screen shows. */
 interface HarvestResponse {
  buds: unknown[];
 }
 
-export interface HarvestDeps extends WebDepsWithWait {
- renderShell: () => void;
- clear: () => void;
- setScreen: (screen: string) => void;
+export interface HarvestDeps extends WebDepsShell {
  sessionId: () => string | null;
  proposals: () => CutProposal[];
  decisions: () => HarvestDecision[];

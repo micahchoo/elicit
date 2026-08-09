@@ -66,6 +66,7 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
    };
   },
   list: () => [],
+  get: () => undefined,
   draw: () => null,
   markAsked: () => { },
   markAnswered: () => { },
@@ -710,6 +711,7 @@ describe('guards', () => {
    _adds: [],
    add(draft) { this._adds.push({ question: draft.question }); return { ...draft, id: 'q', created: '', status: 'pending' as const }; },
    list: () => [],
+   get: () => undefined,
    draw: () => {
     queueDraws += 1;
     if (queueDraws === 1) return null;
@@ -1024,6 +1026,7 @@ describe('the open queue entry — which question the next turn answers (041)', 
   return {
    add: (draft) => ({ ...draft, id: 'added', created: '', status: 'pending' as const }),
    list: () => [],
+   get: () => undefined,
    draw: () => remaining.shift() ?? null,
    markAsked: () => { },
    markAnswered: (id) => { answered.push(id); },

@@ -9,29 +9,21 @@
  * Injection, not import: `el`, `api`, `navTo` and the rest are module-private
  * in main.ts (the import-review pattern). The piece's own "which piece is
  * current" state lives here too — the material screen hands it over with
- * setCurrentPieceId before navigating, and renderPiece takes it back.
+ * setCurrentPieceId before navigating, and renderPiece takes it back. The
+ * material screen (wave C) joins init-wired: its deps arrive via
+ * initMaterial at boot — the territory pattern — and the router calls
+ * renderMaterial() bare.
  */
 import { ulid } from 'ulid';
 import type { Snippet } from '../src/types.ts';
-import type { WebDepsShell, WebDepsWithWait } from './deps.js';
+import type { WebDepsCore, WebDepsShell, WebDepsWithWait } from './deps.js';
 import type { DictationOpts } from './dictation.js';
+import { readableDate } from './dates.js';
+import { showQuietError, WAIT_FAILED } from './wait.js';
 
 export interface PieceDeps extends WebDepsShell {
  /** The dictation wiring, shared with the exchange and mode surfaces (web/dictation.ts). */
  wireDictation: (opts: DictationOpts) => void;
-}
-
-const WAIT_FAILED = 'that did not go through — try again';
-
-/**
- * The quiet error line for this surface's own error renders (a failed
- * refresh, a refused mutation): the same class and default sentence the
- * seam's beginWait().failed() leaves. The wait machinery itself lives in
- * the seam now (WebDepsWithWait.beginWait); these are for catch blocks
- * with no wait in flight.
- */
-function showQuietError(el: WebDepsWithWait['el'], container: HTMLElement, message: string): void {
- container.append(el('p', { class: 'quiet-error' }, message));
 }
 
 /** The Piece being read, set by the material screen before navigation. */
@@ -189,7 +181,7 @@ export function renderPiece(deps: PieceDeps): void {
    const piece = await deps.api<PieceEnriched>(`/api/piece/${encodeURIComponent(pieceId)}`);
    paint(piece);
   } catch (e) {
-   showQuietError(deps.el, doc, 'the piece did not come through \u2014 try again');
+   showQuietError(doc, 'the piece did not come through \u2014 try again');
   }
  }
 
@@ -297,7 +289,7 @@ export function renderPiece(deps: PieceDeps): void {
          });
         } catch (e) {
          console.error(e);
-         showQuietError(deps.el, doc, WAIT_FAILED);
+         showQuietError(doc, WAIT_FAILED);
         }
         await refresh();
        })();
@@ -422,7 +414,7 @@ export function renderPiece(deps: PieceDeps): void {
     await deps.api(`/api/piece/${encodeURIComponent(pieceId)}/reorder`, { arrangement: aid, entries: next });
    } catch (e) {
     console.error(e);
-    showQuietError(deps.el, doc, WAIT_FAILED);
+    showQuietError(doc, WAIT_FAILED);
    }
    await refresh();
   })();
@@ -446,7 +438,7 @@ export function renderPiece(deps: PieceDeps): void {
     await deps.api(`/api/piece/${encodeURIComponent(pieceId)}/reorder`, { arrangement: aid, entries: next });
    } catch (e) {
     console.error(e);
-    showQuietError(deps.el, doc, WAIT_FAILED);
+    showQuietError(doc, WAIT_FAILED);
    }
    await refresh();
   })();
@@ -482,3 +474,188 @@ export function renderPiece(deps: PieceDeps): void {
   .then((piece) => { wait.done(); paint(piece); })
   .catch((e: unknown) => wait.failed(e));
 }
+
+
+/* ── the material screen: choosing what a Piece is made of ── */
+
+/** The material screen's deps, injected once at boot (web/deps.ts): the
+ *  same verbs renderPiece's seam carries, wired the territory way — the
+ *  router calls renderMaterial() bare. */
+export interface MaterialDeps {
+ surface: HTMLElement;
+ el: WebDepsCore['el'];
+ api: WebDepsCore['api'];
+ navTo: (screen: string) => void;
+ beginWait: WebDepsWithWait['beginWait'];
+ clear: () => void;
+ setScreen: (screen: string) => void;
+ renderShell: () => void;
+}
+
+let materialDeps: MaterialDeps | null = null;
+
+/** Wire the material screen's deps once at boot. */
+export function initMaterial(deps: MaterialDeps): void {
+ materialDeps = deps;
+}
+
+function wiredMaterial(): MaterialDeps {
+ const deps = materialDeps;
+ if (deps === null) {
+  throw new Error('material not initialized — call initMaterial before renderMaterial');
+ }
+ return deps;
+}
+
+export function renderMaterial() {
+ const d = wiredMaterial();
+ d.clear();
+ d.setScreen('material');
+ d.renderShell();
+
+ const div = d.el('div', { class: 'screen active material-surface' });
+
+ const nav = d.el('div', { class: 'material-nav' });
+ // One margin word, present only while at least one paragraph is lit.
+ const compose = d.el('button', { class: 'nav-link' }, 'compose');
+ compose.hidden = true;
+ nav.append(compose);
+ div.append(nav);
+
+ // The library's two tabs: the material stack and the dated piece lines.
+ const tabs = d.el('div', { class: 'library-tabs' });
+ const snippetsTab = d.el('button', { class: 'nav-link library-tab here' }, 'snippets');
+ const piecesTab = d.el('button', { class: 'nav-link library-tab' }, 'pieces');
+ snippetsTab.dataset.tab = 'snippets';
+ piecesTab.dataset.tab = 'pieces';
+ tabs.append(snippetsTab, ' \u00b7 ', piecesTab);
+ div.append(tabs);
+
+ const column = d.el('div', { class: 'material-column' });
+ div.append(column);
+ d.surface.append(div);
+
+ const selected = new Set<string>();
+
+ compose.addEventListener('click', () => {
+  const ids = [...selected];
+  if (ids.length === 0) return;
+  const wait = d.beginWait(column, 'stacking them\u2026');
+  d.api<PieceEnriched>('/api/piece', { snippets: ids })
+   .then((piece) => {
+    wait.done();
+    setCurrentPieceId(piece.id);
+    d.navTo('piece');
+   })
+   .catch((e: unknown) => wait.failed(e));
+ });
+
+ const wait = d.beginWait(column, 'reading\u2026');
+ (async () => {
+  try {
+   const [snippetsRes, piecesRes] = await Promise.all([
+    d.api<{ snippets: Snippet[] }>('/api/snippets'),
+    d.api<{ pieces: PieceLite[] }>('/api/pieces'),
+   ]);
+   wait.done();
+   paintMaterial(column, snippetsRes.snippets, piecesRes.pieces, selected, compose, tabs);
+  } catch (e) {
+   wait.failed(e);
+  }
+ })();
+}
+
+function paintMaterial(
+ column: HTMLElement,
+ snippets: Snippet[],
+ pieces: PieceLite[],
+ selected: Set<string>,
+ compose: HTMLButtonElement,
+ tabs: HTMLElement,
+) {
+ const d = wiredMaterial();
+ column.innerHTML = '';
+
+ // The snippets tab: the material as a stack — dated paragraphs, most
+ // recent first — under a filter that hides lines as you type. The server
+ // carries no sitting date here, so captured order stands in — a known
+ // presentational deviation, recorded by the driver; the load-bearing
+ // sitting order happens server-side at pinning time (Q-59).
+ const snippetsArea = d.el('div', { class: 'library-snippets' });
+ const filter = d.el('input', { class: 'library-filter', type: 'text', placeholder: 'filter your words\u2026' });
+ snippetsArea.append(filter);
+ const stacked = [...snippets].sort((a, b) => b.captured.localeCompare(a.captured));
+ const rows: { para: HTMLElement; prose: string }[] = [];
+ const list = d.el('div', { class: 'material-snippets' });
+ for (const s of stacked) {
+  const para = d.el('div', { class: 'material-snippet' });
+  para.append(
+   d.el('span', { class: 'material-date' }, readableDate(s.captured)),
+   d.el('p', { class: 'material-prose' }, s.prose),
+  );
+  if (selected.has(s.id)) para.classList.add('lit');
+  // Touching a paragraph lights it: ink goes dim to full, the way the
+  // harvest surface keeps a span by touching it (Q-58).
+  para.addEventListener('click', () => {
+   if (selected.has(s.id)) {
+    selected.delete(s.id);
+    para.classList.remove('lit');
+   } else {
+    selected.add(s.id);
+    para.classList.add('lit');
+   }
+   compose.hidden = selected.size === 0;
+   compose.textContent = `compose ${selected.size}`;
+  });
+  list.append(para);
+  rows.push({ para, prose: s.prose });
+ }
+ snippetsArea.append(
+  stacked.length === 0 ? d.el('p', { class: 'empty-msg' }, 'nothing here yet') : list,
+ );
+
+ // The pieces tab: dated lines, one per piece, with the first pin's
+ // opening words as a preview when it has any.
+ const piecesArea = d.el('div', { class: 'material-pieces' });
+ if (pieces.length === 0) {
+  piecesArea.append(d.el('p', { class: 'empty-msg' }, 'nothing here yet'));
+ } else {
+  for (const p of pieces) {
+   const firstPin = p.arrangement?.entries.find((e) => e.kind === 'pin');
+   const prose = firstPin?.kind === 'pin' ? firstPin.prose : undefined;
+   let text = readableDate(p.created);
+   if (prose) {
+    const preview = prose.replace(/\s+/g, ' ').trim();
+    text += ' \u2014 ' + (preview.length > 48 ? preview.slice(0, 48) + '\u2026' : preview);
+   }
+   const line = d.el('button', { class: 'nav-link material-piece-line' }, text);
+   line.addEventListener('click', () => {
+    setCurrentPieceId(p.id);
+    d.navTo('piece');
+   });
+   piecesArea.append(line);
+  }
+ }
+
+ // Both tabs stay rendered in the column, so the selection and the filter
+ // survive a switch; the tabs only move which region is visible.
+ column.append(snippetsArea);
+ column.append(piecesArea);
+ piecesArea.hidden = true;
+
+ const tabButtons = tabs.querySelectorAll<HTMLButtonElement>('.library-tab');
+ for (const btn of tabButtons) {
+  btn.addEventListener('click', () => {
+   for (const other of tabButtons) other.classList.remove('here');
+   btn.classList.add('here');
+   snippetsArea.hidden = btn.dataset.tab !== 'snippets';
+   piecesArea.hidden = btn.dataset.tab !== 'pieces';
+  });
+ }
+
+ filter.addEventListener('input', () => {
+  const q = filter.value.trim().toLowerCase();
+  for (const row of rows) row.para.hidden = q !== '' && !row.prose.toLowerCase().includes(q);
+ });
+}
+

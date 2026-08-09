@@ -18,6 +18,13 @@
  * wired, so a forgotten init is a loud failure, never a silent
  * global-document fallback.
  *
+ * Wave C co-locates the implementations with these declarations: the
+ * HTTP layer (api + the read-route rules) lives in web/client.ts, the
+ * shell verbs in web/shell.ts, the waiting machinery in web/wait.ts, the
+ * live refresh in web/live.ts, and the auth screens in web/auth.ts +
+ * web/unprompted.ts — each init-wired the territory way, so main.ts ends
+ * at the router and the seam objects it builds.
+ *
  * The shared primitive shapes come straight from main.ts's own helpers:
  * el(tag, attrs?, ...kids) and api<T>(path, body?, opts?) are the client's
  * two DOM/HTTP wrappers, injected so no split module ever touches document
@@ -50,6 +57,19 @@ export type NavOpts = {
   region?: string;
 };
 
+/**
+ * The api() options (web/client.ts, the one HTTP layer): an explicit
+ * method, the raw-response flag (the piece export's download), and
+ * rawBody — a non-JSON body sent as-is (the STT transcribe POST rides the
+ * one 401 rule through api() with a Float32Array buffer, never
+ * JSON-encoded).
+ */
+export type ApiOpts = {
+ method?: 'GET' | 'POST';
+ raw?: boolean;
+ rawBody?: BodyInit;
+};
+
 /** The DOM/HTTP/core-navigation verbs every split screen needs. */
 export interface WebDepsCore {
   main: HTMLElement;
@@ -58,11 +78,7 @@ export interface WebDepsCore {
     attrs?: Record<string, string>,
     ...kids: (string | Node)[]
   ) => HTMLElementTagNameMap[K];
-  api: <T>(
-    path: string,
-    body?: unknown,
-    opts?: { method?: 'GET' | 'POST'; raw?: boolean },
-  ) => Promise<T>;
+  api: <T>(path: string, body?: unknown, opts?: ApiOpts) => Promise<T>;
   navTo: (screen: string, opts?: NavOpts) => void;
   /** A bare text node — the sentence surfaces render text, never elements. */
   text: (content: string) => Text;
@@ -86,9 +102,10 @@ export interface WebDepsWithWait extends WebDepsCore {
 
 /**
  * The full-screen surfaces' layer: the shell verbs on top of the wait
- * layer. waiting, wiki and piece extend this and declare only their
- * module-specific verbs; reviews, mode, drm and harvest still declare the
- * shell verbs by hand beside WebDepsWithWait (their own surfaces' copies).
+ * layer. Every full-screen surface — waiting, wiki, piece, reviews, mode,
+ * drm, harvest, exchange — extends this and declares only its
+ * module-specific verbs; the shell verbs are one declaration here, with
+ * their implementation co-located in web/shell.ts (wave C).
  */
 export interface WebDepsShell extends WebDepsWithWait {
   renderShell: () => void;
@@ -143,9 +160,35 @@ export interface SessionState {
   setPhaseMeta: (meta: PhaseMetaLike | null) => void;
 }
 
-/** `POST /api/session/:id/end` and `/api/unprompted` — the session whose harvest runs behind the response (084). */
+/** `POST /api/session/:id/end` and `/api/unprompted` — the session whose harvest runs behind the response (084). The server answers both fields: `status` is 'harvesting' when the harvest runs behind the response, 'empty' when an empty sitting was deleted (145). */
 export interface EndResponse {
   sessionId: string;
+  status: 'empty' | 'harvesting';
+}
+
+/**
+ * The one /end → reviews hand-off: POST the end, park the session in the
+ * review queue, and navigate. `gateOnHarvesting` names the per-screen
+ * divergence as it works today — the exchange's two ends park the pending
+ * review from the response unconditionally, the DRM screen only when the
+ * harvest actually runs (status 'harvesting'). A failed end rethrows for
+ * the exchange's callers to handle; the DRM screen swallows it (the
+ * sitting is over either way) and navigates itself.
+ */
+export async function endAndGoToReviews(
+  api: WebDepsCore['api'],
+  sessionId: string,
+  setPendingReviewSession: (sessionId: string | null) => void,
+  navTo: WebDepsCore['navTo'],
+  opts: { gateOnHarvesting: boolean },
+): Promise<void> {
+  const res = await api<EndResponse>(`/api/session/${sessionId}/end`);
+  if (opts.gateOnHarvesting) {
+    if (res.status === 'harvesting') setPendingReviewSession(sessionId);
+  } else {
+    setPendingReviewSession(res.sessionId);
+  }
+  navTo('reviews');
 }
 
 /** `POST /api/import/scan` — counts, and every file that did not come in, and why. */

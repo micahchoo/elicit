@@ -63,6 +63,7 @@ function makeFakeQueue(): QueueStore & { _adds: QueueDraft[] } {
    };
   },
   list: () => [],
+  get: () => undefined,
   draw: () => null,
   markAsked: () => { },
   markAnswered: () => { },

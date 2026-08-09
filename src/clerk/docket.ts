@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type {
  Vault,
  QueueStore,
@@ -11,15 +9,22 @@ import type {
  QueueEntry,
 } from '../types.js';
 import type { SittingContext } from './composed.js';
-import { isExpeditionCandidate, isOtherMindsCandidate, composeOutcomeQuestion } from './composed.js';
+import { isExpeditionCandidate, isOtherMindsCandidate } from './composed.js';
 import { readSitting, sittingCache } from './sitting.js';
 import { stalePins } from '../piece/stale.js';
 import { isDormant } from '../piece/dormancy.js';
-import { THRESHOLDS } from '../wiki/thresholds.js';
+import { THRESHOLDS, readNumber } from '../wiki/thresholds.js';
+import { citeSnippetId } from '../wiki/status.js';
 import { cover } from '../memory/cover.js';
 import type { Piece, PieceStore } from '../piece/contract.js';
-import { annotateReferent, annotateIntentionHorizon } from './annotate.js';
-import type { AnnotationStore, AnnotationRecord } from './annotation-store.js';
+import { rotate, runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep } from './sweeps.js';
+
+// ── The sweep jobs (Wave B2) ──
+// The four self-contained jobs moved to sweeps.ts; re-exported here so the
+// boot wiring (docket-init.ts) and the test suite keep importing them from
+// './docket.js' unchanged. rotate is the shared rotation-cursor primitive
+// (ticket 075, ticket 106) the still-true job in this file also calls.
+export { runReferentAnnotations, runIntentionHorizonAnnotations, runOutcomeQuestions, runOneTimeTemplateSweep };
 
 // ── Structural types from cover.ts contract (Task 4c) ──
 // NOT imported — docket injects these structurally per the plan.
@@ -101,8 +106,7 @@ export async function runDormancySweep(deps: {
  snippets: () => Record<string, Snippet>;
  log: PieceLog;
 }): Promise<number> {
- const daysEntry = THRESHOLDS['piece.dormancyDays'];
- const days = typeof daysEntry.value === 'number' ? daysEntry.value : 45;
+ const days = readNumber(THRESHOLDS['piece.dormancyDays'], 45);
  const snippets = deps.snippets();
  const now = Date.now();
  let setDown = 0;
@@ -124,405 +128,6 @@ export async function runDormancySweep(deps: {
   deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'piece-set-down-auto', detail: `piece=${piece.id}` });
  }
  return setDown;
-}
-
-// ── The referent annotation job (ticket 074) ──
-// At most one model call per candidate snippet: annotateReferent names what
-// a dangling referent points at, or stays silent. Annotations are derived
-// agent prose — re-annotation overwrites, never appends — and a new snippet
-// version is new text, so a version-stale record is re-asked. Silence IS
-// persisted — a snippet the model already judged is never re-asked — but
-// the rendering shows nothing for it. The cap bounds model calls per run,
-// not successes.
-
-/** The most snippets one run may ask the model about (ticket 074). */
-const ANNOTATION_RUN_CAP = 5;
-
-/**
- * The referent annotation job (ticket 074): at most `cap` candidates,
- * newest captured first, each missing a record or carrying a version-stale
- * one. The stamp (model + modelAt) comes FROM annotateReferent's result —
- * the annotation is composed and stamped at the moment the answer is
- * accepted (Q-34); this job persists it as-is and never re-stamps. A model
- * failure is a counted failure, never a silence (the annotation module
- * throws rather than confusing the two, and this job records the throw).
- */
-export async function runReferentAnnotations(deps: {
- snippets: () => Record<string, Snippet>;
- annotations: AnnotationStore;
- complete: Complete;
- modelName: string;
- log: PieceLog;
- cap?: number;
-}): Promise<{ annotated: number; silent: number; failed: number }> {
- const cap = deps.cap ?? ANNOTATION_RUN_CAP;
- const candidates = Object.values(deps.snippets())
-  .sort((a, b) => b.captured.localeCompare(a.captured))
-  .filter((s) => {
-   const rec = deps.annotations.get(s.id);
-   return rec === null || rec.version !== s.version;
-  });
- let annotated = 0;
- let silent = 0;
- let failed = 0;
- for (const snippet of candidates.slice(0, cap)) {
-  try {
-   const result = await annotateReferent({ snippet, model: deps.modelName }, deps.complete);
-   if (result.kind === 'annotation') {
-    deps.annotations.put({
-     kind: 'annotation',
-     snippetId: result.annotation.snippetId,
-     version: result.annotation.version,
-     expression: result.annotation.expression,
-     referent: result.annotation.referent,
-     model: result.annotation.model,
-     modelAt: result.annotation.modelAt,
-    });
-    annotated++;
-   } else {
-    deps.annotations.put({
-     kind: 'silence',
-     snippetId: snippet.id,
-     version: snippet.version,
-     model: deps.modelName,
-     modelAt: new Date().toISOString(),
-    });
-    silent++;
-   }
-  } catch (err) {
-   failed++;
-   deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'referent-annotation-failed', detail: `annotateReferent for snippet ${snippet.id} failed: ${String(err)}` });
-  }
- }
- deps.log({ at: new Date().toISOString(), actor: 'clerk', kind: 'referent-annotated', detail: `annotated=${annotated} silent=${silent} failed=${failed}` });
- return { annotated, silent, failed };
-}
-
-// ── The intention-horizon annotation job (ticket 106) ──
-// At most one model call per intention-facet snippet: the model reads the
-// prose and extracts the horizon — when the person expected the intention
-// to materialize. An ambiguous timeline becomes a dating question (the
-// Anchor rule), never a guess. The cap bounds model calls per run, not
-// successes. Silence IS persisted: a snippet the model already read is
-// never re-asked, unless the snippet version has changed.
-
-const HORIZON_RUN_CAP = 3;
-
-export async function runIntentionHorizonAnnotations(deps: {
-  vault: Vault;
-  annotations: AnnotationStore;
-  complete: Complete;
-  modelName: string;
-  queue: QueueStore;
-  log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
-}): Promise<{ annotated: number; silent: number; ambiguous: number; failed: number }> {
-  const cap = HORIZON_RUN_CAP;
-  const ts = () => new Date().toISOString();
-  const { snippets, readings } = deps.vault.rebuildIndex();
-  const allSnippets = Object.values(snippets);
-
-  // Find snippets that carry an intention-facet reading
-  const intentionIds = new Set<string>();
-  for (const r of Object.values(readings)) {
-    if (r.facet === 'intention' && r.cites.length > 0) {
-      for (const cite of r.cites) {
-        const [snippetId] = cite.split('@');
-        if (snippetId) intentionIds.add(snippetId);
-      }
-    }
-  }
-
-  const candidates = allSnippets
-    .filter((s) => intentionIds.has(s.id))
-    .sort((a, b) => b.captured.localeCompare(a.captured));
-
-  let annotated = 0;
-  let silent = 0;
-  let ambiguous = 0;
-  let failed = 0;
-
-  for (const snippet of candidates.slice(0, cap)) {
-    try {
-      // Check for existing annotation — version-gated, re-ask on new
-      // version. The ambiguous verdict (a dating question was minted) counts
-      // as annotated: re-asking the same snippet every run is the bug the
-      // stored verdict fixes.
-      const existing = deps.annotations.get(snippet.id, 'intention-horizon')
-        ?? deps.annotations.get(snippet.id, 'intention-horizon-ambiguous');
-      if (existing && existing.version === snippet.version) {
-        silent++;
-        continue;
-      }
-
-      const result = await annotateIntentionHorizon(snippet, deps.modelName, deps.complete);
-
-      if (result.kind === 'horizon') {
-        deps.annotations.put({
-          kind: 'intention-horizon',
-          snippetId: result.snippetId,
-          version: result.version,
-          horizon: result.horizon,
-          model: result.model,
-          modelAt: result.modelAt,
-        });
-        annotated++;
-      } else {
-        // Ambiguous horizon — mint a dating question. The verdict is ALSO
-        // stored (kind 'intention-horizon-ambiguous') so the version-gated
-        // check above sees this snippet next run — without the record, the
-        // same snippet is re-annotated and re-asked every docket run.
-        deps.queue.add({
-          source: 'composed',
-          license: 'CC0',
-          question: result.datingQuestion,
-          questionForm: 'deliberative',
-          cites: [`${result.snippetId}@${result.version}`],
-          sharpness: 'weak',
-          horizon: 'session',
-        });
-        deps.annotations.put({
-          kind: 'intention-horizon-ambiguous',
-          snippetId: result.snippetId,
-          version: result.version,
-          datingQuestion: result.datingQuestion,
-          model: result.model,
-          modelAt: result.modelAt,
-        });
-        ambiguous++;
-        deps.log({
-          at: ts(), actor: 'clerk', kind: 'intention-horizon-ambiguous',
-          detail: `ambiguous=1 snippet=${result.snippetId}`,
-          refs: [`${result.snippetId}@${result.version}`],
-        });
-      }
-    } catch (err) {
-      failed++;
-      deps.log({ at: ts(), actor: 'clerk', kind: 'intention-horizon-failed', detail: String(err) });
-    }
-  }
-
-  deps.log({
-    at: ts(), actor: 'clerk', kind: 'intention-horizon-annotated',
-    detail: `annotated=${annotated} silent=${silent} failed=${failed}`,
-  });
-  return { annotated, silent, ambiguous, failed };
-}
-
-// ── Outcome question job (ticket 106) ──
-// Scans intention-horizon annotations for past-horizon intentions and mints
-// outcome questions. Caps at 2 per run with a rotation cursor; ever-minted
-// dedupe through the queue so an expired outcome never re-offers (dormancy is
-// signal). The horizon-past check compares the annotation's modelAt to the
-// horizon's expected elapsed time.
-
-const OUTCOME_RUN_CAP = 2;
-
-/** Milliseconds after which a horizon is considered past (annotation time → now). */
-function isHorizonPast(horizon: 'now' | 'session' | 'days', modelAt: string): boolean {
-  const annotated = Date.parse(modelAt);
-  if (Number.isNaN(annotated)) return false;
-  const elapsed = Date.now() - annotated;
-  const HOUR = 60 * 60 * 1000;
-  const DAY = 24 * HOUR;
-  switch (horizon) {
-    case 'now': return elapsed > HOUR;       // the present moment has passed
-    case 'session': return elapsed > DAY;    // the session is over
-    case 'days': return elapsed > 7 * DAY;   // the coming days have passed
-  }
-}
-
-export async function runOutcomeQuestions(deps: {
-  annotations: AnnotationStore;
-  queue: QueueStore;
-  complete: Complete;
-  vault: Vault;
-  log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
-  sittingOf?: (root: string, session: string) => SittingContext;
-  vaultRoot: string;
-  outcomeCursor?: { read: () => number; write: (offset: number) => void };
-}): Promise<{ minted: number }> {
-  const cap = OUTCOME_RUN_CAP;
-  const ts = () => new Date().toISOString();
-
-  const horizonRecords = deps.annotations.list('intention-horizon')
-    .filter((r): r is AnnotationRecord & { kind: 'intention-horizon' } => r.kind === 'intention-horizon');
-
-  if (horizonRecords.length === 0) return { minted: 0 };
-
-  // Filter to past-horizon intentions
-  const pastHorizons = horizonRecords.filter((r) => isHorizonPast(r.horizon, r.modelAt));
-  if (pastHorizons.length === 0) return { minted: 0 };
-
-  // Ever-minted dedupe: find every snippet already cited by an outcome question
-  const allEntries = deps.queue.list();
-  const outcomeCited = new Set<string>();
-  for (const e of allEntries) {
-    if (e.source === 'outcome') {
-      for (const cite of e.cites ?? []) {
-        const [snippetId] = cite.split('@');
-        if (snippetId) outcomeCited.add(snippetId);
-      }
-    }
-  }
-
-  // Filter out already-minted
-  const eligible = pastHorizons.filter((r) => !outcomeCited.has(r.snippetId));
-  if (eligible.length === 0) return { minted: 0 };
-
-  // Rotation cursor — like still-true, advance past every candidate offered
-  const cursor = deps.outcomeCursor ?? { read: () => 0, write: () => {} };
-  const offset = cursor.read() % Math.max(1, eligible.length);
-  const candidates = Array.from(
-    { length: Math.min(cap, eligible.length) },
-    (_, i) => eligible[(offset + i) % eligible.length]!,
-  );
-
-  const allSnippets = Object.values(deps.vault.rebuildIndex().snippets);
-  const snippetMap = new Map(allSnippets.map((s) => [s.id, s]));
-  const sittingFor = sittingCache(deps.vaultRoot, deps.sittingOf ?? readSitting);
-
-  let minted = 0;
-  for (const rec of candidates) {
-    const snippet = snippetMap.get(rec.snippetId);
-    if (!snippet) continue;
-    try {
-      const draft = await composeOutcomeQuestion(
-        snippet, rec.horizon, deps.complete, sittingFor(snippet.provenance.session),
-      );
-      if (draft) {
-        deps.queue.add(draft);
-        minted++;
-      }
-    } catch (err) {
-      deps.log({ at: ts(), actor: 'clerk', kind: 'outcome-failed', detail: String(err) });
-    }
-  }
-
-  if (candidates.length > 0) {
-    cursor.write(offset + candidates.length);
-  }
-
-  const heldBack = eligible.length - candidates.length;
-  const logDetail = `${minted}`;
-  deps.log({ at: ts(), actor: 'clerk', kind: 'outcome-minted', detail: logDetail });
-  if (heldBack > 0) {
-    deps.log({
-      at: ts(), actor: 'clerk', kind: 'outcome-clipped',
-      detail: `cap=${cap} eligible=${eligible.length} clipped=${heldBack}`,
-    });
-  }
-  return { minted };
-}
-
-// ── The one-time template sweep (QR-6, ticket 114) ──
-// One cleanup, ever: template-generation questions that have outlived their
-// template — the half-Construct opposite mints (gap-fill with a snippet),
-// the still-true repeats, and composed questions wearing therapy-voice
-// assertion smuggling. Each expiry is logged to the Activity Log
-// (Q-23), and the sweep never mints anything: an expired entry keeps its
-// join keys on disk, and the gap-fill dedupe blocks on ANY status (Q-24,
-// Q-41, Q-72), so a re-mint from the same license instances is impossible
-// by construction. User-declared entries are never touched (Q-41: only a
-// question the person typed in by hand is theirs). The flag file makes the
-// whole thing run once, ever.
-
-/** The flag that makes the sweep one-time. Lives in the vault root. */
-const TEMPLATE_SWEEP_FLAG = '.template-sweep-done';
-
-/** Therapy-register phrases — the mechanical voice check, kept deliberately short. */
-const THERAPY_PHRASES = [
- 'hold space',
- 'truly welcome',
- 'fully welcome',
- 'tend to',
- 'let yourself',
- 'make space for',
- 'show up for',
- 'new path',
- 'aliveness',
- 'honor that',
- 'sitting with',
-] as const;
-
-/**
- * Presupposition-heavy openings that smuggle an assertion into the ask —
- * "when you…", "how long will you let…". One alone is not enough; the
- * conservatism gate below demands a therapy phrase beside it.
- */
-const ASSERTION_SMUGGLING_PREFIXES = ['when you', 'how long will you let'] as const;
-
-/**
- * Conservative therapy-voice check: two distinct therapy phrases, or one
- * phrase PLUS a presupposition-smuggling opening. A bare "when you…"
- * question with no therapy register is a perfectly good composed question
- * and survives — the sweep only expires what CLEARLY matches (QR-6).
- */
-function isTherapyVoiced(question: string): boolean {
- const q = question.toLowerCase();
- const hits = THERAPY_PHRASES.filter((p) => q.includes(p));
- if (hits.length >= 2) return true;
- return (
-  hits.length === 1 &&
-  ASSERTION_SMUGGLING_PREFIXES.some((p) => q.startsWith(p))
- );
-}
-
-/** What the one-time sweep expired, by category. */
-export type TemplateSweepCounts = {
- expired: number;
- oppositeMints: number;
- stillTrueRepeats: number;
- therapyVoiced: number;
-};
-
-/**
- * QR-6: the one-time template sweep. Expires every pending template
- * question the templates no longer deserve to be asked from — opposite
- * mints, still-true repeats and therapy-voiced composed entries — logs
- * each to the Activity Log and returns the counts by category. Never
- * expires a user-declared entry and never mints. A no-op (and a zero
- * report) once the flag file exists.
- */
-export async function runOneTimeTemplateSweep(deps: {
- queue: QueueStore;
- vaultRoot: string;
- log: (e: { at: string; actor: string; kind: string; detail: string; refs?: string[] }) => void;
-}): Promise<TemplateSweepCounts> {
- const flag = join(deps.vaultRoot, TEMPLATE_SWEEP_FLAG);
- if (existsSync(flag)) {
-  return { expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 };
- }
- const counts: TemplateSweepCounts = { expired: 0, oppositeMints: 0, stillTrueRepeats: 0, therapyVoiced: 0 };
- const at = new Date().toISOString();
- for (const entry of deps.queue.list({ status: 'pending' })) {
-  // The person's own questions are theirs, whatever the template said (Q-41).
-  if (entry.source === 'user-declared' || entry.source === 'gap-declared') continue;
-  let category: 'oppositeMints' | 'stillTrueRepeats' | 'therapyVoiced' | null = null;
-  if (entry.source === 'gap-fill' && entry.snippet !== undefined) {
-   category = 'oppositeMints';
-  } else if (entry.source === 'still-true') {
-   category = 'stillTrueRepeats';
-  } else if (entry.source === 'composed' && isTherapyVoiced(entry.question)) {
-   category = 'therapyVoiced';
-  }
-  if (category === null) continue;
-  deps.queue.markExpired(entry.id);
-  counts[category]++;
-  counts.expired++;
-  const excerpt =
-   entry.question.length > 60 ? `${entry.question.slice(0, 60)}…` : entry.question;
-  deps.log({
-   at,
-   actor: 'clerk',
-   kind: 'template-sweep-expired',
-   detail: `expired ${entry.source} ${entry.id}: ${excerpt}`,
-   refs: [entry.id],
-  });
- }
- // The flag lands only after the sweep succeeded, so a failed run retries.
- mkdirSync(deps.vaultRoot, { recursive: true });
- writeFileSync(flag, at, 'utf-8');
- return counts;
 }
 
 export async function runDocket(deps: {
@@ -834,7 +439,7 @@ shouldStop?: () => boolean;
   let summaryLines: string[] | undefined;
   if (sessions && deps.loadSummaries) {
    const summaries = deps.loadSummaries(deps.vaultRoot);
-   const tiles = cover(sessions, summaries, THRESHOLDS['opener.historyBudgetChars'].value as number);
+   const tiles = cover(sessions, summaries, readNumber(THRESHOLDS['opener.historyBudgetChars'], 0));
 
    const lines: string[] = [];
    const sLines: string[] = [];
@@ -859,7 +464,7 @@ shouldStop?: () => boolean;
    }
 
    // Cap: oldest lines drop first
-   const cap = THRESHOLDS['opener.historyBlockCap'].value as number;
+   const cap = readNumber(THRESHOLDS['opener.historyBlockCap'], 4000);
    let block = lines.join('\n');
    while (block.length > cap) {
     const idx = block.lastIndexOf('\n');
@@ -878,8 +483,7 @@ shouldStop?: () => boolean;
    const citedIds = new Set<string>();
    for (const e of allEntries) {
     for (const cite of e.cites ?? []) {
-     const [snippetId] = cite.split('@');
-     if (snippetId) citedIds.add(snippetId);
+     citedIds.add(citeSnippetId(cite));
     }
    }
 
@@ -952,11 +556,9 @@ shouldStop?: () => boolean;
   }
   // Rotate (ticket 075): take up to 2 old snippets starting at the cursor,
   // wrapping modulo, so consecutive runs propose different candidates even
-  // when the composer keeps refusing them.
+  // when the composer keeps refusing them. The advance-past-every-offered
+  // cursor semantics live in the shared rotate() helper (sweeps.ts).
   const cursor = deps.stillTrueCursor ?? DEFAULT_STILL_TRUE_CURSOR;
-  const offset = cursor.read();
-  // The modulo keeps the index inside a non-empty array, so the `!` is the
-  // narrowing noUncheckedIndexedAccess cannot see.
 
   // Order by citation thinness then age: snippets with FEWER readings
   // citing them (thinly evidenced) come first — the wiki wants
@@ -977,10 +579,7 @@ shouldStop?: () => boolean;
    return count * 1e14 + t;
   };
   oldSnippets.sort((a, b) => sortKey(a) - sortKey(b));
-  const stillTrueCandidates = Array.from(
-   { length: Math.min(2, oldSnippets.length) },
-   (_, i) => oldSnippets[(offset + i) % oldSnippets.length]!,
-  );
+  const stillTrueCandidates = rotate(cursor, oldSnippets, 2);
 
 
   for (const s of stillTrueCandidates) {
@@ -994,13 +593,7 @@ shouldStop?: () => boolean;
    );
    if (outcome === 'stopped') break;
   }
-  // Advance past every candidate OFFERED — whether composeStillTrue returned
-  // a draft, returned null, or threw. The advance-on-null is the whole fix
-  // for the wedge: the same two snippets were offered forever when the
-  // composer refused them.
-  if (stillTrueCandidates.length > 0) {
-   cursor.write(offset + stillTrueCandidates.length);
-  }
+
   deps.log({ at: ts(), actor: 'clerk', kind: 'still-true-minted', detail: `minted ${stillTrueCount} still-true` });
 
   // ── 4. Expire stale queue entries ──
@@ -1059,34 +652,54 @@ shouldStop?: () => boolean;
    }));
   }
 
+  /**
+   * The expedition twin (ticket 113): both expedition channels — the
+   * regular send-out and the other-minds fallback — share one loop
+   * skeleton: iterate every snippet, stop at the first candidate, and
+   * never mint more than one expedition per run. The differences are the
+   * four parameters: who counts as a candidate (and whether they name a
+   * person to ask), who composes, the log detail, and the run-level flag.
+   */
+  const mintExpedition = async (
+   candidate: (s: Snippet, allEntries: QueueEntry[]) => { eligible: boolean; person: string | undefined },
+   compose: (s: Snippet, person: string | undefined) => Promise<QueueDraft | null>,
+   detail: (s: Snippet) => string,
+   onMinted?: (draft: QueueDraft) => void,
+  ): Promise<void> => {
+   const allEntries = deps.queue.list();
+   for (const s of allSnippets) {
+    const c = candidate(s, allEntries);
+    if (!c.eligible) continue;
+    await mintOne(
+     s,
+     (sn) => compose(sn, c.person),
+     (draft) => {
+      const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
+       at: ts(),
+       actor: 'clerk',
+       kind: 'expedition-minted',
+       detail: detail(s),
+      };
+      if (draft.cites) logEvt.refs = draft.cites;
+      deps.log(logEvt);
+      onMinted?.(draft);
+     },
+     { kind: 'expedition-failed', detail: (_sn, err) => String(err) },
+    );
+    break; // At most ONE expedition per run
+   }
+  };
+
   // ── 6. Expedition minting: at most ONE per run ──
   let expeditionMinted = false;
   const composeExpedition = deps.composeExpedition;
   if (composeExpedition) {
-   await runJob('expedition-failed', async () => {
-    const allEntries = deps.queue.list();
-    for (const s of allSnippets) {
-     if (isExpeditionCandidate(s, allReadings, allEntries, allSnippets)) {
-      await mintOne(
-       s,
-       (sn) => composeExpedition(sn, deps.complete, sittingFor(sn.provenance.session)),
-       (draft) => {
-        const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
-         at: ts(),
-         actor: 'clerk',
-         kind: 'expedition-minted',
-         detail: `minted expedition from snippet ${s.id}`,
-        };
-        if (draft.cites) logEvt.refs = draft.cites;
-        deps.log(logEvt);
-        expeditionMinted = true;
-       },
-       { kind: 'expedition-failed', detail: (_sn, err) => String(err) },
-      );
-      break; // At most ONE expedition per run
-     }
-    }
-   });
+   await runJob('expedition-failed', () => mintExpedition(
+    (s, allEntries) => ({ eligible: isExpeditionCandidate(s, allReadings, allEntries, allSnippets), person: undefined }),
+    (sn) => composeExpedition(sn, deps.complete, sittingFor(sn.provenance.session)),
+    (s) => `minted expedition from snippet ${s.id}`,
+    () => { expeditionMinted = true; },
+   ));
   }
 
   // Other-minds fallback (ticket 113): the errand names a person to ask, but
@@ -1095,31 +708,14 @@ shouldStop?: () => boolean;
   const composeOtherMindsExpedition = deps.composeOtherMindsExpedition;
   const gazetteerStore = deps.gazetteerStore;
   if (!expeditionMinted && composeOtherMindsExpedition && gazetteerStore) {
-   await runJob('expedition-failed', async () => {
-    const allEntries = deps.queue.list();
-    for (const s of allSnippets) {
-     const candidate = isOtherMindsCandidate(s, allReadings, allEntries, allSnippets, gazetteerStore);
-     if (candidate.eligible && candidate.person) {
-     const person = candidate.person;
-      await mintOne(
-       s,
-       (sn) => composeOtherMindsExpedition(sn, deps.complete, person, sittingFor(sn.provenance.session)),
-       (draft) => {
-        const logEvt: { at: string; actor: string; kind: string; detail: string; refs?: string[] } = {
-         at: ts(),
-         actor: 'clerk',
-         kind: 'expedition-minted',
-         detail: `minted other-minds expedition from snippet ${s.id}`,
-        };
-        if (draft.cites) logEvt.refs = draft.cites;
-        deps.log(logEvt);
-       },
-       { kind: 'expedition-failed', detail: (_sn, err) => String(err) },
-      );
-      break; // At most ONE expedition per run
-     }
-    }
-   });
+   await runJob('expedition-failed', () => mintExpedition(
+    (s, allEntries) => {
+     const c = isOtherMindsCandidate(s, allReadings, allEntries, allSnippets, gazetteerStore);
+     return { eligible: c.eligible && Boolean(c.person), person: c.person };
+    },
+    (sn, person) => composeOtherMindsExpedition(sn, deps.complete, person!, sittingFor(sn.provenance.session)),
+    (s) => `minted other-minds expedition from snippet ${s.id}`,
+   ));
   }
 
   // ── 7. Referent annotations (ticket 074): newest snippets first ──

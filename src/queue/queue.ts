@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ulid } from 'ulid';
 import matter from 'gray-matter';
-import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet } from '../types.js';
+import type { QueueStore, QueueEntry, QueueDraft, Mode, Facet, Target } from '../types.js';
 import { appendEvent } from '../log/activity.js';
 import type { EventKind } from '../log/kinds.js';
 import { elideDisfluencies } from '../language/disfluency.js';
@@ -10,13 +10,10 @@ import { EngagementLedger } from './engagement.js';
 import { ENERGY_LEVEL } from './mode-needs.js';
 import { contentWordsOf } from '../index/lexical.js';
 import {
- applyFacetBalance,
- facetBalanceIsLive,
  FACETS,
+ facetBalancedPool,
  formatDistribution,
- readVaultFacetDistribution,
  sessionBlueprint,
- underRepresented,
  type FacetDistribution,
 } from './facet-balance.js';
 import { citeParts } from '../wiki/status.js';
@@ -46,6 +43,42 @@ export function distinctFieldKeys<K extends keyof QueueEntry>(
     else if (typeof v === 'number') out.add(String(v));
   }
   return out as Set<NonNullable<QueueEntry[K]> extends string | number ? string : never>;
+}
+/**
+ * The parked-pointer draft shape the park modules mint: a question that
+ * POINTS at a parked record rather than asking anything new (Q-45),
+ * licensed 'user', deliberately weak and session-horizon so the draw
+ * never prefers it, with the record-naming field (`soundingId`,
+ * `machineId`, `drmId`) attached. The kinds stay the park modules' own
+ * consts (the draw's 'sounding' filter reads them through
+ * DEFAULT_PARKED_POINTER_KINDS); this helper only shapes the draft, so a
+ * new park source is one kind constant plus one call and the copies
+ * cannot drift apart.
+ */
+export function parkPointer(
+ queue: QueueStore,
+ p: {
+  kind: QueueEntry['source'];
+  question: string;
+  /** The record-naming field, e.g. `{ soundingId: ladder.id }` — the parked record is the truth (Q-3), the pointer only points. */
+  idField: Record<string, string>;
+  /** Extra pointer fields beyond the shared shape (e.g. `machineProtocol`, which survives a corrupt record). */
+  extraFields?: Record<string, unknown>;
+  /** The sitting target, carried only when the park knows it. */
+  target?: Target;
+ },
+): QueueEntry {
+ return queue.add({
+  source: p.kind,
+  license: 'user',
+  question: p.question,
+  questionForm: 'deliberative',
+  sharpness: 'weak',
+  horizon: 'session',
+  ...p.idField,
+  ...(p.extraFields ? p.extraFields : {}),
+  ...(p.target ? { target: p.target } : {}),
+ });
 }
 
 /**
@@ -102,6 +135,18 @@ const SESSION_BLUEPRINT_SLOTS = 6;
 function pickTopK(pool: QueueEntry[], k = 3): QueueEntry {
  const top = pool.slice(0, k);
  return top[Math.floor(Math.random() * top.length)]!;
+}
+/**
+ * The thread a queue entry belongs to: the snippet its FIRST cite names.
+ * Ticket 148's per-thread deferral keys on it — the draw's
+ * deferred-thread filter and #deferThreadAfterStrikes both need the same
+ * `cites[0]` → citeParts → snippetId chain, and they must never drift
+ * apart.
+ */
+function threadKeyOf(entry: QueueEntry): string | undefined {
+ const firstCite = entry.cites?.[0];
+ if (!firstCite) return undefined;
+ return citeParts(firstCite)?.snippetId;
 }
 
 /** A hard filter, named as the ladder's log lines say it. */
@@ -243,7 +288,7 @@ type OptionalEntryKey = {
  [K in keyof QueueEntry]-?: undefined extends QueueEntry[K] ? K : never;
 }[keyof QueueEntry];
 
-const OPTIONAL_ENTRY_FIELDS = [
+export const OPTIONAL_ENTRY_FIELDS = [
  // Absent until `markAnswered` writes it. Its absence is the uptake
  // signal's "not yet", never a zero (ticket 041).
  'answeredAt',
@@ -277,6 +322,24 @@ const OPTIONAL_ENTRY_FIELDS = [
  'targetFacet',
  'modeNeeds',
  'direction',
+ // The other-minds expedition this entry carries (ticket 113): the errand
+ // kind and the named person. Draft provenance persisted for restart
+ // fidelity — the type declares them, so the serialization list must
+ // match the type; without the read-back the errand re-mints after a
+ // restart.
+ 'errandKind',
+ 'errandPerson',
+ // The derivation pattern that composed this question (ticket 111, Q-81):
+ // the pattern id, the element refs it recombined, and the operators it
+ // applied. Draft provenance persisted for restart fidelity — the type
+ // declares them, so the serialization list must match the type.
+ 'patternId',
+ 'derivedFrom',
+ 'operatorsUsed',
+ // The lineage evidence that licensed this mirror question (Q-83). Read
+ // back because the one-mirror-question-per-claim dedupe keys on it
+ // across restarts — without it, the sweep re-mints every run.
+ 'lineageMirror',
  // The ladder a parked-sounding pointer names. Read back because the
  // resume route keys on it across restarts (Q-3: the ladder file is the
  // truth, the pointer only points).
@@ -447,6 +510,10 @@ add(draft: QueueDraft): QueueEntry {
   return entries;
  }
 
+ get(id: string): QueueEntry | undefined {
+  return this.#readOne(id) ?? undefined;
+ }
+
  /**
   * The degradation ladder (Q-55): the system drops its own inferences before
   * it drops the person's declarations, and when it runs out of inferences to
@@ -470,11 +537,9 @@ add(draft: QueueDraft): QueueEntry {
   // Ticket 148: skip entries from deferred threads
   const drawPool = this.#deferredSnippets.size > 0
     ? all.filter(e => {
-        const fc = e.cites?.[0];
-        if (!fc) return true;
-        const first = citeParts(fc);
-        if (!first) return true;
-        return !this.#deferredSnippets.has(first.snippetId);
+        const threadKey = threadKeyOf(e);
+        if (!threadKey) return true;
+        return !this.#deferredSnippets.has(threadKey);
       })
     : all;
 
@@ -509,10 +574,7 @@ add(draft: QueueDraft): QueueEntry {
   // the top-k pick so chance runs inside the constraints (Q-13), and running
   // in shadow until its log earns it the right to act (Q-35). It narrows
   // what the Target filter already left; the two compose, in that order.
-  const dist = readVaultFacetDistribution(this.#root);
-  const wanted = underRepresented(dist);
-  const balanced = applyFacetBalance(candidates, wanted);
-  const live = facetBalanceIsLive(process.env);
+  const fb = facetBalancedPool(candidates, { root: this.#root, env: process.env });
 
   // Rung 1 of the ladder: the facet filter wanted this pool empty and stood
   // down instead. It is the system's inference about corpus shape, so it is
@@ -520,23 +582,23 @@ add(draft: QueueDraft): QueueEntry {
   // which is why this rung is a log line rather than a branch. A corpus that
   // owes every Facet owes none in particular; that stand-down is cold start,
   // not a rung, and the filter had no claim to drop.
-  if (!balanced.applied && wanted.size < FACETS.length) {
+  if (!fb.applied && fb.wanted.size < FACETS.length) {
    this.#logRung(1, 'facet-balance', candidates.length, []);
   }
 
   // Step 5: top-k (k=3), uniform random pick — once for the open pool, once
   // for the balanced pool, so the shadow log can name the road not taken.
   const openPick = pickTopK(candidates);
-  const balancedPick = balanced.applied ? pickTopK(balanced.kept) : null;
-  const picked = live && balancedPick ? balancedPick : openPick;
+  const balancedPick = fb.applied ? pickTopK(fb.kept) : null;
+  const picked = fb.live && balancedPick ? balancedPick : openPick;
 
   this.#logFacetBalance({
-   live,
-   dist,
-   wanted,
+   live: fb.live,
+   dist: fb.dist,
+   wanted: fb.wanted,
    poolSize: candidates.length,
-   keptSize: balanced.applied ? balanced.kept.length : candidates.length,
-   applied: balanced.applied,
+   keptSize: fb.applied ? fb.kept.length : candidates.length,
+   applied: fb.applied,
    openPick,
    balancedPick,
   });
@@ -812,11 +874,8 @@ add(draft: QueueDraft): QueueEntry {
   * never does, but a queue that DOES re-serve a thread still deserves it.
   */
  #deferThreadAfterStrikes(entry: QueueEntry, hasOverlap: boolean): boolean {
-   const firstCite = entry.cites?.[0];
-   if (!firstCite) return false;
-   const first = citeParts(firstCite);
-   if (!first) return false;
-   const threadKey = first.snippetId;
+   const threadKey = threadKeyOf(entry);
+   if (!threadKey) return false;
    if (hasOverlap) { this.#threadStrikes.set(threadKey, 0); return false; }
    const strikes = (this.#threadStrikes.get(threadKey) ?? 0) + 1;
    this.#threadStrikes.set(threadKey, strikes);
@@ -825,9 +884,7 @@ add(draft: QueueDraft): QueueEntry {
      const all = this.#readAll();
      for (const e of all) {
        if (e.status !== 'pending') continue;
-       const eCite = e.cites?.[0];
-       if (!eCite) continue;
-       if (citeParts(eCite)?.snippetId === threadKey) { e.status = 'deferred'; this.#write(e); }
+       if (threadKeyOf(e) === threadKey) { e.status = 'deferred'; this.#write(e); }
      }
      this.#append({ kind: 'thread-deferred', detail: `thread=${threadKey} strikes=${strikes}`, refs: [threadKey] });
      return true;

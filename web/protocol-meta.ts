@@ -57,3 +57,15 @@ export function protocolTitle(id: string): string {
  const row = protocolRows.find((p) => p.id === id);
  return row ? (row.title || row.name) : id;
 }
+
+/** Render a protocol-titled label that re-titles when the meta arrives
+ * (ticket 157): the initial textContent is the title (or the registry key
+ * while unknown), and the meta refresh re-renders it in place. The
+ * exchange's drm offer rides a suffix (its arrow). */
+export function protocolLabel(el: HTMLElement, id: string, suffix = ''): void {
+ const text = () => protocolTitle(id) + suffix;
+ el.textContent = text();
+ void ensureProtocolMeta().then(() => {
+  el.textContent = text();
+ });
+}

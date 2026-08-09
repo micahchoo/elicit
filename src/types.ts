@@ -2,7 +2,6 @@
 // Encode invariants from CONTEXT.md as visible type constraints
 
 import type { SemanticIndex } from './index/semantic.js';
-import type { DRMParkedState } from './drm/types.js';
 import type { PatternId, Operator } from './patterns/types.js';
 import type { MachineState } from './protocols/machine.js';
 
@@ -226,6 +225,14 @@ export type CutProposal = {
 
 /** How the words arrived at the box, when the client can tell (ticket 048). */
 export type CaptureChannel = 'typed' | 'spoken' | 'pasted';
+
+/** The channels a client may declare for a turn's arrival (ticket 048). */
+export const CAPTURE_CHANNELS: readonly CaptureChannel[] = ['typed', 'spoken', 'pasted'];
+
+/** Narrowing guard for a capture channel value sent by the client. */
+export function isCaptureChannel(v: unknown): v is CaptureChannel {
+ return (CAPTURE_CHANNELS as readonly unknown[]).includes(v);
+}
 
 export type HarvestDecision = {
  /** Index into the proposals array */
@@ -586,6 +593,12 @@ export type QueueDraft = Omit<QueueEntry, 'id' | 'created' | 'status'>;
 export interface QueueStore {
  add(e: QueueDraft): QueueEntry;
  list(filter?: { status?: QueueEntry['status']; source?: QueueEntry['source'] }): QueueEntry[];
+
+ /**
+  * One entry by id, or undefined when nothing reads back with that id.
+  * The routes' `list().find(...)` 404 guard, as a store read (F9).
+  */
+ get(id: string): QueueEntry | undefined;
  /**
   * Pick one pending question by the draw pipeline (Q-55: filter, relax,
   * balance, top-k random — never argmax). THE DRAW OWNS the pending→asked
@@ -776,12 +789,6 @@ export type SessionState = {
  * from `finishedSounding` being absent (no descent ended on this turn).
  */
 sounding?: SoundingState;
-/**
- * The finished DRM state, carried from the route when a DRM closes (ticket
- * 159, slice 6: a running DRM no longer lives in a bespoke field — the
- * session's phase machine IS the store, with the DrmUi inside machine.ui).
- */
-finishedDRM?: DRMParkedState;
 /**
  * Whether a descent was offered this sitting and what came of it. Absent
  * means none has been offered yet; 'declined' means one was and will not be

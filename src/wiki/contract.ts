@@ -602,6 +602,15 @@ export function assertUserTurn(turns: Turn[]): void {
 }
 
 /**
+ * Wrap text as a single user turn — the only message shape a local endpoint
+ * answers. The one builder in the slice: contradiction, composed and the
+ * compose paths all call it instead of spelling the turn out.
+ */
+export function userTurn(text: string): Turn[] {
+  return [{ role: 'user', text, at: '' }];
+}
+
+/**
  * Join the parts and THROW if the result is over budget.
  *
  * This is an assertion that an over-budget prompt was never BUILT, not a policy

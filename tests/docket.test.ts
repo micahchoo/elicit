@@ -124,6 +124,9 @@ function makeFakeQueue(entries?: QueueEntry[]): QueueStore & { _entries: QueueEn
     return true;
    });
   },
+  get(id: string): QueueEntry | undefined {
+   return _entries.find((e) => e.id === id);
+  },
   draw() { return null; },
   markAsked() { },
   markAnswered() { },

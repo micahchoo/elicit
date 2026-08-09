@@ -3,6 +3,7 @@ import { FACETS } from '../queue/facet-balance.js';
 import type { ResponseFormat } from '../llm.js';
 import { admissible, normalize, startsMidSentence } from './admissibility.js';
 import { stripFences } from '../clerk/compose-gate.js';
+import type { Authorship } from '../import/contract.js';
 
 // ---------------------------------------------------------------------------
 // The vocabularies, at runtime
@@ -32,6 +33,21 @@ const STANCES: ReadonlySet<string> = new Set<Stance>([
  'avowal', 'self-observation', 'report-of-fact', 'pole-preference',
  'commitment', 'uncertainty-marked', 'superseded', 'role-taking',
 ]);
+
+/**
+ * The region-authorship guard (seeding Task 7), owned here because this
+ * module owns the STANCES vocabulary: a cut from a region whose words the
+ * person did not compose may not wear `stance: 'avowal'` — the words were
+ * KEPT, not held, and an avowal asserts the person holds the claim. The
+ * coercion moves WITHIN the vocabulary ('avowal' → 'report-of-fact', both
+ * members of STANCES), never outside it. The prompt clause
+ * (import/extract.ts KEPT_NOT_WRITTEN) shapes the model; this enforces,
+ * whatever it returned.
+ */
+export function coerceAuthorshipStance(stance: string, authorship: Authorship): string {
+ if (authorship !== 'authored' && stance === 'avowal') return 'report-of-fact';
+ return stance;
+}
 
 /**
  * The four harvest decision verbs at runtime — the array mirror of

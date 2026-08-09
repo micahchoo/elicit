@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QueueEntry, QueueStore, Target } from '../types.js';
 import type { MachineState } from './machine.js';
+import { parkPointer as queueParkPointer } from '../queue/queue.js';
 
 /**
  * The pointer-source kind a parked machine mints. Owned here, not by the
@@ -95,15 +96,11 @@ export function parkMachinePointer(
  const label = phase
   ? `${phase.label} (${state.protocol}, phase ${state.phaseIndex + 1} of ${phases.length})`
   : `${state.protocol} machine parked`;
- return queue.add({
-  source: PARKED_SOURCE,
-  license: 'user',
+ return queueParkPointer(queue, {
+  kind: PARKED_SOURCE,
   question: label,
-  questionForm: 'deliberative',
-  sharpness: 'weak',
-  horizon: 'session',
-  machineId: sessionId,
-  machineProtocol: state.protocol,
+  idField: { machineId: sessionId },
+  extraFields: { machineProtocol: state.protocol },
   ...(target ? { target } : {}),
  });
 }

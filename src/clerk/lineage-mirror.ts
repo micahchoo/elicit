@@ -22,7 +22,7 @@ import matter from 'gray-matter';
 import type { Complete, LineageRead, QueueDraft, QueueStore } from '../types.js';
 import { readTranscripts } from '../vault/transcripts.js';
 import { isInterrogative, hasFirstPersonOutsideQuote } from '../language/guards.js';
-import { THRESHOLDS, shadowDecision } from '../wiki/thresholds.js';
+import { THRESHOLDS, readNumber, shadowDecision } from '../wiki/thresholds.js';
 import { composeWithRetry, stripFences, type Rejection } from './compose-gate.js';
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ export function licenseMirror(
 ): LineageRead | null {
   // The bound is the bound whether or not the flag is live (Q-56) — a
   // not-live fallback that LOOSENED it would invert the flag's meaning.
-  const minAge = THRESHOLDS['lineageMirror.minClaimAgeDays'].value as number;
+  const minAge = readNumber(THRESHOLDS['lineageMirror.minClaimAgeDays'], 14);
 
   const updatedMs = Date.parse(claim.updated);
   if (Number.isNaN(updatedMs)) return null;

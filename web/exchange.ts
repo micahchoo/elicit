@@ -17,27 +17,19 @@ import type { GateReading, SoundingEnd } from '../src/types.ts';
 import { descentCloseWord, sourceWord } from './provenance.js';
 import { lineageBlock } from './lineage.js';
 import { pasteTracker } from './paste-tracker.js';
-import { ensureProtocolMeta, protocolTitle } from './protocol-meta.js';
+import { ensureProtocolMeta, protocolLabel, protocolTitle } from './protocol-meta.js';
 import { triadSurface, toggleTriad, type PhaseMetaLike } from './triad-surface.js';
 import type { DictationOpts } from './dictation.js';
-import type { EndResponse, SessionState, WebDepsCore, WebDepsWithWait } from './deps.js';
+import { endAndGoToReviews } from './deps.js';
+import type { SessionState, WebDepsShell, WebDepsWithWait } from './deps.js';
 
-export interface ExchangeDeps {
- main: HTMLElement;
- el: WebDepsCore['el'];
- api: WebDepsCore['api'];
- navTo: (screen: string) => void;
- beginWait: WebDepsWithWait['beginWait'];
- renderShell: () => void;
- clear: () => void;
+export interface ExchangeDeps extends WebDepsWithWait, WebDepsShell {
  showQuietError: (container: HTMLElement, message: string) => void;
- setScreen: (screen: string) => void;
  session: SessionState;
  wireDictation: (opts: DictationOpts) => void;
  /** The session clock's interval — this screen starts it, main.ts's clear() stops it. */
  sessionClock: () => ReturnType<typeof setInterval> | null;
  setSessionClock: (timer: ReturnType<typeof setInterval> | null) => void;
- document: Document;
 }
 
 /** The turn route's reply shape, moved verbatim from main.ts. */
@@ -208,13 +200,13 @@ export function renderExchange(deps: ExchangeDeps): void {
    // The dimmed label above the question block renders the def TITLE
    // (ticket 157); the once-cached fetch updates it in place when it
    // lands, and a failed fetch leaves the registry id as the fallback.
-   const protocolLabel = deps.el('div', { class: 'exchange-protocol' }, protocolTitle(protocol));
+   const protocolTag = deps.el('div', { class: 'exchange-protocol' }, protocolTitle(protocol));
    void ensureProtocolMeta().then(() => {
     const fresh = deps.session.sessionProtocol();
   if (!fresh) return;
-    protocolLabel.textContent = protocolTitle(fresh);
+    protocolTag.textContent = protocolTitle(fresh);
    });
-   header.append(protocolLabel);
+   header.append(protocolTag);
   }
  // The machine phase line (ticket 159, slice 3), in the DRM probe-meta
  // grammar — quiet, 0.75rem, muted. Rendered only while a machine is
@@ -607,12 +599,17 @@ async function pressEverydayGate(choice: 'continue' | 'park' | 'another-day') {
  );
  try {
   if (choice === 'another-day') {
-   const res = await deps.api<EndResponse>(
-    `/api/session/${deps.session.sessionId()}/end`,
+   // End and hand the review over: the exchange parks the pending review
+   // unconditionally — the harvest runs behind /end except on an empty
+   // sitting, and the review surface decides what to show.
+   await endAndGoToReviews(
+    deps.api,
+    deps.session.sessionId()!,
+    deps.session.setPendingReviewSession,
+    deps.navTo,
+    { gateOnHarvesting: false },
    );
-   deps.session.setPendingReviewSession(res.sessionId);
    wait.done();
-   deps.navTo('reviews');
    return;
   }
   // park — depth kept: the gate route enters the closing door; the door
@@ -655,10 +652,8 @@ anotherDayWord.addEventListener('click', () => onGateWord('another-day'));
  answerArea.append(answerRow, answerHint, gateRow);
 
   // The offer carries the DRM title, never the jargon (ticket 157).
-  const drmOffer = deps.el('button', { class: 'nav-link exchange-drm-offer' }, `${protocolTitle('drm')} \u2192`);
-  void ensureProtocolMeta().then(() => {
-   drmOffer.textContent = `${protocolTitle('drm')} \u2192`;
-  });
+  const drmOffer = deps.el('button', { class: 'nav-link exchange-drm-offer' });
+  protocolLabel(drmOffer, 'drm', ' \u2192');
   drmOffer.addEventListener('click', () => deps.navTo('drm'));
   answerArea.append(drmOffer);
 
@@ -744,12 +739,14 @@ anotherDayWord.addEventListener('click', () => onGateWord('another-day'));
      closingRow.scrollIntoView({ block: 'center' });
     }
     try {
-     const endRes = await deps.api<EndResponse>(
-      `/api/session/${deps.session.sessionId()}/end`,
+     await endAndGoToReviews(
+      deps.api,
+      deps.session.sessionId()!,
+      deps.session.setPendingReviewSession,
+      deps.navTo,
+      { gateOnHarvesting: false },
      );
-     deps.session.setPendingReviewSession(endRes.sessionId);
      wait.done();
-     deps.navTo('reviews');
     } catch (e) {
      wait.failed(e);
      setControlsBusy(false);

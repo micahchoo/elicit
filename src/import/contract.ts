@@ -154,6 +154,13 @@ export type ImportAddition = string;
 export type Authorship = 'authored' | 'other' | 'machine-assisted';
 
 /**
+ * The three authorship values at runtime — the array mirror of
+ * `Authorship` above, so the region route's rejection and the type can
+ * never drift (the same pattern as `IMPORT_ACTIONS`).
+ */
+export const AUTHORS: readonly Authorship[] = ['authored', 'other', 'machine-assisted'];
+
+/**
  * The one mechanical rule that dates every file in a region (Q-67, amending
  * Q-57 for undated corpora). Declared once, at Reach. What Q-57 bans is the
  * GUESS — mtime above all, a lie for anything ever copied. A date typed into a

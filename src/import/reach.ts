@@ -20,7 +20,7 @@ import { appendEvent } from '../log/activity.js';
 import { appendLine, readLines } from '../jsonl.js';
 import type { Survey } from './survey.js';
 import type { LogFn } from '../wiki/contract.js';
-import { THRESHOLDS } from '../wiki/thresholds.js';
+import { THRESHOLDS, readNumber } from '../wiki/thresholds.js';
 
 export type ReachOffer = { path: string; unread: number; terms: string[] };
 
@@ -84,7 +84,7 @@ export function reachOffer(deps: {
 }): ReachOffer | null {
  const { survey, liveTerms, declined, log } = deps;
  const entry = THRESHOLDS['reach.nameOverlapMinTerms'];
- const minOverlap = deps.minOverlap ?? (typeof entry.value === 'number' ? entry.value : 2);
+ const minOverlap = deps.minOverlap ?? readNumber(entry, 2);
 
  const live = liveTerms();
  const nodes = survey?.nodes ?? [];

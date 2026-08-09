@@ -69,7 +69,7 @@ export function citeParts(cite: string): { snippetId: string; version: number } 
  * (Q-5), and a malformed cite can never name a real snippet id anyway — the
  * whole-string fallback only keeps the no-`@` reading stable.
  */
-function citeSnippetId(cite: string): string {
+export function citeSnippetId(cite: string): string {
   return citeParts(cite)?.snippetId ?? cite;
 }
 

@@ -9,10 +9,7 @@
  * This is a suggestion, not a decision. An explicit `mode.target` always wins.
  */
 
-import { existsSync, readdirSync } from 'node:fs';
 import { readTranscripts } from '../vault/transcripts.js';
-import { join } from 'node:path';
-import matter from 'gray-matter';
 import type { Target } from '../types.js';
 
 /** How many consecutive inward sittings it takes to offer the workshop instead. */

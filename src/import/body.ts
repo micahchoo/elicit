@@ -40,6 +40,48 @@ export function classifyDroppedRun(lines: string[]): DroppedRunKind {
   return 'not-prose';
 }
 
+/**
+ * The regions of a source body that preparation dropped, and why — the
+ * reader sees *why* a paragraph carries no cuts. `at`/`length` are offsets
+ * into the source body, so the surface can mark the words in place. A line
+ * survives iff its trailing-whitespace-stripped text is empty (blank lines
+ * are separators, never marks) or appears in the prepared prose; consecutive
+ * non-surviving lines form one mark, named by `classifyDroppedRun` — the
+ * same vocabulary `clean` deletes by (moved home with the classifier).
+ */
+export type DroppedRegion = { at: number; length: number; why: DroppedRunKind };
+
+export function droppedRegions(body: string, prepared: string): DroppedRegion[] {
+  const preparedLines = new Set(prepared.split('\n').map((l) => l.trimEnd()));
+  const survives = (line: string): boolean => {
+    const t = line.trimEnd();
+    return t === '' || preparedLines.has(t);
+  };
+  const marks: DroppedRegion[] = [];
+  let runStart = -1;
+  let runEnd = 0;
+  let at = 0;
+  const mark = (): DroppedRegion => ({
+    at: runStart,
+    length: runEnd - runStart,
+    why: classifyDroppedRun(body.slice(runStart, runEnd).split('\n')),
+  });
+  for (const line of body.split('\n')) {
+    if (survives(line)) {
+      if (runStart !== -1) marks.push(mark());
+      runStart = -1;
+    } else if (runStart === -1) {
+      runStart = at;
+      runEnd = at + line.length;
+    } else {
+      runEnd = at + line.length;
+    }
+    at += line.length + 1;
+  }
+  if (runStart !== -1) marks.push(mark());
+  return marks;
+}
+
 /** Strip Hugo shortcodes, images, bare links and HTML. */
 export function clean(md: string, keepQuotes: boolean): string {
   return md
